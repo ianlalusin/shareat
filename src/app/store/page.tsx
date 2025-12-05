@@ -47,6 +47,11 @@ import {
   onSnapshot,
   deleteDoc,
 } from 'firebase/firestore';
+import {
+  AdminSidebar,
+} from "@/components/admin/sidebar";
+import { AdminHeader } from "@/components/admin/header";
+import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 type Store = {
   id: string;
@@ -156,7 +161,7 @@ export default function StorePage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+      <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Stores
@@ -311,6 +316,6 @@ export default function StorePage() {
           </TableBody>
         </Table>
       </div>
-    </div>
+      </main>
   );
 }

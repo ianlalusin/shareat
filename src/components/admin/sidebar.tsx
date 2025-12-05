@@ -18,11 +18,13 @@ import {
   Wrench,
   Settings,
   CircleUser,
+  LayoutDashboard,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const menuItems = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/store", label: "Store", icon: Store },
   { href: "#staff", label: "Staff", icon: Users },
   { href: "#menu", label: "Menu", icon: BookMarked },
@@ -42,7 +44,7 @@ export function AdminSidebar() {
   // A simple way to check active state for placeholder hrefs
   const isActive = (href: string) => {
     if (href === '#') return false;
-    return pathname.startsWith(href);
+    return pathname === href;
   }
 
   return (
