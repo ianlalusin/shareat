@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -342,7 +342,9 @@ export default function MenuPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (itemId: string) => {
+  const handleDelete = async (event: Event, itemId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
     if (!firestore) return;
     if (window.confirm('Are you sure you want to delete this menu item?')) {
       try {
@@ -720,7 +722,7 @@ export default function MenuPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handleDelete(item.id)}>Delete</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={(e) => handleDelete(e, item.id)}>Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -737,5 +739,7 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
 
     
