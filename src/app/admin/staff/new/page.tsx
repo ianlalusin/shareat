@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -54,6 +54,20 @@ export default function NewStaffPage() {
   const storage = useStorage();
   const router = useRouter();
 
+  const [isBirthdayPickerOpen, setIsBirthdayPickerOpen] = useState(false);
+  const [tempBirthday, setTempBirthday] = useState<Date | undefined>(new Date());
+  
+  const [isHiredDatePickerOpen, setIsHiredDatePickerOpen] = useState(false);
+  const [tempHiredDate, setTempHiredDate] = useState<Date | undefined>(new Date());
+
+  const yearRange = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return {
+      fromYear: 1950,
+      toYear: currentYear + 5,
+    };
+  }, []);
+
   useEffect(() => {
     if (firestore) {
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -78,6 +92,17 @@ export default function NewStaffPage() {
       setFormData((prev) => ({ ...prev, [name]: date }));
     }
   };
+
+  const confirmBirthday = () => {
+    handleDateChange('birthday', tempBirthday);
+    setIsBirthdayPickerOpen(false);
+  }
+
+  const confirmHiredDate = () => {
+    handleDateChange('dateHired', tempHiredDate);
+    setIsHiredDatePickerOpen(false);
+  }
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -163,7 +188,7 @@ export default function NewStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                 <Popover>
+                 <Popover open={isBirthdayPickerOpen} onOpenChange={setIsBirthdayPickerOpen}>
                     <PopoverTrigger asChild>
                     <Button
                         variant={"outline"}
@@ -177,18 +202,24 @@ export default function NewStaffPage() {
                     </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                    <Calendar
-                        mode="single"
-                        selected={new Date(formData.birthday)}
-                        onSelect={(date) => handleDateChange('birthday', date)}
-                        initialFocus
-                    />
+                      <Calendar
+                          mode="single"
+                          selected={tempBirthday}
+                          onSelect={setTempBirthday}
+                          captionLayout="dropdown-buttons"
+                          fromYear={yearRange.fromYear}
+                          toYear={yearRange.toYear}
+                          initialFocus
+                      />
+                      <div className="p-2 border-t border-border">
+                          <Button size="sm" className="w-full" onClick={confirmBirthday}>Confirm</Button>
+                      </div>
                     </PopoverContent>
                 </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                 <Popover>
+                 <Popover open={isHiredDatePickerOpen} onOpenChange={setIsHiredDatePickerOpen}>
                     <PopoverTrigger asChild>
                     <Button
                         variant={"outline"}
@@ -202,12 +233,18 @@ export default function NewStaffPage() {
                     </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                    <Calendar
-                        mode="single"
-                        selected={new Date(formData.dateHired)}
-                        onSelect={(date) => handleDateChange('dateHired', date)}
-                        initialFocus
-                    />
+                      <Calendar
+                          mode="single"
+                          selected={tempHiredDate}
+                          onSelect={setTempHiredDate}
+                          captionLayout="dropdown-buttons"
+                          fromYear={yearRange.fromYear}
+                          toYear={yearRange.toYear}
+                          initialFocus
+                      />
+                      <div className="p-2 border-t border-border">
+                          <Button size="sm" className="w-full" onClick={confirmHiredDate}>Confirm</Button>
+                      </div>
                     </PopoverContent>
                 </Popover>
               </div>

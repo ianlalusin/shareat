@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter, notFound } from 'next/navigation';
+import { notFound, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
@@ -57,7 +57,8 @@ type GListItem = {
   is_active: boolean;
 };
 
-export default function EditStorePage({ params: { storeId } }: { params: { storeId: string } }) {
+export default function EditStorePage({ params }: { params: { storeId: string } }) {
+  const { storeId } = params;
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
