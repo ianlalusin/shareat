@@ -5,7 +5,6 @@ import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { doc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
-import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -121,8 +120,8 @@ export default function StaffDetailPage() {
           <InfoItem label="Email" value={staff.email} />
           <InfoItem label="Contact No." value={staff.contactNo} />
           <InfoItem label="Address" value={staff.address} />
-          <InfoItem label="Birthday" value={staff.birthday ? format(new Date(staff.birthday as any), 'PPP') : 'N/A'} />
-          <InfoItem label="Date Hired" value={staff.dateHired ? format(new Date(staff.dateHired as any), 'PPP') : 'N/A'} />
+          <InfoItem label="Birthday" value={staff.birthday} />
+          <InfoItem label="Date Hired" value={staff.dateHired} />
           <InfoItem label="Rate" value={staff.rate?.toString() ?? 'N/A'} />
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">Employment Status</p>

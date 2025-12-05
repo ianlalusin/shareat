@@ -27,8 +27,8 @@ export type Staff = {
   address: string;
   email: string;
   contactNo: string;
-  birthday: Date | string;
-  dateHired: Date | string;
+  birthday: string;
+  dateHired: string;
   position: string;
   rate: number;
   employmentStatus: 'Active' | 'Inactive' | 'Resigned' | 'AWOL';

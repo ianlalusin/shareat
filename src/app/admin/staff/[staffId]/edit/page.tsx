@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
-import { format } from 'date-fns';
 import {
   doc,
   getDoc,
@@ -24,13 +23,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { ArrowLeft, CalendarIcon, User } from 'lucide-react';
+import { ArrowLeft, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 import { Staff, Store } from '@/lib/types';
 
 
@@ -46,20 +42,6 @@ export default function EditStaffPage() {
   const storage = useStorage();
   const router = useRouter();
 
-  const [isBirthdayPickerOpen, setIsBirthdayPickerOpen] = useState(false);
-  const [tempBirthday, setTempBirthday] = useState<Date | undefined>(new Date());
-  
-  const [isHiredDatePickerOpen, setIsHiredDatePickerOpen] = useState(false);
-  const [tempHiredDate, setTempHiredDate] = useState<Date | undefined>(new Date());
-
-  const yearRange = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    return {
-      fromYear: 1950,
-      toYear: currentYear + 5,
-    };
-  }, []);
-
   useEffect(() => {
     if (!firestore || !staffId) return;
 
@@ -69,17 +51,7 @@ export default function EditStaffPage() {
 
         if (docSnap.exists()) {
             const staffData = docSnap.data() as Omit<Staff, 'id'>;
-            const birthday = staffData.birthday ? new Date(staffData.birthday as any) : new Date();
-            const dateHired = staffData.dateHired ? new Date(staffData.dateHired as any) : new Date();
-            
-            setFormData({ 
-              ...staffData,
-              birthday,
-              dateHired
-            });
-            
-            setTempBirthday(birthday);
-            setTempHiredDate(dateHired);
+            setFormData(staffData);
 
             if (staffData.picture) {
                 setPicturePreview(staffData.picture);
@@ -103,29 +75,20 @@ export default function EditStaffPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!formData) return;
     const { name, value } = e.target;
-    setFormData((prev) => (prev ? { ...prev, [name]: name === 'rate' ? (parseFloat(value) || 0) : value } : null));
+    setFormData((prev) => {
+      if (!prev) return null;
+      if (name === 'rate') {
+          const rate = parseFloat(value);
+          return { ...prev, [name]: isNaN(rate) ? 0 : rate };
+      }
+      return { ...prev, [name]: value };
+    });
   };
   
   const handleSelectChange = (name: string, value: string) => {
     if (!formData) return;
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
   };
-
-  const handleDateChange = (name: string, date: Date | undefined) => {
-    if (date && formData) {
-      setFormData((prev) => (prev ? { ...prev, [name]: date } : null));
-    }
-  };
-
-  const confirmBirthday = () => {
-    handleDateChange('birthday', tempBirthday);
-    setIsBirthdayPickerOpen(false);
-  }
-
-  const confirmHiredDate = () => {
-    handleDateChange('dateHired', tempHiredDate);
-    setIsHiredDatePickerOpen(false);
-  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -149,8 +112,6 @@ export default function EditStaffPage() {
     const dataToSave = {
       ...formData,
       picture: pictureUrl,
-      birthday: formData.birthday ? format(new Date(formData.birthday), "yyyy-MM-dd") : null,
-      dateHired: formData.dateHired ? format(new Date(formData.dateHired), "yyyy-MM-dd") : null,
     };
 
     try {
@@ -246,65 +207,11 @@ export default function EditStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                 <Popover open={isBirthdayPickerOpen} onOpenChange={setIsBirthdayPickerOpen}>
-                    <PopoverTrigger asChild>
-                    <Button
-                        variant={"outline"}
-                        className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.birthday && "text-muted-foreground"
-                        )}
-                    >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.birthday ? format(new Date(formData.birthday), "PPP") : <span>Pick a date</span>}
-                    </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                          mode="single"
-                          selected={tempBirthday}
-                          onSelect={setTempBirthday}
-                          captionLayout="dropdown-buttons"
-                          fromYear={yearRange.fromYear}
-                          toYear={yearRange.toYear}
-                          initialFocus
-                      />
-                      <div className="p-2 border-t border-border">
-                          <Button size="sm" className="w-full" onClick={confirmBirthday}>Confirm</Button>
-                      </div>
-                    </PopoverContent>
-                </Popover>
+                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                 <Popover open={isHiredDatePickerOpen} onOpenChange={setIsHiredDatePickerOpen}>
-                    <PopoverTrigger asChild>
-                    <Button
-                        variant={"outline"}
-                        className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !formData.dateHired && "text-muted-foreground"
-                        )}
-                    >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.dateHired ? format(new Date(formData.dateHired), "PPP") : <span>Pick a date</span>}
-                    </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                          mode="single"
-                          selected={tempHiredDate}
-                          onSelect={setTempHiredDate}
-                          captionLayout="dropdown-buttons"
-                          fromYear={yearRange.fromYear}
-                          toYear={yearRange.toYear}
-                          initialFocus
-                      />
-                      <div className="p-2 border-t border-border">
-                          <Button size="sm" className="w-full" onClick={confirmHiredDate}>Confirm</Button>
-                      </div>
-                    </PopoverContent>
-                </Popover>
+                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rate">Rate</Label>
