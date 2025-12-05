@@ -49,4 +49,6 @@ export type MenuItem = {
   barcode: string;
   is_active: boolean;
   storeIds: string[];
+  availability: string[];
 };
+

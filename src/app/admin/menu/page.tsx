@@ -40,9 +40,11 @@ import {
   updateDoc,
   onSnapshot,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store } from '@/lib/types';
+import { MenuItem, Store, GListItem } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -56,6 +58,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useStoreSelector } from '@/store/use-store-selector';
+
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -67,21 +71,24 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   barcode: '',
   is_active: true,
   storeIds: [],
+  availability: [],
 };
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const firestore = useFirestore();
+  const { selectedStoreId } = useStoreSelector();
 
   useEffect(() => {
     if (firestore) {
-      const unsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
+      const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [] })));
+        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [], availability: item.availability || [] })));
       });
 
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -90,11 +97,29 @@ export default function MenuPage() {
       });
 
       return () => {
-        unsubscribe();
+        menuUnsubscribe();
         storesUnsubscribe();
       }
     }
   }, [firestore]);
+
+  useEffect(() => {
+    if (firestore && selectedStoreId) {
+       const availabilityQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'menu availability'),
+        where('is_active', '==', true),
+        where('storeIds', 'array-contains', selectedStoreId)
+      );
+
+      const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        setAvailabilityOptions(availabilityData);
+      });
+      
+      return () => availabilityUnsubscribe();
+    }
+  }, [firestore, selectedStoreId]);
 
 
   useEffect(() => {
@@ -102,6 +127,7 @@ export default function MenuPage() {
       setFormData({
         ...editingItem,
         variants: editingItem.variants || [],
+        availability: editingItem.availability || [],
       });
     } else {
         setFormData(initialItemState);
@@ -133,6 +159,15 @@ export default function MenuPage() {
       return { ...prev, storeIds: newStoreIds };
     });
   };
+
+  const handleAvailabilityChange = (itemName: string) => {
+    setFormData(prev => {
+        const newAvailability = prev.availability.includes(itemName)
+            ? prev.availability.filter(item => item !== itemName)
+            : [...prev.availability, itemName];
+        return {...prev, availability: newAvailability};
+    })
+  }
 
   const handleSwitchChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, is_active: checked }));
@@ -194,6 +229,13 @@ export default function MenuPage() {
         .map(s => s.storeName)
         .join(', ');
   };
+  
+  const getSelectedAvailabilityNames = () => {
+    if (formData.availability.length === 0) return "Select availability";
+    if (formData.availability.length === availabilityOptions.length) return "All selected";
+    if (formData.availability.length > 2) return `${formData.availability.length} selected`;
+    return formData.availability.join(', ');
+  }
 
   const calculateProfit = (cost: number, price: number) => {
     if (cost <= 0 || price <= 0) return '0.00%';
@@ -262,6 +304,32 @@ export default function MenuPage() {
                       <SelectItem value="fraction">Fraction</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="availability">Availability</Label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                        <span>{getSelectedAvailabilityNames()}</span>
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                        {availabilityOptions.length > 0 ?
+                          availabilityOptions.map(option => (
+                            <DropdownMenuCheckboxItem
+                                key={option.id}
+                                checked={formData.availability.includes(option.item)}
+                                onSelect={(e) => e.preventDefault()}
+                                onClick={() => handleAvailabilityChange(option.item)}
+                            >
+                                {option.item}
+                            </DropdownMenuCheckboxItem>
+                          )) :
+                          <DropdownMenuItem disabled>No options for this store</DropdownMenuItem>
+                        }
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                  <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="storeIds">Applicable Stores</Label>
@@ -337,6 +405,7 @@ export default function MenuPage() {
                       <TableRow>
                         <TableHead className="px-2 h-10">Menu Name</TableHead>
                         <TableHead className="px-2 h-10">Variants</TableHead>
+                        <TableHead className="px-2 h-10">Availability</TableHead>
                         <TableHead className="px-2 h-10">Sell By</TableHead>
                         <TableHead className="px-2 h-10 text-right">Cost</TableHead>
                         <TableHead className="px-2 h-10 text-right">Price</TableHead>
@@ -354,6 +423,9 @@ export default function MenuPage() {
                           <TableCell className="p-2 font-medium">{item.menuName}</TableCell>
                           <TableCell className="p-2">
                              {item.variants.map(v => <Badge key={v} variant="outline" className="mr-1 mb-1">{v}</Badge>)}
+                          </TableCell>
+                          <TableCell className="p-2">
+                             {item.availability.map(v => <Badge key={v} variant="default" className="mr-1 mb-1">{v}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2 capitalize">{item.sellBy}</TableCell>
                           <TableCell className="p-2 text-right">{item.cost.toFixed(2)}</TableCell>

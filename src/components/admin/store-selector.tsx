@@ -11,6 +11,7 @@ import {
 import { Store as StoreIcon } from "lucide-react";
 import { useFirestore } from "@/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
+import { useStoreSelector } from "@/store/use-store-selector";
 
 type Store = {
   id: string;
@@ -20,6 +21,7 @@ type Store = {
 export function StoreSelector() {
   const [stores, setStores] = useState<Store[]>([]);
   const firestore = useFirestore();
+  const { selectedStoreId, setSelectedStoreId } = useStoreSelector();
 
   useEffect(() => {
     if (firestore) {
@@ -30,14 +32,17 @@ export function StoreSelector() {
             (doc) => ({ id: doc.id, ...doc.data() } as Store)
           );
           setStores(storesData);
+           if (storesData.length > 0 && !selectedStoreId) {
+            setSelectedStoreId(storesData[0].id);
+          }
         }
       );
       return () => unsubscribe();
     }
-  }, [firestore]);
+  }, [firestore, selectedStoreId, setSelectedStoreId]);
 
   return (
-    <Select defaultValue={stores.length > 0 ? stores[0].id : ""}>
+    <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
       <SelectTrigger className="w-full md:w-[200px] lg:w-[240px] bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 focus:ring-accent data-[state=open]:bg-primary-foreground/10">
         <div className="flex items-center gap-2">
           <StoreIcon className="h-4 w-4" />
