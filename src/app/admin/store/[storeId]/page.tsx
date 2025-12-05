@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store, ArrowLeft } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { format } from 'date-fns';
 
 type Store = {
   id: string;
@@ -22,7 +23,8 @@ type Store = {
   address: string;
   description: string;
   status: 'Active' | 'Inactive';
-  tags: ('Foodpanda' | 'Grab' | 'Dine in' | 'Take Out')[];
+  tags: string[];
+  openingDate?: Date | string;
 };
 
 export default function StoreDetailPage({ params }: { params: { storeId: string } }) {
@@ -131,6 +133,10 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
                 <p>{store.address}</p>
             </div>
             <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
+                <p>{store.openingDate ? format(new Date(store.openingDate as any), "PPP") : 'N/A'}</p>
+            </div>
+            <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Type</p>
                 <Badge variant="secondary">{store.type}</Badge>
             </div>
@@ -143,7 +149,7 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
                     {store.status}
                 </Badge>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-2">
                 <p className="text-sm font-medium text-muted-foreground">Tags</p>
                 <div className="flex flex-wrap gap-1">
                     {store.tags.map((tag) => (
@@ -159,3 +165,5 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
     </main>
   );
 }
+
+    

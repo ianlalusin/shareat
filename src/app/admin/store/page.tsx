@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { format } from "date-fns";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,12 +45,16 @@ import {
   addDoc,
   collection,
   doc,
-  setDoc,
   updateDoc,
   onSnapshot,
   deleteDoc,
+  query, 
+  where
 } from 'firebase/firestore';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 
 type Store = {
   id: string;
@@ -60,7 +66,15 @@ type Store = {
   address: string;
   description: string;
   status: 'Active' | 'Inactive';
-  tags: ('Foodpanda' | 'Grab' | 'Dine in' | 'Take Out')[];
+  tags: string[];
+  openingDate?: Date | string;
+};
+
+type GListItem = {
+  id: string;
+  item: string;
+  category: string;
+  is_active: boolean;
 };
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -73,6 +87,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   status: 'Active',
   tags: [],
   logo: '',
+  openingDate: new Date(),
 };
 
 export default function StorePage() {
@@ -80,6 +95,7 @@ export default function StorePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
+  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const firestore = useFirestore();
   const router = useRouter();
 
@@ -89,14 +105,32 @@ export default function StorePage() {
         const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
         setStores(storesData);
       });
-      return () => unsubscribe();
+
+      const tagsQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'Store tags'),
+        where('is_active', '==', true)
+      );
+
+      const unsubscribeTags = onSnapshot(tagsQuery, (snapshot) => {
+        const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        setStoreTags(tagsData);
+      });
+
+      return () => {
+        unsubscribe();
+        unsubscribeTags();
+      }
     }
   }, [firestore]);
 
 
   useEffect(() => {
     if (editingStore) {
-      setFormData(editingStore);
+      setFormData({
+        ...editingStore,
+        openingDate: editingStore.openingDate ? new Date(editingStore.openingDate as any) : new Date(),
+      });
     } else {
       setFormData(initialStoreState);
     }
@@ -112,6 +146,12 @@ export default function StorePage() {
      setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
+  const handleDateChange = (date: Date | undefined) => {
+    if (date) {
+      setFormData((prev) => ({...prev, openingDate: date}));
+    }
+  }
+
   const handleTagChange = (tag: string, checked: boolean) => {
     setFormData((prev) => {
       const newTags = checked
@@ -125,13 +165,18 @@ export default function StorePage() {
     event.preventDefault();
     if (!firestore) return;
 
+    const dataToSave = {
+      ...formData,
+      openingDate: formData.openingDate instanceof Date ? formData.openingDate.toISOString() : formData.openingDate
+    };
+
     try {
       if (editingStore) {
         const storeRef = doc(firestore, 'stores', editingStore.id);
-        await updateDoc(storeRef, formData);
+        await updateDoc(storeRef, dataToSave);
         setEditingStore(null);
       } else {
-        await addDoc(collection(firestore, 'stores'), formData);
+        await addDoc(collection(firestore, 'stores'), dataToSave);
       }
       setFormData(initialStoreState);
       setIsModalOpen(false);
@@ -182,7 +227,7 @@ export default function StorePage() {
               <span>Add Store</span>
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
+          <DialogContent className="sm:max-w-3xl">
             <DialogHeader>
               <DialogTitle>{editingStore ? 'Edit Store' : 'Add New Store'}</DialogTitle>
             </DialogHeader>
@@ -220,6 +265,31 @@ export default function StorePage() {
                   <Label htmlFor="address">Address</Label>
                   <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="openingDate">Opening Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.openingDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.openingDate ? format(new Date(formData.openingDate), "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.openingDate ? new Date(formData.openingDate) : undefined}
+                        onSelect={handleDateChange}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
@@ -236,21 +306,21 @@ export default function StorePage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="col-span-2 space-y-2">
                   <Label>Tags</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {['Foodpanda', 'Grab', 'Dine in', 'Take Out'].map((tag) => (
-                      <div key={tag} className="flex items-center gap-1">
+                  <div className="flex flex-wrap gap-4">
+                    {storeTags.map((tag) => (
+                      <div key={tag.id} className="flex items-center gap-2">
                         <Input
                           type="checkbox"
-                          id={`tag-${tag}`}
+                          id={`tag-${tag.item}`}
                           name="tags"
-                          value={tag}
-                          checked={formData.tags.includes(tag as any)}
-                          onChange={(e) => handleTagChange(tag, e.target.checked)}
+                          value={tag.item}
+                          checked={formData.tags.includes(tag.item as any)}
+                          onChange={(e) => handleTagChange(tag.item, e.target.checked)}
                           className="h-4 w-4"
                         />
-                        <Label htmlFor={`tag-${tag}`}>{tag}</Label>
+                        <Label htmlFor={`tag-${tag.item}`}>{tag.item}</Label>
                       </div>
                     ))}
                   </div>
@@ -276,7 +346,7 @@ export default function StorePage() {
               <TableHead>Type</TableHead>
               <TableHead>Contact No.</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Address</TableHead>
+              <TableHead>Opening Date</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Tags</TableHead>
               <TableHead>
@@ -293,7 +363,7 @@ export default function StorePage() {
                 </TableCell>
                 <TableCell>{store.contactNo}</TableCell>
                 <TableCell>{store.email}</TableCell>
-                <TableCell>{store.address}</TableCell>
+                <TableCell>{store.openingDate ? format(new Date(store.openingDate as any), "PPP") : 'N/A'}</TableCell>
                 <TableCell>
                   <Badge
                     variant={store.status === 'Active' ? 'default' : 'destructive'}
@@ -332,3 +402,5 @@ export default function StorePage() {
       </main>
   );
 }
+
+    
