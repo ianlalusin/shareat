@@ -270,15 +270,17 @@ export default function GListPage() {
         {Object.entries(groupedItems).map(([category, itemsInCategory]) => (
           <AccordionItem key={category} value={category} className="border-0">
              <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
-              <AccordionTrigger className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80 hover:no-underline">
-                <div className='flex items-center gap-2'>
-                    <h2 className="text-base font-semibold">{category}</h2>
-                    <Badge variant="secondary">{itemsInCategory.length}</Badge>
-                </div>
+               <div className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80">
+                <AccordionTrigger className="flex-1 p-0 hover:no-underline">
+                  <div className='flex items-center gap-2'>
+                      <h2 className="text-base font-semibold">{category}</h2>
+                      <Badge variant="secondary">{itemsInCategory.length}</Badge>
+                  </div>
+                </AccordionTrigger>
                  <Button
                   size="sm"
                   variant="ghost"
-                  className="mr-2 h-7 w-7 p-0 [&[data-state=open]>svg]:-rotate-90"
+                  className="mr-2 h-7 w-7 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
                     openAddModalForCategory(category);
@@ -286,7 +288,7 @@ export default function GListPage() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-              </AccordionTrigger>
+               </div>
               <AccordionContent className="p-0">
                 <div className="border-t">
                   <Table>
