@@ -28,8 +28,7 @@ type Store = {
   openingDate?: Date | string;
 };
 
-export default function StoreDetailPage({ params }: { params: { storeId: string } }) {
-  const { storeId } = params;
+export default function StoreDetailPage({ params: { storeId } }: { params: { storeId: string } }) {
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();
