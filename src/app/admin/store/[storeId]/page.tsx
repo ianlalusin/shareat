@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
-import { notFound } from 'next/navigation';
+import { notFound, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Store, ArrowLeft } from 'lucide-react';
+import { Store as StoreIcon, ArrowLeft, MoreVertical } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type Store = {
   id: string;
@@ -32,6 +33,7 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();
+  const router = useRouter();
 
   useEffect(() => {
     if (!firestore || !storeId) return;
@@ -48,6 +50,29 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
 
     return () => unsubscribe();
   }, [firestore, storeId]);
+
+  const handleDelete = async () => {
+    if (!firestore || !storeId) return;
+    if (window.confirm('Are you sure you want to delete this store?')) {
+      try {
+        await deleteDoc(doc(firestore, 'stores', storeId));
+        router.push('/admin/store');
+      } catch (error) {
+        console.error("Error deleting document: ", error);
+      }
+    }
+  };
+
+  const handleEdit = () => {
+    // This is a bit of a workaround to pass the store data to the modal
+    // on the parent page. A more robust solution might use a global state manager.
+    router.push('/admin/store');
+    setTimeout(() => {
+        const editEvent = new CustomEvent('edit-store', { detail: store });
+        window.dispatchEvent(editEvent);
+    }, 100);
+  };
+
 
   if (loading) {
     return (
@@ -92,26 +117,41 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-      <div className="flex items-center gap-4">
-        <Button asChild variant="outline" size="icon" className="h-7 w-7">
-          <Link href="/admin/store">
-            <ArrowLeft className="h-4 w-4" />
-            <span className="sr-only">Back</span>
-          </Link>
-        </Button>
-        <Avatar className="h-16 w-16 border">
-          {store.logo ? (
-             <AvatarImage src={store.logo} alt={store.storeName} />
-          ) : null}
-          <AvatarFallback>
-            <Store className="h-8 w-8" />
-          </AvatarFallback>
-        </Avatar>
-        <div>
-            <h1 className="text-2xl font-bold tracking-tight font-headline">
-                {store.storeName}
-            </h1>
+      <div className="flex items-center gap-4 justify-between">
+        <div className='flex items-center gap-4'>
+            <Button asChild variant="outline" size="icon" className="h-7 w-7">
+            <Link href="/admin/store">
+                <ArrowLeft className="h-4 w-4" />
+                <span className="sr-only">Back</span>
+            </Link>
+            </Button>
+            <Avatar className="h-16 w-16 border">
+            {store.logo ? (
+                <AvatarImage src={store.logo} alt={store.storeName} />
+            ) : null}
+            <AvatarFallback>
+                <StoreIcon className="h-8 w-8" />
+            </AvatarFallback>
+            </Avatar>
+            <div>
+                <h1 className="text-2xl font-bold tracking-tight font-headline">
+                    {store.storeName}
+                </h1>
+            </div>
         </div>
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button aria-haspopup="true" size="icon" variant="ghost">
+                    <MoreVertical className="h-4 w-4" />
+                    <span className="sr-only">Toggle menu</span>
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={handleEdit}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleDelete} className='text-destructive focus:text-destructive'>Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       
       <Card>
@@ -165,5 +205,3 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
     </main>
   );
 }
-
-    

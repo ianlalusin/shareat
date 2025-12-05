@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -99,6 +99,17 @@ export default function StorePage() {
   const firestore = useFirestore();
   const router = useRouter();
 
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [tempDate, setTempDate] = useState<Date | undefined>(new Date());
+
+  const yearRange = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return {
+      fromYear: 1990,
+      toYear: currentYear,
+    };
+  }, []);
+
   useEffect(() => {
     if (firestore) {
       const unsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -127,12 +138,15 @@ export default function StorePage() {
 
   useEffect(() => {
     if (editingStore) {
+      const openingDate = editingStore.openingDate ? new Date(editingStore.openingDate as any) : new Date();
       setFormData({
         ...editingStore,
-        openingDate: editingStore.openingDate ? new Date(editingStore.openingDate as any) : new Date(),
+        openingDate,
       });
+      setTempDate(openingDate)
     } else {
       setFormData(initialStoreState);
+      setTempDate(initialStoreState.openingDate ? new Date(initialStoreState.openingDate) : new Date());
     }
   }, [editingStore]);
 
@@ -150,6 +164,11 @@ export default function StorePage() {
     if (date) {
       setFormData((prev) => ({...prev, openingDate: date}));
     }
+  }
+
+  const confirmDate = () => {
+    handleDateChange(tempDate);
+    setIsDatePickerOpen(false);
   }
 
   const handleTagChange = (tag: string, checked: boolean) => {
@@ -267,7 +286,7 @@ export default function StorePage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="openingDate">Opening Date</Label>
-                  <Popover>
+                   <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
                     <PopoverTrigger asChild>
                       <Button
                         variant={"outline"}
@@ -283,10 +302,16 @@ export default function StorePage() {
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        selected={formData.openingDate ? new Date(formData.openingDate) : undefined}
-                        onSelect={handleDateChange}
+                        selected={tempDate}
+                        onSelect={setTempDate}
+                        captionLayout="dropdown-buttons"
+                        fromYear={yearRange.fromYear}
+                        toYear={yearRange.toYear}
                         initialFocus
                       />
+                      <div className="p-2 border-t border-border">
+                        <Button size="sm" className="w-full" onClick={confirmDate}>Confirm</Button>
+                      </div>
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -389,8 +414,8 @@ export default function StorePage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={(e) => handleEdit(e, store)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={(e) => handleDelete(e, store.id)}>Delete</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(e) => handleEdit(e as unknown as React.MouseEvent, store)}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, store.id)}>Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
@@ -402,5 +427,3 @@ export default function StorePage() {
       </main>
   );
 }
-
-    
