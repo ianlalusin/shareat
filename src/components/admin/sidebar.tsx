@@ -23,7 +23,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const menuItems = [
-  { href: "#store", label: "Store", icon: Store },
+  { href: "/store", label: "Store", icon: Store },
   { href: "#staff", label: "Staff", icon: Users },
   { href: "#menu", label: "Menu", icon: BookMarked },
   { href: "#inventory", label: "Inventory", icon: Boxes },
