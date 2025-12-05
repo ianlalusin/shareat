@@ -237,11 +237,11 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                       <Label htmlFor="email">Email</Label>
                       <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2">
+                    <div className="md:col-span-2 space-y-2">
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
-                    <div className="col-span-2 space-y-2">
+                    <div className="md:col-span-2 space-y-2">
                         <Label>Tags</Label>
                         <div className="flex flex-wrap gap-2">
                             {storeTags.map((tag) => (
@@ -256,7 +256,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                             ))}
                         </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="md:col-span-2 space-y-2">
                         <Label htmlFor="logo">Logo</Label>
                         <div className="flex items-center gap-4">
                             <Avatar className="h-20 w-20 border">
@@ -268,24 +268,22 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                             <Input id="logo" name="logo" type="file" onChange={handleFileChange} className="max-w-xs" />
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <Label htmlFor="openingDate">Opening Date</Label>
-                          <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
-                          {dateError && <p className="text-sm text-destructive">{dateError}</p>}
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="status">Status</Label>
-                            <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
-                                <SelectTrigger id="status">
-                                <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                <SelectItem value="Active">Active</SelectItem>
-                                <SelectItem value="Inactive">Inactive</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="openingDate">Opening Date</Label>
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                      {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="status">Status</Label>
+                        <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
+                            <SelectTrigger id="status">
+                            <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                            <SelectItem value="Active">Active</SelectItem>
+                            <SelectItem value="Inactive">Inactive</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                     <div className="col-span-2 space-y-2">
                       <Label htmlFor="description">Description</Label>

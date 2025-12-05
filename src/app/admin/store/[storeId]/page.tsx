@@ -158,20 +158,18 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
                     ))}
                 </div>
             </div>
-            <div className="flex items-start gap-8">
-              <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
-                  <p>{store.openingDate || 'N/A'}</p>
-              </div>
-              <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                   <Badge
-                      variant={store.status === 'Active' ? 'default' : 'destructive'}
-                      className={store.status === 'Active' ? 'bg-green-500' : ''}
-                    >
-                      {store.status}
-                  </Badge>
-              </div>
+            <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
+                <p>{store.openingDate || 'N/A'}</p>
+            </div>
+            <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Status</p>
+                 <Badge
+                    variant={store.status === 'Active' ? 'default' : 'destructive'}
+                    className={store.status === 'Active' ? 'bg-green-500' : ''}
+                  >
+                    {store.status}
+                </Badge>
             </div>
         </CardContent>
       </Card>
