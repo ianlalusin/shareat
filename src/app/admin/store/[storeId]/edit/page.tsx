@@ -89,7 +89,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
         if (docSnap.exists()) {
             const storeData = docSnap.data() as Omit<Store, 'id'>;
             const openingDate = storeData.openingDate ? new Date(storeData.openingDate as any) : new Date();
-            setFormData({ ...storeData, openingDate });
+            setFormData({ ...storeData, openingDate, tags: storeData.tags || [] });
             setTempDate(openingDate);
             if (storeData.logo) {
                 setLogoPreview(storeData.logo);
