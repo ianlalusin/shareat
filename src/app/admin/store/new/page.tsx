@@ -55,7 +55,7 @@ export default function NewStorePage() {
     if (firestore) {
       const tagsQuery = query(
         collection(firestore, 'lists'),
-        where('category', '==', 'Store tags'),
+        where('category', '==', 'store tags'),
         where('is_active', '==', true)
       );
       const unsubscribe = onSnapshot(tagsQuery, (snapshot) => {
@@ -174,7 +174,7 @@ export default function NewStorePage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
+                     <div className="space-y-2">
                       <Label htmlFor="contactNo">Contact No.</Label>
                       <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
                     </div>
@@ -186,7 +186,7 @@ export default function NewStorePage() {
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
-                     <div className="space-y-2">
+                    <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
                       <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                       {dateError && <p className="text-sm text-destructive">{dateError}</p>}

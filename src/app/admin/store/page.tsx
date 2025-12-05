@@ -40,17 +40,17 @@ function TagFetcher() {
 
   useEffect(() => {
     if (firestore) {
-      console.log("Firestore is available. Initializing query...");
+      console.log("Firestore is available. Initializing query with category: 'store tags'...");
       const tagsQuery = query(
         collection(firestore, 'lists'),
-        where('category', '==', 'Store tags'),
+        where('category', '==', 'store tags'),
         where('is_active', '==', true)
       );
 
       const unsubscribe = onSnapshot(tagsQuery, 
         (snapshot) => {
           if (snapshot.empty) {
-            console.log("Query returned no documents. Check your 'lists' collection for items with category: 'Store tags' and is_active: true.");
+            console.log("Query returned no documents. Check your 'lists' collection for items with category: 'store tags' and is_active: true.");
           }
           const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
           console.log("Successfully fetched tags:", tagsData.map(t => t.item));
