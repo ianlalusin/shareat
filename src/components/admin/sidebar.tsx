@@ -19,6 +19,7 @@ import {
   Settings,
   CircleUser,
   LayoutDashboard,
+  ListChecks,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,6 +31,7 @@ const menuItems = [
   { href: "#menu", label: "Menu", icon: BookMarked },
   { href: "#inventory", label: "Inventory", icon: Boxes },
   { href: "#reports", label: "Reports", icon: AreaChart },
+  { href: "/admin/g-list", label: "G.List", icon: ListChecks },
   { href: "#maintenance", label: "Maintenance", icon: Wrench },
 ];
 
@@ -43,8 +45,8 @@ export function AdminSidebar() {
   
   // A simple way to check active state for placeholder hrefs
   const isActive = (href: string) => {
-    if (href === '#') return false;
-    return pathname === href;
+    if (href.startsWith('#')) return false;
+    return pathname.startsWith(href);
   }
 
   return (
