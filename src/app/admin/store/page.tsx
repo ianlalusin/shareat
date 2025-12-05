@@ -26,9 +26,66 @@ import {
   doc,
   onSnapshot,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import Link from 'next/link';
-import { Store } from '@/lib/types';
+import { Store, GListItem } from '@/lib/types';
+
+
+function TagFetcher() {
+  const firestore = useFirestore();
+  const [tags, setTags] = useState<GListItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (firestore) {
+      console.log("Firestore is available. Initializing query...");
+      const tagsQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'Store tags'),
+        where('is_active', '==', true)
+      );
+
+      const unsubscribe = onSnapshot(tagsQuery, 
+        (snapshot) => {
+          if (snapshot.empty) {
+            console.log("Query returned no documents. Check your 'lists' collection for items with category: 'Store tags' and is_active: true.");
+          }
+          const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+          console.log("Successfully fetched tags:", tagsData.map(t => t.item));
+          setTags(tagsData);
+        },
+        (err) => {
+          console.error("Error fetching tags:", err);
+          setError(`Error fetching tags: ${err.message}`);
+        }
+      );
+      
+      return () => unsubscribe();
+    } else {
+        console.log("Firestore not yet available.");
+    }
+  }, [firestore]);
+
+  return (
+    <div className="p-4 border-dashed border-2 border-destructive bg-background rounded-lg my-4">
+      <h3 className="font-bold text-lg text-destructive">Diagnostic Tool: Tag Fetcher</h3>
+      <p className="text-sm text-muted-foreground">Open your browser's developer console (F12) to see the live data being fetched from Firestore.</p>
+      {error && <p className="text-destructive font-medium mt-2">{error}</p>}
+      <div className='mt-2'>
+        <p className="font-medium">Tags currently read from Firestore:</p>
+        {tags.length > 0 ? (
+          <ul className="list-disc pl-5">
+            {tags.map(tag => <li key={tag.id}>{tag.item}</li>)}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">No tags found matching the criteria.</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 
 export default function StorePage() {
@@ -77,6 +134,9 @@ export default function StorePage() {
             </Link>
         </Button>
       </div>
+      
+      <TagFetcher />
+      
       <div className="rounded-lg border shadow-sm bg-background">
         <Table>
           <TableHeader>
@@ -87,7 +147,6 @@ export default function StorePage() {
               <TableHead>Email</TableHead>
               <TableHead>Opening Date</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Tags</TableHead>
               <TableHead>
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -110,9 +169,6 @@ export default function StorePage() {
                   >
                     {store.status}
                   </Badge>
-                </TableCell>
-                <TableCell>
-                  {store.tags}
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
