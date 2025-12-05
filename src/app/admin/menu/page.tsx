@@ -139,7 +139,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -394,7 +394,7 @@ export default function MenuPage() {
                             <SelectValue placeholder="Select availability" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="">Always Available</SelectItem>
+                            <SelectItem value="always">Always Available</SelectItem>
                             {availabilityOptions.map(option => (
                                 <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
                             ))}
