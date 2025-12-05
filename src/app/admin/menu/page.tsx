@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[]
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -167,12 +167,13 @@ export default function MenuPage() {
         ...editingItem,
         variants
       });
-      setDisplayValues({
-        cost: formatCurrency(editingItem.cost),
-        price: formatCurrency(editingItem.price),
-        variantCost: formatCurrency(variantFormData.cost),
-        variantPrice: formatCurrency(variantFormData.price),
-      });
+       const currentVariant = variants.find(v => v.id === editingVariantId);
+       setDisplayValues({
+         cost: formatCurrency(editingItem.cost),
+         price: formatCurrency(editingItem.price),
+         variantCost: formatCurrency(currentVariant?.cost || variantFormData.cost),
+         variantPrice: formatCurrency(currentVariant?.price || variantFormData.price),
+       });
     } else {
         setFormData(initialItemState);
         setDisplayValues({
@@ -183,7 +184,7 @@ export default function MenuPage() {
         })
     }
     setImageFile(null);
-  }, [editingItem, variantFormData.cost, variantFormData.price]);
+  }, [editingItem, editingVariantId]);
   
    useEffect(() => {
     if (!isModalOpen) {
@@ -683,7 +684,7 @@ export default function MenuPage() {
                     </TableHeader>
                     <TableBody>
                       {itemsInCategory.map((item) => (
-                        <TableRow key={item.id}>
+                        <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
                           <TableCell className="p-2 font-medium">{item.menuName}</TableCell>
                           <TableCell className="p-2">
                              {item.variants.map((v, i) => <Badge key={i} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
@@ -707,7 +708,7 @@ export default function MenuPage() {
                               {item.is_active ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="p-2">
+                          <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button aria-haspopup="true" size="icon" variant="ghost">
@@ -735,9 +736,5 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
-
-    
 
     
