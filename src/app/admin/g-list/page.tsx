@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, ChevronDown } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, ChevronDown, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -43,6 +43,12 @@ import {
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
 import { GListItem, Store } from '@/lib/types';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -88,7 +94,7 @@ export default function GListPage() {
         storeIds: editingItem.storeIds || [],
       });
     } else {
-      setFormData(initialItemState);
+      // For new items, formData is managed by openAddModal and openAddModalForCategory
     }
   }, [editingItem]);
 
@@ -158,6 +164,12 @@ export default function GListPage() {
     setFormData(initialItemState);
     setIsModalOpen(true);
   }
+  
+  const openAddModalForCategory = (category: string) => {
+    setEditingItem(null);
+    setFormData({...initialItemState, category});
+    setIsModalOpen(true);
+  };
 
   const getStoreNames = (storeIds: string[] | undefined) => {
     if (!storeIds || storeIds.length === 0) return 'N/A';
@@ -173,6 +185,15 @@ export default function GListPage() {
         .map(s => s.storeName)
         .join(', ');
   };
+
+  const groupedItems = items.reduce((acc, item) => {
+    const category = item.category || 'Uncategorized';
+    if (!acc[category]) {
+      acc[category] = [];
+    }
+    acc[category].push(item);
+    return acc;
+  }, {} as Record<string, GListItem[]>);
 
   return (
       <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
@@ -244,59 +265,85 @@ export default function GListPage() {
           </DialogContent>
         </Dialog>
       </div>
-      <div className="rounded-lg border shadow-sm bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Item</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Store</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>{item.item}</TableCell>
-                <TableCell>{item.category}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {item.storeIds?.map(id => (
-                      <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant={item.is_active ? 'default' : 'destructive'}
-                    className={item.is_active ? 'bg-green-500' : ''}
-                  >
-                    {item.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button aria-haspopup="true" size="icon" variant="ghost">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Toggle menu</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => handleDelete(item.id)}>Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      
+      <Accordion type="multiple" className="w-full space-y-4" defaultValue={Object.keys(groupedItems)}>
+        {Object.entries(groupedItems).map(([category, itemsInCategory]) => (
+          <AccordionItem key={category} value={category} className="border-0">
+             <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
+              <AccordionTrigger className="flex items-center justify-between p-4 bg-muted/50 hover:bg-muted/80 hover:no-underline">
+                <div className='flex items-center gap-2'>
+                    <h2 className="text-base font-semibold">{category}</h2>
+                    <Badge variant="secondary">{itemsInCategory.length}</Badge>
+                </div>
+                 <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mr-2 h-7 w-7 p-0 [&[data-state=open]>svg]:-rotate-90"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openAddModalForCategory(category);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </AccordionTrigger>
+              <AccordionContent className="p-0">
+                <div className="border-t">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item</TableHead>
+                        <TableHead>Store</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemsInCategory.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.item}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {item.storeIds?.map(id => (
+                                <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={item.is_active ? 'default' : 'destructive'}
+                              className={item.is_active ? 'bg-green-500' : ''}
+                            >
+                              {item.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button aria-haspopup="true" size="icon" variant="ghost">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Toggle menu</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handleDelete(item.id)}>Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </AccordionContent>
+             </div>
+          </AccordionItem>
+        ))}
+      </Accordion>
       </main>
   );
 }
