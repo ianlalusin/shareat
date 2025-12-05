@@ -212,19 +212,19 @@ export default function NewStorePage() {
                       <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} className="h-32" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Tags</Label>
-                      <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
-                        {storeTags.map((tag) => (
-                          <Button
-                            key={tag.id}
-                            type="button"
-                            variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
-                            onClick={() => handleTagChange(tag.item)}
-                          >
-                            {tag.item}
-                          </Button>
-                        ))}
-                      </div>
+                        <Label>Tags</Label>
+                        <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
+                            {storeTags.map((tag) => (
+                            <Button
+                                key={tag.id}
+                                type="button"
+                                variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
+                                onClick={() => handleTagChange(tag.item)}
+                            >
+                                {tag.item}
+                            </Button>
+                            ))}
+                        </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
