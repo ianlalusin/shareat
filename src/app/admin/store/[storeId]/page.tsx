@@ -29,11 +29,12 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();
+  const { storeId } = params;
 
   useEffect(() => {
-    if (!firestore || !params.storeId) return;
+    if (!firestore || !storeId) return;
     setLoading(true);
-    const docRef = doc(firestore, 'stores', params.storeId);
+    const docRef = doc(firestore, 'stores', storeId);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         setStore({ id: docSnap.id, ...docSnap.data() } as Store);
@@ -44,7 +45,7 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
     });
 
     return () => unsubscribe();
-  }, [firestore, params.storeId]);
+  }, [firestore, storeId]);
 
   if (loading) {
     return (
