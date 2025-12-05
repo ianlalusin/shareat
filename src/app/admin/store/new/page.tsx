@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 
 
 type Store = {
@@ -271,17 +272,13 @@ export default function NewStorePage() {
                     <Label>Tags</Label>
                     <div className="flex flex-wrap gap-4">
                         {storeTags.map((tag) => (
-                        <div key={tag.id} className="flex items-center gap-2">
-                            <Input
-                            type="checkbox"
+                        <div key={tag.id} className="flex items-center space-x-2">
+                            <Checkbox
                             id={`tag-${tag.item}`}
-                            name="tags"
-                            value={tag.item}
                             checked={formData.tags.includes(tag.item as any)}
-                            onChange={(e) => handleTagChange(tag.item, e.target.checked)}
-                            className="h-4 w-4"
+                            onCheckedChange={(checked) => handleTagChange(tag.item, !!checked)}
                             />
-                            <Label htmlFor={`tag-${tag.item}`}>{tag.item}</Label>
+                            <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
                         </div>
                         ))}
                     </div>

@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type Store = {
   id: string;
@@ -327,17 +328,13 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                       <Label>Tags</Label>
                       <div className="flex flex-wrap gap-4">
                           {storeTags.map((tag) => (
-                          <div key={tag.id} className="flex items-center gap-2">
-                              <Input
-                              type="checkbox"
+                          <div key={tag.id} className="flex items-center space-x-2">
+                              <Checkbox
                               id={`tag-${tag.item}`}
-                              name="tags"
-                              value={tag.item}
                               checked={formData.tags.includes(tag.item as any)}
-                              onChange={(e) => handleTagChange(tag.item, e.target.checked)}
-                              className="h-4 w-4"
+                              onCheckedChange={(checked) => handleTagChange(tag.item, !!checked)}
                               />
-                              <Label htmlFor={`tag-${tag.item}`}>{tag.item}</Label>
+                              <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
                           </div>
                           ))}
                       </div>
