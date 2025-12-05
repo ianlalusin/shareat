@@ -8,7 +8,7 @@ import { notFound, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Store as StoreIcon, ArrowLeft, MoreVertical } from 'lucide-react';
+import { Store as StoreIcon, ArrowLeft, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
@@ -62,17 +62,6 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
       }
     }
   };
-
-  const handleEdit = () => {
-    // This is a bit of a workaround to pass the store data to the modal
-    // on the parent page. A more robust solution might use a global state manager.
-    router.push('/admin/store');
-    setTimeout(() => {
-        const editEvent = new CustomEvent('edit-store', { detail: store });
-        window.dispatchEvent(editEvent);
-    }, 100);
-  };
-
 
   if (loading) {
     return (
@@ -139,19 +128,16 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
                 </h1>
             </div>
         </div>
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button aria-haspopup="true" size="icon" variant="ghost">
-                    <MoreVertical className="h-4 w-4" />
-                    <span className="sr-only">Toggle menu</span>
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={handleEdit}>Edit</DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleDelete} className='text-destructive focus:text-destructive'>Delete</DropdownMenuItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex gap-2">
+            <Button asChild variant="outline">
+                <Link href={`/admin/store/${storeId}/edit`}>
+                    <Pencil className="mr-2 h-4 w-4" /> Edit
+                </Link>
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
+        </div>
       </div>
       
       <Card>
