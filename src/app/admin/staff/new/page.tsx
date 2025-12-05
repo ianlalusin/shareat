@@ -66,7 +66,7 @@ export default function NewStaffPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: name === 'rate' ? parseFloat(value) : value }));
+    setFormData((prev) => ({ ...prev, [name]: name === 'rate' ? (parseFloat(value) || 0) : value }));
   };
   
   const handleSelectChange = (name: string, value: string) => {

@@ -83,7 +83,7 @@ export default function EditStaffPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!formData) return;
     const { name, value } = e.target;
-    setFormData((prev) => (prev ? { ...prev, [name]: name === 'rate' ? parseFloat(value) : value } : null));
+    setFormData((prev) => (prev ? { ...prev, [name]: name === 'rate' ? (parseFloat(value) || 0) : value } : null));
   };
   
   const handleSelectChange = (name: string, value: string) => {
@@ -284,7 +284,7 @@ export default function EditStaffPage() {
               </div>
                <div className="md:col-span-3 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
-                <Textarea id="notes" name="notes" value={formData.notes} onChange={handleInputChange} />
+                <Textarea id="notes" name="notes" value={formData.notes || ''} onChange={handleInputChange} />
               </div>
                <div className="space-y-2">
                 <Label htmlFor="encoder">Encoder</Label>
