@@ -1,4 +1,5 @@
 
+
 export type Store = {
   id: string;
   storeName: string;
@@ -64,4 +65,6 @@ export type MenuItem = {
   taxRate?: string;
   trackInventory?: boolean;
   alertLevel?: number;
+  specialTags?: string[];
 };
+

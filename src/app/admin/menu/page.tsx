@@ -82,6 +82,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   taxRate: '',
   trackInventory: false,
   alertLevel: 0,
+  specialTags: [],
 };
 
 const initialVariantState: Omit<Variant, 'id'> = { name: '', cost: 0, price: 0, barcode: '' };
@@ -91,6 +92,7 @@ export default function MenuPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [taxRates, setTaxRates] = useState<GListItem[]>([]);
+  const [specialTags, setSpecialTags] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -110,7 +112,7 @@ export default function MenuPage() {
     if (firestore) {
       const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [] })));
+        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [], specialTags: item.specialTags || [] })));
       });
 
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -147,13 +149,24 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setTaxRates(taxRateData);
+      });
+
+      const specialTagsQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'special tags'),
+        where('is_active', '==', true)
+      );
+      const specialTagsUnsubscribe = onSnapshot(specialTagsQuery, (snapshot) => {
+        const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        setSpecialTags(tagsData);
       });
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
+        specialTagsUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
@@ -162,10 +175,12 @@ export default function MenuPage() {
   useEffect(() => {
     if (editingItem) {
       const variants = editingItem.variants || [];
+      const specialTags = editingItem.specialTags || [];
       setFormData({
         ...initialItemState,
         ...editingItem,
-        variants
+        variants,
+        specialTags
       });
        const currentVariant = variants.find(v => v.id === editingVariantId);
        setDisplayValues({
@@ -268,6 +283,16 @@ export default function MenuPage() {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
+    const handleSpecialTagChange = (tag: string) => {
+    setFormData(prev => {
+      const currentTags = prev.specialTags || [];
+      const newTags = currentTags.includes(tag)
+        ? currentTags.filter(t => t !== tag)
+        : [...currentTags, tag];
+      return { ...prev, specialTags: newTags };
+    });
+  };
+
   const handleAddVariant = () => {
     if (editingVariantId) { // We are saving an edit
         setFormData(prev => ({
@@ -322,7 +347,7 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const dataToSave = { ...formData, imageUrl, variants: formData.variants.map(({id, ...rest}) => rest) };
+    const dataToSave = { ...formData, imageUrl, variants: formData.variants.map(({id, ...rest}) => rest), specialTags: formData.specialTags || [] };
 
     try {
       if (editingItem) {
@@ -342,9 +367,9 @@ export default function MenuPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (event: Event, itemId: string) => {
-    event.preventDefault();
+  const handleDelete = async (event: React.MouseEvent, itemId: string) => {
     event.stopPropagation();
+    event.preventDefault();
     if (!firestore) return;
     if (window.confirm('Are you sure you want to delete this menu item?')) {
       try {
@@ -376,6 +401,18 @@ export default function MenuPage() {
         .map(s => s.storeName)
         .join(', ');
   };
+
+  const getSelectedTagNames = () => {
+    const selectedCount = formData.specialTags?.length || 0;
+    if (selectedCount === 0) return "Select special tags";
+    if (selectedCount === specialTags.length) return "All tags selected";
+    if (selectedCount > 2) return `${selectedCount} tags selected`;
+    return specialTags
+        .filter(t => formData.specialTags?.includes(t.item))
+        .map(t => t.item)
+        .join(', ');
+  };
+
 
   const calculateProfit = (cost: number, price: number) => {
     if (price <= cost || price <= 0) return '0.00%';
@@ -592,6 +629,31 @@ export default function MenuPage() {
                     <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
                   </div>
                 </div>
+
+                 <div className="space-y-2">
+                    <Label>Special Tags</Label>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between font-normal">
+                            <span>{getSelectedTagNames()}</span>
+                            <ChevronDown className="h-4 w-4" />
+                        </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                           {specialTags.map(tag => (
+                                <DropdownMenuCheckboxItem
+                                    key={tag.id}
+                                    checked={formData.specialTags?.includes(tag.item)}
+                                    onSelect={(e) => e.preventDefault()}
+                                    onClick={() => handleSpecialTagChange(tag.item)}
+                                >
+                                    {tag.item}
+                                </DropdownMenuCheckboxItem>
+                            ))}
+                            {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -671,7 +733,6 @@ export default function MenuPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Variants</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Sell By</TableHead>
@@ -686,48 +747,65 @@ export default function MenuPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {itemsInCategory.map((item) => (
-                        <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
-                          <TableCell className="p-2 font-medium text-xs">{item.menuName}</TableCell>
-                          <TableCell className="p-2 text-xs">
-                             {item.variants.map((v, i) => <Badge key={i} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
-                          </TableCell>
-                          <TableCell className="p-2 text-xs">
-                             <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
+                      {itemsInCategory.flatMap((item) => {
+                        const hasVariants = item.variants && item.variants.length > 0;
+                        const mainRow = (
+                          <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium bg-muted/20">
+                            <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
+                            <TableCell className="p-2 text-xs">
+                              <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
                                 {(item.availability || 'Always').substring(0, 6)}{(item.availability || 'Always').length > 6 ? '...' : ''}
-                             </Badge>
-                          </TableCell>
-                          <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
-                          <TableCell className="p-2 capitalize text-xs">{item.sellBy}</TableCell>
-                          <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
-                          <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
-                          <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
-                          <TableCell className="p-2 text-xs">{item.barcode}</TableCell>
-                          <TableCell className="p-2 text-xs">
-                            <Badge
-                              variant={item.is_active ? 'default' : 'destructive'}
-                              className={item.is_active ? 'bg-green-500' : ''}
-                            >
-                              {item.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button aria-haspopup="true" size="icon" variant="ghost">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                  <span className="sr-only">Toggle menu</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={(e) => handleDelete(e, item.id)}>Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
+                            <TableCell className="p-2 capitalize text-xs">{item.sellBy}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? formatCurrency(item.cost) : ''}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? formatCurrency(item.price) : ''}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? calculateProfit(item.cost, item.price) : ''}</TableCell>
+                            <TableCell className="p-2 text-xs">{!hasVariants ? item.barcode : ''}</TableCell>
+                            <TableCell className="p-2 text-xs">
+                              <Badge
+                                variant={item.is_active ? 'default' : 'destructive'}
+                                className={item.is_active ? 'bg-green-500' : ''}
+                              >
+                                {item.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button aria-haspopup="true" size="icon" variant="ghost">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Toggle menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, item.id)}>Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+
+                        const variantRows = hasVariants ? item.variants.map((variant, index) => (
+                           <TableRow key={`${item.id}-variant-${index}`} className="hover:bg-muted/40">
+                             <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.name}</TableCell>
+                             <TableCell className="p-2 text-xs"></TableCell>
+                             <TableCell className="p-2 capitalize text-xs"></TableCell>
+                             <TableCell className="p-2 capitalize text-xs"></TableCell>
+                             <TableCell className="p-2 text-right text-xs text-muted-foreground">{formatCurrency(variant.cost)}</TableCell>
+                             <TableCell className="p-2 text-right text-xs text-muted-foreground">{formatCurrency(variant.price)}</TableCell>
+                             <TableCell className="p-2 text-right text-xs text-muted-foreground">{calculateProfit(variant.cost, variant.price)}</TableCell>
+                             <TableCell className="p-2 text-xs text-muted-foreground">{variant.barcode}</TableCell>
+                             <TableCell className="p-2 text-xs"></TableCell>
+                             <TableCell className="p-2"></TableCell>
+                           </TableRow>
+                        )) : [];
+
+                        return [mainRow, ...variantRows];
+                      })}
                     </TableBody>
                   </Table>
                 </div>
