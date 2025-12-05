@@ -147,14 +147,14 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setTaxRates(taxRateData);
       });
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
-      }
+      };
     }
   }, [firestore, selectedStoreId]);
 
