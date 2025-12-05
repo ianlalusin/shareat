@@ -241,33 +241,6 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
-                    <div className="md:col-span-2 space-y-2">
-                        <Label>Tags</Label>
-                        <div className="flex flex-wrap gap-2">
-                            {storeTags.map((tag) => (
-                            <Button
-                                key={tag.id}
-                                type="button"
-                                variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
-                                onClick={() => handleTagChange(tag.item)}
-                            >
-                                {tag.item}
-                            </Button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="md:col-span-2 space-y-2">
-                        <Label htmlFor="logo">Logo</Label>
-                        <div className="flex items-center gap-4">
-                            <Avatar className="h-20 w-20 border">
-                                {logoPreview ? <AvatarImage src={logoPreview} alt="Logo Preview" /> : null}
-                                <AvatarFallback>
-                                    <StoreIcon className="h-10 w-10" />
-                                </AvatarFallback>
-                            </Avatar>
-                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} className="max-w-xs" />
-                        </div>
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
                       <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
@@ -285,9 +258,36 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="col-span-2 space-y-2">
+                    <div className="md:col-span-2 space-y-2">
+                        <Label htmlFor="logo">Logo</Label>
+                        <div className="flex items-center gap-4">
+                            <Avatar className="h-20 w-20 border">
+                                {logoPreview ? <AvatarImage src={logoPreview} alt="Logo Preview" /> : null}
+                                <AvatarFallback>
+                                    <StoreIcon className="h-10 w-10" />
+                                </AvatarFallback>
+                            </Avatar>
+                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} className="max-w-xs" />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="description">Description</Label>
-                      <Textarea id="description" name="description" value={formData.description || ''} onChange={handleInputChange} />
+                      <Textarea id="description" name="description" value={formData.description || ''} onChange={handleInputChange} className="h-32" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Tags</Label>
+                        <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
+                            {storeTags.map((tag) => (
+                            <Button
+                                key={tag.id}
+                                type="button"
+                                variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
+                                onClick={() => handleTagChange(tag.item)}
+                            >
+                                {tag.item}
+                            </Button>
+                            ))}
+                        </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
