@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -24,8 +25,8 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
+  TableHead,
   TableRow,
 } from '@/components/ui/table';
 import { PlusCircle, MoreHorizontal } from 'lucide-react';
@@ -47,6 +48,7 @@ import {
   onSnapshot,
   deleteDoc,
 } from 'firebase/firestore';
+import { Textarea } from '@/components/ui/textarea';
 
 type Store = {
   id: string;
@@ -56,6 +58,7 @@ type Store = {
   email: string;
   logo?: string;
   address: string;
+  description: string;
   status: 'Active' | 'Inactive';
   tags: ('Foodpanda' | 'Grab' | 'Dine in' | 'Take Out')[];
 };
@@ -66,6 +69,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   contactNo: '',
   email: '',
   address: '',
+  description: '',
   status: 'Active',
   tags: [],
   logo: '',
@@ -77,6 +81,7 @@ export default function StorePage() {
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
   const firestore = useFirestore();
+  const router = useRouter();
 
   useEffect(() => {
     if (firestore) {
@@ -98,7 +103,7 @@ export default function StorePage() {
   }, [editingStore]);
 
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -135,17 +140,21 @@ export default function StorePage() {
     }
   };
   
-  const handleEdit = (store: Store) => {
+  const handleEdit = (e: React.MouseEvent, store: Store) => {
+    e.stopPropagation();
     setEditingStore(store);
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (storeId: string) => {
+  const handleDelete = async (e: React.MouseEvent, storeId: string) => {
+    e.stopPropagation();
     if (!firestore) return;
-    try {
-      await deleteDoc(doc(firestore, 'stores', storeId));
-    } catch (error) {
-      console.error("Error deleting document: ", error);
+    if (window.confirm('Are you sure you want to delete this store?')) {
+      try {
+        await deleteDoc(doc(firestore, 'stores', storeId));
+      } catch (error) {
+        console.error("Error deleting document: ", error);
+      }
     }
   };
 
@@ -154,6 +163,11 @@ export default function StorePage() {
     setFormData(initialStoreState);
     setIsModalOpen(true);
   }
+  
+  const handleRowClick = (storeId: string) => {
+    router.push(`/admin/store/${storeId}`);
+  };
+
 
   return (
       <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
@@ -205,6 +219,10 @@ export default function StorePage() {
                 <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
                   <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="status">Status</Label>
@@ -268,7 +286,7 @@ export default function StorePage() {
           </TableHeader>
           <TableBody>
             {stores.map((store) => (
-              <TableRow key={store.id}>
+              <TableRow key={store.id} onClick={() => handleRowClick(store.id)} className="cursor-pointer">
                 <TableCell>{store.storeName}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{store.type}</Badge>
@@ -291,7 +309,7 @@ export default function StorePage() {
                     </Badge>
                   ))}
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button aria-haspopup="true" size="icon" variant="ghost">
@@ -301,8 +319,8 @@ export default function StorePage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => handleEdit(store)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => handleDelete(store.id)}>Delete</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(e) => handleEdit(e, store)}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(e) => handleDelete(e, store.id)}>Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
