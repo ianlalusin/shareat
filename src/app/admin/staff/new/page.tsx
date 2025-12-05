@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
+import { validateDate } from '@/lib/utils';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -46,6 +47,7 @@ export default function NewStaffPage() {
   const [formData, setFormData] = useState<Omit<Staff, 'id'>>(initialStaffState);
   const [stores, setStores] = useState<Store[]>([]);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [dateErrors, setDateErrors] = useState<{ birthday?: string; dateHired?: string }>({});
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -59,6 +61,17 @@ export default function NewStaffPage() {
       return () => storesUnsubscribe();
     }
   }, [firestore]);
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (!validateDate(value)) {
+        setDateErrors((prev) => ({ ...prev, [name]: "Invalid format. Use MM/DD/YYYY" }));
+    } else {
+        setDateErrors((prev) => ({ ...prev, [name]: undefined }));
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -83,7 +96,7 @@ export default function NewStaffPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !storage) return;
+    if (!firestore || !storage || Object.values(dateErrors).some(e => e)) return;
 
     let pictureUrl = '';
     if (pictureFile) {
@@ -157,11 +170,13 @@ export default function NewStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
+                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rate">Rate</Label>

@@ -27,6 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GListItem, Store } from '@/lib/types';
+import { validateDate } from '@/lib/utils';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -46,6 +47,7 @@ export default function NewStorePage() {
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [dateError, setDateError] = useState<string | undefined>();
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -70,6 +72,16 @@ export default function NewStorePage() {
     }
   }, [firestore]);
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (!validateDate(value)) {
+        setDateError("Invalid format. Use MM/DD/YYYY");
+    } else {
+        setDateError(undefined);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -97,7 +109,7 @@ export default function NewStorePage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !storage) return;
+    if (!firestore || !storage || dateError) return;
 
     let logoUrl = '';
     if (logoFile) {
@@ -173,7 +185,8 @@ export default function NewStorePage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                      {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                     </div>
                     <div className="col-span-2 space-y-2">
                     <Label htmlFor="description">Description</Label>

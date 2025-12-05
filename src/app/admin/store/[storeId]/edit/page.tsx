@@ -32,6 +32,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GListItem, Store } from '@/lib/types';
+import { validateDate } from '@/lib/utils';
 
 
 export default function EditStorePage({ params }: { params: { storeId: string } }) {
@@ -41,6 +42,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | undefined>();
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -83,6 +85,16 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     }
   }, [firestore, storeId]);
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
+
+    if (!validateDate(value)) {
+        setDateError("Invalid format. Use MM/DD/YYYY");
+    } else {
+        setDateError(undefined);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (!formData) return;
@@ -116,7 +128,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !formData || !storage) return;
+    if (!firestore || !formData || !storage || dateError) return;
 
     let logoUrl = formData.logo || '';
     if (logoFile) {
@@ -240,7 +252,8 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleInputChange} placeholder="MM/DD/YYYY" />
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                      {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                     </div>
                     <div className="col-span-2 space-y-2">
                       <Label htmlFor="description">Description</Label>
