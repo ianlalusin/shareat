@@ -24,7 +24,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
-import { validateDate } from '@/lib/utils';
+import { formatAndValidateDate } from '@/lib/utils';
+import { parse } from 'date-fns';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -65,20 +66,37 @@ export default function NewStaffPage() {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-
-    if (!validateDate(value)) {
-        setDateErrors((prev) => ({ ...prev, [name]: "Invalid format. Use MM/DD/YYYY" }));
-    } else {
-        setDateErrors((prev) => ({ ...prev, [name]: undefined }));
+     if (value === '') {
+      setDateErrors((prev) => ({ ...prev, [name]: undefined }));
     }
   };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const { formatted, error } = formatAndValidateDate(value);
+    setFormData(prev => ({ ...prev, [name]: formatted }));
+    setDateErrors(prev => ({ ...prev, [name]: error }));
+  };
+
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    try {
+      const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
+      if (isValid(parsedDate)) {
+        setFormData(prev => ({ ...prev, [name]: format(parsedDate, 'M/d/yyyy')}));
+      }
+    } catch (error) {
+      // If parsing fails, it's not in the long format, so we leave it as is.
+    }
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => {
         if (name === 'rate') {
             const rate = parseFloat(value);
-            return { ...prev, [name]: isNaN(rate) ? 0 : rate };
+            return { ...prev, [name]: isNaN(rate) ? '' : rate };
         }
         return { ...prev, [name]: value };
     });
@@ -170,12 +188,12 @@ export default function NewStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                 {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                 {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">

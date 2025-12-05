@@ -27,7 +27,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GListItem, Store } from '@/lib/types';
-import { validateDate } from '@/lib/utils';
+import { formatAndValidateDate } from '@/lib/utils';
+import { parse, isValid, format } from 'date-fns';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -75,13 +76,30 @@ export default function NewStorePage() {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-
-    if (!validateDate(value)) {
-        setDateError("Invalid format. Use MM/DD/YYYY");
-    } else {
+    if (value === '') {
         setDateError(undefined);
     }
   };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const { formatted, error } = formatAndValidateDate(value);
+    setFormData(prev => ({ ...prev, [name]: formatted }));
+    setDateError(error);
+  };
+
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    try {
+        const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
+        if (isValid(parsedDate)) {
+            setFormData(prev => ({ ...prev, [name]: format(parsedDate, 'M/d/yyyy')}));
+        }
+    } catch (error) {
+        // If parsing fails, it's not in the long format, so we leave it as is.
+    }
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -185,7 +203,7 @@ export default function NewStorePage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                       {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                     </div>
                     <div className="col-span-2 space-y-2">

@@ -32,11 +32,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GListItem, Store } from '@/lib/types';
-import { validateDate } from '@/lib/utils';
+import { formatAndValidateDate } from '@/lib/utils';
+import { parse, isValid, format } from 'date-fns';
 
 
 export default function EditStorePage({ params }: { params: { storeId: string } }) {
-  const { storeId } = params;
+  const storeId = params.storeId;
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
@@ -88,13 +89,32 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
-
-    if (!validateDate(value)) {
-        setDateError("Invalid format. Use MM/DD/YYYY");
-    } else {
+     if (value === '') {
         setDateError(undefined);
     }
   };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    const { formatted, error } = formatAndValidateDate(value);
+    setFormData(prev => (prev ? { ...prev, [name]: formatted } : null));
+    setDateError(error);
+  };
+
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    try {
+        const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
+        if (isValid(parsedDate)) {
+            setFormData(prev => (prev ? { ...prev, [name]: format(parsedDate, 'M/d/yyyy') } : null));
+        }
+    } catch (error) {
+        // If parsing fails, it's not in the long format, so we leave it as is.
+    }
+  }
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (!formData) return;
@@ -252,7 +272,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} placeholder="MM/DD/YYYY" />
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                       {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                     </div>
                     <div className="col-span-2 space-y-2">
