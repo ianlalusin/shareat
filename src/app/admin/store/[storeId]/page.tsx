@@ -8,25 +8,11 @@ import { notFound, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Store as StoreIcon, ArrowLeft, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { Store as StoreIcon, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Store } from '@/lib/types';
 
-type Store = {
-  id: string;
-  storeName: string;
-  type: 'resto' | 'kiosk';
-  contactNo: string;
-  email: string;
-  logo?: string;
-  address: string;
-  description: string;
-  status: 'Active' | 'Inactive';
-  tags: string[];
-  openingDate?: Date | string;
-};
 
 export default function StoreDetailPage({ params: { storeId } }: { params: { storeId: string } }) {
   const [store, setStore] = useState<Store | null>(null);
@@ -159,7 +145,7 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
             </div>
             <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
-                <p>{store.openingDate ? format(new Date(store.openingDate as any), "PPP") : 'N/A'}</p>
+                <p>{store.openingDate || 'N/A'}</p>
             </div>
             <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Type</p>

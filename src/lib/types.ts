@@ -10,7 +10,7 @@ export type Store = {
   description: string;
   status: 'Active' | 'Inactive';
   tags: string[];
-  openingDate?: Date | string;
+  openingDate?: string;
 };
 
 export type GListItem = {

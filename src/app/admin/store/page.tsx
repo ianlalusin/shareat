@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { format } from "date-fns";
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -29,20 +28,8 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import Link from 'next/link';
+import { Store } from '@/lib/types';
 
-type Store = {
-  id: string;
-  storeName: string;
-  type: 'resto' | 'kiosk';
-  contactNo: string;
-  email: string;
-  logo?: string;
-  address: string;
-  description: string;
-  status: 'Active' | 'Inactive';
-  tags: string[];
-  openingDate?: Date | string;
-};
 
 export default function StorePage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -115,7 +102,7 @@ export default function StorePage() {
                 </TableCell>
                 <TableCell>{store.contactNo}</TableCell>
                 <TableCell>{store.email}</TableCell>
-                <TableCell>{store.openingDate ? format(new Date(store.openingDate as any), "PPP") : 'N/A'}</TableCell>
+                <TableCell>{store.openingDate || 'N/A'}</TableCell>
                 <TableCell>
                   <Badge
                     variant={store.status === 'Active' ? 'default' : 'destructive'}
