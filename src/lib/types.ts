@@ -18,6 +18,7 @@ export type GListItem = {
   item: string;
   category: string;
   is_active: boolean;
+  storeId?: string;
 };
 
 export type Staff = {

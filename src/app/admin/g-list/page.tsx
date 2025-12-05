@@ -40,22 +40,19 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-
-type GListItem = {
-  id: string;
-  item: string;
-  category: string;
-  is_active: boolean;
-};
+import { GListItem, Store } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
   category: '',
   is_active: true,
+  storeId: '',
 };
 
 export default function GListPage() {
   const [items, setItems] = useState<GListItem[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GListItem | null>(null);
   const [formData, setFormData] = useState<Omit<GListItem, 'id'>>(initialItemState);
@@ -67,7 +64,16 @@ export default function GListPage() {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setItems(itemsData);
       });
-      return () => unsubscribe();
+
+      const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
+        const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
+        setStores(storesData);
+      });
+
+      return () => {
+        unsubscribe();
+        storesUnsubscribe();
+      }
     }
   }, [firestore]);
 
@@ -78,6 +84,7 @@ export default function GListPage() {
         item: editingItem.item,
         category: editingItem.category,
         is_active: editingItem.is_active,
+        storeId: editingItem.storeId || '',
       });
     } else {
       setFormData(initialItemState);
@@ -88,6 +95,10 @@ export default function GListPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, storeId: value }));
   };
 
   const handleSwitchChange = (checked: boolean) => {
@@ -135,6 +146,11 @@ export default function GListPage() {
     setIsModalOpen(true);
   }
 
+  const getStoreName = (storeId: string | undefined) => {
+    if (!storeId) return 'All Stores';
+    return stores.find(s => s.id === storeId)?.storeName || 'Unknown Store';
+  };
+
   return (
       <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
@@ -154,6 +170,18 @@ export default function GListPage() {
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
+                 <div className="space-y-2">
+                  <Label htmlFor="storeId">Store</Label>
+                  <Select name="storeId" value={formData.storeId} onValueChange={handleSelectChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a store (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Stores</SelectItem>
+                      {stores.map(store => <SelectItem key={store.id} value={store.id}>{store.storeName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="item">Item</Label>
                   <Input id="item" name="item" value={formData.item} onChange={handleInputChange} required />
@@ -185,6 +213,7 @@ export default function GListPage() {
             <TableRow>
               <TableHead>Item</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead>Store</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>
                 <span className="sr-only">Actions</span>
@@ -196,6 +225,7 @@ export default function GListPage() {
               <TableRow key={item.id}>
                 <TableCell>{item.item}</TableCell>
                 <TableCell>{item.category}</TableCell>
+                <TableCell>{getStoreName(item.storeId)}</TableCell>
                 <TableCell>
                   <Badge
                     variant={item.is_active ? 'default' : 'destructive'}
