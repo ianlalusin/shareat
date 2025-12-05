@@ -18,10 +18,6 @@ import { useFirestore, useStorage } from '@/firebase';
 import {
   doc,
   updateDoc,
-  onSnapshot,
-  query, 
-  where,
-  collection,
   getDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -30,17 +26,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
-import { Checkbox } from '@/components/ui/checkbox';
-import { GListItem, Store } from '@/lib/types';
+import { Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
-import { parse, isValid, format } from 'date-fns';
 
 
 export default function EditStorePage({ params }: { params: { storeId: string } }) {
   const storeId = params.storeId;
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
@@ -58,7 +51,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
 
         if (docSnap.exists()) {
             const storeData = docSnap.data() as Omit<Store, 'id'>;
-            setFormData({ ...storeData, tags: storeData.tags || [] });
+            setFormData({ ...storeData, tags: storeData.tags || '' });
             if (storeData.logo) {
                 setLogoPreview(storeData.logo);
             }
@@ -70,20 +63,6 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     
     fetchStore();
 
-    const tagsQuery = query(
-      collection(firestore, 'lists'),
-      where('category', '==', 'Store tags'),
-      where('is_active', '==', true)
-    );
-
-    const unsubscribeTags = onSnapshot(tagsQuery, (snapshot) => {
-      const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-      setStoreTags(tagsData);
-    });
-
-    return () => {
-      unsubscribeTags();
-    }
   }, [firestore, storeId]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,17 +107,6 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
      if (!formData) return;
      setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
   }
-
-  const handleTagChange = (tagItem: string) => {
-    if (!formData) return;
-    setFormData((prev) => {
-        if (!prev) return null;
-        const newTags = prev.tags.includes(tagItem)
-            ? prev.tags.filter((t) => t !== tagItem)
-            : [...prev.tags, tagItem];
-        return { ...prev, tags: newTags };
-    });
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
@@ -280,20 +248,9 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                       <Label htmlFor="description">Description</Label>
                       <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
                     </div>
-                    <div className="col-span-2 space-y-2">
-                      <Label>Tags</Label>
-                      <div className="flex flex-wrap gap-4">
-                          {storeTags.map((tag) => (
-                          <div key={tag.id} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={`tag-${tag.item}`}
-                                checked={formData.tags.includes(tag.item)}
-                                onCheckedChange={() => handleTagChange(tag.item)}
-                              />
-                              <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
-                          </div>
-                          ))}
-                      </div>
+                     <div className="col-span-2 space-y-2">
+                      <Label htmlFor="tags">Tags</Label>
+                      <Input id="tags" name="tags" value={formData.tags} onChange={handleInputChange} placeholder="e.g. new, featured, popular"/>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">

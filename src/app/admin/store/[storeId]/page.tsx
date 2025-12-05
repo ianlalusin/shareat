@@ -88,6 +88,9 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
   if (!store) {
     notFound();
   }
+  
+  const tags = store.tags ? store.tags.split(',').map(tag => tag.trim()) : [];
+
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
@@ -163,7 +166,7 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
             <div className="space-y-1 md:col-span-2">
                 <p className="text-sm font-medium text-muted-foreground">Tags</p>
                 <div className="flex flex-wrap gap-1">
-                    {store.tags.map((tag) => (
+                    {tags.map((tag) => (
                         <Badge key={tag} variant="outline">
                         {tag}
                         </Badge>

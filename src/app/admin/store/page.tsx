@@ -111,12 +111,8 @@ export default function StorePage() {
                     {store.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="flex flex-wrap gap-1">
-                  {store.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
+                <TableCell>
+                  {store.tags}
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>

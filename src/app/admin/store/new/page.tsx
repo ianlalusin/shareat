@@ -17,18 +17,13 @@ import {
 import { useFirestore, useStorage } from '@/firebase';
 import {
   addDoc,
-  collection,
-  query, 
-  where,
-  onSnapshot
+  collection
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { GListItem, Store } from '@/lib/types';
-import { formatAndValidateDate } from '@/lib/utils';
-import { parse, isValid, format } from 'date-fns';
+import { Store } from '@/lib/types';
+import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -39,39 +34,19 @@ const initialStoreState: Omit<Store, 'id'> = {
   address: '',
   description: '',
   status: 'Active',
-  tags: [],
+  tags: '',
   logo: '',
   openingDate: '',
 };
 
 export default function NewStorePage() {
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
-  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
 
-
-  useEffect(() => {
-    if (firestore) {
-      const tagsQuery = query(
-        collection(firestore, 'lists'),
-        where('category', '==', 'Store tags'),
-        where('is_active', '==', true)
-      );
-
-      const unsubscribeTags = onSnapshot(tagsQuery, (snapshot) => {
-        const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-        setStoreTags(tagsData);
-      });
-
-      return () => {
-        unsubscribeTags();
-      }
-    }
-  }, [firestore]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -83,6 +58,7 @@ export default function NewStorePage() {
 
   const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    if (!value) return;
     const { formatted, error } = formatAndValidateDate(value);
     setFormData(prev => ({ ...prev, [name]: formatted }));
     setDateError(error);
@@ -91,14 +67,8 @@ export default function NewStorePage() {
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    try {
-        const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
-        if (isValid(parsedDate)) {
-            setFormData(prev => ({ ...prev, [name]: format(parsedDate, 'M/d/yyyy')}));
-        }
-    } catch (error) {
-        // If parsing fails, it's not in the long format, so we leave it as is.
-    }
+    const formattedValue = revertToInputFormat(value);
+    setFormData(prev => ({ ...prev, [name]: formattedValue }));
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -115,15 +85,6 @@ export default function NewStorePage() {
   const handleSelectChange = (name: string, value: string) => {
      setFormData((prev) => ({ ...prev, [name]: value }));
   }
-
-  const handleTagChange = (tagItem: string) => {
-    setFormData((prev) => {
-      const newTags = prev.tags.includes(tagItem)
-        ? prev.tags.filter((t) => t !== tagItem)
-        : [...prev.tags, tagItem];
-      return { ...prev, tags: newTags };
-    });
-  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -222,20 +183,9 @@ export default function NewStorePage() {
                         </SelectContent>
                     </Select>
                     </div>
-                    <div className="col-span-2 space-y-2">
-                    <Label>Tags</Label>
-                    <div className="flex flex-wrap gap-4">
-                        {storeTags.map((tag) => (
-                        <div key={tag.id} className="flex items-center space-x-2">
-                            <Checkbox
-                                id={`tag-${tag.item}`}
-                                checked={formData.tags.includes(tag.item)}
-                                onCheckedChange={() => handleTagChange(tag.item)}
-                              />
-                              <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
-                        </div>
-                        ))}
-                    </div>
+                     <div className="space-y-2">
+                      <Label htmlFor="tags">Tags</Label>
+                      <Input id="tags" name="tags" value={formData.tags} onChange={handleInputChange} placeholder="e.g. new, featured, popular"/>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
