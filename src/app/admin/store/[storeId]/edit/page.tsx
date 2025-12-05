@@ -149,14 +149,14 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     setIsDatePickerOpen(false);
   }
 
-  const handleTagChange = (tag: string, checked: boolean) => {
+  const handleTagChange = (tagItem: string) => {
     if (!formData) return;
     setFormData((prev) => {
         if (!prev) return null;
-        const newTags = checked
-            ? [...prev.tags, tag]
-            : prev.tags.filter((t) => t !== tag);
-        return { ...prev, tags: newTags as Store['tags'] };
+        const newTags = prev.tags.includes(tagItem)
+            ? prev.tags.filter((t) => t !== tagItem)
+            : [...prev.tags, tagItem];
+        return { ...prev, tags: newTags };
     });
   };
 
@@ -171,9 +171,9 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
         logoUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const openingDate = formData.openingDate instanceof Date
-        ? formData.openingDate.toISOString()
-        : formData.openingDate;
+    const openingDate = formData.openingDate
+        ? (formData.openingDate instanceof Date ? formData.openingDate.toISOString() : formData.openingDate)
+        : null;
 
     const dataToSave = {
       ...formData,
@@ -330,9 +330,9 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                           {storeTags.map((tag) => (
                           <div key={tag.id} className="flex items-center space-x-2">
                               <Checkbox
-                              id={`tag-${tag.item}`}
-                              checked={formData.tags.includes(tag.item as any)}
-                              onCheckedChange={(checked) => handleTagChange(tag.item, !!checked)}
+                                id={`tag-${tag.item}`}
+                                checked={formData.tags.includes(tag.item)}
+                                onCheckedChange={() => handleTagChange(tag.item)}
                               />
                               <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
                           </div>
