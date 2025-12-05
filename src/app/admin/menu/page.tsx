@@ -143,31 +143,18 @@ export default function MenuPage() {
   }, [firestore]);
 
   useEffect(() => {
-    if (firestore && selectedStoreId) {
-       const availabilityQuery = query(
+    if (firestore) {
+      const availabilityQuery = query(
         collection(firestore, 'lists'),
         where('category', '==', 'menu availability'),
-        where('is_active', '==', true),
-        where('storeIds', 'array-contains', selectedStoreId)
+        where('is_active', '==', true)
       );
-
+  
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
         const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setAvailabilityOptions(availabilityData);
       });
-      
-      const taxRateQuery = query(
-        collection(firestore, 'lists'),
-        where('category', '==', 'tax rates'),
-        where('is_active', '==', true),
-        where('storeIds', 'array-contains', selectedStoreId)
-      );
-
-      const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-        setTaxRates(taxRateData);
-      });
-
+  
       const specialTagsQuery = query(
         collection(firestore, 'lists'),
         where('category', '==', 'special tags'),
@@ -177,11 +164,27 @@ export default function MenuPage() {
         const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setSpecialTags(tagsData);
       });
+  
+      let taxRateUnsubscribe = () => {};
+      if (selectedStoreId) {
+        const taxRateQuery = query(
+          collection(firestore, 'lists'),
+          where('category', '==', 'tax rates'),
+          where('is_active', '==', true),
+          where('storeIds', 'array-contains', selectedStoreId)
+        );
+        taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+          setTaxRates(taxRateData);
+        });
+      } else {
+        setTaxRates([]);
+      }
       
       return () => {
         availabilityUnsubscribe();
-        taxRateUnsubscribe();
         specialTagsUnsubscribe();
+        taxRateUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
@@ -402,8 +405,7 @@ export default function MenuPage() {
     try {
       if (editingItem) {
         const itemRef = doc(firestore, 'menu', editingItem.id);
-        // @ts-ignore
-        await updateDoc(itemRef, dataToSave);
+        await updateDoc(itemRef, dataToSave as Partial<MenuItem>);
 
         // If it's a main item, update its variants' shared properties
         if (!editingItem.parentMenuId) {
@@ -426,7 +428,6 @@ export default function MenuPage() {
         }
 
       } else {
-        // @ts-ignore
         await addDoc(collection(firestore, 'menu'), dataToSave);
       }
 
@@ -848,7 +849,6 @@ export default function MenuPage() {
                 <AccordionTrigger className="flex-1 p-0 hover:no-underline">
                   <div className='flex items-center gap-2'>
                       <h2 className="text-base font-semibold">{category}</h2>
-                      {/* @ts-ignore */}
                       <Badge variant="secondary">{itemsInCategory.length}</Badge>
                   </div>
                 </AccordionTrigger>
@@ -888,7 +888,6 @@ export default function MenuPage() {
                     <TableBody>
                       {itemsInCategory.flatMap((item) => {
                         const mainRow = (
-                          // @ts-ignore
                           <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium bg-muted/20">
                             <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
                             <TableCell className="p-2 text-xs">
@@ -934,7 +933,7 @@ export default function MenuPage() {
                           </TableRow>
                         );
 
-                        {/* @ts-ignore */}
+                        // @ts-ignore
                         const variantRows = item.variants.map((variant) => (
                            <TableRow key={variant.id} onClick={() => handleEdit(variant)} className="cursor-pointer hover:bg-muted/40">
                              <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.variantName}</TableCell>
