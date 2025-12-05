@@ -13,7 +13,7 @@ export default function AdminLayout({
 }) {
   return (
     <SidebarProvider>
-      <Sidebar>
+      <Sidebar collapsible="icon">
         <AdminSidebar />
       </Sidebar>
       <SidebarInset>

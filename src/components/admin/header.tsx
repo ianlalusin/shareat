@@ -1,16 +1,24 @@
 "use client";
 
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { StoreSelector } from "./store-selector";
 import { NavButtonGroup } from "./nav-button-group";
 import { Logo } from "./logo";
+import { cn } from "@/lib/utils";
 
 export function AdminHeader() {
+  const { state } = useSidebar();
+
   return (
     <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-4 border-b bg-primary px-4 md:px-6">
       <div className="flex items-center gap-2">
-        <SidebarTrigger className="text-primary-foreground hover:bg-primary-foreground/10" />
-        <div className="flex items-center gap-2 group-data-[sidebar-hidden=true]:hidden">
+        <SidebarTrigger className="text-primary-foreground hover:bg-primary-foreground/10 md:hidden" />
+        <div
+          className={cn(
+            "hidden items-center gap-2 md:flex",
+            state === "expanded" && "md:hidden"
+          )}
+        >
           <Logo className="h-8 w-8 text-primary-foreground" />
           <h1 className="text-lg font-semibold font-headline text-primary-foreground whitespace-nowrap">
             SharEat Hub
