@@ -37,3 +37,16 @@ export type Staff = {
   picture?: string;
   encoder: string;
 };
+
+export type MenuItem = {
+  id: string;
+  category: string;
+  menuName: string;
+  variants: string[];
+  sellBy: 'unit' | 'fraction';
+  cost: number;
+  price: number;
+  barcode: string;
+  is_active: boolean;
+  storeIds: string[];
+};

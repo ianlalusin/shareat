@@ -28,7 +28,7 @@ const menuItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/store", label: "Store", icon: Store },
   { href: "/admin/staff", label: "Staff", icon: Users },
-  { href: "#menu", label: "Menu", icon: BookMarked },
+  { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "#inventory", label: "Inventory", icon: Boxes },
   { href: "#reports", label: "Reports", icon: AreaChart },
   { href: "/admin/g-list", label: "G.List", icon: ListChecks },
