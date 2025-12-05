@@ -147,8 +147,8 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-        setTaxRates(taxRateData)
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[]
+        setTaxRates(taxRateData);
       });
       
       return () => {
@@ -170,8 +170,8 @@ export default function MenuPage() {
       setDisplayValues({
         cost: formatCurrency(editingItem.cost),
         price: formatCurrency(editingItem.price),
-        variantCost: '',
-        variantPrice: ''
+        variantCost: formatCurrency(variantFormData.cost),
+        variantPrice: formatCurrency(variantFormData.price),
       });
     } else {
         setFormData(initialItemState);
@@ -183,7 +183,7 @@ export default function MenuPage() {
         })
     }
     setImageFile(null);
-  }, [editingItem]);
+  }, [editingItem, variantFormData.cost, variantFormData.price]);
   
    useEffect(() => {
     if (!isModalOpen) {
@@ -281,7 +281,6 @@ export default function MenuPage() {
         }));
     }
     setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
-    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
     setIsAddingVariant(false);
   };
   
@@ -690,7 +689,9 @@ export default function MenuPage() {
                              {item.variants.map((v, i) => <Badge key={i} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2">
-                             <Badge variant="default" className="mr-1 mb-1">{item.availability || 'Always'}</Badge>
+                             <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
+                                {(item.availability || 'Always').substring(0, 6)}{(item.availability || 'Always').length > 6 ? '...' : ''}
+                             </Badge>
                           </TableCell>
                           <TableCell className="p-2 capitalize">{item.targetStation}</TableCell>
                           <TableCell className="p-2 capitalize">{item.sellBy}</TableCell>
@@ -734,6 +735,8 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
 
     
 
