@@ -148,7 +148,7 @@ export default function MenuPage() {
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
         const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-        setTaxRates(taxRateData);
+        setTaxRates(taxRateData)
       });
       
       return () => {
@@ -213,7 +213,7 @@ export default function MenuPage() {
     
     if (name === 'variantCost' || name === 'variantPrice') {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
-       setVariantFormData(prev => ({ ...prev, [name.replace('variant','')]: parseCurrency(numericValue) }));
+       setVariantFormData(prev => ({ ...prev, [name.replace('variant','').toLowerCase()]: parseCurrency(numericValue) }));
     } else {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
        setFormData(prev => ({ ...prev, [name]: parseCurrency(numericValue) }));
@@ -233,7 +233,7 @@ export default function MenuPage() {
   const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name } = e.target;
      if (name === 'variantCost' || name === 'variantPrice') {
-        const fieldName = name.replace('variant','');
+        const fieldName = name.replace('variant','').toLowerCase();
         // @ts-ignore
         const fieldValue = variantFormData[fieldName];
         setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
@@ -687,7 +687,7 @@ export default function MenuPage() {
                         <TableRow key={item.id}>
                           <TableCell className="p-2 font-medium">{item.menuName}</TableCell>
                           <TableCell className="p-2">
-                             {item.variants.map(v => <Badge key={v.id} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
+                             {item.variants.map((v, i) => <Badge key={i} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2">
                              <Badge variant="default" className="mr-1 mb-1">{item.availability || 'Always'}</Badge>
@@ -734,5 +734,7 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
 
     
