@@ -47,11 +47,6 @@ import {
   onSnapshot,
   deleteDoc,
 } from 'firebase/firestore';
-import {
-  AdminSidebar,
-} from "@/components/admin/sidebar";
-import { AdminHeader } from "@/components/admin/header";
-import { Sidebar, SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 type Store = {
   id: string;
