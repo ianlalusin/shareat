@@ -240,12 +240,12 @@ export default function EditStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                <Input id="birthday" name="birthday" value={formData.birthday || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                 {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
                 {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">

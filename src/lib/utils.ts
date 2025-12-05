@@ -6,12 +6,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function validateDate(dateString: string): boolean {
-  if (!dateString) return true; // Allow empty values
-  const parsedDate = parse(dateString, 'M/d/yyyy', new Date());
-  return isValid(parsedDate);
-}
-
 export function formatAndValidateDate(dateString: string): { formatted: string; error?: string } {
     if (!dateString) {
         return { formatted: '' };
@@ -33,4 +27,17 @@ export function formatAndValidateDate(dateString: string): { formatted: string; 
         formatted: dateString,
         error: "Invalid format. Use MM/DD/YYYY",
     };
+}
+
+export function revertToInputFormat(dateString: string): string {
+    if (!dateString) return '';
+    try {
+        const parsedDate = parse(dateString, 'MMMM dd, yyyy', new Date());
+        if (isValid(parsedDate)) {
+            return format(parsedDate, 'M/d/yyyy');
+        }
+    } catch (error) {
+        // Not in long format, return original
+    }
+    return dateString;
 }
