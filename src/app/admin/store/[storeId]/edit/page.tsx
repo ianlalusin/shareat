@@ -237,30 +237,10 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                 <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                    <Label htmlFor="storeName">Store Name</Label>
-                    <Input id="storeName" name="storeName" value={formData.storeName} onChange={handleInputChange} required />
+                      <Label htmlFor="storeName">Store Name</Label>
+                      <Input id="storeName" name="storeName" value={formData.storeName} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="type">Type</Label>
-                    <Select name="type" value={formData.type} onValueChange={(value) => handleSelectChange('type', value)} required>
-                        <SelectTrigger id="type">
-                        <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                        <SelectItem value="resto">Resto</SelectItem>
-                        <SelectItem value="kiosk">Kiosk</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="contactNo">Contact No.</Label>
-                    <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
-                    </div>
-                    <div className="space-y-2 col-span-2">
                         <Label htmlFor="logo">Logo</Label>
                         <div className="flex items-center gap-4">
                             <Avatar className="h-20 w-20 border">
@@ -269,78 +249,98 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                                     <StoreIcon className="h-10 w-10" />
                                 </AvatarFallback>
                             </Avatar>
-                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
+                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} className="max-w-xs" />
                         </div>
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
+                      <Label htmlFor="type">Type</Label>
+                      <Select name="type" value={formData.type} onValueChange={(value) => handleSelectChange('type', value)} required>
+                          <SelectTrigger id="type">
+                          <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                          <SelectItem value="resto">Resto</SelectItem>
+                          <SelectItem value="kiosk">Kiosk</SelectItem>
+                          </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="openingDate">Opening Date</Label>
-                    <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
-                        <PopoverTrigger asChild>
-                        <Button
-                            variant={"outline"}
-                            className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !formData.openingDate && "text-muted-foreground"
-                            )}
-                        >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formData.openingDate ? format(new Date(formData.openingDate), "PPP") : <span>Pick a date</span>}
-                        </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                        <Calendar
-                            mode="single"
-                            selected={tempDate}
-                            onSelect={setTempDate}
-                            captionLayout="dropdown-buttons"
-                            fromYear={yearRange.fromYear}
-                            toYear={yearRange.toYear}
-                            initialFocus
-                        />
-                        <div className="p-2 border-t border-border">
-                            <Button size="sm" className="w-full" onClick={confirmDate}>Confirm</Button>
-                        </div>
-                        </PopoverContent>
-                    </Popover>
+                      <Label htmlFor="status">Status</Label>
+                      <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
+                          <SelectTrigger id="status">
+                          <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                          </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="contactNo">Contact No.</Label>
+                      <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address">Address</Label>
+                      <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="openingDate">Opening Date</Label>
+                      <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                          <PopoverTrigger asChild>
+                          <Button
+                              variant={"outline"}
+                              className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !formData.openingDate && "text-muted-foreground"
+                              )}
+                          >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formData.openingDate ? format(new Date(formData.openingDate), "PPP") : <span>Pick a date</span>}
+                          </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                          <Calendar
+                              mode="single"
+                              selected={tempDate}
+                              onSelect={setTempDate}
+                              captionLayout="dropdown-buttons"
+                              fromYear={yearRange.fromYear}
+                              toYear={yearRange.toYear}
+                              initialFocus
+                          />
+                          <div className="p-2 border-t border-border">
+                              <Button size="sm" className="w-full" onClick={confirmDate}>Confirm</Button>
+                          </div>
+                          </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="col-span-2 space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
-                    </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
-                        <SelectTrigger id="status">
-                        <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
                     </div>
                     <div className="col-span-2 space-y-2">
-                    <Label>Tags</Label>
-                    <div className="flex flex-wrap gap-4">
-                        {storeTags.map((tag) => (
-                        <div key={tag.id} className="flex items-center gap-2">
-                            <Input
-                            type="checkbox"
-                            id={`tag-${tag.item}`}
-                            name="tags"
-                            value={tag.item}
-                            checked={formData.tags.includes(tag.item as any)}
-                            onChange={(e) => handleTagChange(tag.item, e.target.checked)}
-                            className="h-4 w-4"
-                            />
-                            <Label htmlFor={`tag-${tag.item}`}>{tag.item}</Label>
-                        </div>
-                        ))}
-                    </div>
+                      <Label>Tags</Label>
+                      <div className="flex flex-wrap gap-4">
+                          {storeTags.map((tag) => (
+                          <div key={tag.id} className="flex items-center gap-2">
+                              <Input
+                              type="checkbox"
+                              id={`tag-${tag.item}`}
+                              name="tags"
+                              value={tag.item}
+                              checked={formData.tags.includes(tag.item as any)}
+                              onChange={(e) => handleTagChange(tag.item, e.target.checked)}
+                              className="h-4 w-4"
+                              />
+                              <Label htmlFor={`tag-${tag.item}`}>{tag.item}</Label>
+                          </div>
+                          ))}
+                      </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
