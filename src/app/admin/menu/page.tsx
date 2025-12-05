@@ -135,7 +135,7 @@ export default function MenuPage() {
       );
 
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setAvailabilityOptions(availabilityData);
       });
       
@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -388,6 +388,8 @@ export default function MenuPage() {
     acc[category].push(item);
     return acc;
   }, {} as Record<string, MenuItem[]>);
+  
+  const showBaseFields = !isAddingVariant && formData.variants.length === 0;
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -471,45 +473,52 @@ export default function MenuPage() {
 
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {showBaseFields && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="cost">Base Cost</Label>
+                          <Input
+                            id="cost"
+                            name="cost"
+                            type="text"
+                            inputMode="decimal"
+                            value={displayValues.cost}
+                            onChange={handleCurrencyInputChange}
+                            onBlur={handleCurrencyInputBlur}
+                            onFocus={handleCurrencyInputFocus}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="price">Base Price</Label>
+                          <Input
+                            id="price"
+                            name="price"
+                            type="text"
+                            inputMode="decimal"
+                            value={displayValues.price}
+                            onChange={handleCurrencyInputChange}
+                            onBlur={handleCurrencyInputBlur}
+                            onFocus={handleCurrencyInputFocus}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="barcode">Base Barcode</Label>
+                          <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                        </div>
+                      </>
+                    )}
+
                     <div className="space-y-2">
-                    <Label htmlFor="cost">Base Cost</Label>
-                    <Input 
-                        id="cost" 
-                        name="cost" 
-                        type="text"
-                        inputMode='decimal'
-                        value={displayValues.cost}
-                        onChange={handleCurrencyInputChange} 
-                        onBlur={handleCurrencyInputBlur}
-                        onFocus={handleCurrencyInputFocus}
-                        required />
-                    </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="price">Base Price</Label>
-                    <Input 
-                        id="price" 
-                        name="price" 
-                        type="text"
-                        inputMode='decimal'
-                        value={displayValues.price}
-                        onChange={handleCurrencyInputChange}
-                        onBlur={handleCurrencyInputBlur}
-                        onFocus={handleCurrencyInputFocus}
-                        required />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="barcode">Base Barcode</Label>
-                        <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
-                    </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="sellBy">Sell By</Label>
-                    <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                        <SelectItem value="unit">Unit</SelectItem>
-                        <SelectItem value="fraction">Fraction</SelectItem>
-                        </SelectContent>
-                    </Select>
+                      <Label htmlFor="sellBy">Sell By</Label>
+                      <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                          <SelectItem value="unit">Unit</SelectItem>
+                          <SelectItem value="fraction">Fraction</SelectItem>
+                          </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="availability">Availability</Label>
@@ -526,16 +535,19 @@ export default function MenuPage() {
                         </Select>
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="targetStation">Target Station</Label>
-                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
-                        <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
-                        <SelectContent>
-                        <SelectItem value="Hot">Hot</SelectItem>
-                        <SelectItem value="Cold">Cold</SelectItem>
-                        </SelectContent>
-                    </Select>
+                      <Label htmlFor="targetStation">Target Station</Label>
+                      <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                          <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
+                          <SelectContent>
+                          <SelectItem value="Hot">Hot</SelectItem>
+                          <SelectItem value="Cold">Cold</SelectItem>
+                          </SelectContent>
+                      </Select>
                     </div>
-                    <div className="space-y-2">
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
                     <Label htmlFor="taxRate">Tax Rate</Label>
                     <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
                         <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
@@ -545,8 +557,8 @@ export default function MenuPage() {
                         )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
                         </SelectContent>
                     </Select>
-                    </div>
-                    <div className="md:col-span-2 space-y-2">
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="storeIds">Applicable Stores</Label>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -571,41 +583,46 @@ export default function MenuPage() {
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    </div>
-                    <div className="flex items-center space-x-2">
+                  </div>
+                  <div className="flex items-end pb-2 space-x-2">
                     <Label htmlFor="is_active">Active</Label>
                     <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
-                    </div>
-                    <div className="md:col-span-3 space-y-2">
-                        <Label htmlFor="imageUrl">Image</Label>
-                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
-                    </div>
-                    <div className="md:col-span-3 space-y-2">
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                    <Label htmlFor="imageUrl">Image</Label>
+                    <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
                         <Label htmlFor="publicDescription">Public Description</Label>
                         <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} />
                     </div>
-                    <div className="md:col-span-3 flex items-center gap-4">
-                        <div className="flex items-center space-x-2">
-                        <Label htmlFor="trackInventory">Track Inventory</Label>
-                        <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center space-x-2">
+                            <Label htmlFor="trackInventory">Track Inventory</Label>
+                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                          </div>
+                          {formData.trackInventory && (
+                              <div className="flex items-center space-x-2">
+                                  <Label htmlFor="alertLevel">Alert Level</Label>
+                                  <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
+                              </div>
+                          )}
                         </div>
                         {formData.trackInventory && (
-                            <div className="flex items-center space-x-2">
-                                <Label htmlFor="alertLevel">Alert Level</Label>
-                                <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
-                            </div>
-                        )}
-                    </div>
-                    {formData.trackInventory && (
-                        <div className="md:col-span-3">
                             <Alert>
                                 <AlertDescription>
                                     Low stock alerts will be triggered when the quantity in stock reaches the alert level.
                                 </AlertDescription>
                             </Alert>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
+
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -715,3 +732,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
