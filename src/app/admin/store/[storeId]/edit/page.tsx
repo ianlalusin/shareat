@@ -32,7 +32,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GListItem, Store } from '@/lib/types';
-import { formatAndValidateDate } from '@/lib/utils';
+import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 
 
@@ -105,14 +105,8 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    try {
-        const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
-        if (isValid(parsedDate)) {
-            setFormData(prev => (prev ? { ...prev, [name]: format(parsedDate, 'M/d/yyyy') } : null));
-        }
-    } catch (error) {
-        // If parsing fails, it's not in the long format, so we leave it as is.
-    }
+    const formattedValue = revertToInputFormat(value);
+    setFormData(prev => (prev ? { ...prev, [name]: formattedValue } : null));
   }
 
 
@@ -145,6 +139,13 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
         return { ...prev, tags: newTags };
     });
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        e.preventDefault();
+    }
+  };
+
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -216,7 +217,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                 <CardTitle>Store Details</CardTitle>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <Label htmlFor="storeName">Store Name</Label>

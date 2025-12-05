@@ -28,7 +28,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ArrowLeft, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Staff, Store } from '@/lib/types';
-import { formatAndValidateDate } from '@/lib/utils';
+import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 
 export default function EditStaffPage() {
@@ -93,14 +93,8 @@ export default function EditStaffPage() {
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    try {
-        const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
-        if (isValid(parsedDate)) {
-            setFormData(prev => (prev ? { ...prev, [name]: format(parsedDate, 'M/d/yyyy') } : null));
-        }
-    } catch (error) {
-        // If parsing fails, it's not in the long format, so we leave it as is.
-    }
+    const formattedValue = revertToInputFormat(value);
+    setFormData(prev => (prev ? { ...prev, [name]: formattedValue } : null));
   }
 
 
@@ -111,7 +105,7 @@ export default function EditStaffPage() {
       if (!prev) return null;
       if (name === 'rate') {
           const rate = parseFloat(value);
-          return { ...prev, [name]: isNaN(rate) ? '' : rate };
+          return { ...prev, [name]: isNaN(rate) ? 0 : rate };
       }
       return { ...prev, [name]: value };
     });
@@ -129,6 +123,13 @@ export default function EditStaffPage() {
       setPicturePreview(URL.createObjectURL(file));
     }
   };
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        e.preventDefault();
+    }
+  };
+
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -193,7 +194,7 @@ export default function EditStaffPage() {
           <CardTitle>Staff Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-3 flex items-center gap-6">
                 <Avatar className="h-24 w-24 border">
