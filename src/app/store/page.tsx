@@ -254,7 +254,6 @@ export default function StorePage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
               <TableHead>Store Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Contact No.</TableHead>
@@ -270,7 +269,6 @@ export default function StorePage() {
           <TableBody>
             {stores.map((store) => (
               <TableRow key={store.id}>
-                <TableCell className="font-medium">{store.id.substring(0,6)}...</TableCell>
                 <TableCell>{store.storeName}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{store.type}</Badge>
