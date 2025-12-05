@@ -26,10 +26,10 @@ type Store = {
 };
 
 export default function StoreDetailPage({ params }: { params: { storeId: string } }) {
+  const { storeId } = params;
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();
-  const { storeId } = params;
 
   useEffect(() => {
     if (!firestore || !storeId) return;
