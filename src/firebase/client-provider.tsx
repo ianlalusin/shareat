@@ -14,6 +14,7 @@ export const FirebaseClientProvider: React.FC<{
         firebaseApp: firebase.firebaseApp,
         auth: firebase.auth,
         firestore: firebase.firestore,
+        storage: firebase.storage,
       }}
     >
       {children}

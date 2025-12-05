@@ -4,11 +4,13 @@ import React, { createContext, useContext } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Auth } from 'firebase/auth';
 import { Firestore } from 'firebase/firestore';
+import { FirebaseStorage } from 'firebase/storage';
 
 interface FirebaseContextValue {
   firebaseApp: FirebaseApp;
   auth: Auth;
   firestore: Firestore;
+  storage: FirebaseStorage;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -33,3 +35,4 @@ export const useFirebase = () => {
 export const useFirebaseApp = () => useFirebase().firebaseApp;
 export const useAuth = () => useFirebase().auth;
 export const useFirestore = () => useFirebase().firestore;
+export const useStorage = () => useFirebase().storage;

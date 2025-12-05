@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useStorage } from '@/firebase';
 import {
   addDoc,
   collection,
@@ -23,6 +23,7 @@ import {
   where,
   onSnapshot
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -67,7 +68,9 @@ const initialStoreState: Omit<Store, 'id'> = {
 export default function NewStorePage() {
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const firestore = useFirestore();
+  const storage = useStorage();
   const router = useRouter();
 
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -106,6 +109,12 @@ export default function NewStorePage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setLogoFile(e.target.files[0]);
+    }
+  };
+
   const handleSelectChange = (name: string, value: string) => {
      setFormData((prev) => ({ ...prev, [name]: value }));
   }
@@ -132,10 +141,18 @@ export default function NewStorePage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore) return;
+    if (!firestore || !storage) return;
+
+    let logoUrl = '';
+    if (logoFile) {
+      const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
+      const snapshot = await uploadBytes(logoRef, logoFile);
+      logoUrl = await getDownloadURL(snapshot.ref);
+    }
 
     const dataToSave = {
       ...formData,
+      logo: logoUrl,
       openingDate: formData.openingDate instanceof Date ? formData.openingDate.toISOString() : formData.openingDate
     };
 
@@ -193,7 +210,7 @@ export default function NewStorePage() {
                     </div>
                     <div className="space-y-2">
                     <Label htmlFor="logo">Logo</Label>
-                    <Input id="logo" name="logo" type="file" />
+                    <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
                     </div>
                     <div className="space-y-2">
                     <Label htmlFor="address">Address</Label>

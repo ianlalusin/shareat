@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useStorage } from '@/firebase';
 import {
   doc,
   updateDoc,
@@ -25,12 +25,15 @@ import {
   collection,
   getDoc
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Store as StoreIcon } from 'lucide-react';
 
 type Store = {
   id: string;
@@ -58,7 +61,10 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const firestore = useFirestore();
+  const storage = useStorage();
   const router = useRouter();
 
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -84,6 +90,9 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
             const openingDate = storeData.openingDate ? new Date(storeData.openingDate as any) : new Date();
             setFormData({ ...storeData, openingDate });
             setTempDate(openingDate);
+            if (storeData.logo) {
+                setLogoPreview(storeData.logo);
+            }
         } else {
             setFormData(null);
         }
@@ -113,6 +122,14 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     if (!formData) return;
     const { name, value } = e.target;
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
+  };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setLogoFile(file);
+      setLogoPreview(URL.createObjectURL(file));
+    }
   };
 
   const handleSelectChange = (name: string, value: string) => {
@@ -144,10 +161,18 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !formData) return;
+    if (!firestore || !formData || !storage) return;
+
+    let logoUrl = formData.logo || '';
+    if (logoFile) {
+        const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
+        const snapshot = await uploadBytes(logoRef, logoFile);
+        logoUrl = await getDownloadURL(snapshot.ref);
+    }
 
     const dataToSave = {
       ...formData,
+      logo: logoUrl,
       openingDate: formData.openingDate instanceof Date ? formData.openingDate.toISOString() : formData.openingDate
     };
 
@@ -231,9 +256,17 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                     <Label htmlFor="email">Email</Label>
                     <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="logo">Logo</Label>
-                    <Input id="logo" name="logo" type="file" />
+                    <div className="space-y-2 col-span-2">
+                        <Label htmlFor="logo">Logo</Label>
+                        <div className="flex items-center gap-4">
+                            <Avatar className="h-20 w-20 border">
+                                {logoPreview ? <AvatarImage src={logoPreview} alt="Logo Preview" /> : null}
+                                <AvatarFallback>
+                                    <StoreIcon className="h-10 w-10" />
+                                </AvatarFallback>
+                            </Avatar>
+                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
+                        </div>
                     </div>
                     <div className="space-y-2">
                     <Label htmlFor="address">Address</Label>
