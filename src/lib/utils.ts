@@ -41,3 +41,20 @@ export function revertToInputFormat(dateString: string): string {
     }
     return dateString;
 }
+
+export function formatCurrency(value: number | string | undefined | null) {
+  const numericValue = Number(value);
+  if (isNaN(numericValue)) {
+    return '₱0.00';
+  }
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+  }).format(numericValue);
+}
+
+export function parseCurrency(value: string | undefined | null): number {
+  if (!value) return 0;
+  const numberValue = value.replace(/[^0-9.-]+/g, '');
+  return parseFloat(numberValue) || 0;
+}

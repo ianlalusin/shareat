@@ -59,6 +59,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useStoreSelector } from '@/store/use-store-selector';
+import { formatCurrency, parseCurrency } from '@/lib/utils';
 
 
 const initialItemState: Omit<MenuItem, 'id'> = {
@@ -81,6 +82,7 @@ export default function MenuPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
+  const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
 
@@ -129,18 +131,58 @@ export default function MenuPage() {
         variants: editingItem.variants || [],
         availability: editingItem.availability || [],
       });
+      setDisplayValues({
+        cost: formatCurrency(editingItem.cost),
+        price: formatCurrency(editingItem.price),
+      });
     } else {
         setFormData(initialItemState);
+        setDisplayValues({
+          cost: formatCurrency(initialItemState.cost),
+          price: formatCurrency(initialItemState.price),
+        })
     }
   }, [editingItem]);
+  
+   useEffect(() => {
+    if (isModalOpen) {
+      if (editingItem) {
+        setDisplayValues({
+          cost: formatCurrency(editingItem.cost),
+          price: formatCurrency(editingItem.price)
+        });
+      } else {
+        setDisplayValues({
+          cost: formatCurrency(initialItemState.cost),
+          price: formatCurrency(initialItemState.price)
+        });
+      }
+    }
+  }, [isModalOpen, editingItem]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-    setFormData((prev) => ({ 
-        ...prev, 
-        [name]: type === 'number' ? parseFloat(value) || 0 : value 
-    }));
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
+  
+  const handleCurrencyInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
+    setFormData(prev => ({ ...prev, [name]: parseFloat(numericValue) || 0 }));
+  }
+
+  const handleCurrencyInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = parseFloat(value) || 0;
+    setDisplayValues(prev => ({ ...prev, [name]: formatCurrency(numericValue) }));
+  }
+  
+  const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name } = e.target;
+    const fieldValue = name === 'cost' ? formData.cost : formData.price;
+    setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
+  }
 
   const handleVariantsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
@@ -289,11 +331,29 @@ export default function MenuPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="cost">Cost</Label>
-                  <Input id="cost" name="cost" type="number" value={formData.cost} onChange={handleInputChange} required />
+                  <Input 
+                    id="cost" 
+                    name="cost" 
+                    type="text"
+                    inputMode='decimal'
+                    value={displayValues.cost}
+                    onChange={handleCurrencyInputChange} 
+                    onBlur={handleCurrencyInputBlur}
+                    onFocus={handleCurrencyInputFocus}
+                    required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="price">Price</Label>
-                  <Input id="price" name="price" type="number" value={formData.price} onChange={handleInputChange} required />
+                  <Input 
+                    id="price" 
+                    name="price" 
+                    type="text"
+                    inputMode='decimal'
+                    value={displayValues.price}
+                    onChange={handleCurrencyInputChange}
+                    onBlur={handleCurrencyInputBlur}
+                    onFocus={handleCurrencyInputFocus}
+                    required />
                 </div>
                  <div className="space-y-2">
                   <Label htmlFor="sellBy">Sell By</Label>
@@ -428,8 +488,8 @@ export default function MenuPage() {
                              {item.availability.map(v => <Badge key={v} variant="default" className="mr-1 mb-1">{v}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2 capitalize">{item.sellBy}</TableCell>
-                          <TableCell className="p-2 text-right">{item.cost.toFixed(2)}</TableCell>
-                          <TableCell className="p-2 text-right">{item.price.toFixed(2)}</TableCell>
+                          <TableCell className="p-2 text-right">{formatCurrency(item.cost)}</TableCell>
+                          <TableCell className="p-2 text-right">{formatCurrency(item.price)}</TableCell>
                           <TableCell className="p-2 text-right">{calculateProfit(item.cost, item.price)}</TableCell>
                           <TableCell className="p-2">{item.barcode}</TableCell>
                           <TableCell className="p-2">
