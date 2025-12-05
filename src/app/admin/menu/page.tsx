@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setTaxRates(taxRateData);
       });
       
@@ -283,6 +283,7 @@ export default function MenuPage() {
     }
     setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
     setIsAddingVariant(false);
+    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
   };
   
   const handleEditVariant = (variant: Variant) => {
@@ -664,20 +665,20 @@ export default function MenuPage() {
                </div>
               <AccordionContent className="p-0">
                 <div className="border-t overflow-x-auto">
-                  <Table>
+                  <Table className="text-xs">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="px-2 h-10">Menu Name</TableHead>
-                        <TableHead className="px-2 h-10">Variants</TableHead>
-                        <TableHead className="px-2 h-10">Availability</TableHead>
-                        <TableHead className="px-2 h-10">Target Station</TableHead>
-                        <TableHead className="px-2 h-10">Sell By</TableHead>
-                        <TableHead className="px-2 h-10 text-right">Cost</TableHead>
-                        <TableHead className="px-2 h-10 text-right">Price</TableHead>
-                        <TableHead className="px-2 h-10 text-right">Profit %</TableHead>
-                        <TableHead className="px-2 h-10">Barcode</TableHead>
-                        <TableHead className="px-2 h-10">Status</TableHead>
-                        <TableHead className="px-2 h-10">
+                        <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Variants</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Sell By</TableHead>
+                        <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
+                        <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
+                        <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Barcode</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Status</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">
                           <span className="sr-only">Actions</span>
                         </TableHead>
                       </TableRow>
@@ -685,22 +686,22 @@ export default function MenuPage() {
                     <TableBody>
                       {itemsInCategory.map((item) => (
                         <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
-                          <TableCell className="p-2 font-medium">{item.menuName}</TableCell>
-                          <TableCell className="p-2">
+                          <TableCell className="p-2 font-medium text-xs">{item.menuName}</TableCell>
+                          <TableCell className="p-2 text-xs">
                              {item.variants.map((v, i) => <Badge key={i} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
                           </TableCell>
-                          <TableCell className="p-2">
+                          <TableCell className="p-2 text-xs">
                              <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
                                 {(item.availability || 'Always').substring(0, 6)}{(item.availability || 'Always').length > 6 ? '...' : ''}
                              </Badge>
                           </TableCell>
-                          <TableCell className="p-2 capitalize">{item.targetStation}</TableCell>
-                          <TableCell className="p-2 capitalize">{item.sellBy}</TableCell>
-                          <TableCell className="p-2 text-right">{formatCurrency(item.cost)}</TableCell>
-                          <TableCell className="p-2 text-right">{formatCurrency(item.price)}</TableCell>
-                          <TableCell className="p-2 text-right">{calculateProfit(item.cost, item.price)}</TableCell>
-                          <TableCell className="p-2">{item.barcode}</TableCell>
-                          <TableCell className="p-2">
+                          <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
+                          <TableCell className="p-2 capitalize text-xs">{item.sellBy}</TableCell>
+                          <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
+                          <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
+                          <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
+                          <TableCell className="p-2 text-xs">{item.barcode}</TableCell>
+                          <TableCell className="p-2 text-xs">
                             <Badge
                               variant={item.is_active ? 'default' : 'destructive'}
                               className={item.is_active ? 'bg-green-500' : ''}
