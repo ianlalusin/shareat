@@ -98,7 +98,7 @@ export default function MenuPage() {
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   
-  const [variantFormData, setVariantFormData] = useState<Variant>(() => ({...initialVariantState, id: Date.now().toString()}));
+  const [variantFormData, setVariantFormData] = useState<Variant | null>(null);
   const [isAddingVariant, setIsAddingVariant] = useState(false);
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   
@@ -208,7 +208,7 @@ export default function MenuPage() {
       setDisplayValues({ cost: '', price: '', variantCost: '', variantPrice: '' });
       setIsAddingVariant(false);
       setEditingVariantId(null);
-      setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
+      setVariantFormData(null);
     }
   }, [isModalOpen]);
 
@@ -229,7 +229,7 @@ export default function MenuPage() {
     
     if (name === 'variantCost' || name === 'variantPrice') {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
-       setVariantFormData(prev => ({ ...prev, [name.replace('variant','').toLowerCase()]: parseCurrency(numericValue) }));
+       setVariantFormData(prev => prev ? ({ ...prev, [name.replace('variant','').toLowerCase()]: parseCurrency(numericValue) }) : null);
     } else {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
        setFormData(prev => ({ ...prev, [name]: parseCurrency(numericValue) }));
@@ -249,9 +249,8 @@ export default function MenuPage() {
   const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name } = e.target;
      if (name === 'variantCost' || name === 'variantPrice') {
-        const fieldName = name.replace('variant','').toLowerCase();
-        // @ts-ignore
-        const fieldValue = variantFormData[fieldName];
+        const fieldName = name.replace('variant','').toLowerCase() as 'cost' | 'price';
+        const fieldValue = variantFormData?.[fieldName];
         setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
      } else {
         // @ts-ignore
@@ -294,6 +293,7 @@ export default function MenuPage() {
   };
 
   const handleAddVariant = () => {
+    if (!variantFormData || !variantFormData.name) return;
     if (editingVariantId) { // We are saving an edit
         setFormData(prev => ({
             ...prev,
@@ -306,9 +306,8 @@ export default function MenuPage() {
             variants: [...prev.variants, variantFormData]
         }));
     }
-    setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
+    setVariantFormData(null);
     setIsAddingVariant(false);
-    setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
   };
   
   const handleEditVariant = (variant: Variant) => {
@@ -328,10 +327,18 @@ export default function MenuPage() {
           variants: prev.variants.filter(v => v.id !== variantId)
       }));
   };
+  
+  const handleAddNewVariantClick = () => {
+    if (!firestore) return;
+    const newVariantId = doc(collection(firestore, '_')).id;
+    setVariantFormData({ ...initialVariantState, id: newVariantId });
+    setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
+    setIsAddingVariant(true);
+  }
 
   const handleCancelVariant = () => {
-    setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
-    setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
+    setVariantFormData(null);
+    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
     setIsAddingVariant(false);
     setEditingVariantId(null);
   };
@@ -347,7 +354,7 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const dataToSave = { ...formData, imageUrl, variants: formData.variants.map(({id, ...rest}) => rest), specialTags: formData.specialTags || [] };
+    const dataToSave = { ...formData, imageUrl, variants: formData.variants, specialTags: formData.specialTags || [] };
 
     try {
       if (editingItem) {
@@ -500,7 +507,7 @@ export default function MenuPage() {
                             </div>
                         ))}
 
-                        {isAddingVariant && (
+                        {isAddingVariant && variantFormData && (
                            <div className="p-2 space-y-4">
                                 <div className='flex justify-between items-center'>
                                     <h4 className="font-medium">{editingVariantId ? 'Edit Variant' : 'Add New Variant'}</h4>
@@ -512,7 +519,7 @@ export default function MenuPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                      <div className="space-y-2">
                                         <Label htmlFor="variantName">Variant Name</Label>
-                                        <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
+                                        <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => prev ? ({...prev, name: e.target.value}) : null)}/>
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="variantCost">Cost</Label>
@@ -524,19 +531,18 @@ export default function MenuPage() {
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="variantBarcode">Barcode</Label>
-                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => ({...prev, barcode: e.target.value}))} />
+                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => prev ? ({...prev, barcode: e.target.value}) : null)} />
                                     </div>
                                 </div>
                            </div>
                         )}
                         {!isAddingVariant && (
-                            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingVariant(true)}>
+                            <Button type="button" variant="outline" size="sm" onClick={handleAddNewVariantClick}>
                                 <Plus className="mr-2 h-4 w-4" /> Add Variant
                             </Button>
                         )}
                     </div>
                 </div>
-
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {showBaseFields && (
@@ -814,7 +820,7 @@ export default function MenuPage() {
                         );
 
                         const variantRows = hasVariants ? item.variants.map((variant, index) => (
-                           <TableRow key={`${item.id}-variant-${variant.id || index}`} className="hover:bg-muted/40">
+                           <TableRow key={variant.id || `${item.id}-variant-${index}`} className="hover:bg-muted/40">
                              <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.name}</TableCell>
                              <TableCell className="p-2 text-xs"></TableCell>
                              <TableCell className="p-2 capitalize text-xs"></TableCell>
@@ -850,5 +856,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
