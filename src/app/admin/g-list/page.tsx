@@ -63,7 +63,7 @@ export default function GListPage() {
 
   useEffect(() => {
     if (firestore) {
-      const unsubscribe = onSnapshot(collection(firestore, 'g-list'), (snapshot) => {
+      const unsubscribe = onSnapshot(collection(firestore, 'lists'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setItems(itemsData);
       });
@@ -100,11 +100,11 @@ export default function GListPage() {
 
     try {
       if (editingItem) {
-        const itemRef = doc(firestore, 'g-list', editingItem.id);
+        const itemRef = doc(firestore, 'lists', editingItem.id);
         await updateDoc(itemRef, formData);
         setEditingItem(null);
       } else {
-        await addDoc(collection(firestore, 'g-list'), formData);
+        await addDoc(collection(firestore, 'lists'), formData);
       }
       setFormData(initialItemState);
       setIsModalOpen(false);
@@ -122,7 +122,7 @@ export default function GListPage() {
     if (!firestore) return;
     if (window.confirm('Are you sure you want to delete this item?')) {
       try {
-        await deleteDoc(doc(firestore, 'g-list', itemId));
+        await deleteDoc(doc(firestore, 'lists', itemId));
       } catch (error) {
         console.error("Error deleting document: ", error);
       }
