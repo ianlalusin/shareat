@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setTaxRates(taxRateData);
       });
       
@@ -283,7 +283,7 @@ export default function MenuPage() {
     }
     setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
     setIsAddingVariant(false);
-    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
+    setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
   };
   
   const handleEditVariant = (variant: Variant) => {
@@ -306,7 +306,7 @@ export default function MenuPage() {
 
   const handleCancelVariant = () => {
     setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
-    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
+    setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
     setIsAddingVariant(false);
     setEditingVariantId(null);
   };
@@ -720,7 +720,7 @@ export default function MenuPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={(e) => { e.stopPropagation(); handleDelete(item.id); }}>Delete</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handleDelete(item.id)}>Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -737,3 +737,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
