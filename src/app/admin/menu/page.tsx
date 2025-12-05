@@ -147,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -434,15 +434,17 @@ export default function MenuPage() {
 
                         {isAddingVariant && (
                            <div className="p-2 space-y-4">
-                                <h4 className="font-medium">{editingVariantId ? 'Edit Variant' : 'Add New Variant'}</h4>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className='flex justify-between items-center'>
+                                    <h4 className="font-medium">{editingVariantId ? 'Edit Variant' : 'Add New Variant'}</h4>
+                                    <div className="flex justify-end gap-2">
+                                        <Button type="button" variant="ghost" onClick={handleCancelVariant}>Cancel</Button>
+                                        <Button type="button" onClick={handleAddVariant}>{editingVariantId ? 'Save Variant' : 'Add Variant'}</Button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                      <div className="space-y-2">
                                         <Label htmlFor="variantName">Variant Name</Label>
                                         <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="variantBarcode">Barcode</Label>
-                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => ({...prev, barcode: e.target.value}))} />
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="variantCost">Cost</Label>
@@ -452,10 +454,10 @@ export default function MenuPage() {
                                         <Label htmlFor="variantPrice">Price</Label>
                                         <Input id="variantPrice" name="variantPrice" value={displayValues.variantPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
                                     </div>
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                    <Button type="button" variant="ghost" onClick={handleCancelVariant}>Cancel</Button>
-                                    <Button type="button" onClick={handleAddVariant}>{editingVariantId ? 'Save Variant' : 'Add Variant'}</Button>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="variantBarcode">Barcode</Label>
+                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => ({...prev, barcode: e.target.value}))} />
+                                    </div>
                                 </div>
                            </div>
                         )}
