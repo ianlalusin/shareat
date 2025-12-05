@@ -12,7 +12,7 @@ export function AdminHeader() {
         <SidebarTrigger className="text-primary-foreground hover:bg-primary-foreground/10" />
         <div className="flex items-center gap-2 group-data-[sidebar-hidden=true]:hidden">
           <Logo className="h-8 w-8 text-primary-foreground" />
-          <h1 className="text-lg font-semibold font-headline text-primary-foreground">
+          <h1 className="text-lg font-semibold font-headline text-primary-foreground whitespace-nowrap">
             SharEat Hub
           </h1>
         </div>
