@@ -27,7 +27,7 @@ import { usePathname } from "next/navigation";
 const menuItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/store", label: "Store", icon: Store },
-  { href: "#staff", label: "Staff", icon: Users },
+  { href: "/admin/staff", label: "Staff", icon: Users },
   { href: "#menu", label: "Menu", icon: BookMarked },
   { href: "#inventory", label: "Inventory", icon: Boxes },
   { href: "#reports", label: "Reports", icon: AreaChart },
