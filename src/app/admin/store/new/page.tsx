@@ -183,13 +183,29 @@ export default function NewStorePage() {
                       <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="logo">Logo</Label>
-                      <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
+                    <div className="col-span-2 space-y-2">
+                        <Label>Tags</Label>
+                        <div className="flex flex-wrap gap-2">
+                        {storeTags.map((tag) => (
+                          <Button
+                            key={tag.id}
+                            type="button"
+                            variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
+                            onClick={() => handleTagChange(tag.item)}
+                          >
+                            {tag.item}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="logo">Logo</Label>
+                      <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <Label htmlFor="openingDate">Opening Date</Label>
@@ -212,21 +228,6 @@ export default function NewStorePage() {
                     <div className="col-span-2 space-y-2">
                       <Label htmlFor="description">Description</Label>
                       <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
-                    </div>
-                    <div className="col-span-2 space-y-2">
-                      <Label>Tags</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {storeTags.map((tag) => (
-                          <Button
-                            key={tag.id}
-                            type="button"
-                            variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
-                            onClick={() => handleTagChange(tag.item)}
-                          >
-                            {tag.item}
-                          </Button>
-                        ))}
-                      </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">

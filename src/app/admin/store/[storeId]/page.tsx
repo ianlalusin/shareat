@@ -133,16 +133,30 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
         </CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-6">
             <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Email</p>
-                <p>{store.email}</p>
+                <p className="text-sm font-medium text-muted-foreground">Type</p>
+                <Badge variant="secondary">{store.type}</Badge>
             </div>
              <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Contact No.</p>
                 <p>{store.contactNo}</p>
             </div>
             <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Email</p>
+                <p>{store.email}</p>
+            </div>
+            <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Address</p>
                 <p>{store.address}</p>
+            </div>
+            <div className="md:col-span-2 space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Tags</p>
+                <div className="flex flex-wrap gap-1">
+                    {store.tags.map((tag) => (
+                        <Badge key={tag} variant="outline">
+                        {tag}
+                        </Badge>
+                    ))}
+                </div>
             </div>
             <div className="flex items-start gap-8">
               <div className="space-y-1">
@@ -158,20 +172,6 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
                       {store.status}
                   </Badge>
               </div>
-            </div>
-            <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Type</p>
-                <Badge variant="secondary">{store.type}</Badge>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-                <p className="text-sm font-medium text-muted-foreground">Tags</p>
-                <div className="flex flex-wrap gap-1">
-                    {store.tags.map((tag) => (
-                        <Badge key={tag} variant="outline">
-                        {tag}
-                        </Badge>
-                    ))}
-                </div>
             </div>
         </CardContent>
       </Card>
