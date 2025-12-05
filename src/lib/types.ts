@@ -1,4 +1,5 @@
 
+
 export type Store = {
   id: string;
   storeName: string;
@@ -22,7 +23,7 @@ export type GListItem = {
 };
 
 export type Staff = {
-  id: string;
+  id:string;
   assignedStore: string;
   fullName: string;
   address: string;
@@ -48,19 +49,21 @@ export type MenuItem = {
   category: string;
   menuName: string; // The name of the main dish, e.g., "Pizza"
   storeIds: string[];
-  availability: string;
+  availability: string; // 'always', or from G.List
   targetStation?: 'Hot' | 'Cold';
+  soldBy: 'unit' | 'fraction';
+  
+  // Can be shared or overridden by variant
   imageUrl?: string;
   publicDescription?: string;
-  specialTags?: string[];
-  
+  specialTags: string[];
+  taxRate: string;
+
   // Individual properties for every item/variant
   isAvailable: boolean; 
   cost: number;
   price: number;
-  soldBy: 'unit' | 'fraction';
   barcode: string;
-  trackInventory?: boolean;
-  alertLevel?: number;
-  taxRate?: string;
+  trackInventory: boolean;
+  alertLevel: number;
 };
