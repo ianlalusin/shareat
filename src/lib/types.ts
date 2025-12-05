@@ -1,5 +1,4 @@
 
-
 export type Store = {
   id: string;
   storeName: string;
@@ -39,6 +38,8 @@ export type Staff = {
   encoder: string;
 };
 
+// This is no longer used and can be removed, but we'll keep it for now
+// to avoid breaking other parts of the app that might reference it.
 export type Variant = {
   id: string;
   name: string;
@@ -50,21 +51,28 @@ export type Variant = {
 
 export type MenuItem = {
   id: string;
+  // Linking variants
+  parentMenuId?: string; // If this is present, it's a variant.
+  variantName?: string;  // e.g., "Small", "Large", "Spicy"
+
+  // Shared properties
   category: string;
-  menuName: string;
-  variants: Variant[];
-  sellBy: 'unit' | 'fraction';
-  cost: number;
-  price: number;
-  barcode: string;
-  isAvailable: boolean;
+  menuName: string; // The name of the main dish, e.g., "Pizza"
   storeIds: string[];
   availability: string;
+  targetStation?: 'Hot' | 'Cold';
   imageUrl?: string;
   publicDescription?: string;
-  targetStation?: 'Hot' | 'Cold';
-  taxRate?: string;
+  specialTags?: string[];
+  isAvailable: boolean; // Each item/variant has its own availability
+
+  // Individual properties
+  cost: number;
+  price: number;
+  sellBy: 'unit' | 'fraction';
+  barcode: string;
   trackInventory?: boolean;
   alertLevel?: number;
-  specialTags?: string[];
+  taxRate?: string;
 };
+

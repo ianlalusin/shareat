@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -42,10 +42,11 @@ import {
   deleteDoc,
   query,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, GListItem, Variant } from '@/lib/types';
+import { MenuItem, Store, GListItem } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -64,11 +65,9 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
-  variants: [],
   sellBy: 'unit',
   cost: 0,
   price: 0,
@@ -83,9 +82,20 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   trackInventory: false,
   alertLevel: 0,
   specialTags: [],
+  parentMenuId: undefined,
+  variantName: undefined,
 };
 
-const initialVariantState: Omit<Variant, 'id'> = { name: '', cost: 0, price: 0, barcode: '', isAvailable: true };
+type VariantFormData = {
+  id: string;
+  name: string;
+  cost: number;
+  price: number;
+  barcode: string;
+};
+
+const initialVariantFormState: VariantFormData = { id: '', name: '', cost: 0, price: 0, barcode: '' };
+
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -97,10 +107,9 @@ export default function MenuPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  
-  const [variantFormData, setVariantFormData] = useState<Variant | null>(null);
+
   const [isAddingVariant, setIsAddingVariant] = useState(false);
-  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [variantFormData, setVariantFormData] = useState<VariantFormData>(initialVariantFormState);
   
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string, variantCost: string, variantPrice: string }>({ cost: '', price: '', variantCost: '', variantPrice: '' });
   
@@ -112,7 +121,7 @@ export default function MenuPage() {
     if (firestore) {
       const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants?.map(v => ({...v, isAvailable: v.isAvailable !== false})) || [], specialTags: item.specialTags || [] })));
+        setItems(itemsData);
       });
 
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -174,20 +183,16 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (editingItem) {
-      const variants = editingItem.variants?.map(v => ({...v, isAvailable: v.isAvailable !== false })) || [];
-      const specialTags = editingItem.specialTags || [];
       setFormData({
         ...initialItemState,
         ...editingItem,
-        variants,
-        specialTags
+        specialTags: editingItem.specialTags || [],
       });
-       const currentVariant = variants.find(v => v.id === editingVariantId);
        setDisplayValues({
          cost: formatCurrency(editingItem.cost),
          price: formatCurrency(editingItem.price),
-         variantCost: formatCurrency(currentVariant?.cost || 0),
-         variantPrice: formatCurrency(currentVariant?.price || 0),
+         variantCost: '',
+         variantPrice: '',
        });
     } else {
         setFormData(initialItemState);
@@ -199,7 +204,7 @@ export default function MenuPage() {
         })
     }
     setImageFile(null);
-  }, [editingItem, editingVariantId]);
+  }, [editingItem]);
   
    useEffect(() => {
     if (!isModalOpen) {
@@ -207,8 +212,7 @@ export default function MenuPage() {
       setFormData(initialItemState);
       setDisplayValues({ cost: '', price: '', variantCost: '', variantPrice: '' });
       setIsAddingVariant(false);
-      setEditingVariantId(null);
-      setVariantFormData(null);
+      setVariantFormData(initialVariantFormState);
     }
   }, [isModalOpen]);
 
@@ -229,7 +233,7 @@ export default function MenuPage() {
     
     if (name === 'variantCost' || name === 'variantPrice') {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
-       setVariantFormData(prev => prev ? ({ ...prev, [name.replace('variant','').toLowerCase()]: parseCurrency(numericValue) }) : null);
+       setVariantFormData(prev => ({ ...prev, [name.replace('variant','').toLowerCase()]: parseCurrency(numericValue) }));
     } else {
        setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
        setFormData(prev => ({ ...prev, [name]: parseCurrency(numericValue) }));
@@ -250,7 +254,7 @@ export default function MenuPage() {
     const { name } = e.target;
      if (name === 'variantCost' || name === 'variantPrice') {
         const fieldName = name.replace('variant','').toLowerCase() as 'cost' | 'price';
-        const fieldValue = variantFormData?.[fieldName];
+        const fieldValue = variantFormData[fieldName];
         setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
      } else {
         // @ts-ignore
@@ -282,7 +286,7 @@ export default function MenuPage() {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
-    const handleSpecialTagChange = (tag: string) => {
+  const handleSpecialTagChange = (tag: string) => {
     setFormData(prev => {
       const currentTags = prev.specialTags || [];
       const newTags = currentTags.includes(tag)
@@ -292,59 +296,47 @@ export default function MenuPage() {
     });
   };
 
-  const handleAddVariant = () => {
-    if (!variantFormData || !variantFormData.name) return;
-    
-    if (editingVariantId) { // We are saving an edit
-        setFormData(prev => ({
-            ...prev,
-            variants: prev.variants.map(v => v.id === editingVariantId ? variantFormData : v)
-        }));
-    } else { // We are adding a new one
-        setFormData(prev => ({
-            ...prev,
-            variants: [...prev.variants, variantFormData]
-        }));
+  const handleAddVariant = async () => {
+    if (!firestore || !editingItem || !variantFormData.name) return;
+
+    const newVariant: Omit<MenuItem, 'id'> = {
+      ...initialItemState,
+      menuName: editingItem.menuName,
+      category: editingItem.category,
+      storeIds: editingItem.storeIds,
+      availability: editingItem.availability,
+      targetStation: editingItem.targetStation,
+      taxRate: editingItem.taxRate,
+      imageUrl: editingItem.imageUrl,
+      publicDescription: editingItem.publicDescription,
+      specialTags: editingItem.specialTags,
+      sellBy: editingItem.sellBy,
+      parentMenuId: editingItem.id,
+      variantName: variantFormData.name,
+      cost: variantFormData.cost,
+      price: variantFormData.price,
+      barcode: variantFormData.barcode,
+      isAvailable: true,
+    };
+
+    try {
+      await addDoc(collection(firestore, 'menu'), newVariant);
+      handleCancelVariant();
+    } catch (error) {
+      console.error("Error adding variant: ", error);
     }
-
-    setVariantFormData(null);
-    setIsAddingVariant(false);
-    setEditingVariantId(null);
-    setDisplayValues(prev => ({ ...prev, variantCost: '', variantPrice: '' }));
-  };
-  
-  const handleEditVariant = (variant: Variant) => {
-    setEditingVariantId(variant.id);
-    setVariantFormData(variant);
-    setDisplayValues(prev => ({
-      ...prev,
-      variantCost: formatCurrency(variant.cost),
-      variantPrice: formatCurrency(variant.price)
-    }));
-    setIsAddingVariant(true);
   };
 
-  const handleDeleteVariant = (variantId: string) => {
-      setFormData(prev => ({
-          ...prev,
-          variants: prev.variants.filter(v => v.id !== variantId)
-      }));
-  };
-  
   const handleAddNewVariantClick = () => {
-    if (!firestore) return;
-    const newVariantId = doc(collection(firestore, '_')).id;
-    setVariantFormData({ ...initialVariantState, id: newVariantId });
+    setVariantFormData(initialVariantFormState);
     setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
     setIsAddingVariant(true);
-    setEditingVariantId(null);
   }
 
   const handleCancelVariant = () => {
-    setVariantFormData(null);
+    setVariantFormData(initialVariantFormState);
     setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
     setIsAddingVariant(false);
-    setEditingVariantId(null);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -358,19 +350,26 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const dataToSave = { ...formData, imageUrl, variants: formData.variants, specialTags: formData.specialTags || [] };
-
-    try {
+    const dataToSave = { ...formData, imageUrl, specialTags: formData.specialTags || [] };
+    
+    // a variant cannot be edited into a main item
+    if (dataToSave.parentMenuId && dataToSave.variantName) {
+      // It's a variant, just update it
+       if (editingItem) {
+         const itemRef = doc(firestore, 'menu', editingItem.id);
+         await updateDoc(itemRef, dataToSave);
+       }
+    } else {
+      // It's a main item
       if (editingItem) {
         const itemRef = doc(firestore, 'menu', editingItem.id);
         await updateDoc(itemRef, dataToSave);
       } else {
         await addDoc(collection(firestore, 'menu'), dataToSave);
       }
-      setIsModalOpen(false);
-    } catch (error) {
-      console.error('Error saving document: ', error);
     }
+
+    setIsModalOpen(false);
   };
   
   const handleEdit = (item: MenuItem) => {
@@ -378,19 +377,35 @@ export default function MenuPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (event: React.MouseEvent, itemId: string) => {
+  const handleDelete = async (event: React.MouseEvent, itemToDelete: MenuItem) => {
     event.stopPropagation();
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this menu item?')) {
+    if (window.confirm('Are you sure you want to delete this menu item? This will also delete all its variants.')) {
       try {
-        await deleteDoc(doc(firestore, 'menu', itemId));
+        const batch = writeBatch(firestore);
+
+        // Delete the main item
+        const mainItemRef = doc(firestore, 'menu', itemToDelete.id);
+        batch.delete(mainItemRef);
+
+        // If it's a main item, delete its variants
+        if (!itemToDelete.parentMenuId) {
+          const variantsToDelete = items.filter(i => i.parentMenuId === itemToDelete.id);
+          variantsToDelete.forEach(variant => {
+            const variantRef = doc(firestore, 'menu', variant.id);
+            batch.delete(variantRef);
+          });
+        }
+        
+        await batch.commit();
+
       } catch (error) {
-        console.error("Error deleting document: ", error);
+        console.error("Error deleting document(s): ", error);
       }
     }
   };
 
-  const handleItemAvailabilityChange = async (itemId: string, newStatus: boolean) => {
+  const handleAvailabilityChange = async (itemId: string, newStatus: boolean) => {
     if (!firestore) return;
     const itemRef = doc(firestore, 'menu', itemId);
     try {
@@ -400,34 +415,11 @@ export default function MenuPage() {
     }
   };
 
-  const handleVariantAvailabilityChange = async (itemId: string, variantId: string, newStatus: boolean) => {
-    if (!firestore) return;
-    const itemRef = doc(firestore, 'menu', itemId);
-    const item = items.find(i => i.id === itemId);
-    if (!item) return;
-
-    const updatedVariants = item.variants.map(v => 
-      v.id === variantId ? { ...v, isAvailable: newStatus } : v
-    );
-
-    try {
-      await updateDoc(itemRef, { variants: updatedVariants });
-    } catch (error) {
-      console.error("Error updating variant availability: ", error);
-    }
-  };
-
   const openAddModal = () => {
     setEditingItem(null);
     setFormData(initialItemState);
     setIsModalOpen(true);
   }
-  
-  const openAddModalForCategory = (category: string) => {
-    setEditingItem(null);
-    setFormData({...initialItemState, category});
-    setIsModalOpen(true);
-  };
   
   const getSelectedStoreNames = () => {
     if (formData.storeIds.length === 0) return "Select stores";
@@ -450,23 +442,39 @@ export default function MenuPage() {
         .join(', ');
   };
 
-
   const calculateProfit = (cost: number, price: number) => {
     if (price <= cost || price <= 0) return '0.00%';
     const profit = ((price - cost) / price) * 100;
     return `${profit.toFixed(2)}%`;
   }
 
-  const groupedItems = items.reduce((acc, item) => {
-    const category = item.category || 'Uncategorized';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(item);
-    return acc;
-  }, {} as Record<string, MenuItem[]>);
+  const groupedItems = useMemo(() => {
+    const mainItems = items.filter(item => !item.parentMenuId);
+    const variants = items.filter(item => item.parentMenuId);
+
+    const grouped = mainItems.reduce((acc, item) => {
+      const category = item.category || 'Uncategorized';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push({
+        ...item,
+        variants: variants.filter(v => v.parentMenuId === item.id).sort((a, b) => a.variantName!.localeCompare(b.variantName!)),
+      });
+      return acc;
+    }, {} as Record<string, (MenuItem & { variants: MenuItem[] })[]>);
+    
+    // sort categories alphabetically
+    return Object.keys(grouped).sort().reduce(
+      (obj, key) => { 
+        obj[key] = grouped[key]; 
+        return obj;
+      }, 
+      {} as Record<string, (MenuItem & { variants: MenuItem[] })[]>
+    );
+  }, [items]);
   
-  const showBaseFields = !isAddingVariant && (!formData.variants || formData.variants.length === 0);
+  const isVariant = !!formData.parentMenuId;
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -483,190 +491,181 @@ export default function MenuPage() {
           </DialogTrigger>
           <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add New Menu Item'}</DialogTitle>
+              <DialogTitle>
+                {editingItem 
+                  ? `Edit ${isVariant ? `${editingItem.menuName} (${editingItem.variantName})` : editingItem.menuName}`
+                  : 'Add New Menu Item'}
+              </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="space-y-4 py-4">
+                {/* --- Main Item Fields --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="menuName">Menu Name</Label>
-                        <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required />
+                        <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required disabled={isVariant} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="category">Category</Label>
-                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required disabled={isVariant} />
                     </div>
                 </div>
 
-                {/* Variants Section */}
-                <div className="space-y-2">
+                {/* --- Variant Name Field (for variants only) --- */}
+                {isVariant && (
+                  <div className="space-y-2">
+                    <Label htmlFor="variantName">Variant Name</Label>
+                    <Input id="variantName" name="variantName" value={formData.variantName || ''} onChange={handleInputChange} required />
+                  </div>
+                )}
+                
+                {/* --- Variants Section (for main items only) --- */}
+                {!isVariant && editingItem && (
+                  <div className="space-y-2">
                     <Label>Variants</Label>
                     <div className="space-y-2 rounded-md border p-2">
-                        {formData.variants.map(variant => (
-                            <div key={variant.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
-                                <span className="flex-1 font-medium">{variant.name}</span>
-                                <span className="text-sm">{formatCurrency(variant.price)}</span>
-                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditVariant(variant)}><Pencil className="h-4 w-4"/></Button>
-                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteVariant(variant.id)}><Trash2 className="h-4 w-4"/></Button>
-                            </div>
-                        ))}
+                       {items.filter(i => i.parentMenuId === editingItem.id).map(variant => (
+                          <div key={variant.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                              <span className="flex-1 font-medium">{variant.variantName}</span>
+                              <span className="text-sm">{formatCurrency(variant.price)}</span>
+                              <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEdit(variant)}><Pencil className="h-4 w-4"/></Button>
+                              <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={(e) => handleDelete(e, variant)}><Trash2 className="h-4 w-4"/></Button>
+                          </div>
+                      ))}
 
-                        {isAddingVariant && variantFormData && (
-                           <div className="p-2 space-y-4">
-                                <div className='flex justify-between items-center'>
-                                    <h4 className="font-medium">{editingVariantId ? 'Edit Variant' : 'Add New Variant'}</h4>
-                                    <div className="flex justify-end gap-2">
-                                        <Button type="button" variant="ghost" onClick={handleCancelVariant}>Cancel</Button>
-                                        <Button type="button" onClick={handleAddVariant}>{editingVariantId ? 'Save Variant' : 'Add Variant'}</Button>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                     <div className="space-y-2">
-                                        <Label htmlFor="variantName">Variant Name</Label>
-                                        <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => prev ? ({...prev, name: e.target.value}) : null)}/>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="variantCost">Cost</Label>
-                                        <Input id="variantCost" name="variantCost" value={displayValues.variantCost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="variantPrice">Price</Label>
-                                        <Input id="variantPrice" name="variantPrice" value={displayValues.variantPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="variantBarcode">Barcode</Label>
-                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => prev ? ({...prev, barcode: e.target.value}) : null)} />
-                                    </div>
-                                </div>
-                           </div>
-                        )}
-                        {!isAddingVariant && (
-                            <Button type="button" variant="outline" size="sm" onClick={handleAddNewVariantClick}>
-                                <Plus className="mr-2 h-4 w-4" /> Add Variant
-                            </Button>
-                        )}
+                      {isAddingVariant && (
+                         <div className="p-2 space-y-4">
+                              <div className='flex justify-between items-center'>
+                                  <h4 className="font-medium">Add New Variant</h4>
+                                  <div className="flex justify-end gap-2">
+                                      <Button type="button" variant="ghost" onClick={handleCancelVariant}>Cancel</Button>
+                                      <Button type="button" onClick={handleAddVariant}>Add Variant</Button>
+                                  </div>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                   <div className="space-y-2">
+                                      <Label htmlFor="variantName">Variant Name</Label>
+                                      <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
+                                  </div>
+                                  <div className="space-y-2">
+                                      <Label htmlFor="variantCost">Cost</Label>
+                                      <Input id="variantCost" name="variantCost" value={displayValues.variantCost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                                  </div>
+                                  <div className="space-y-2">
+                                      <Label htmlFor="variantPrice">Price</Label>
+                                      <Input id="variantPrice" name="variantPrice" value={displayValues.variantPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                                  </div>
+                                  <div className="space-y-2">
+                                      <Label htmlFor="variantBarcode">Barcode</Label>
+                                      <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => ({...prev, barcode: e.target.value}))} />
+                                  </div>
+                              </div>
+                         </div>
+                      )}
+                      {!isAddingVariant && (
+                          <Button type="button" variant="outline" size="sm" onClick={handleAddNewVariantClick}>
+                              <Plus className="mr-2 h-4 w-4" /> Add Variant
+                          </Button>
+                      )}
                     </div>
-                </div>
-
+                  </div>
+                )}
+                
+                {/* --- Individual Pricing & Barcode --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {showBaseFields && (
-                      <>
-                        <div className="space-y-2">
-                          <Label htmlFor="cost">Base Cost</Label>
-                          <Input
-                            id="cost"
-                            name="cost"
-                            type="text"
-                            inputMode="decimal"
-                            value={displayValues.cost}
-                            onChange={handleCurrencyInputChange}
-                            onBlur={handleCurrencyInputBlur}
-                            onFocus={handleCurrencyInputFocus}
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="price">Base Price</Label>
-                          <Input
-                            id="price"
-                            name="price"
-                            type="text"
-                            inputMode="decimal"
-                            value={displayValues.price}
-                            onChange={handleCurrencyInputChange}
-                            onBlur={handleCurrencyInputBlur}
-                            onFocus={handleCurrencyInputFocus}
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="barcode">Base Barcode</Label>
-                          <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
-                        </div>
-                      </>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label htmlFor="sellBy">Sell By</Label>
-                      <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                          <SelectItem value="unit">Unit</SelectItem>
-                          <SelectItem value="fraction">Fraction</SelectItem>
-                          </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="availability">Availability</Label>
-                        <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select availability" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="always">Always Available</SelectItem>
-                                {availabilityOptions.map(option => (
-                                    <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="targetStation">Target Station</Label>
-                      <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
-                          <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
-                          <SelectContent>
-                          <SelectItem value="Hot">Hot</SelectItem>
-                          <SelectItem value="Cold">Cold</SelectItem>
-                          </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cost">Cost</Label>
+                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="price">Price</Label>
+                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="barcode">Barcode</Label>
+                    <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                  </div>
                 </div>
 
+                {/* --- Common Fields --- */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sellBy">Sell By</Label>
+                    <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unit">Unit</SelectItem>
+                        <SelectItem value="fraction">Fraction</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="availability">Availability</Label>
+                    <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)} disabled={isVariant}>
+                      <SelectTrigger><SelectValue placeholder="Select availability" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="always">Always Available</SelectItem>
+                        {availabilityOptions.map(option => (
+                            <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="targetStation">Target Station</Label>
+                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)} disabled={isVariant}>
+                      <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Hot">Hot</SelectItem>
+                        <SelectItem value="Cold">Cold</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="taxRate">Tax Rate</Label>
-                    <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
-                        <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
-                        <SelectContent>
+                    <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)} disabled={isVariant}>
+                      <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
+                      <SelectContent>
                         {taxRates.length > 0 ? taxRates.map(rate => (
                             <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
                         )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
-                        </SelectContent>
+                      </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="storeIds">Applicable Stores</Label>
                     <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between">
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between" disabled={isVariant}>
                             <span>{getSelectedStoreNames()}</span>
                             <ChevronDown className="h-4 w-4" />
                         </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                            <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {stores.map(store => (
-                                <DropdownMenuCheckboxItem
-                                    key={store.id}
-                                    checked={formData.storeIds.includes(store.id)}
-                                    onSelect={(e) => e.preventDefault()}
-                                    onClick={() => handleStoreIdChange(store.id)}
-                                >
-                                    {store.storeName}
-                                </DropdownMenuCheckboxItem>
-                            ))}
-                        </DropdownMenuContent>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {stores.map(store => (
+                            <DropdownMenuCheckboxItem
+                                key={store.id}
+                                checked={formData.storeIds.includes(store.id)}
+                                onSelect={(e) => e.preventDefault()}
+                                onClick={() => handleStoreIdChange(store.id)}
+                            >
+                                {store.storeName}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 </div>
-
-                 <div className="space-y-2">
+                <div className="space-y-2">
                     <Label>Special Tags</Label>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between font-normal">
+                        <Button variant="outline" className="w-full justify-between font-normal" disabled={isVariant}>
                             <span>{getSelectedTagNames()}</span>
                             <ChevronDown className="h-4 w-4" />
                         </Button>
@@ -686,18 +685,16 @@ export default function MenuPage() {
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                       <Label htmlFor="imageUrl">Image</Label>
-                      <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                      <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} disabled={isVariant} />
                   </div>
                     <div className="space-y-2">
                         <Label htmlFor="publicDescription">Public Description</Label>
-                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} />
+                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
                     </div>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <div className="flex items-center gap-4">
@@ -721,7 +718,6 @@ export default function MenuPage() {
                         )}
                     </div>
                 </div>
-
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -753,7 +749,9 @@ export default function MenuPage() {
                   className="mr-2 h-7 w-7 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    openAddModalForCategory(category);
+                    setEditingItem(null);
+                    setFormData({...initialItemState, category});
+                    setIsModalOpen(true);
                   }}
                 >
                   <Plus className="h-4 w-4" />
@@ -780,26 +778,25 @@ export default function MenuPage() {
                     </TableHeader>
                     <TableBody>
                       {itemsInCategory.flatMap((item) => {
-                        const hasVariants = item.variants && item.variants.length > 0;
                         const mainRow = (
                           <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium bg-muted/20">
                             <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
                             <TableCell className="p-2 text-xs">
                               <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
-                                {(item.availability || 'Always').substring(0, 6)}{item.availability && item.availability.length > 6 ? '...' : ''}
+                                {(item.availability || 'Always').substring(0, 6)}{(item.availability && item.availability.length > 6) ? '...' : ''}
                               </Badge>
                             </TableCell>
                             <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
                             <TableCell className="p-2 capitalize text-xs">{item.sellBy}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? formatCurrency(item.cost) : ''}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? formatCurrency(item.price) : ''}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{!hasVariants ? calculateProfit(item.cost, item.price) : ''}</TableCell>
-                            <TableCell className="p-2 text-xs">{!hasVariants ? item.barcode : ''}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!item.variants.length ? formatCurrency(item.cost) : ''}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!item.variants.length ? formatCurrency(item.price) : ''}</TableCell>
+                            <TableCell className="p-2 text-right text-xs">{!item.variants.length ? calculateProfit(item.cost, item.price) : ''}</TableCell>
+                            <TableCell className="p-2 text-xs">{!item.variants.length ? item.barcode : ''}</TableCell>
                             <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
                               <div className="flex flex-col items-center gap-1">
                                 <Switch
                                   checked={item.isAvailable}
-                                  onCheckedChange={(newStatus) => handleItemAvailabilityChange(item.id, newStatus)}
+                                  onCheckedChange={(newStatus) => handleAvailabilityChange(item.id, newStatus)}
                                   aria-label={`Toggle ${item.menuName} availability`}
                                 />
                                 <span className="text-xs text-muted-foreground">{item.isAvailable ? 'Available' : 'Unavailable'}</span>
@@ -816,16 +813,16 @@ export default function MenuPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, item.id)}>Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, item)}>Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
                           </TableRow>
                         );
 
-                        const variantRows = hasVariants ? item.variants.map((variant, index) => (
-                           <TableRow key={variant.id || `${item.id}-variant-${index}`} className="hover:bg-muted/40">
-                             <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.name}</TableCell>
+                        const variantRows = item.variants.map((variant) => (
+                           <TableRow key={variant.id} onClick={() => handleEdit(variant)} className="cursor-pointer hover:bg-muted/40">
+                             <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.variantName}</TableCell>
                              <TableCell className="p-2 text-xs"></TableCell>
                              <TableCell className="p-2 capitalize text-xs"></TableCell>
                              <TableCell className="p-2 capitalize text-xs"></TableCell>
@@ -836,16 +833,30 @@ export default function MenuPage() {
                              <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex flex-col items-center gap-1">
                                     <Switch
-                                    checked={variant.isAvailable}
-                                    onCheckedChange={(newStatus) => handleVariantAvailabilityChange(item.id, variant.id, newStatus)}
-                                    aria-label={`Toggle ${variant.name} availability`}
+                                      checked={variant.isAvailable}
+                                      onCheckedChange={(newStatus) => handleAvailabilityChange(variant.id, newStatus)}
+                                      aria-label={`Toggle ${variant.variantName} availability`}
                                     />
                                     <span className="text-xs text-muted-foreground">{variant.isAvailable ? 'Available' : 'Unavailable'}</span>
                                 </div>
                              </TableCell>
-                             <TableCell className="p-2"></TableCell>
+                             <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
+                                 <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button aria-haspopup="true" size="icon" variant="ghost">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                        <span className="sr-only">Toggle menu</span>
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                      <DropdownMenuItem onSelect={() => handleEdit(variant)}>Edit</DropdownMenuItem>
+                                      <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, variant)}>Delete</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                             </TableCell>
                            </TableRow>
-                        )) : [];
+                        ));
 
                         return [mainRow, ...variantRows];
                       })}
