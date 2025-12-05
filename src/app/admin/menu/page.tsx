@@ -32,7 +32,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useStorage } from '@/firebase';
 import {
   addDoc,
   collection,
@@ -43,6 +43,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
 import { MenuItem, Store, GListItem } from '@/lib/types';
 import {
@@ -59,7 +60,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { formatCurrency, parseCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 
 const initialItemState: Omit<MenuItem, 'id'> = {
@@ -72,25 +75,34 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   barcode: '',
   is_active: true,
   storeIds: [],
-  availability: [],
+  availability: '',
+  imageUrl: '',
+  publicDescription: '',
+  targetStation: undefined,
+  taxRate: '',
+  trackInventory: false,
+  alertLevel: 0,
 };
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
+  const [taxRates, setTaxRates] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
   const firestore = useFirestore();
+  const storage = useStorage();
   const { selectedStoreId } = useStoreSelector();
 
   useEffect(() => {
     if (firestore) {
       const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [], availability: item.availability || [] })));
+        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [] })));
       });
 
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -119,7 +131,22 @@ export default function MenuPage() {
         setAvailabilityOptions(availabilityData);
       });
       
-      return () => availabilityUnsubscribe();
+      const taxRateQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'tax rates'),
+        where('is_active', '==', true),
+        where('storeIds', 'array-contains', selectedStoreId)
+      );
+
+      const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        setTaxRates(taxRateData);
+      });
+      
+      return () => {
+        availabilityUnsubscribe();
+        taxRateUnsubscribe();
+      }
     }
   }, [firestore, selectedStoreId]);
 
@@ -127,9 +154,8 @@ export default function MenuPage() {
   useEffect(() => {
     if (editingItem) {
       setFormData({
+        ...initialItemState,
         ...editingItem,
-        variants: editingItem.variants || [],
-        availability: editingItem.availability || [],
       });
       setDisplayValues({
         cost: formatCurrency(editingItem.cost),
@@ -142,27 +168,26 @@ export default function MenuPage() {
           price: formatCurrency(initialItemState.price),
         })
     }
+    setImageFile(null);
   }, [editingItem]);
   
    useEffect(() => {
-    if (isModalOpen) {
-      if (editingItem) {
-        setDisplayValues({
-          cost: formatCurrency(editingItem.cost),
-          price: formatCurrency(editingItem.price)
-        });
-      } else {
-        setDisplayValues({
-          cost: formatCurrency(initialItemState.cost),
-          price: formatCurrency(initialItemState.price)
-        });
-      }
+    if (!isModalOpen) {
+      setEditingItem(null);
+      setFormData(initialItemState);
+      setDisplayValues({ cost: '', price: ''});
     }
-  }, [isModalOpen, editingItem]);
+  }, [isModalOpen]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { type } = e.target as HTMLInputElement;
+
+     if (type === 'number') {
+        setFormData((prev) => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
+    } else {
+        setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
   
   const handleCurrencyInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,14 +208,20 @@ export default function MenuPage() {
     const fieldValue = name === 'cost' ? formData.cost : formData.price;
     setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
   }
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+    }
+  };
 
   const handleVariantsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
-    setFormData(prev => ({...prev, variants: value.split(',').map(v => v.trim())}));
+    setFormData(prev => ({...prev, variants: value.split(',').map(v => v.trim()).filter(v => v)}));
   }
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value as 'unit' | 'fraction' }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleStoreIdChange = (storeId: string) => {
@@ -202,32 +233,30 @@ export default function MenuPage() {
     });
   };
 
-  const handleAvailabilityChange = (itemName: string) => {
-    setFormData(prev => {
-        const newAvailability = prev.availability.includes(itemName)
-            ? prev.availability.filter(item => item !== itemName)
-            : [...prev.availability, itemName];
-        return {...prev, availability: newAvailability};
-    })
-  }
-
-  const handleSwitchChange = (checked: boolean) => {
-    setFormData((prev) => ({ ...prev, is_active: checked }));
+  const handleSwitchChange = (name: string, checked: boolean) => {
+    setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore) return;
+    if (!firestore || !storage) return;
+
+    let imageUrl = formData.imageUrl || '';
+    if (imageFile) {
+        const imageRef = ref(storage, `Shareat Hub/menu_items/${Date.now()}_${imageFile.name}`);
+        const snapshot = await uploadBytes(imageRef, imageFile);
+        imageUrl = await getDownloadURL(snapshot.ref);
+    }
+    
+    const dataToSave = { ...formData, imageUrl };
 
     try {
       if (editingItem) {
         const itemRef = doc(firestore, 'menu', editingItem.id);
-        await updateDoc(itemRef, formData);
-        setEditingItem(null);
+        await updateDoc(itemRef, dataToSave);
       } else {
-        await addDoc(collection(firestore, 'menu'), formData);
+        await addDoc(collection(firestore, 'menu'), dataToSave);
       }
-      setFormData(initialItemState);
       setIsModalOpen(false);
     } catch (error) {
       console.error('Error saving document: ', error);
@@ -271,17 +300,10 @@ export default function MenuPage() {
         .map(s => s.storeName)
         .join(', ');
   };
-  
-  const getSelectedAvailabilityNames = () => {
-    if (formData.availability.length === 0) return "Select availability";
-    if (formData.availability.length === availabilityOptions.length) return "All selected";
-    if (formData.availability.length > 2) return `${formData.availability.length} selected`;
-    return formData.availability.join(', ');
-  }
 
   const calculateProfit = (cost: number, price: number) => {
-    if (cost <= 0 || price <= 0) return '0.00%';
-    const profit = ((price - cost) / cost) * 100;
+    if (price <= cost || cost <= 0) return '0.00%';
+    const profit = ((price - cost) / price) * 100;
     return `${profit.toFixed(2)}%`;
   }
 
@@ -307,7 +329,7 @@ export default function MenuPage() {
               <span>Add Menu Item</span>
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add New Menu Item'}</DialogTitle>
             </DialogHeader>
@@ -366,32 +388,41 @@ export default function MenuPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="availability">Availability</Label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
-                        <span>{getSelectedAvailabilityNames()}</span>
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                        {availabilityOptions.length > 0 ?
-                          availabilityOptions.map(option => (
-                            <DropdownMenuCheckboxItem
-                                key={option.id}
-                                checked={formData.availability.includes(option.item)}
-                                onSelect={(e) => e.preventDefault()}
-                                onClick={() => handleAvailabilityChange(option.item)}
-                            >
-                                {option.item}
-                            </DropdownMenuCheckboxItem>
-                          )) :
-                          <DropdownMenuItem disabled>No options for this store</DropdownMenuItem>
-                        }
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    <Label htmlFor="availability">Availability</Label>
+                    <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select availability" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="">Always Available</SelectItem>
+                            {availabilityOptions.map(option => (
+                                <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-                 <div className="space-y-2 md:col-span-2">
+                 <div className="space-y-2">
+                  <Label htmlFor="targetStation">Target Station</Label>
+                   <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                    <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Hot">Hot</SelectItem>
+                      <SelectItem value="Cold">Cold</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="taxRate">Tax Rate</Label>
+                   <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
+                    <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
+                    <SelectContent>
+                      {taxRates.length > 0 ? taxRates.map(rate => (
+                        <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
+                      )) : <DropdownMenuItem disabled>No tax rates for this store</DropdownMenuItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2 space-y-2">
                   <Label htmlFor="storeIds">Applicable Stores</Label>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -419,8 +450,37 @@ export default function MenuPage() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Label htmlFor="is_active">Active</Label>
-                  <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={handleSwitchChange} />
+                  <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
                 </div>
+                 <div className="md:col-span-3 space-y-2">
+                    <Label htmlFor="imageUrl">Image</Label>
+                    <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                </div>
+                <div className="md:col-span-3 space-y-2">
+                    <Label htmlFor="publicDescription">Public Description</Label>
+                    <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} />
+                </div>
+                 <div className="md:col-span-3 flex items-center gap-4">
+                    <div className="flex items-center space-x-2">
+                      <Label htmlFor="trackInventory">Track Inventory</Label>
+                      <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                    </div>
+                    {formData.trackInventory && (
+                         <div className="flex items-center space-x-2">
+                            <Label htmlFor="alertLevel">Alert Level</Label>
+                            <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
+                        </div>
+                    )}
+                 </div>
+                 {formData.trackInventory && (
+                     <div className="md:col-span-3">
+                        <Alert>
+                            <AlertDescription>
+                                Low stock alerts will be triggered when the quantity in stock reaches the alert level.
+                            </AlertDescription>
+                        </Alert>
+                     </div>
+                 )}
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -466,6 +526,7 @@ export default function MenuPage() {
                         <TableHead className="px-2 h-10">Menu Name</TableHead>
                         <TableHead className="px-2 h-10">Variants</TableHead>
                         <TableHead className="px-2 h-10">Availability</TableHead>
+                        <TableHead className="px-2 h-10">Target Station</TableHead>
                         <TableHead className="px-2 h-10">Sell By</TableHead>
                         <TableHead className="px-2 h-10 text-right">Cost</TableHead>
                         <TableHead className="px-2 h-10 text-right">Price</TableHead>
@@ -485,8 +546,9 @@ export default function MenuPage() {
                              {item.variants.map(v => <Badge key={v} variant="outline" className="mr-1 mb-1">{v}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2">
-                             {item.availability.map(v => <Badge key={v} variant="default" className="mr-1 mb-1">{v}</Badge>)}
+                             <Badge variant="default" className="mr-1 mb-1">{item.availability || 'Always'}</Badge>
                           </TableCell>
+                          <TableCell className="p-2 capitalize">{item.targetStation}</TableCell>
                           <TableCell className="p-2 capitalize">{item.sellBy}</TableCell>
                           <TableCell className="p-2 text-right">{formatCurrency(item.cost)}</TableCell>
                           <TableCell className="p-2 text-right">{formatCurrency(item.price)}</TableCell>
