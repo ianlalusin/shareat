@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { notFound } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Store } from 'lucide-react';
+import { Store, ArrowLeft } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 
 type Store = {
   id: string;
@@ -48,6 +50,10 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
     return (
         <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
             <div className="flex items-center gap-4">
+                <Button variant="outline" size="icon" className="h-7 w-7" disabled>
+                    <ArrowLeft className="h-4 w-4" />
+                    <span className="sr-only">Back</span>
+                </Button>
                 <Skeleton className="h-16 w-16 rounded-full" />
                 <div className="space-y-2">
                     <Skeleton className="h-8 w-48" />
@@ -84,6 +90,12 @@ export default function StoreDetailPage({ params }: { params: { storeId: string 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center gap-4">
+        <Button asChild variant="outline" size="icon" className="h-7 w-7">
+          <Link href="/admin/store">
+            <ArrowLeft className="h-4 w-4" />
+            <span className="sr-only">Back</span>
+          </Link>
+        </Button>
         <Avatar className="h-16 w-16 border">
           {store.logo ? (
              <AvatarImage src={store.logo} alt={store.storeName} />
