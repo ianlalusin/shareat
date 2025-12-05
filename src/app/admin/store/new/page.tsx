@@ -277,8 +277,8 @@ export default function NewStorePage() {
                                 id={`tag-${tag.item}`}
                                 checked={formData.tags.includes(tag.item)}
                                 onCheckedChange={() => handleTagChange(tag.item)}
-                            />
-                            <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
+                              />
+                              <Label htmlFor={`tag-${tag.item}`} className="font-normal">{tag.item}</Label>
                         </div>
                         ))}
                     </div>

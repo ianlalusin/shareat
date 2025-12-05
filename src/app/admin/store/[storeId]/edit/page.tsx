@@ -58,7 +58,7 @@ type GListItem = {
 };
 
 export default function EditStorePage({ params }: { params: { storeId: string } }) {
-  const { storeId } = params;
+  const storeId = params.storeId;
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
