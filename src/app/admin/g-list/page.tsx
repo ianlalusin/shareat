@@ -47,7 +47,7 @@ const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
   category: '',
   is_active: true,
-  storeId: '',
+  storeId: 'all',
 };
 
 export default function GListPage() {
@@ -84,7 +84,7 @@ export default function GListPage() {
         item: editingItem.item,
         category: editingItem.category,
         is_active: editingItem.is_active,
-        storeId: editingItem.storeId || '',
+        storeId: editingItem.storeId || 'all',
       });
     } else {
       setFormData(initialItemState);
@@ -109,13 +109,18 @@ export default function GListPage() {
     event.preventDefault();
     if (!firestore) return;
 
+    const dataToSave = {
+      ...formData,
+      storeId: formData.storeId === 'all' ? '' : formData.storeId,
+    }
+
     try {
       if (editingItem) {
         const itemRef = doc(firestore, 'lists', editingItem.id);
-        await updateDoc(itemRef, formData);
+        await updateDoc(itemRef, dataToSave);
         setEditingItem(null);
       } else {
-        await addDoc(collection(firestore, 'lists'), formData);
+        await addDoc(collection(firestore, 'lists'), dataToSave);
       }
       setFormData(initialItemState);
       setIsModalOpen(false);
@@ -147,7 +152,7 @@ export default function GListPage() {
   }
 
   const getStoreName = (storeId: string | undefined) => {
-    if (!storeId) return 'All Stores';
+    if (!storeId || storeId === 'all') return 'All Stores';
     return stores.find(s => s.id === storeId)?.storeName || 'Unknown Store';
   };
 
@@ -177,7 +182,7 @@ export default function GListPage() {
                       <SelectValue placeholder="Select a store (optional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Stores</SelectItem>
+                      <SelectItem value="all">All Stores</SelectItem>
                       {stores.map(store => <SelectItem key={store.id} value={store.id}>{store.storeName}</SelectItem>)}
                     </SelectContent>
                   </Select>
