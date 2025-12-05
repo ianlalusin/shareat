@@ -18,7 +18,11 @@ import { useFirestore, useStorage } from '@/firebase';
 import {
   doc,
   updateDoc,
-  getDoc
+  getDoc,
+  collection,
+  onSnapshot,
+  query,
+  where
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,7 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
-import { Store } from '@/lib/types';
+import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 
 
@@ -37,6 +41,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
+  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -51,7 +56,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
 
         if (docSnap.exists()) {
             const storeData = docSnap.data() as Omit<Store, 'id'>;
-            setFormData({ ...storeData, tags: storeData.tags || '' });
+            setFormData({ ...storeData, tags: storeData.tags || [] });
             if (storeData.logo) {
                 setLogoPreview(storeData.logo);
             }
@@ -62,6 +67,17 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     }
     
     fetchStore();
+
+    const tagsQuery = query(
+      collection(firestore, 'lists'),
+      where('category', '==', 'Store tags'),
+      where('is_active', '==', true)
+    );
+    const unsubscribe = onSnapshot(tagsQuery, (snapshot) => {
+      const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+      setStoreTags(tagsData);
+    });
+    return () => unsubscribe();
 
   }, [firestore, storeId]);
 
@@ -114,6 +130,16 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
     }
   };
 
+  const handleTagChange = (tag: string) => {
+    if (!formData) return;
+    setFormData(prev => {
+      if (!prev) return null;
+      const newTags = prev.tags.includes(tag)
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag];
+      return { ...prev, tags: newTags };
+    });
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -215,19 +241,7 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                           </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="status">Status</Label>
-                      <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
-                          <SelectTrigger id="status">
-                          <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                          <SelectItem value="Active">Active</SelectItem>
-                          <SelectItem value="Inactive">Inactive</SelectItem>
-                          </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
+                     <div className="space-y-2">
                       <Label htmlFor="contactNo">Contact No.</Label>
                       <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
                     </div>
@@ -235,22 +249,47 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
                       <Label htmlFor="email">Email</Label>
                       <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2">
+                     <div className="space-y-2">
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
-                      {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                    <div className="grid grid-cols-2 gap-6 col-span-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="openingDate">Opening Date</Label>
+                          <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                          {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="status">Status</Label>
+                            <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
+                                <SelectTrigger id="status">
+                                <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                <SelectItem value="Active">Active</SelectItem>
+                                <SelectItem value="Inactive">Inactive</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                     <div className="col-span-2 space-y-2">
                       <Label htmlFor="description">Description</Label>
                       <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
                     </div>
                      <div className="col-span-2 space-y-2">
-                      <Label htmlFor="tags">Tags</Label>
-                      <Input id="tags" name="tags" value={formData.tags} onChange={handleInputChange} placeholder="e.g. new, featured, popular"/>
+                        <Label>Tags</Label>
+                        <div className="flex flex-wrap gap-2">
+                            {storeTags.map((tag) => (
+                            <Button
+                                key={tag.id}
+                                type="button"
+                                variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
+                                onClick={() => handleTagChange(tag.item)}
+                            >
+                                {tag.item}
+                            </Button>
+                            ))}
+                        </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">

@@ -17,12 +17,15 @@ import {
 import { useFirestore, useStorage } from '@/firebase';
 import {
   addDoc,
-  collection
+  collection,
+  onSnapshot,
+  query,
+  where
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Store } from '@/lib/types';
+import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 
 
@@ -34,7 +37,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   address: '',
   description: '',
   status: 'Active',
-  tags: '',
+  tags: [],
   logo: '',
   openingDate: '',
 };
@@ -43,9 +46,25 @@ export default function NewStorePage() {
   const [formData, setFormData] = useState<Omit<Store, 'id'>>(initialStoreState);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
+  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
+
+  useEffect(() => {
+    if (firestore) {
+      const tagsQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'Store tags'),
+        where('is_active', '==', true)
+      );
+      const unsubscribe = onSnapshot(tagsQuery, (snapshot) => {
+        const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        setStoreTags(tagsData);
+      });
+      return () => unsubscribe();
+    }
+  }, [firestore]);
 
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,6 +104,15 @@ export default function NewStorePage() {
   const handleSelectChange = (name: string, value: string) => {
      setFormData((prev) => ({ ...prev, [name]: value }));
   }
+
+  const handleTagChange = (tag: string) => {
+    setFormData(prev => {
+      const newTags = prev.tags.includes(tag)
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag];
+      return { ...prev, tags: newTags };
+    });
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -131,61 +159,74 @@ export default function NewStorePage() {
                 <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                    <Label htmlFor="storeName">Store Name</Label>
-                    <Input id="storeName" name="storeName" value={formData.storeName} onChange={handleInputChange} required />
+                      <Label htmlFor="storeName">Store Name</Label>
+                      <Input id="storeName" name="storeName" value={formData.storeName} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="type">Type</Label>
-                    <Select name="type" value={formData.type} onValueChange={(value) => handleSelectChange('type', value)} required>
+                      <Label htmlFor="type">Type</Label>
+                      <Select name="type" value={formData.type} onValueChange={(value) => handleSelectChange('type', value)} required>
                         <SelectTrigger id="type">
-                        <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent>
-                        <SelectItem value="resto">Resto</SelectItem>
-                        <SelectItem value="kiosk">Kiosk</SelectItem>
+                          <SelectItem value="resto">Resto</SelectItem>
+                          <SelectItem value="kiosk">Kiosk</SelectItem>
                         </SelectContent>
-                    </Select>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="contactNo">Contact No.</Label>
-                    <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
+                      <Label htmlFor="contactNo">Contact No.</Label>
+                      <Input id="contactNo" name="contactNo" value={formData.contactNo} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
+                      <Label htmlFor="email">Email</Label>
+                      <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} required />
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="logo">Logo</Label>
-                    <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
+                      <Label htmlFor="logo">Logo</Label>
+                      <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
                     </div>
                     <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
+                      <Label htmlFor="address">Address</Label>
+                      <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
-                      {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="openingDate">Opening Date</Label>
+                          <Input id="openingDate" name="openingDate" value={formData.openingDate} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                          {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="status">Status</Label>
+                          <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
+                              <SelectTrigger id="status">
+                              <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                              <SelectItem value="Active">Active</SelectItem>
+                              <SelectItem value="Inactive">Inactive</SelectItem>
+                              </SelectContent>
+                          </Select>
+                        </div>
                     </div>
                     <div className="col-span-2 space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea id="description" name="description" value={formData.description} onChange={handleInputChange} />
                     </div>
-                    <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value)} required>
-                        <SelectTrigger id="status">
-                        <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    </div>
-                     <div className="space-y-2">
-                      <Label htmlFor="tags">Tags</Label>
-                      <Input id="tags" name="tags" value={formData.tags} onChange={handleInputChange} placeholder="e.g. new, featured, popular"/>
+                    <div className="col-span-2 space-y-2">
+                      <Label>Tags</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {storeTags.map((tag) => (
+                          <Button
+                            key={tag.id}
+                            type="button"
+                            variant={formData.tags.includes(tag.item) ? 'default' : 'outline'}
+                            onClick={() => handleTagChange(tag.item)}
+                          >
+                            {tag.item}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">

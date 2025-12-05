@@ -9,7 +9,7 @@ export type Store = {
   address: string;
   description: string;
   status: 'Active' | 'Inactive';
-  tags: string;
+  tags: string[];
   openingDate?: string;
 };
 

@@ -26,7 +26,8 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
     const docRef = doc(firestore, 'stores', storeId);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        setStore({ id: docSnap.id, ...docSnap.data() } as Store);
+        const data = docSnap.data() as Omit<Store, 'id'>;
+        setStore({ id: docSnap.id, ...data, tags: data.tags || [] });
       } else {
         setStore(null);
       }
@@ -89,9 +90,6 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
     notFound();
   }
   
-  const tags = store.tags ? store.tags.split(',').map(tag => tag.trim()) : [];
-
-
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center gap-4 justify-between">
@@ -146,27 +144,29 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
                 <p className="text-sm font-medium text-muted-foreground">Address</p>
                 <p>{store.address}</p>
             </div>
-            <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
-                <p>{store.openingDate || 'N/A'}</p>
+            <div className="flex items-start gap-8">
+              <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
+                  <p>{store.openingDate || 'N/A'}</p>
+              </div>
+              <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Status</p>
+                   <Badge
+                      variant={store.status === 'Active' ? 'default' : 'destructive'}
+                      className={store.status === 'Active' ? 'bg-green-500' : ''}
+                    >
+                      {store.status}
+                  </Badge>
+              </div>
             </div>
             <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Type</p>
                 <Badge variant="secondary">{store.type}</Badge>
             </div>
-            <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Status</p>
-                 <Badge
-                    variant={store.status === 'Active' ? 'default' : 'destructive'}
-                    className={store.status === 'Active' ? 'bg-green-500' : ''}
-                  >
-                    {store.status}
-                </Badge>
-            </div>
             <div className="space-y-1 md:col-span-2">
                 <p className="text-sm font-medium text-muted-foreground">Tags</p>
                 <div className="flex flex-wrap gap-1">
-                    {tags.map((tag) => (
+                    {store.tags.map((tag) => (
                         <Badge key={tag} variant="outline">
                         {tag}
                         </Badge>
