@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -43,6 +44,7 @@ import {
   query,
   where,
   writeBatch,
+  getDocs,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
@@ -68,7 +70,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
-  sellBy: 'unit',
+  soldBy: 'unit',
   cost: 0,
   price: 0,
   barcode: '',
@@ -87,14 +89,13 @@ const initialItemState: Omit<MenuItem, 'id'> = {
 };
 
 type VariantFormData = {
-  id: string;
   name: string;
   cost: number;
   price: number;
   barcode: string;
 };
 
-const initialVariantFormState: VariantFormData = { id: '', name: '', cost: 0, price: 0, barcode: '' };
+const initialVariantFormState: VariantFormData = { name: '', cost: 0, price: 0, barcode: '' };
 
 
 export default function MenuPage() {
@@ -300,7 +301,7 @@ export default function MenuPage() {
     if (!firestore || !editingItem || !variantFormData.name) return;
 
     const newVariant: Omit<MenuItem, 'id'> = {
-      ...initialItemState,
+      ...initialItemState, // ensures all fields are present
       menuName: editingItem.menuName,
       category: editingItem.category,
       storeIds: editingItem.storeIds,
@@ -310,7 +311,7 @@ export default function MenuPage() {
       imageUrl: editingItem.imageUrl,
       publicDescription: editingItem.publicDescription,
       specialTags: editingItem.specialTags,
-      sellBy: editingItem.sellBy,
+      soldBy: editingItem.soldBy,
       parentMenuId: editingItem.id,
       variantName: variantFormData.name,
       cost: variantFormData.cost,
@@ -351,25 +352,43 @@ export default function MenuPage() {
     }
     
     const dataToSave = { ...formData, imageUrl, specialTags: formData.specialTags || [] };
-    
-    // a variant cannot be edited into a main item
-    if (dataToSave.parentMenuId && dataToSave.variantName) {
-      // It's a variant, just update it
-       if (editingItem) {
-         const itemRef = doc(firestore, 'menu', editingItem.id);
-         await updateDoc(itemRef, dataToSave);
-       }
-    } else {
-      // It's a main item
+
+    try {
       if (editingItem) {
         const itemRef = doc(firestore, 'menu', editingItem.id);
         await updateDoc(itemRef, dataToSave);
+
+        // If it's a main item, update its variants' shared properties
+        if (!editingItem.parentMenuId) {
+          const batch = writeBatch(firestore);
+          const q = query(collection(firestore, "menu"), where("parentMenuId", "==", editingItem.id));
+          const querySnapshot = await getDocs(q);
+          querySnapshot.forEach((variantDoc) => {
+            const variantRef = doc(firestore, 'menu', variantDoc.id);
+            batch.update(variantRef, {
+              menuName: dataToSave.menuName,
+              category: dataToSave.category,
+              storeIds: dataToSave.storeIds,
+              availability: dataToSave.availability,
+              targetStation: dataToSave.targetStation,
+              taxRate: dataToSave.taxRate,
+              imageUrl: dataToSave.imageUrl,
+              publicDescription: dataToSave.publicDescription,
+              specialTags: dataToSave.specialTags,
+              soldBy: dataToSave.soldBy,
+            });
+          });
+          await batch.commit();
+        }
+
       } else {
         await addDoc(collection(firestore, 'menu'), dataToSave);
       }
-    }
 
-    setIsModalOpen(false);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error saving document: ", error);
+    }
   };
   
   const handleEdit = (item: MenuItem) => {
@@ -380,20 +399,20 @@ export default function MenuPage() {
   const handleDelete = async (event: React.MouseEvent, itemToDelete: MenuItem) => {
     event.stopPropagation();
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this menu item? This will also delete all its variants.')) {
+    if (window.confirm(`Are you sure you want to delete this item? ${!itemToDelete.parentMenuId ? 'This will also delete all its variants.' : ''}`)) {
       try {
         const batch = writeBatch(firestore);
 
-        // Delete the main item
-        const mainItemRef = doc(firestore, 'menu', itemToDelete.id);
-        batch.delete(mainItemRef);
+        // Delete the item itself
+        const itemRef = doc(firestore, 'menu', itemToDelete.id);
+        batch.delete(itemRef);
 
-        // If it's a main item, delete its variants
+        // If it's a main item, find and delete all its variants
         if (!itemToDelete.parentMenuId) {
-          const variantsToDelete = items.filter(i => i.parentMenuId === itemToDelete.id);
-          variantsToDelete.forEach(variant => {
-            const variantRef = doc(firestore, 'menu', variant.id);
-            batch.delete(variantRef);
+          const q = query(collection(firestore, "menu"), where("parentMenuId", "==", itemToDelete.id));
+          const querySnapshot = await getDocs(q);
+          querySnapshot.forEach((variantDoc) => {
+            batch.delete(variantDoc.ref);
           });
         }
         
@@ -459,7 +478,7 @@ export default function MenuPage() {
       }
       acc[category].push({
         ...item,
-        variants: variants.filter(v => v.parentMenuId === item.id).sort((a, b) => a.variantName!.localeCompare(b.variantName!)),
+        variants: variants.filter(v => v.parentMenuId === item.id).sort((a, b) => (a.variantName || '').localeCompare(b.variantName || '')),
       });
       return acc;
     }, {} as Record<string, (MenuItem & { variants: MenuItem[] })[]>);
@@ -467,7 +486,7 @@ export default function MenuPage() {
     // sort categories alphabetically
     return Object.keys(grouped).sort().reduce(
       (obj, key) => { 
-        obj[key] = grouped[key]; 
+        obj[key] = grouped[key].sort((a, b) => a.menuName.localeCompare(b.menuName)); 
         return obj;
       }, 
       {} as Record<string, (MenuItem & { variants: MenuItem[] })[]>
@@ -527,7 +546,7 @@ export default function MenuPage() {
                        {items.filter(i => i.parentMenuId === editingItem.id).map(variant => (
                           <div key={variant.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
                               <span className="flex-1 font-medium">{variant.variantName}</span>
-                              <span className="text-sm">{formatCurrency(variant.price)}</span>
+                              <span className="text-sm text-muted-foreground">{formatCurrency(variant.price)}</span>
                               <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEdit(variant)}><Pencil className="h-4 w-4"/></Button>
                               <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={(e) => handleDelete(e, variant)}><Trash2 className="h-4 w-4"/></Button>
                           </div>
@@ -544,8 +563,8 @@ export default function MenuPage() {
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                    <div className="space-y-2">
-                                      <Label htmlFor="variantName">Variant Name</Label>
-                                      <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
+                                      <Label htmlFor="variantNameInput">Variant Name</Label>
+                                      <Input id="variantNameInput" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
                                   </div>
                                   <div className="space-y-2">
                                       <Label htmlFor="variantCost">Cost</Label>
@@ -563,7 +582,7 @@ export default function MenuPage() {
                          </div>
                       )}
                       {!isAddingVariant && (
-                          <Button type="button" variant="outline" size="sm" onClick={handleAddNewVariantClick}>
+                          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={handleAddNewVariantClick}>
                               <Plus className="mr-2 h-4 w-4" /> Add Variant
                           </Button>
                       )}
@@ -590,8 +609,8 @@ export default function MenuPage() {
                 {/* --- Common Fields --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="sellBy">Sell By</Label>
-                    <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
+                    <Label htmlFor="soldBy">Sold By</Label>
+                    <Select name="soldBy" value={formData.soldBy} onValueChange={(value) => handleSelectChange('soldBy', value)} required disabled={isVariant}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unit">Unit</SelectItem>
@@ -765,7 +784,7 @@ export default function MenuPage() {
                         <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Sell By</TableHead>
+                        <TableHead className="px-2 h-10 text-xs">Sold By</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
@@ -782,12 +801,12 @@ export default function MenuPage() {
                           <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium bg-muted/20">
                             <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
                             <TableCell className="p-2 text-xs">
-                              <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
+                              <Badge variant="outline" className="mr-1 mb-1 whitespace-nowrap">
                                 {(item.availability || 'Always').substring(0, 6)}{(item.availability && item.availability.length > 6) ? '...' : ''}
                               </Badge>
                             </TableCell>
                             <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
-                            <TableCell className="p-2 capitalize text-xs">{item.sellBy}</TableCell>
+                            <TableCell className="p-2 capitalize text-xs">{item.soldBy}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{!item.variants.length ? formatCurrency(item.cost) : ''}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{!item.variants.length ? formatCurrency(item.price) : ''}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{!item.variants.length ? calculateProfit(item.cost, item.price) : ''}</TableCell>
