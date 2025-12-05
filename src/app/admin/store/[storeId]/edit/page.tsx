@@ -169,11 +169,15 @@ export default function EditStorePage({ params }: { params: { storeId: string } 
         const snapshot = await uploadBytes(logoRef, logoFile);
         logoUrl = await getDownloadURL(snapshot.ref);
     }
+    
+    const openingDate = formData.openingDate instanceof Date
+        ? formData.openingDate.toISOString()
+        : formData.openingDate;
 
     const dataToSave = {
       ...formData,
       logo: logoUrl,
-      openingDate: formData.openingDate instanceof Date ? formData.openingDate.toISOString() : formData.openingDate
+      openingDate: openingDate
     };
 
     try {
