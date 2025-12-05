@@ -54,7 +54,7 @@ export function AdminSidebar() {
       <SidebarHeader>
         <div className="flex items-center gap-2">
           <Logo className="h-8 w-8 text-primary" />
-          <h1 className="text-xl font-semibold font-headline text-foreground">
+          <h1 className="text-xl font-semibold font-headline text-foreground group-data-[state=collapsed]:hidden">
             SharEat Hub
           </h1>
         </div>
