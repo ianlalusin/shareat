@@ -45,6 +45,7 @@ export type Variant = {
   cost: number;
   price: number;
   barcode: string;
+  isAvailable: boolean;
 };
 
 export type MenuItem = {
@@ -56,7 +57,7 @@ export type MenuItem = {
   cost: number;
   price: number;
   barcode: string;
-  is_active: boolean;
+  isAvailable: boolean;
   storeIds: string[];
   availability: string;
   imageUrl?: string;
@@ -67,4 +68,3 @@ export type MenuItem = {
   alertLevel?: number;
   specialTags?: string[];
 };
-

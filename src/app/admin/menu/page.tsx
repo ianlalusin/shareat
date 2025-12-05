@@ -73,7 +73,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   cost: 0,
   price: 0,
   barcode: '',
-  is_active: true,
+  isAvailable: true,
   storeIds: [],
   availability: 'always',
   imageUrl: '',
@@ -85,7 +85,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   specialTags: [],
 };
 
-const initialVariantState: Omit<Variant, 'id'> = { name: '', cost: 0, price: 0, barcode: '' };
+const initialVariantState: Omit<Variant, 'id'> = { name: '', cost: 0, price: 0, barcode: '', isAvailable: true };
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -112,7 +112,7 @@ export default function MenuPage() {
     if (firestore) {
       const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
         const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants || [], specialTags: item.specialTags || [] })));
+        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [], variants: item.variants?.map(v => ({...v, isAvailable: v.isAvailable !== false})) || [], specialTags: item.specialTags || [] })));
       });
 
       const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -174,7 +174,7 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (editingItem) {
-      const variants = editingItem.variants || [];
+      const variants = editingItem.variants?.map(v => ({...v, isAvailable: v.isAvailable !== false })) || [];
       const specialTags = editingItem.specialTags || [];
       setFormData({
         ...initialItemState,
@@ -186,8 +186,8 @@ export default function MenuPage() {
        setDisplayValues({
          cost: formatCurrency(editingItem.cost),
          price: formatCurrency(editingItem.price),
-         variantCost: formatCurrency(currentVariant?.cost || variantFormData.cost),
-         variantPrice: formatCurrency(currentVariant?.price || variantFormData.price),
+         variantCost: formatCurrency(currentVariant?.cost || 0),
+         variantPrice: formatCurrency(currentVariant?.price || 0),
        });
     } else {
         setFormData(initialItemState);
@@ -369,7 +369,6 @@ export default function MenuPage() {
 
   const handleDelete = async (event: React.MouseEvent, itemId: string) => {
     event.stopPropagation();
-    event.preventDefault();
     if (!firestore) return;
     if (window.confirm('Are you sure you want to delete this menu item?')) {
       try {
@@ -377,6 +376,33 @@ export default function MenuPage() {
       } catch (error) {
         console.error("Error deleting document: ", error);
       }
+    }
+  };
+
+  const handleItemAvailabilityChange = async (itemId: string, newStatus: boolean) => {
+    if (!firestore) return;
+    const itemRef = doc(firestore, 'menu', itemId);
+    try {
+      await updateDoc(itemRef, { isAvailable: newStatus });
+    } catch (error) {
+      console.error("Error updating item availability: ", error);
+    }
+  };
+
+  const handleVariantAvailabilityChange = async (itemId: string, variantId: string, newStatus: boolean) => {
+    if (!firestore) return;
+    const itemRef = doc(firestore, 'menu', itemId);
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const updatedVariants = item.variants.map(v => 
+      v.id === variantId ? { ...v, isAvailable: newStatus } : v
+    );
+
+    try {
+      await updateDoc(itemRef, { variants: updatedVariants });
+    } catch (error) {
+      console.error("Error updating variant availability: ", error);
     }
   };
 
@@ -586,7 +612,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="taxRate">Tax Rate</Label>
                     <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
@@ -623,10 +649,6 @@ export default function MenuPage() {
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                  <div className="flex items-end pb-2 space-x-2">
-                    <Label htmlFor="is_active">Active</Label>
-                    <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
                   </div>
                 </div>
 
@@ -763,13 +785,15 @@ export default function MenuPage() {
                             <TableCell className="p-2 text-right text-xs">{!hasVariants ? formatCurrency(item.price) : ''}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{!hasVariants ? calculateProfit(item.cost, item.price) : ''}</TableCell>
                             <TableCell className="p-2 text-xs">{!hasVariants ? item.barcode : ''}</TableCell>
-                            <TableCell className="p-2 text-xs">
-                              <Badge
-                                variant={item.is_active ? 'default' : 'destructive'}
-                                className={item.is_active ? 'bg-green-500' : ''}
-                              >
-                                {item.is_active ? 'Active' : 'Inactive'}
-                              </Badge>
+                            <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-col items-center gap-1">
+                                <Switch
+                                  checked={item.isAvailable}
+                                  onCheckedChange={(newStatus) => handleItemAvailabilityChange(item.id, newStatus)}
+                                  aria-label={`Toggle ${item.menuName} availability`}
+                                />
+                                <span className="text-xs text-muted-foreground">{item.isAvailable ? 'Available' : 'Unavailable'}</span>
+                              </div>
                             </TableCell>
                             <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
                               <DropdownMenu>
@@ -790,7 +814,7 @@ export default function MenuPage() {
                         );
 
                         const variantRows = hasVariants ? item.variants.map((variant, index) => (
-                           <TableRow key={`${item.id}-variant-${index}`} className="hover:bg-muted/40">
+                           <TableRow key={`${item.id}-variant-${variant.id || index}`} className="hover:bg-muted/40">
                              <TableCell className="p-2 text-xs pl-6 text-muted-foreground">{variant.name}</TableCell>
                              <TableCell className="p-2 text-xs"></TableCell>
                              <TableCell className="p-2 capitalize text-xs"></TableCell>
@@ -799,7 +823,16 @@ export default function MenuPage() {
                              <TableCell className="p-2 text-right text-xs text-muted-foreground">{formatCurrency(variant.price)}</TableCell>
                              <TableCell className="p-2 text-right text-xs text-muted-foreground">{calculateProfit(variant.cost, variant.price)}</TableCell>
                              <TableCell className="p-2 text-xs text-muted-foreground">{variant.barcode}</TableCell>
-                             <TableCell className="p-2 text-xs"></TableCell>
+                             <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex flex-col items-center gap-1">
+                                    <Switch
+                                    checked={variant.isAvailable}
+                                    onCheckedChange={(newStatus) => handleVariantAvailabilityChange(item.id, variant.id, newStatus)}
+                                    aria-label={`Toggle ${variant.name} availability`}
+                                    />
+                                    <span className="text-xs text-muted-foreground">{variant.isAvailable ? 'Available' : 'Unavailable'}</span>
+                                </div>
+                             </TableCell>
                              <TableCell className="p-2"></TableCell>
                            </TableRow>
                         )) : [];
@@ -817,7 +850,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
-
-    
