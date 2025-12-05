@@ -12,7 +12,7 @@ export function AdminHeader() {
   return (
     <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-4 border-b bg-primary px-4 md:px-6">
       <div className="flex items-center gap-2">
-        <SidebarTrigger className="text-primary-foreground hover:bg-primary-foreground/10 md:hidden" />
+        <SidebarTrigger className="text-primary-foreground hover:bg-primary-foreground/10" />
         <div
           className={cn(
             "hidden items-center gap-2 md:flex",
