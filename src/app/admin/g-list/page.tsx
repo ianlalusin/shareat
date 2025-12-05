@@ -196,7 +196,7 @@ export default function GListPage() {
   }, {} as Record<string, GListItem[]>);
 
   return (
-      <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+      <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           G.List
@@ -266,11 +266,11 @@ export default function GListPage() {
         </Dialog>
       </div>
       
-      <Accordion type="multiple" className="w-full space-y-4" defaultValue={Object.keys(groupedItems)}>
+      <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedItems)}>
         {Object.entries(groupedItems).map(([category, itemsInCategory]) => (
           <AccordionItem key={category} value={category} className="border-0">
              <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
-              <AccordionTrigger className="flex items-center justify-between p-4 bg-muted/50 hover:bg-muted/80 hover:no-underline">
+              <AccordionTrigger className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80 hover:no-underline">
                 <div className='flex items-center gap-2'>
                     <h2 className="text-base font-semibold">{category}</h2>
                     <Badge variant="secondary">{itemsInCategory.length}</Badge>
@@ -292,10 +292,10 @@ export default function GListPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Store</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>
+                        <TableHead className="px-2 h-10">Item</TableHead>
+                        <TableHead className="px-2 h-10">Store</TableHead>
+                        <TableHead className="px-2 h-10">Status</TableHead>
+                        <TableHead className="px-2 h-10">
                           <span className="sr-only">Actions</span>
                         </TableHead>
                       </TableRow>
@@ -303,15 +303,15 @@ export default function GListPage() {
                     <TableBody>
                       {itemsInCategory.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell>{item.item}</TableCell>
-                          <TableCell>
+                          <TableCell className="p-2">{item.item}</TableCell>
+                          <TableCell className="p-2">
                             <div className="flex flex-wrap gap-1">
                               {item.storeIds?.map(id => (
                                 <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
                               ))}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="p-2">
                             <Badge
                               variant={item.is_active ? 'default' : 'destructive'}
                               className={item.is_active ? 'bg-green-500' : ''}
@@ -319,7 +319,7 @@ export default function GListPage() {
                               {item.is_active ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="p-2">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button aria-haspopup="true" size="icon" variant="ghost">
