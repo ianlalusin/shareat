@@ -38,11 +38,19 @@ export type Staff = {
   encoder: string;
 };
 
+export type Variant = {
+  id: string;
+  name: string;
+  cost: number;
+  price: number;
+  barcode: string;
+};
+
 export type MenuItem = {
   id: string;
   category: string;
   menuName: string;
-  variants: string[];
+  variants: Variant[];
   sellBy: 'unit' | 'fraction';
   cost: number;
   price: number;
@@ -57,4 +65,3 @@ export type MenuItem = {
   trackInventory?: boolean;
   alertLevel?: number;
 };
-

@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, ChevronDown, Plus } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, ChevronDown, Plus, Trash2, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -45,7 +45,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, GListItem } from '@/lib/types';
+import { MenuItem, Store, GListItem, Variant } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -60,7 +60,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -75,7 +75,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   barcode: '',
   is_active: true,
   storeIds: [],
-  availability: '',
+  availability: 'always',
   imageUrl: '',
   publicDescription: '',
   targetStation: undefined,
@@ -83,6 +83,8 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   trackInventory: false,
   alertLevel: 0,
 };
+
+const initialVariantState: Omit<Variant, 'id'> = { name: '', cost: 0, price: 0, barcode: '' };
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -93,7 +95,13 @@ export default function MenuPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
+  
+  const [variantFormData, setVariantFormData] = useState<Variant>(() => ({...initialVariantState, id: Date.now().toString()}));
+  const [isAddingVariant, setIsAddingVariant] = useState(false);
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  
+  const [displayValues, setDisplayValues] = useState<{ cost: string, price: string, variantCost: string, variantPrice: string }>({ cost: '', price: '', variantCost: '', variantPrice: '' });
+  
   const firestore = useFirestore();
   const storage = useStorage();
   const { selectedStoreId } = useStoreSelector();
@@ -139,7 +147,7 @@ export default function MenuPage() {
       );
 
       const taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[];
         setTaxRates(taxRateData);
       });
       
@@ -153,19 +161,25 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (editingItem) {
+      const variants = editingItem.variants || [];
       setFormData({
         ...initialItemState,
         ...editingItem,
+        variants
       });
       setDisplayValues({
         cost: formatCurrency(editingItem.cost),
         price: formatCurrency(editingItem.price),
+        variantCost: '',
+        variantPrice: ''
       });
     } else {
         setFormData(initialItemState);
         setDisplayValues({
           cost: formatCurrency(initialItemState.cost),
           price: formatCurrency(initialItemState.price),
+          variantCost: '',
+          variantPrice: ''
         })
     }
     setImageFile(null);
@@ -175,7 +189,10 @@ export default function MenuPage() {
     if (!isModalOpen) {
       setEditingItem(null);
       setFormData(initialItemState);
-      setDisplayValues({ cost: '', price: ''});
+      setDisplayValues({ cost: '', price: '', variantCost: '', variantPrice: '' });
+      setIsAddingVariant(false);
+      setEditingVariantId(null);
+      setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
     }
   }, [isModalOpen]);
 
@@ -193,20 +210,38 @@ export default function MenuPage() {
   const handleCurrencyInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     const numericValue = value.replace(/[^0-9.]/g, '');
-    setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
-    setFormData(prev => ({ ...prev, [name]: parseFloat(numericValue) || 0 }));
+    
+    if (name === 'variantCost' || name === 'variantPrice') {
+       setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
+       setVariantFormData(prev => ({ ...prev, [name.replace('variant','')]: parseCurrency(numericValue) }));
+    } else {
+       setDisplayValues(prev => ({ ...prev, [name]: numericValue }));
+       setFormData(prev => ({ ...prev, [name]: parseCurrency(numericValue) }));
+    }
   }
 
   const handleCurrencyInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const numericValue = parseFloat(value) || 0;
-    setDisplayValues(prev => ({ ...prev, [name]: formatCurrency(numericValue) }));
+    const numericValue = parseCurrency(value);
+     if (name === 'variantCost' || name === 'variantPrice') {
+        setDisplayValues(prev => ({ ...prev, [name]: formatCurrency(numericValue) }));
+     } else {
+        setDisplayValues(prev => ({ ...prev, [name]: formatCurrency(numericValue) }));
+     }
   }
   
   const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name } = e.target;
-    const fieldValue = name === 'cost' ? formData.cost : formData.price;
-    setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
+     if (name === 'variantCost' || name === 'variantPrice') {
+        const fieldName = name.replace('variant','');
+        // @ts-ignore
+        const fieldValue = variantFormData[fieldName];
+        setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
+     } else {
+        // @ts-ignore
+        const fieldValue = formData[name];
+        setDisplayValues(prev => ({ ...prev, [name]: fieldValue === 0 ? '' : String(fieldValue) }));
+     }
   }
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -214,11 +249,6 @@ export default function MenuPage() {
       setImageFile(e.target.files[0]);
     }
   };
-
-  const handleVariantsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { value } = e.target;
-    setFormData(prev => ({...prev, variants: value.split(',').map(v => v.trim()).filter(v => v)}));
-  }
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -237,6 +267,49 @@ export default function MenuPage() {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
+  const handleAddVariant = () => {
+    if (editingVariantId) { // We are saving an edit
+        setFormData(prev => ({
+            ...prev,
+            variants: prev.variants.map(v => v.id === editingVariantId ? variantFormData : v)
+        }));
+        setEditingVariantId(null);
+    } else { // We are adding a new one
+        setFormData(prev => ({
+            ...prev,
+            variants: [...prev.variants, variantFormData]
+        }));
+    }
+    setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
+    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
+    setIsAddingVariant(false);
+  };
+  
+  const handleEditVariant = (variant: Variant) => {
+    setEditingVariantId(variant.id);
+    setVariantFormData(variant);
+    setDisplayValues(prev => ({
+      ...prev,
+      variantCost: formatCurrency(variant.cost),
+      variantPrice: formatCurrency(variant.price)
+    }));
+    setIsAddingVariant(true);
+  };
+
+  const handleDeleteVariant = (variantId: string) => {
+      setFormData(prev => ({
+          ...prev,
+          variants: prev.variants.filter(v => v.id !== variantId)
+      }));
+  };
+
+  const handleCancelVariant = () => {
+    setVariantFormData({ ...initialVariantState, id: Date.now().toString() });
+    setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
+    setIsAddingVariant(false);
+    setEditingVariantId(null);
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!firestore || !storage) return;
@@ -248,7 +321,7 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const dataToSave = { ...formData, imageUrl };
+    const dataToSave = { ...formData, imageUrl, variants: formData.variants.map(({id, ...rest}) => rest) };
 
     try {
       if (editingItem) {
@@ -302,7 +375,7 @@ export default function MenuPage() {
   };
 
   const calculateProfit = (cost: number, price: number) => {
-    if (price <= cost || cost <= 0) return '0.00%';
+    if (price <= cost || price <= 0) return '0.00%';
     const profit = ((price - cost) / price) * 100;
     return `${profit.toFixed(2)}%`;
   }
@@ -334,153 +407,203 @@ export default function MenuPage() {
               <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add New Menu Item'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
-                 <div className="space-y-2">
-                  <Label htmlFor="menuName">Menu Name</Label>
-                  <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required />
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="menuName">Menu Name</Label>
+                        <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="category">Category</Label>
+                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                    </div>
                 </div>
+
+                {/* Variants Section */}
                 <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                    <Label>Variants</Label>
+                    <div className="space-y-2 rounded-md border p-2">
+                        {formData.variants.map(variant => (
+                            <div key={variant.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                                <span className="flex-1 font-medium">{variant.name}</span>
+                                <span className="text-sm">{formatCurrency(variant.price)}</span>
+                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditVariant(variant)}><Pencil className="h-4 w-4"/></Button>
+                                <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteVariant(variant.id)}><Trash2 className="h-4 w-4"/></Button>
+                            </div>
+                        ))}
+
+                        {isAddingVariant && (
+                           <div className="p-2 space-y-4">
+                                <h4 className="font-medium">{editingVariantId ? 'Edit Variant' : 'Add New Variant'}</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                     <div className="space-y-2">
+                                        <Label htmlFor="variantName">Variant Name</Label>
+                                        <Input id="variantName" value={variantFormData.name} onChange={(e) => setVariantFormData(prev => ({...prev, name: e.target.value}))}/>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="variantBarcode">Barcode</Label>
+                                        <Input id="variantBarcode" value={variantFormData.barcode} onChange={(e) => setVariantFormData(prev => ({...prev, barcode: e.target.value}))} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="variantCost">Cost</Label>
+                                        <Input id="variantCost" name="variantCost" value={displayValues.variantCost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="variantPrice">Price</Label>
+                                        <Input id="variantPrice" name="variantPrice" value={displayValues.variantPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                    <Button type="button" variant="ghost" onClick={handleCancelVariant}>Cancel</Button>
+                                    <Button type="button" onClick={handleAddVariant}>{editingVariantId ? 'Save Variant' : 'Add Variant'}</Button>
+                                </div>
+                           </div>
+                        )}
+                        {!isAddingVariant && (
+                            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingVariant(true)}>
+                                <Plus className="mr-2 h-4 w-4" /> Add Variant
+                            </Button>
+                        )}
+                    </div>
                 </div>
-                 <div className="space-y-2">
-                  <Label htmlFor="barcode">Barcode</Label>
-                  <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="variants">Variants (comma-separated)</Label>
-                  <Input id="variants" name="variants" value={formData.variants.join(', ')} onChange={handleVariantsChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cost">Cost</Label>
-                  <Input 
-                    id="cost" 
-                    name="cost" 
-                    type="text"
-                    inputMode='decimal'
-                    value={displayValues.cost}
-                    onChange={handleCurrencyInputChange} 
-                    onBlur={handleCurrencyInputBlur}
-                    onFocus={handleCurrencyInputFocus}
-                    required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price</Label>
-                  <Input 
-                    id="price" 
-                    name="price" 
-                    type="text"
-                    inputMode='decimal'
-                    value={displayValues.price}
-                    onChange={handleCurrencyInputChange}
-                    onBlur={handleCurrencyInputBlur}
-                    onFocus={handleCurrencyInputFocus}
-                    required />
-                </div>
-                 <div className="space-y-2">
-                  <Label htmlFor="sellBy">Sell By</Label>
-                   <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unit">Unit</SelectItem>
-                      <SelectItem value="fraction">Fraction</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="availability">Availability</Label>
-                    <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select availability" />
-                        </SelectTrigger>
+
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                    <Label htmlFor="cost">Base Cost</Label>
+                    <Input 
+                        id="cost" 
+                        name="cost" 
+                        type="text"
+                        inputMode='decimal'
+                        value={displayValues.cost}
+                        onChange={handleCurrencyInputChange} 
+                        onBlur={handleCurrencyInputBlur}
+                        onFocus={handleCurrencyInputFocus}
+                        required />
+                    </div>
+                    <div className="space-y-2">
+                    <Label htmlFor="price">Base Price</Label>
+                    <Input 
+                        id="price" 
+                        name="price" 
+                        type="text"
+                        inputMode='decimal'
+                        value={displayValues.price}
+                        onChange={handleCurrencyInputChange}
+                        onBlur={handleCurrencyInputBlur}
+                        onFocus={handleCurrencyInputFocus}
+                        required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="barcode">Base Barcode</Label>
+                        <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                    </div>
+                    <div className="space-y-2">
+                    <Label htmlFor="sellBy">Sell By</Label>
+                    <Select name="sellBy" value={formData.sellBy} onValueChange={(value) => handleSelectChange('sellBy', value)} required>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="always">Always Available</SelectItem>
-                            {availabilityOptions.map(option => (
-                                <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
-                            ))}
+                        <SelectItem value="unit">Unit</SelectItem>
+                        <SelectItem value="fraction">Fraction</SelectItem>
                         </SelectContent>
                     </Select>
-                </div>
-                 <div className="space-y-2">
-                  <Label htmlFor="targetStation">Target Station</Label>
-                   <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
-                    <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Hot">Hot</SelectItem>
-                      <SelectItem value="Cold">Cold</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="taxRate">Tax Rate</Label>
-                   <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
-                    <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
-                    <SelectContent>
-                      {taxRates.length > 0 ? taxRates.map(rate => (
-                        <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
-                      )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="storeIds">Applicable Stores</Label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
-                        <span>{getSelectedStoreNames()}</span>
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {stores.map(store => (
-                            <DropdownMenuCheckboxItem
-                                key={store.id}
-                                checked={formData.storeIds.includes(store.id)}
-                                onSelect={(e) => e.preventDefault()}
-                                onClick={() => handleStoreIdChange(store.id)}
-                            >
-                                {store.storeName}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Label htmlFor="is_active">Active</Label>
-                  <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
-                </div>
-                 <div className="md:col-span-3 space-y-2">
-                    <Label htmlFor="imageUrl">Image</Label>
-                    <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
-                </div>
-                <div className="md:col-span-3 space-y-2">
-                    <Label htmlFor="publicDescription">Public Description</Label>
-                    <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} />
-                </div>
-                 <div className="md:col-span-3 flex items-center gap-4">
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="availability">Availability</Label>
+                        <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select availability" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="always">Always Available</SelectItem>
+                                {availabilityOptions.map(option => (
+                                    <SelectItem key={option.id} value={option.item}>{option.item}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                    <Label htmlFor="targetStation">Target Station</Label>
+                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                        <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
+                        <SelectContent>
+                        <SelectItem value="Hot">Hot</SelectItem>
+                        <SelectItem value="Cold">Cold</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    </div>
+                    <div className="space-y-2">
+                    <Label htmlFor="taxRate">Tax Rate</Label>
+                    <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
+                        <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
+                        <SelectContent>
+                        {taxRates.length > 0 ? taxRates.map(rate => (
+                            <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
+                        )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
+                        </SelectContent>
+                    </Select>
+                    </div>
+                    <div className="md:col-span-2 space-y-2">
+                    <Label htmlFor="storeIds">Applicable Stores</Label>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                            <span>{getSelectedStoreNames()}</span>
+                            <ChevronDown className="h-4 w-4" />
+                        </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                            <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {stores.map(store => (
+                                <DropdownMenuCheckboxItem
+                                    key={store.id}
+                                    checked={formData.storeIds.includes(store.id)}
+                                    onSelect={(e) => e.preventDefault()}
+                                    onClick={() => handleStoreIdChange(store.id)}
+                                >
+                                    {store.storeName}
+                                </DropdownMenuCheckboxItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    </div>
                     <div className="flex items-center space-x-2">
-                      <Label htmlFor="trackInventory">Track Inventory</Label>
-                      <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                    <Label htmlFor="is_active">Active</Label>
+                    <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={(c) => handleSwitchChange('is_active', c)} />
+                    </div>
+                    <div className="md:col-span-3 space-y-2">
+                        <Label htmlFor="imageUrl">Image</Label>
+                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                    </div>
+                    <div className="md:col-span-3 space-y-2">
+                        <Label htmlFor="publicDescription">Public Description</Label>
+                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} />
+                    </div>
+                    <div className="md:col-span-3 flex items-center gap-4">
+                        <div className="flex items-center space-x-2">
+                        <Label htmlFor="trackInventory">Track Inventory</Label>
+                        <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                        </div>
+                        {formData.trackInventory && (
+                            <div className="flex items-center space-x-2">
+                                <Label htmlFor="alertLevel">Alert Level</Label>
+                                <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
+                            </div>
+                        )}
                     </div>
                     {formData.trackInventory && (
-                         <div className="flex items-center space-x-2">
-                            <Label htmlFor="alertLevel">Alert Level</Label>
-                            <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
+                        <div className="md:col-span-3">
+                            <Alert>
+                                <AlertDescription>
+                                    Low stock alerts will be triggered when the quantity in stock reaches the alert level.
+                                </AlertDescription>
+                            </Alert>
                         </div>
                     )}
-                 </div>
-                 {formData.trackInventory && (
-                     <div className="md:col-span-3">
-                        <Alert>
-                            <AlertDescription>
-                                Low stock alerts will be triggered when the quantity in stock reaches the alert level.
-                            </AlertDescription>
-                        </Alert>
-                     </div>
-                 )}
+                </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -543,7 +666,7 @@ export default function MenuPage() {
                         <TableRow key={item.id}>
                           <TableCell className="p-2 font-medium">{item.menuName}</TableCell>
                           <TableCell className="p-2">
-                             {item.variants.map(v => <Badge key={v} variant="outline" className="mr-1 mb-1">{v}</Badge>)}
+                             {item.variants.map(v => <Badge key={v.id} variant="outline" className="mr-1 mb-1">{v.name}</Badge>)}
                           </TableCell>
                           <TableCell className="p-2">
                              <Badge variant="default" className="mr-1 mb-1">{item.availability || 'Always'}</Badge>
@@ -590,5 +713,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
