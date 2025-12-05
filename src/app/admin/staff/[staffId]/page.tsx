@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 
 export default function StaffDetailPage() {
