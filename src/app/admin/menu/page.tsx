@@ -294,20 +294,23 @@ export default function MenuPage() {
 
   const handleAddVariant = () => {
     if (!variantFormData || !variantFormData.name) return;
+    
     if (editingVariantId) { // We are saving an edit
         setFormData(prev => ({
             ...prev,
             variants: prev.variants.map(v => v.id === editingVariantId ? variantFormData : v)
         }));
-        setEditingVariantId(null);
     } else { // We are adding a new one
         setFormData(prev => ({
             ...prev,
             variants: [...prev.variants, variantFormData]
         }));
     }
+
     setVariantFormData(null);
     setIsAddingVariant(false);
+    setEditingVariantId(null);
+    setDisplayValues(prev => ({ ...prev, variantCost: '', variantPrice: '' }));
   };
   
   const handleEditVariant = (variant: Variant) => {
@@ -334,6 +337,7 @@ export default function MenuPage() {
     setVariantFormData({ ...initialVariantState, id: newVariantId });
     setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
     setIsAddingVariant(true);
+    setEditingVariantId(null);
   }
 
   const handleCancelVariant = () => {
@@ -462,7 +466,7 @@ export default function MenuPage() {
     return acc;
   }, {} as Record<string, MenuItem[]>);
   
-  const showBaseFields = !isAddingVariant && formData.variants.length === 0;
+  const showBaseFields = !isAddingVariant && (!formData.variants || formData.variants.length === 0);
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -782,7 +786,7 @@ export default function MenuPage() {
                             <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
                             <TableCell className="p-2 text-xs">
                               <Badge variant="default" className="mr-1 mb-1 whitespace-nowrap">
-                                {(item.availability || 'Always').substring(0, 6)}{(item.availability || 'Always').length > 6 ? '...' : ''}
+                                {(item.availability || 'Always').substring(0, 6)}{item.availability && item.availability.length > 6 ? '...' : ''}
                               </Badge>
                             </TableCell>
                             <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
