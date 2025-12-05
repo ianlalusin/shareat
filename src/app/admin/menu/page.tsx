@@ -418,7 +418,7 @@ export default function MenuPage() {
                     <SelectContent>
                       {taxRates.length > 0 ? taxRates.map(rate => (
                         <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
-                      )) : <DropdownMenuItem disabled>No tax rates for this store</DropdownMenuItem>}
+                      )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -590,3 +590,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
