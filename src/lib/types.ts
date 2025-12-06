@@ -1,4 +1,5 @@
 
+
 export type Store = {
   id: string;
   storeName: string;
@@ -73,15 +74,16 @@ export type Table = {
 export type Order = {
   id: string;
   storeId: string;
-  tableLabel: string;
+  tableLabel: string; // The label from the Table document (e.g., "1", "2A")
   status: 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
-  orderTimestamp: any; // Firestore ServerTimestamp
+  orderTimestamp: any; // Firestore ServerTimestamp, marks the start of the 2-hour limit
   completedTimestamp?: any; // Firestore ServerTimestamp
   totalAmount: number;
   notes?: string;
 };
 
+// Represents only PAID items for an order
 export type OrderItem = {
   id: string;
   orderId: string;
@@ -89,7 +91,17 @@ export type OrderItem = {
   menuName: string;
   quantity: number;
   priceAtOrder: number;
-  isRefill: boolean;
+  targetStation?: 'Hot' | 'Cold';
+  timestamp: any; // Firestore ServerTimestamp
+};
+
+// Represents FREE refill items, kept separate for operational analysis
+export type RefillItem = {
+  id: string;
+  orderId: string;
+  menuItemId: string;
+  menuName: string;
+  quantity: number;
   targetStation?: 'Hot' | 'Cold';
   timestamp: any; // Firestore ServerTimestamp
 };
@@ -99,7 +111,8 @@ export type OrderTransaction = {
   orderId: string;
   type: 'Payment' | 'Discount' | 'Charge';
   amount: number;
-  method?: string; // e.g., 'Cash', 'Card', or from G.List
+  method?: string; // e.g., 'Cash', 'Card', or from G.List for MOP
   notes?: string;
   timestamp: any; // Firestore ServerTimestamp
 };
+
