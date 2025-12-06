@@ -103,23 +103,17 @@ export default function CashierPage() {
     <Dialog open={isNewOrderModalOpen} onOpenChange={setIsNewOrderModalOpen}>
         <div className="flex h-[calc(100vh-4rem)] bg-background">
         {/* Left Panel: Available Tables */}
-        <div className="w-1/3 border-r border-border p-4">
+        <div className="w-1/3 border-r border-border p-4 overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4 font-headline">Available Tables ({availableTables.length})</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                 {availableTables.map(table => (
                     <Card 
                         key={table.id} 
-                        className="cursor-pointer hover:shadow-lg transition-shadow"
+                        className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center"
                         onClick={() => handleAvailableTableClick(table)}
                     >
-                        <CardHeader className="p-4 flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                            <Badge className={cn("text-white", getStatusColor(table.status))}>
-                                {table.status}
-                            </Badge>
-                        </CardHeader>
-                        <CardContent className="p-4 text-center">
-                            <span className="text-xs text-muted-foreground">{table.location || 'Main Area'}</span>
+                        <CardContent className="p-1 text-center">
+                            <p className="text-2xl font-bold">{table.tableName}</p>
                         </CardContent>
                     </Card>
                 ))}
@@ -161,7 +155,7 @@ export default function CashierPage() {
         {/* New Order Modal */}
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
-                <DialogTitle>New Order for {selectedTable?.tableName}</DialogTitle>
+                <DialogTitle>New Order for Table {selectedTable?.tableName}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
                 <div className="space-y-2">
