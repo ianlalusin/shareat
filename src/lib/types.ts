@@ -1,5 +1,6 @@
 
 
+
 export type Store = {
   id: string;
   storeName: string;
@@ -49,7 +50,7 @@ export type MenuItem = {
   // Shared properties (copied from parent for variants)
   category: string;
   menuName: string; // The name of the main dish, e.g., "Pizza"
-  storeIds: string[];
+  storeId: string;
   availability: string; // 'always', or from G.List
   targetStation?: 'Hot' | 'Cold';
   soldBy: 'unit' | 'fraction';
@@ -68,3 +69,4 @@ export type MenuItem = {
   trackInventory: boolean;
   alertLevel: number;
 };
+

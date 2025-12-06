@@ -74,7 +74,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   price: 0,
   barcode: '',
   isAvailable: true,
-  storeIds: [],
+  storeId: '',
   availability: 'always',
   imageUrl: '',
   publicDescription: '',
@@ -124,23 +124,26 @@ export default function MenuPage() {
   const { selectedStoreId } = useStoreSelector();
 
   useEffect(() => {
-    if (firestore) {
-      const menuUnsubscribe = onSnapshot(collection(firestore, 'menu'), (snapshot) => {
-        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
-        setItems(itemsData);
-      });
+    if (firestore && selectedStoreId) {
+        const menuQuery = query(collection(firestore, 'menu'), where('storeId', '==', selectedStoreId));
+        const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
+            const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as MenuItem[];
+            setItems(itemsData);
+        });
 
-      const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
-        const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
-        setStores(storesData);
-      });
+        const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
+            const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
+            setStores(storesData);
+        });
 
-      return () => {
-        menuUnsubscribe();
-        storesUnsubscribe();
-      }
+        return () => {
+            menuUnsubscribe();
+            storesUnsubscribe();
+        }
+    } else {
+        setItems([]); // Clear items if no store is selected
     }
-  }, [firestore]);
+}, [firestore, selectedStoreId]);
 
   useEffect(() => {
     if (firestore) {
@@ -295,15 +298,6 @@ export default function MenuPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleStoreIdChange = (storeId: string) => {
-    setFormData((prev) => {
-      const newStoreIds = prev.storeIds.includes(storeId)
-        ? prev.storeIds.filter(id => id !== storeId)
-        : [...prev.storeIds, storeId];
-      return { ...prev, storeIds: newStoreIds };
-    });
-  };
-
   const handleSwitchChange = (name: string, checked: boolean) => {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
@@ -334,7 +328,7 @@ export default function MenuPage() {
 
 
   const handleAddVariant = async () => {
-    if (!firestore || !storage || !editingItem || !variantFormData.variantName) return;
+    if (!firestore || !storage || !editingItem || !variantFormData.variantName || !selectedStoreId) return;
     
     let variantImageUrl = variantFormData.imageUrl || editingItem.imageUrl || '';
     if (variantImageFile) {
@@ -347,7 +341,7 @@ export default function MenuPage() {
       // Inherited properties
       menuName: editingItem.menuName,
       category: editingItem.category,
-      storeIds: editingItem.storeIds,
+      storeId: selectedStoreId,
       availability: editingItem.availability,
       targetStation: editingItem.targetStation,
       taxRate: editingItem.taxRate,
@@ -391,7 +385,7 @@ export default function MenuPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !storage) return;
+    if (!firestore || !storage || !selectedStoreId) return;
 
     let imageUrl = formData.imageUrl || '';
     if (imageFile) {
@@ -417,7 +411,7 @@ export default function MenuPage() {
             batch.update(variantRef, {
               menuName: dataToSave.menuName,
               category: dataToSave.category,
-              storeIds: dataToSave.storeIds,
+              storeId: dataToSave.storeId,
               availability: dataToSave.availability,
               targetStation: dataToSave.targetStation,
               taxRate: dataToSave.taxRate,
@@ -428,7 +422,7 @@ export default function MenuPage() {
         }
 
       } else {
-        await addDoc(collection(firestore, 'menu'), dataToSave);
+        await addDoc(collection(firestore, 'menu'), {...dataToSave, storeId: selectedStoreId});
       }
 
       setIsModalOpen(false);
@@ -481,21 +475,15 @@ export default function MenuPage() {
   };
 
   const openAddModal = () => {
+    if (!selectedStoreId) {
+      alert("Please select a store first.");
+      return;
+    }
     setEditingItem(null);
-    setFormData(initialItemState);
+    setFormData({...initialItemState, storeId: selectedStoreId});
     setIsModalOpen(true);
   }
   
-  const getSelectedStoreNames = () => {
-    if (formData.storeIds.length === 0) return "Select stores";
-    if (formData.storeIds.length === stores.length) return "All stores selected";
-    if (formData.storeIds.length > 2) return `${formData.storeIds.length} stores selected`;
-    return stores
-        .filter(s => formData.storeIds.includes(s.id))
-        .map(s => s.storeName)
-        .join(', ');
-  };
-
   const getSelectedTagNames = (tags: string[] | undefined) => {
     const selectedCount = tags?.length || 0;
     if (selectedCount === 0) return "Select special tags";
@@ -739,32 +727,7 @@ export default function MenuPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="storeIds">Applicable Stores</Label>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between" disabled={isVariant}>
-                            <span>{getSelectedStoreNames()}</span>
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {stores.map(store => (
-                            <DropdownMenuCheckboxItem
-                                key={store.id}
-                                checked={formData.storeIds.includes(store.id)}
-                                onSelect={(e) => e.preventDefault()}
-                                onClick={() => handleStoreIdChange(store.id)}
-                            >
-                                {store.storeName}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                 
                 </div>
                 <div className="space-y-2">
                     <Label>Special Tags</Label>
@@ -858,8 +821,12 @@ export default function MenuPage() {
                   className="mr-2 h-7 w-7 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!selectedStoreId) {
+                      alert("Please select a store first.");
+                      return;
+                    }
                     setEditingItem(null);
-                    setFormData({...initialItemState, category});
+                    setFormData({...initialItemState, category, storeId: selectedStoreId});
                     setIsModalOpen(true);
                   }}
                 >
