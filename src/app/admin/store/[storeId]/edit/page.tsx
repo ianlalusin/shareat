@@ -101,8 +101,21 @@ export default function EditStorePage() {
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
-     if (value === '') {
+    let updatedValue = value;
+
+    if (!formData) return;
+
+    // Automatically add "/" after month and day
+    if (value.length > (formData.openingDate?.length || 0)) {
+      if (value.length === 2 && !value.includes('/')) {
+        updatedValue = `${value}/`;
+      } else if (value.length === 5 && value.split('/').length === 2) {
+        updatedValue = `${value}/`;
+      }
+    }
+
+    setFormData((prev) => (prev ? { ...prev, [name]: updatedValue } : null));
+     if (updatedValue === '') {
         setDateError(undefined);
     }
   };
@@ -277,7 +290,7 @@ export default function EditStorePage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
-                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                      <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                       {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                     </div>
                     <div className="space-y-2">

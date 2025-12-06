@@ -76,8 +76,21 @@ export default function EditStaffPage() {
   
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
-    if (value === '') {
+    let updatedValue = value;
+
+    if (!formData) return;
+
+    // Automatically add "/" after month and day
+    if (value.length > (formData[name as 'birthday' | 'dateHired']?.length || 0)) {
+      if (value.length === 2 && !value.includes('/')) {
+        updatedValue = `${value}/`;
+      } else if (value.length === 5 && value.split('/').length === 2) {
+        updatedValue = `${value}/`;
+      }
+    }
+    
+    setFormData((prev) => (prev ? { ...prev, [name]: updatedValue } : null));
+    if (updatedValue === '') {
         setDateErrors((prev) => ({ ...prev, [name]: undefined }));
     }
   };
@@ -240,12 +253,12 @@ export default function EditStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                <Input id="birthday" name="birthday" value={formData.birthday || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">
