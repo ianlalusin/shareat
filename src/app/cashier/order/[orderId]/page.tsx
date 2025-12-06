@@ -86,6 +86,7 @@ export default function OrderDetailPage() {
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [chargeValue, setChargeValue] = useState('');
   const [selectedCharge, setSelectedCharge] = useState('');
+  const [customChargeType, setCustomChargeType] = useState('');
   const [chargeTypes, setChargeTypes] = useState<GListItem[]>([]);
 
 
@@ -167,9 +168,12 @@ export default function OrderDetailPage() {
 
     if (field === 'tin') {
         const unformattedTin = unformatTIN(tin.inputValue);
-        if(unformattedTin !== tin.savedValue && unformattedTin.length <= 9) {
+        if(unformattedTin !== tin.savedValue && (unformattedTin.length === 9 || unformattedTin.length === 0)) {
             dataToUpdate.tin = unformattedTin;
             dispatch({ type: 'SET_SAVED', payload: unformattedTin });
+        } else if (unformattedTin.length > 0 && unformattedTin.length < 9) {
+            // Revert to saved value if input is invalid and blurred
+            dispatch({ type: 'SET_INPUT', payload: formatTIN(tin.savedValue) });
         }
     } else if (field === 'customerName' && customerName !== order.customerName) {
         dataToUpdate.customerName = customerName;
@@ -219,7 +223,7 @@ export default function OrderDetailPage() {
           <span className="sr-only">Back</span>
         </Button>
         <div>
-            <h1 className="text-2xl font-semibold font-headline">Order #{order.id.substring(0, 6)}</h1>
+            <h1 className="text-2xl font-semibold font-headline">Billing Summary</h1>
         </div>
       </div>
       
@@ -317,14 +321,24 @@ export default function OrderDetailPage() {
                                 className="focus-visible:ring-offset-0 w-28"
                             />
                            <Label htmlFor="charge-type" className="sr-only">Type</Label>
-                            <Select value={selectedCharge} onValueChange={setSelectedCharge}>
-                                <SelectTrigger id="charge-type" className="flex-1">
-                                    <SelectValue placeholder="Type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {chargeTypes.map(c => <SelectItem key={c.id} value={c.item}>{c.item}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
+                           {chargeTypes.length > 0 ? (
+                             <Select value={selectedCharge} onValueChange={setSelectedCharge}>
+                                 <SelectTrigger id="charge-type" className="flex-1">
+                                     <SelectValue placeholder="Type" />
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                     {chargeTypes.map(c => <SelectItem key={c.id} value={c.item}>{c.item}</SelectItem>)}
+                                 </SelectContent>
+                             </Select>
+                           ) : (
+                             <Input
+                                id="custom-charge-type"
+                                value={customChargeType}
+                                onChange={(e) => setCustomChargeType(e.target.value)}
+                                placeholder="Charge Type"
+                                className="flex-1"
+                             />
+                           )}
                             <Button type="button" size="sm">Apply</Button>
                             <Button type="button" size="icon" variant="ghost" onClick={() => setShowChargeForm(false)}>
                                 <X className="h-4 w-4"/>
