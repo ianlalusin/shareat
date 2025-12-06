@@ -32,8 +32,13 @@ export function StoreSelector() {
             (doc) => ({ id: doc.id, ...doc.data() } as Store)
           );
           setStores(storesData);
-           if (storesData.length > 0 && !selectedStoreId) {
-            setSelectedStoreId(storesData[0].id);
+          if (!selectedStoreId && storesData.length > 0) {
+            const lipaStore = storesData.find(store => store.storeName === 'SharEat Lipa');
+            if (lipaStore) {
+              setSelectedStoreId(lipaStore.id);
+            } else {
+              setSelectedStoreId(storesData[0].id);
+            }
           }
         }
       );
