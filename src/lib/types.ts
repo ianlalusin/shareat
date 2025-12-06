@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type Store = {
@@ -123,5 +124,5 @@ export type OrderTransaction = {
   amount: number;
   method?: string; // e.g., 'Cash', 'Card', or from G.List for MOP
   notes?: string;
-  timestamp: any; // Firestore ServerTimestamp
+  timestamp: Timestamp; 
 };

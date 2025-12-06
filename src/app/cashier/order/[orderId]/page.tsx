@@ -1,18 +1,27 @@
 
 'use client';
 
-import { useState, useEffect, useReducer } from 'react';
+import { useState, useEffect, useReducer, useMemo } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
-import { doc, onSnapshot, collection, updateDoc, query, where } from 'firebase/firestore';
-import { Order, OrderItem, GListItem } from '@/lib/types';
+import {
+  doc,
+  onSnapshot,
+  collection,
+  updateDoc,
+  query,
+  where,
+  addDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { Order, OrderItem, GListItem, OrderTransaction } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import {
   Table,
@@ -68,6 +77,7 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState('');
   const [address, setAddress] = useState('');
@@ -116,9 +126,16 @@ export default function OrderDetailPage() {
         setOrderItems(itemsData);
     });
     
+    const transactionsQuery = query(collection(firestore, 'orders', orderId, 'transactions'));
+    const transactionsUnsubscribe = onSnapshot(transactionsQuery, (snapshot) => {
+        const transData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OrderTransaction));
+        setTransactions(transData);
+    });
+    
     return () => {
       orderUnsubscribe();
       itemsUnsubscribe();
+      transactionsUnsubscribe();
     };
   }, [firestore, orderId]);
   
@@ -153,26 +170,30 @@ export default function OrderDetailPage() {
       }
     }
   }, [firestore, order?.storeId]);
+  
+  const subtotal = useMemo(() => order?.totalAmount || 0, [order]);
+
+  const grandTotal = useMemo(() => {
+    return transactions.reduce((acc, trans) => {
+      if (trans.type === 'Discount') {
+        return acc - trans.amount;
+      }
+      if (trans.type === 'Charge') {
+        return acc + trans.amount;
+      }
+      // 'Payment' types will be handled later
+      return acc;
+    }, subtotal);
+  }, [subtotal, transactions]);
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value;
-    const lastChar = input.slice(-1);
-    const currentDigits = (tin.inputValue.match(/\d/g) || []).join('');
-    
-    // Allow deleting even with formatting
-    if (input.length < tin.inputValue.length) {
-        dispatch({ type: 'SET_INPUT', payload: input });
-        return;
+    const digits = unformatTIN(input);
+
+    if (/^\d*$/.test(digits) && digits.length <= 9) {
+      const formatted = formatTIN(digits);
+      dispatch({ type: 'SET_INPUT', payload: formatted });
     }
-    
-    // Only add numbers, up to 9
-    if (!/\d/.test(lastChar) || currentDigits.length >= 9) {
-        return;
-    }
-    
-    const newDigits = (input.match(/\d/g) || []).join('');
-    const formatted = formatTIN(newDigits);
-    dispatch({ type: 'SET_INPUT', payload: formatted });
   };
   
   const handleDetailsUpdate = async (field: 'customerName' | 'address' | 'tin') => {
@@ -201,6 +222,79 @@ export default function OrderDetailPage() {
         } catch (error) {
             console.error(`Error updating ${field}:`, error);
         }
+    }
+  };
+  
+  const handleApplyDiscount = async () => {
+    if (!firestore || !order || !discountValue || !selectedDiscount) {
+        alert('Please enter a value and select a discount type.');
+        return;
+    }
+
+    const value = parseFloat(discountValue);
+    let amount = 0;
+    if (discountType === '₱') {
+        amount = value;
+    } else {
+        amount = (subtotal * value) / 100;
+    }
+
+    if (amount <= 0) {
+        alert('Discount amount must be positive.');
+        return;
+    }
+
+    const newTransaction: Omit<OrderTransaction, 'id'> = {
+        orderId: order.id,
+        type: 'Discount',
+        amount: amount,
+        notes: selectedDiscount,
+        timestamp: serverTimestamp(),
+    };
+
+    try {
+        await addDoc(collection(firestore, 'orders', order.id, 'transactions'), newTransaction);
+        // Reset form
+        setDiscountValue('');
+        setSelectedDiscount('');
+        setShowDiscountForm(false);
+    } catch (error) {
+        console.error('Error applying discount:', error);
+        alert('Failed to apply discount.');
+    }
+  };
+
+  const handleApplyCharge = async () => {
+    if (!firestore || !order || !chargeValue) {
+        alert('Please enter a charge amount.');
+        return;
+    }
+    const chargeName = chargeTypes.length > 0 ? selectedCharge : customChargeType;
+    if (!chargeName) {
+        alert('Please select or enter a charge type.');
+        return;
+    }
+    const amount = parseFloat(chargeValue);
+    if (amount <= 0) {
+        alert('Charge amount must be positive.');
+        return;
+    }
+    const newTransaction: Omit<OrderTransaction, 'id'> = {
+        orderId: order.id,
+        type: 'Charge',
+        amount: amount,
+        notes: chargeName,
+        timestamp: serverTimestamp(),
+    };
+    try {
+        await addDoc(collection(firestore, 'orders', order.id, 'transactions'), newTransaction);
+        setChargeValue('');
+        setSelectedCharge('');
+        setCustomChargeType('');
+        setShowChargeForm(false);
+    } catch (error) {
+        console.error('Error applying charge:', error);
+        alert('Failed to apply charge.');
     }
   };
 
@@ -270,12 +364,22 @@ export default function OrderDetailPage() {
                     </Table>
                 </CardContent>
                 <CardFooter className="flex flex-col items-stretch gap-2">
-                    <div className="flex justify-between w-full max-w-sm self-end">
-                        <span className="text-muted-foreground">Subtotal</span>
-                        <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
+                     <div className="flex flex-col items-end gap-2 w-full max-w-sm self-end">
+                       {transactions.filter(t => t.type !== 'Payment').map(trans => (
+                         <div key={trans.id} className="flex justify-between w-full text-sm">
+                           <span className="text-muted-foreground">{trans.type}: {trans.notes}</span>
+                           <span className={trans.type === 'Discount' ? 'text-green-600' : 'text-destructive'}>
+                             {trans.type === 'Discount' ? '-' : ''}{formatCurrency(trans.amount)}
+                           </span>
+                         </div>
+                       ))}
+                        <div className="flex justify-between w-full">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span className="font-medium">{formatCurrency(subtotal)}</span>
+                        </div>
                     </div>
 
-                    <div className="space-y-2 py-2">
+                    <div className="space-y-2 py-2 w-full">
                         {!showDiscountForm && !showChargeForm && (
                             <div className="flex justify-end gap-2">
                                 <Button variant="outline" onClick={() => setShowDiscountForm(true)}>
@@ -287,7 +391,7 @@ export default function OrderDetailPage() {
                             </div>
                         )}
                         {showDiscountForm && (
-                            <div className="flex items-stretch gap-2 rounded-lg border p-2">
+                           <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
                                 <Label htmlFor="discount-value" className="sr-only">Value</Label>
                                <div className="flex flex-auto">
                                     <Input 
@@ -317,7 +421,7 @@ export default function OrderDetailPage() {
                                         {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
-                                <Button type="button" size="sm" className="flex-none">Apply</Button>
+                                <Button type="button" size="sm" className="flex-none" onClick={handleApplyDiscount}>Apply</Button>
                                 <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowDiscountForm(false)}>
                                     <X className="h-4 w-4"/>
                                     <span className="sr-only">Cancel</span>
@@ -325,7 +429,7 @@ export default function OrderDetailPage() {
                             </div>
                         )}
                         {showChargeForm && (
-                            <div className="flex items-stretch gap-2 rounded-lg border p-2">
+                            <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
                                <Label htmlFor="charge-value" className="sr-only">Value</Label>
                                <Input 
                                     id="charge-value"
@@ -354,7 +458,7 @@ export default function OrderDetailPage() {
                                     className="flex-auto"
                                  />
                                )}
-                                <Button type="button" size="sm" className="flex-none">Apply</Button>
+                                <Button type="button" size="sm" className="flex-none" onClick={handleApplyCharge}>Apply</Button>
                                 <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowChargeForm(false)}>
                                     <X className="h-4 w-4"/>
                                     <span className="sr-only">Cancel</span>
@@ -365,7 +469,7 @@ export default function OrderDetailPage() {
                     <Separator className="my-2"/>
                      <div className="flex justify-between w-full max-w-sm self-end text-lg font-semibold">
                         <span>Total</span>
-                        <span>{formatCurrency(order.totalAmount)}</span>
+                        <span>{formatCurrency(grandTotal)}</span>
                     </div>
                 </CardFooter>
             </Card>
