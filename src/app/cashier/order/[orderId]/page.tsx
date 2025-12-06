@@ -36,21 +36,24 @@ const tinReducer = (state: any, action: any) => {
     case 'SET_SAVED':
       return { ...state, savedValue: action.payload };
     case 'SET_ALL':
-      return { inputValue: action.payload.input, savedValue: action.payload.saved };
+        const formatted = formatTIN(action.payload.saved || '');
+      return { inputValue: formatted, savedValue: action.payload.saved || '' };
     default:
       return state;
   }
 };
 
-const formatTIN = (value: string) => {
+const formatTIN = (value: string): string => {
+  if (!value) return '';
   const digits = value.replace(/\D/g, '').slice(0, 9);
-  let formatted = digits;
-  if (digits.length > 6) {
-    formatted = `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  } else if (digits.length > 3) {
-    formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  }
-  return formatted;
+  if (!digits) return '';
+
+  const parts = [];
+  if (digits.length > 0) parts.push(digits.slice(0, 3));
+  if (digits.length > 3) parts.push(digits.slice(3, 6));
+  if (digits.length > 6) parts.push(digits.slice(6, 9));
+  
+  return parts.join('-');
 };
 
 const unformatTIN = (value: string) => {
@@ -79,6 +82,11 @@ export default function OrderDetailPage() {
   const [discountType, setDiscountType] = useState<'₱' | '%'>('₱');
   const [selectedDiscount, setSelectedDiscount] = useState('');
   const [discountTypes, setDiscountTypes] = useState<GListItem[]>([]);
+  
+  const [showChargeForm, setShowChargeForm] = useState(false);
+  const [chargeValue, setChargeValue] = useState('');
+  const [selectedCharge, setSelectedCharge] = useState('');
+  const [chargeTypes, setChargeTypes] = useState<GListItem[]>([]);
 
 
   const firestore = useFirestore();
@@ -93,8 +101,7 @@ export default function OrderDetailPage() {
         setOrder(orderData);
         setCustomerName(orderData.customerName || '');
         setAddress(orderData.address || '');
-        const savedTin = orderData.tin || '';
-        dispatch({ type: 'SET_ALL', payload: { input: formatTIN(savedTin), saved: savedTin }});
+        dispatch({ type: 'SET_ALL', payload: { saved: orderData.tin }});
 
       } else {
         setOrder(null);
@@ -123,17 +130,33 @@ export default function OrderDetailPage() {
         where('storeIds', 'array-contains', order.storeId)
       );
 
-      const unsubscribe = onSnapshot(discountsQuery, (snapshot) => {
+      const discountsUnsubscribe = onSnapshot(discountsQuery, (snapshot) => {
         const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GListItem));
         setDiscountTypes(types);
       });
+      
+      const chargesQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'charge type'),
+        where('is_active', '==', true),
+        where('storeIds', 'array-contains', order.storeId)
+      );
+      const chargesUnsubscribe = onSnapshot(chargesQuery, (snapshot) => {
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GListItem));
+        setChargeTypes(types);
+      });
 
-      return () => unsubscribe();
+      return () => {
+        discountsUnsubscribe();
+        chargesUnsubscribe();
+      }
     }
   }, [firestore, order?.storeId]);
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatTIN(e.target.value);
+    const input = e.target.value;
+    const digits = unformatTIN(input);
+    const formatted = formatTIN(digits);
     dispatch({ type: 'SET_INPUT', payload: formatted });
   };
   
@@ -234,12 +257,12 @@ export default function OrderDetailPage() {
                         <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
                     </div>
                      <div className="flex flex-col items-stretch gap-2 w-full max-w-sm self-end">
-                      {!showDiscountForm && (
+                        {!showDiscountForm && !showChargeForm && (
                         <div className="flex justify-end gap-2 w-full">
                             <Button variant="outline" onClick={() => setShowDiscountForm(true)}>
                                 <Plus className="mr-2 h-4 w-4" /> Add Discount
                             </Button>
-                            <Button variant="outline">
+                            <Button variant="outline" onClick={() => setShowChargeForm(true)}>
                                 <Plus className="mr-2 h-4 w-4" /> Add Charge
                             </Button>
                         </div>
@@ -277,6 +300,33 @@ export default function OrderDetailPage() {
                             </Select>
                             <Button type="button" size="sm">Apply</Button>
                             <Button type="button" size="icon" variant="ghost" onClick={() => setShowDiscountForm(false)}>
+                                <X className="h-4 w-4"/>
+                                <span className="sr-only">Cancel</span>
+                            </Button>
+                        </div>
+                      )}
+                      {showChargeForm && (
+                        <div className="flex items-center gap-2 rounded-lg border p-2">
+                           <Label htmlFor="charge-value" className="sr-only">Value</Label>
+                           <Input 
+                                id="charge-value"
+                                type="number"
+                                value={chargeValue}
+                                onChange={(e) => setChargeValue(e.target.value)}
+                                placeholder="Amount"
+                                className="focus-visible:ring-offset-0 w-28"
+                            />
+                           <Label htmlFor="charge-type" className="sr-only">Type</Label>
+                            <Select value={selectedCharge} onValueChange={setSelectedCharge}>
+                                <SelectTrigger id="charge-type" className="flex-1">
+                                    <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {chargeTypes.map(c => <SelectItem key={c.id} value={c.item}>{c.item}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Button type="button" size="sm">Apply</Button>
+                            <Button type="button" size="icon" variant="ghost" onClick={() => setShowChargeForm(false)}>
                                 <X className="h-4 w-4"/>
                                 <span className="sr-only">Cancel</span>
                             </Button>
