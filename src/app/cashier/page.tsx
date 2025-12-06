@@ -266,7 +266,7 @@ export default function CashierPage() {
             <DialogHeader>
                 <DialogTitle>New Order for {selectedTable?.tableName}</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-6 py-4">
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="guestCount">No of Guests</Label>
@@ -332,7 +332,7 @@ export default function CashierPage() {
                 </div>
 
                 {showNotes && (
-                    <div className="col-span-3 space-y-2">
+                    <div className="space-y-2">
                          <Label htmlFor="notes">Notes</Label>
                          <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
                     </div>
