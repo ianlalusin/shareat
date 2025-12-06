@@ -294,7 +294,7 @@ export default function CashierPage() {
                                 </div>
                             </CardContent>
                             <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
-                                <Button variant="outline">Bill</Button>
+                                <Button variant="outline" onClick={() => router.push(`/cashier/order/${order?.id}`)}>Bill</Button>
                                 <Button onClick={() => router.push(`/cashier/order/${order?.id}`)}>View Order</Button>
                             </CardFooter>
                         </Card>
