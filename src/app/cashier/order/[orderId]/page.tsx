@@ -30,12 +30,12 @@ import { Textarea } from '@/components/ui/textarea';
 // Reducer for complex state management of TIN input
 const tinReducer = (state: any, action: any) => {
   switch (action.type) {
-    case 'SET_MASKED':
-      return { ...state, masked: action.payload };
-    case 'SET_UNMASKED':
-      return { ...state, unmasked: action.payload };
     case 'SET_FORMATTED':
       return { ...state, formatted: action.payload };
+    case 'SET_UNMASKED':
+       return { ...state, unmasked: action.payload };
+    case 'SET_ALL':
+        return { formatted: action.payload.formatted, unmasked: action.payload.unmasked };
     default:
       return state;
   }
@@ -69,9 +69,8 @@ export default function OrderDetailPage() {
   const [address, setAddress] = useState('');
 
   const [tin, dispatch] = useReducer(tinReducer, {
-    masked: '',
-    unmasked: '',
     formatted: '',
+    unmasked: '',
   });
 
 
@@ -88,8 +87,7 @@ export default function OrderDetailPage() {
         setCustomerName(orderData.customerName);
         setAddress(orderData.address || '');
         const unmaskedTin = (orderData.tin || '').replace(/\D/g, '').slice(0, 9);
-        dispatch({ type: 'SET_UNMASKED', payload: unmaskedTin });
-        dispatch({ type: 'SET_FORMATTED', payload: formatTIN(unmaskedTin) });
+        dispatch({ type: 'SET_ALL', payload: { unmasked: unmaskedTin, formatted: formatTIN(unmaskedTin) } });
 
       } else {
         setOrder(null);
