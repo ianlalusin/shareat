@@ -114,9 +114,16 @@ export default function TableManagementPage() {
     try {
       if (editingTable) {
         const tableRef = doc(firestore, 'tables', editingTable.id);
-        await updateDoc(tableRef, dataToSave);
+        await updateDoc(tableRef, {
+            tableName: dataToSave.tableName,
+            status: dataToSave.status,
+        });
       } else {
-        await addDoc(collection(firestore, 'tables'), {...dataToSave, resetCounter: 0});
+        await addDoc(collection(firestore, 'tables'), {
+            ...dataToSave,
+            activeOrderId: '',
+            resetCounter: 0
+        });
       }
       setIsModalOpen(false);
     } catch (error) {
@@ -151,6 +158,33 @@ export default function TableManagementPage() {
     }
   };
   
+    const seedTables = async () => {
+    if (!firestore || !selectedStoreId) {
+      alert('Please select a store first.');
+      return;
+    }
+    if (window.confirm('This will add tables 2 to 30 for the selected store. Proceed?')) {
+      const batch = writeBatch(firestore);
+      for (let i = 2; i <= 30; i++) {
+        const newTableRef = doc(collection(firestore, 'tables'));
+        batch.set(newTableRef, {
+          tableName: `Table ${i}`,
+          storeId: selectedStoreId,
+          status: 'Available',
+          activeOrderId: '',
+          resetCounter: 0,
+        });
+      }
+      try {
+        await batch.commit();
+        alert('Tables 2-30 have been successfully created.');
+      } catch (error) {
+        console.error('Error seeding tables: ', error);
+        alert('An error occurred while seeding tables. Check the console.');
+      }
+    }
+  };
+
   const getStatusColor = (status: Table['status']) => {
     switch (status) {
       case 'Available': return 'bg-green-500';
@@ -168,6 +202,9 @@ export default function TableManagementPage() {
           Table Management
         </h1>
         <div className="flex items-center gap-2">
+           <Button onClick={seedTables} disabled={!selectedStoreId}>
+            Seed Tables (2-30)
+          </Button>
            <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0}>
             Reset All Counters
           </Button>
