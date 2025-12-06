@@ -1,11 +1,10 @@
 'use client';
 
 import { StoreSelector } from '@/components/admin/store-selector';
-import { NavButtonGroup } from '@/components/admin/nav-button-group';
+import { NavButtonGroup, NavButtonGroupMobile } from '@/components/admin/nav-button-group';
 import { Logo } from '@/components/admin/logo';
-import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { CircleUser } from 'lucide-react';
+import { CircleUser, MoreVertical } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,8 +53,33 @@ export function CashierHeader() {
 
       <div className="flex w-full items-center justify-end gap-4 md:gap-2 lg:gap-4">
         <StoreSelector />
-        <NavButtonGroup />
-        <LiveDateTime />
+        <div className='hidden md:flex'>
+          <NavButtonGroup />
+        </div>
+        <LiveDateTime className="hidden md:flex" />
+
+        {/* Mobile-only menu */}
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-primary-foreground hover:bg-primary-foreground/10"
+              >
+                <MoreVertical className="h-6 w-6" />
+                <span className="sr-only">More options</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>
+                <LiveDateTime />
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <NavButtonGroupMobile />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );

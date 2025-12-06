@@ -1,8 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 
-export function LiveDateTime() {
+interface LiveDateTimeProps {
+  className?: string;
+}
+
+export function LiveDateTime({ className }: LiveDateTimeProps) {
   const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -21,7 +26,7 @@ export function LiveDateTime() {
   if (!currentDateTime) {
     // Render nothing or a placeholder on the server and during initial client render
     return (
-      <div className="hidden md:flex flex-col items-start text-primary-foreground">
+      <div className={cn("flex-col items-start text-primary-foreground", className)}>
         <p className="font-semibold text-sm leading-none h-5 w-36 bg-primary-foreground/20 animate-pulse rounded-sm"></p>
         <p className="text-xs leading-none h-4 w-20 mt-1 bg-primary-foreground/20 animate-pulse rounded-sm"></p>
       </div>
@@ -42,7 +47,7 @@ export function LiveDateTime() {
   });
 
   return (
-    <div className="hidden md:flex flex-col items-start text-primary-foreground">
+    <div className={cn("flex flex-col items-start text-primary-foreground", className)}>
       <p className="font-semibold text-sm leading-none">{formattedDate}</p>
       <p className="text-xs leading-none">{formattedTime}</p>
     </div>

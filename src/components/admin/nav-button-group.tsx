@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { DropdownMenuItem } from '../ui/dropdown-menu';
 
 const navLinks = [
   { href: '/cashier', label: 'Cashier' },
@@ -39,5 +40,24 @@ export function NavButtonGroup() {
         </Button>
       ))}
     </div>
+  );
+}
+
+export function NavButtonGroupMobile() {
+  const pathname = usePathname();
+
+  return (
+    <>
+      {navLinks.map(({ href, label, disabled }) => (
+        <DropdownMenuItem
+          key={href}
+          asChild
+          disabled={disabled}
+          className={cn(pathname.startsWith(href) && 'bg-accent')}
+        >
+          <Link href={disabled ? '#' : href}>{label}</Link>
+        </DropdownMenuItem>
+      ))}
+    </>
   );
 }
