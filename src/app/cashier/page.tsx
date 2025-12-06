@@ -86,7 +86,7 @@ export default function CashierPage() {
                 ...doc.data(),
               })) as MenuItem[];
               const filteredPackages = menuData.filter(
-                (item) => item.category === 'unlimited' && item.isAvailable
+                (item) => item.category === 'Unlimited' && item.isAvailable
               );
               setUnlimitedPackages(filteredPackages);
             });
@@ -283,7 +283,7 @@ export default function CashierPage() {
                  </DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
-                <div className="grid grid-cols-3 gap-4">
+                 <div className="grid grid-cols-3 items-end gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="guestCount">No of Guests</Label>
                          <div className="flex items-center gap-2">
