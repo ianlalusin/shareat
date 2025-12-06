@@ -407,8 +407,18 @@ useEffect(() => {
                     <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
                       <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Hot">Hot</SelectItem>
-                        <SelectItem value="Cold">Cold</SelectItem>
+                        <SelectItem value="Hot">
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-orange-500" />
+                            Hot
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="Cold">
+                           <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                            Cold
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
