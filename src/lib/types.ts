@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 export type Store = {
@@ -98,7 +97,9 @@ export type OrderItem = {
   quantity: number;
   priceAtOrder: number;
   targetStation?: 'Hot' | 'Cold';
-  timestamp: any; // Firestore ServerTimestamp
+  timestamp: Timestamp; // Firestore ServerTimestamp
+  servedTimestamp?: Timestamp;
+  status: 'Pending' | 'Served' | 'Cancelled';
   isRefill: boolean;
 };
 
@@ -110,7 +111,9 @@ export type RefillItem = {
   menuName: string;
   quantity: number;
   targetStation?: 'Hot' | 'Cold';
-  timestamp: any; // Firestore ServerTimestamp
+  timestamp: Timestamp; // Firestore ServerTimestamp
+  servedTimestamp?: Timestamp;
+  status: 'Pending' | 'Served' | 'Cancelled';
 };
 
 export type OrderTransaction = {

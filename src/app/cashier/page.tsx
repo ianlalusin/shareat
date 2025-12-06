@@ -15,7 +15,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
@@ -27,6 +26,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { OrderTimer } from '@/components/cashier/order-timer';
 import { useRouter } from 'next/navigation';
+import { OrderDetailsModal } from '@/components/cashier/order-details-modal';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -46,7 +46,9 @@ export default function CashierPage() {
     const [meatFlavors, setMeatFlavors] = useState<GListItem[]>([]);
     
     const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
+    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     
     // New Order Form State
     const [customerName, setCustomerName] = useState('');
@@ -200,6 +202,7 @@ export default function CashierPage() {
             priceAtOrder: pkg.price,
             isRefill: false,
             timestamp: serverTimestamp(),
+            status: 'Pending',
         });
 
         // 3. Update the table
@@ -223,6 +226,13 @@ export default function CashierPage() {
         resetForm();
         setSelectedTable(table);
         setIsNewOrderModalOpen(true);
+    }
+    
+    const handleViewOrderClick = (order: Order | undefined) => {
+      if (order) {
+        setSelectedOrder(order);
+        setIsDetailsModalOpen(true);
+      }
     }
     
     const handleFlavorClick = (flavor: string) => {
@@ -249,160 +259,169 @@ export default function CashierPage() {
     }
 
   return (
-    <Dialog open={isNewOrderModalOpen} onOpenChange={setIsNewOrderModalOpen}>
-        <div className="flex h-[calc(100vh-4rem)] bg-background">
-        {/* Left Panel: Available Tables */}
-        <div className="w-1/3 border-r border-border p-4 overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4 font-headline">Available Tables ({availableTables.length})</h2>
-            <div className="grid grid-cols-2 gap-4">
-                {availableTables.map(table => (
-                    <Card 
-                        key={table.id} 
-                        className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center border-2 border-green-500"
-                        onClick={() => handleAvailableTableClick(table)}
-                    >
-                        <CardContent className="p-1 text-center">
-                            <p className="font-bold text-2xl md:text-3xl lg:text-4xl">{table.tableName}</p>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
-        </div>
+    <>
+      <Dialog open={isNewOrderModalOpen} onOpenChange={setIsNewOrderModalOpen}>
+          <div className="flex h-[calc(100vh-4rem)] bg-background">
+          {/* Left Panel: Available Tables */}
+          <div className="w-1/3 border-r border-border p-4 overflow-y-auto">
+              <h2 className="text-lg font-semibold mb-4 font-headline">Available Tables ({availableTables.length})</h2>
+              <div className="grid grid-cols-2 gap-4">
+                  {availableTables.map(table => (
+                      <Card 
+                          key={table.id} 
+                          className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center border-2 border-green-500"
+                          onClick={() => handleAvailableTableClick(table)}
+                      >
+                          <CardContent className="p-1 text-center">
+                              <p className="font-bold text-2xl md:text-3xl lg:text-4xl">{table.tableName}</p>
+                          </CardContent>
+                      </Card>
+                  ))}
+              </div>
+          </div>
 
-        {/* Right Panel: Occupied Tables */}
-        <div className="w-2/3 p-4 overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4 font-headline">Occupied Tables ({occupiedTables.length})</h2>
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {occupiedTables.map(table => {
-                    const order = orders.find(o => o.id === table.activeOrderId);
-                    return (
-                        <Card key={table.id} className="bg-muted/30">
-                            <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
-                                <div>
-                                    <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                                    <p className="text-xs text-muted-foreground font-medium">{order?.packageName}</p>
-                                </div>
-                                <Badge className={cn("text-white", getStatusColor(table.status))}>
-                                    {table.status}
-                                </Badge>
-                            </CardHeader>
-                             <CardContent className="p-4 pt-0">
-                                <div className="text-sm">
-                                    <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
-                                    <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
-                                    <OrderTimer startTime={order?.orderTimestamp} />
-                                </div>
-                            </CardContent>
-                            <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
-                                <Button variant="outline" onClick={() => router.push(`/cashier/order/${order?.id}`)}>Bill</Button>
-                                <Button onClick={() => router.push(`/cashier/order/${order?.id}`)}>View Order</Button>
-                            </CardFooter>
-                        </Card>
-                    )
-                })}
-            </div>
-        </div>
-        </div>
+          {/* Right Panel: Occupied Tables */}
+          <div className="w-2/3 p-4 overflow-y-auto">
+              <h2 className="text-lg font-semibold mb-4 font-headline">Occupied Tables ({occupiedTables.length})</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {occupiedTables.map(table => {
+                      const order = orders.find(o => o.id === table.activeOrderId);
+                      return (
+                          <Card key={table.id} className="bg-muted/30">
+                              <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
+                                  <div>
+                                      <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
+                                      <p className="text-xs text-muted-foreground font-medium">{order?.packageName}</p>
+                                  </div>
+                                  <Badge className={cn("text-white", getStatusColor(table.status))}>
+                                      {table.status}
+                                  </Badge>
+                              </CardHeader>
+                              <CardContent className="p-4 pt-0">
+                                  <div className="text-sm">
+                                      <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
+                                      <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
+                                      <OrderTimer startTime={order?.orderTimestamp} />
+                                  </div>
+                              </CardContent>
+                              <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
+                                  <Button variant="outline" onClick={() => router.push(`/cashier/order/${order?.id}`)}>Bill</Button>
+                                  <Button onClick={() => handleViewOrderClick(order)}>View Order</Button>
+                              </CardFooter>
+                          </Card>
+                      )
+                  })}
+              </div>
+          </div>
+          </div>
 
-        {/* New Order Modal */}
-        <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
-                 <DialogTitle>
-                    New Order for {selectedTable?.tableName}
-                    <span className="text-sm text-muted-foreground font-normal ml-2">by {userName}</span>
-                 </DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-6 py-4">
-                <div className="grid grid-cols-3 items-end gap-4">
-                     <div className="space-y-2">
-                        <Label htmlFor="guestCount">No. of Guests</Label>
-                        <div className="flex items-center gap-2">
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-full text-center" />
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="customerName">Customer Name</Label>
-                        <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="package">Package</Label>
-                        <Select value={selectedPackage} onValueChange={setSelectedPackage} required>
-                            <SelectTrigger id="package">
-                                <SelectValue placeholder="Select a package" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {unlimitedPackages.map(pkg => (
-                                    <SelectItem key={pkg.id} value={pkg.id}>{pkg.menuName}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
+          {/* New Order Modal */}
+          <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                  <DialogTitle>
+                      New Order for {selectedTable?.tableName}
+                      <span className="text-sm text-muted-foreground font-normal ml-2">by {userName}</span>
+                  </DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-6 py-4">
+                  <div className="grid grid-cols-3 items-end gap-4">
+                      <div className="space-y-2">
+                          <Label htmlFor="guestCount">No. of Guests</Label>
+                          <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
+                              <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-full text-center" />
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                          </div>
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="customerName">Customer Name</Label>
+                          <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="package">Package</Label>
+                          <Select value={selectedPackage} onValueChange={setSelectedPackage} required>
+                              <SelectTrigger id="package">
+                                  <SelectValue placeholder="Select a package" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  {unlimitedPackages.map(pkg => (
+                                      <SelectItem key={pkg.id} value={pkg.id}>{pkg.menuName}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                      </div>
+                  </div>
 
-                <div className="space-y-2">
-                    <Label>Initial Flavors (Max 3)</Label>
-                    <div className="flex flex-wrap gap-2 rounded-lg border p-4">
-                         {meatFlavors.map(flavor => (
-                            <Button 
-                                key={flavor.id}
-                                type="button"
-                                variant={selectedFlavors.includes(flavor.item) ? 'default' : 'outline'}
-                                onClick={() => handleFlavorClick(flavor.item)}
-                                disabled={!selectedFlavors.includes(flavor.item) && selectedFlavors.length >= 3}
-                            >
-                                {flavor.item}
-                            </Button>
-                         ))}
-                    </div>
-                </div>
+                  <div className="space-y-2">
+                      <Label>Initial Flavors (Max 3)</Label>
+                      <div className="flex flex-wrap gap-2 rounded-lg border p-4">
+                          {meatFlavors.map(flavor => (
+                              <Button 
+                                  key={flavor.id}
+                                  type="button"
+                                  variant={selectedFlavors.includes(flavor.item) ? 'default' : 'outline'}
+                                  onClick={() => handleFlavorClick(flavor.item)}
+                                  disabled={!selectedFlavors.includes(flavor.item) && selectedFlavors.length >= 3}
+                              >
+                                  {flavor.item}
+                              </Button>
+                          ))}
+                      </div>
+                  </div>
 
-                <div className="grid grid-cols-3 gap-4 items-end">
-                     <div className="space-y-2">
-                        <Label htmlFor="rice">Rice</Label>
-                        <div className="flex items-center gap-2">
-                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="rice" type="number" value={riceCount} onChange={e => setRiceCount(Number(e.target.value))} className="w-full text-center" />
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
-                        </div>
-                     </div>
-                     <div className="space-y-2">
-                        <Label htmlFor="cheese">Cheese</Label>
-                        <div className="flex items-center gap-2">
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="cheese" type="number" value={cheeseCount} onChange={e => setCheeseCount(Number(e.target.value))} className="w-full text-center" />
-                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
-                        </div>
-                     </div>
-                     <div className="flex items-center space-x-2">
-                        <Switch id="show-notes" checked={showNotes} onCheckedChange={setShowNotes} />
-                        <Label htmlFor="show-notes">Add Notes</Label>
-                    </div>
-                </div>
+                  <div className="grid grid-cols-3 gap-4 items-end">
+                      <div className="space-y-2">
+                          <Label htmlFor="rice">Rice</Label>
+                          <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
+                              <Input id="rice" type="number" value={riceCount} onChange={e => setRiceCount(Number(e.target.value))} className="w-full text-center" />
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                          </div>
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="cheese">Cheese</Label>
+                          <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
+                              <Input id="cheese" type="number" value={cheeseCount} onChange={e => setCheeseCount(Number(e.target.value))} className="w-full text-center" />
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                          </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                          <Switch id="show-notes" checked={showNotes} onCheckedChange={setShowNotes} />
+                          <Label htmlFor="show-notes">Add Notes</Label>
+                      </div>
+                  </div>
 
-                {showNotes && (
-                    <div className="space-y-2">
-                         <Label htmlFor="notes">Notes</Label>
-                         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-                    </div>
-                )}
-            </div>
-            <DialogFooter>
-                <Button type="button" variant="ghost" onClick={resetForm}>
-                    Clear
-                </Button>
-                <DialogClose asChild>
-                    <Button type="button" variant="outline">
-                    Cancel
-                    </Button>
-                </DialogClose>
-                <Button onClick={handleNewOrder}>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Start Order
-                </Button>
-            </DialogFooter>
-        </DialogContent>
-
-    </Dialog>
+                  {showNotes && (
+                      <div className="space-y-2">
+                          <Label htmlFor="notes">Notes</Label>
+                          <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                      </div>
+                  )}
+              </div>
+              <DialogFooter>
+                  <Button type="button" variant="ghost" onClick={resetForm}>
+                      Clear
+                  </Button>
+                  <DialogClose asChild>
+                      <Button type="button" variant="outline">
+                      Cancel
+                      </Button>
+                  </DialogClose>
+                  <Button onClick={handleNewOrder}>
+                      <PlusCircle className="mr-2 h-4 w-4" /> Start Order
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+      
+      {selectedOrder && (
+        <OrderDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          order={selectedOrder}
+        />
+      )}
+    </>
   );
 }
