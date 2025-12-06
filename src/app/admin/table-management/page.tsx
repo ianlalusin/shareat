@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -200,10 +199,6 @@ export default function TableManagementPage() {
                           <SelectItem value="Inactive">Inactive</SelectItem>
                         </SelectContent>
                       </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="resetCounter">Reset Counter</Label>
-                    <Input id="resetCounter" name="resetCounter" type="number" value={formData.resetCounter} onChange={handleInputChange} required />
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="activeOrderId">Active Order ID</Label>
