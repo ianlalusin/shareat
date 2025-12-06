@@ -326,6 +326,11 @@ useEffect(() => {
       {} as Record<string, MenuItem[]>
     );
   }, [items]);
+  
+  const selectedStoreName = useMemo(() => {
+    return stores.find(s => s.id === selectedStoreId)?.storeName || 'N/A';
+  }, [stores, selectedStoreId]);
+
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -350,7 +355,7 @@ useEffect(() => {
             </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="space-y-4 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="menuName">Menu Name</Label>
                         <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required />
@@ -358,6 +363,10 @@ useEffect(() => {
                     <div className="space-y-2">
                         <Label htmlFor="category">Category</Label>
                         <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="store">Store</Label>
+                      <Input id="store" name="store" value={selectedStoreName} readOnly disabled />
                     </div>
                 </div>
 
