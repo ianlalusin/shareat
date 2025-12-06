@@ -83,8 +83,7 @@ export default function TableManagementPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const isNumeric = ['resetCounter'].includes(name);
-    setFormData((prev) => ({ ...prev, [name]: isNumeric ? Number(value) : value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSelectChange = (value: Table['status']) => {
@@ -105,7 +104,10 @@ export default function TableManagementPage() {
     if (!firestore || !selectedStoreId) return;
 
     const dataToSave = {
-      ...formData,
+      tableName: formData.tableName,
+      status: formData.status,
+      activeOrderId: formData.activeOrderId,
+      resetCounter: formData.resetCounter,
       storeId: selectedStoreId,
     };
 
@@ -114,7 +116,7 @@ export default function TableManagementPage() {
         const tableRef = doc(firestore, 'tables', editingTable.id);
         await updateDoc(tableRef, dataToSave);
       } else {
-        await addDoc(collection(firestore, 'tables'), dataToSave);
+        await addDoc(collection(firestore, 'tables'), {...dataToSave, resetCounter: 0});
       }
       setIsModalOpen(false);
     } catch (error) {
@@ -239,11 +241,11 @@ export default function TableManagementPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
             {tables.map((table) => (
             <Card key={table.id} className="flex flex-col">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">{table.tableName}</CardTitle>
-                    <Badge className={cn("text-white", getStatusColor(table.status))}>{table.status}</Badge>
+                <CardHeader className="flex-grow pb-2">
+                    <CardTitle className="text-base font-bold">{table.tableName}</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-grow">
+                <CardContent className="flex-grow space-y-2">
+                     <Badge className={cn("text-white w-full justify-center", getStatusColor(table.status))}>{table.status}</Badge>
                     <div className="text-xs text-muted-foreground">Order: {table.activeOrderId || 'N/A'}</div>
                     <div className="text-xs text-muted-foreground">Counter: {table.resetCounter}</div>
                 </CardContent>
