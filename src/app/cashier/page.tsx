@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { OrderTimer } from '@/components/cashier/order-timer';
+import { useRouter } from 'next/navigation';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -63,6 +64,7 @@ export default function CashierPage() {
 
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
+    const router = useRouter();
     
     useEffect(() => {
         if (firestore && selectedStoreId) {
@@ -291,8 +293,9 @@ export default function CashierPage() {
                                     <OrderTimer startTime={order?.orderTimestamp} />
                                 </div>
                             </CardContent>
-                            <CardFooter className="p-4 pt-0">
-                                <Button className="w-full">View Order</Button>
+                            <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
+                                <Button variant="outline">Bill</Button>
+                                <Button onClick={() => router.push(`/cashier/order/${order?.id}`)}>View Order</Button>
                             </CardFooter>
                         </Card>
                     )
