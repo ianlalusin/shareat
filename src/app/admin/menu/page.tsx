@@ -154,7 +154,7 @@ export default function MenuPage() {
       );
   
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[];
         setAvailabilityOptions(availabilityData);
       });
   
@@ -664,21 +664,24 @@ export default function MenuPage() {
                   </div>
                 )}
                 
-                {/* --- Individual Pricing & Barcode --- */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cost">Cost</Label>
-                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="price">Price</Label>
-                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="barcode">Barcode</Label>
-                    <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
-                  </div>
-                </div>
+                {(!editingItem || isVariant) && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="cost">Cost</Label>
+                        <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="price">Price</Label>
+                        <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="barcode">Barcode</Label>
+                        <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* --- Common Fields --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -715,51 +718,52 @@ export default function MenuPage() {
                     </Select>
                   </div>
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="taxRate">Tax Rate</Label>
-                    <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)} disabled={isVariant}>
-                      <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
-                      <SelectContent>
-                        {taxRates.length > 0 ? taxRates.map(rate => (
-                            <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
-                        )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Special Tags</Label>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between font-normal" disabled={isVariant}>
-                            <span>{getSelectedTagNames(formData.specialTags)}</span>
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                           {specialTags.map(tag => (
-                                <DropdownMenuCheckboxItem
-                                    key={tag.id}
-                                    checked={formData.specialTags?.includes(tag.item)}
-                                    onSelect={(e) => e.preventDefault()}
-                                    onClick={() => handleSpecialTagChange(tag.item)}
-                                >
-                                    {tag.item}
-                                </DropdownMenuCheckboxItem>
-                            ))}
-                            {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="imageUrl">Image</Label>
-                      <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} disabled={isVariant} />
-                  </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="taxRate">Tax Rate</Label>
+                        <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)} disabled={isVariant}>
+                        <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
+                        <SelectContent>
+                            {taxRates.length > 0 ? taxRates.map(rate => (
+                                <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
+                            )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
+                        </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Special Tags</Label>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between font-normal" disabled={isVariant}>
+                                <span>{getSelectedTagNames(formData.specialTags)}</span>
+                                <ChevronDown className="h-4 w-4" />
+                            </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                            {specialTags.map(tag => (
+                                    <DropdownMenuCheckboxItem
+                                        key={tag.id}
+                                        checked={formData.specialTags?.includes(tag.item)}
+                                        onSelect={(e) => e.preventDefault()}
+                                        onClick={() => handleSpecialTagChange(tag.item)}
+                                    >
+                                        {tag.item}
+                                    </DropdownMenuCheckboxItem>
+                                ))}
+                                {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="imageUrl">Image</Label>
+                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} disabled={isVariant} />
+                    </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="publicDescription">Public Description</Label>
-                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
+                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant || (editingItem && !isVariant)}/>
                     </div>
                     <div className="space-y-2">
                         <div className="flex items-center gap-4">
@@ -949,5 +953,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
