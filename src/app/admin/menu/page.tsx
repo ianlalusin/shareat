@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus, Trash2, Pencil } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -61,6 +61,7 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { TagsInput } from '@/components/ui/tags-input';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -87,15 +88,12 @@ export default function MenuPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [taxRates, setTaxRates] = useState<GListItem[]>([]);
-  const [specialTags, setSpecialTags] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
-
-  const [tagInput, setTagInput] = useState('');
   
   const firestore = useFirestore();
   const storage = useStorage();
@@ -135,17 +133,7 @@ useEffect(() => {
         const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setAvailabilityOptions(availabilityData);
       });
-  
-      const specialTagsQuery = query(
-        collection(firestore, 'lists'),
-        where('category', '==', 'special tags'),
-        where('is_active', '==', true)
-      );
-      const specialTagsUnsubscribe = onSnapshot(specialTagsQuery, (snapshot) => {
-        const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
-        setSpecialTags(tagsData);
-      });
-  
+    
       let taxRateUnsubscribe = () => {};
       if (selectedStoreId) {
         const taxRateQuery = query(
@@ -164,7 +152,6 @@ useEffect(() => {
       
       return () => {
         availabilityUnsubscribe();
-        specialTagsUnsubscribe();
         taxRateUnsubscribe();
       };
     }
@@ -178,14 +165,12 @@ useEffect(() => {
         ...editingItem,
         specialTags: editingItem.specialTags || [],
       });
-      setTagInput((editingItem.specialTags || []).join(', '));
        setDisplayValues({
          cost: formatCurrency(editingItem.cost),
          price: formatCurrency(editingItem.price),
        });
     } else {
         setFormData(initialItemState);
-        setTagInput('');
         setDisplayValues({
           cost: formatCurrency(initialItemState.cost),
           price: formatCurrency(initialItemState.price),
@@ -198,7 +183,6 @@ useEffect(() => {
     if (!isModalOpen) {
       setEditingItem(null);
       setFormData(initialItemState);
-      setTagInput('');
       setDisplayValues({ cost: '', price: '' });
     }
   }, [isModalOpen]);
@@ -249,20 +233,8 @@ useEffect(() => {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
-  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setTagInput(value);
-    const tags = value.split(',').map(tag => tag.trim()).filter(Boolean);
-    setFormData(prev => ({ ...prev, specialTags: tags }));
-  };
-
-  const addTag = (tag: string) => {
-    const currentTags = tagInput.split(',').map(t => t.trim()).filter(Boolean);
-    if (!currentTags.includes(tag)) {
-      const newTagInput = [...currentTags, tag].join(', ');
-      setTagInput(newTagInput);
-      setFormData(prev => ({ ...prev, specialTags: [...currentTags, tag] }));
-    }
+  const handleTagsChange = (newTags: string[]) => {
+    setFormData(prev => ({ ...prev, specialTags: newTags }));
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -276,9 +248,11 @@ useEffect(() => {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const tags = tagInput.split(',').map(tag => tag.trim()).filter(Boolean);
-    const dataToSave = { ...formData, imageUrl, specialTags: tags };
-
+    const dataToSave: Omit<MenuItem, 'id'> = {
+      ...formData,
+      imageUrl,
+    };
+    
     try {
       if (editingItem) {
         const itemRef = doc(firestore, 'menu', editingItem.id);
@@ -355,10 +329,6 @@ useEffect(() => {
       {} as Record<string, MenuItem[]>
     );
   }, [items]);
-  
-  const filteredTags = tagInput.length > 0
-    ? specialTags.filter(tag => tag.item.toLowerCase().includes(tagInput.split(',').pop()!.trim().toLowerCase()))
-    : [];
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -458,20 +428,12 @@ useEffect(() => {
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
-                          <Input
-                            id="specialTags"
-                            name="specialTags"
-                            value={tagInput}
-                            onChange={handleTagInputChange}
-                            placeholder="e.g. spicy, vegan, new"
-                          />
-                          {filteredTags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 p-2 border rounded-md">
-                              {filteredTags.map(tag => (
-                                <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addTag(tag.item)}>{tag.item}</Button>
-                              ))}
-                            </div>
-                          )}
+                        <TagsInput
+                          id="specialTags"
+                          value={formData.specialTags}
+                          onChange={handleTagsChange}
+                          placeholder="Add tags..."
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="imageUrl">Image</Label>

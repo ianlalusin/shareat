@@ -1,7 +1,4 @@
 
-
-
-
 export type Store = {
   id: string;
   storeName: string;
@@ -61,5 +58,3 @@ export type MenuItem = {
   alertLevel: number;
   specialTags: string[];
 };
-
-
