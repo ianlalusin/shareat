@@ -1,4 +1,4 @@
-import { AdminHeader } from "@/components/admin/header";
+import { CashierHeader } from "@/components/cashier/header";
 
 export default function CashierLayout({
   children,
@@ -7,7 +7,7 @@ export default function CashierLayout({
 }) {
   return (
     <div className="flex min-h-svh w-full flex-col bg-background">
-      <AdminHeader />
+      <CashierHeader />
       {children}
     </div>
   );
