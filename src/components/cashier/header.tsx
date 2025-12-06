@@ -21,7 +21,6 @@ export function CashierHeader() {
   return (
     <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-4 border-b bg-primary px-4 md:px-6">
       <div className="flex items-center gap-4">
-        <LiveDateTime />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -56,6 +55,7 @@ export function CashierHeader() {
       <div className="flex w-full items-center justify-end gap-4 md:gap-2 lg:gap-4">
         <StoreSelector />
         <NavButtonGroup />
+        <LiveDateTime />
       </div>
     </header>
   );
