@@ -77,6 +77,7 @@ export type Order = {
   tableLabel: string; // The label from the Table document (e.g., "1", "2A")
   status: 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
+  customerName: string;
   orderTimestamp: any; // Firestore ServerTimestamp, marks the start of the 2-hour limit
   completedTimestamp?: any; // Firestore ServerTimestamp
   totalAmount: number;
@@ -118,4 +119,3 @@ export type OrderTransaction = {
   notes?: string;
   timestamp: any; // Firestore ServerTimestamp
 };
-

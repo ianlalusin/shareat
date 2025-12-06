@@ -47,6 +47,7 @@ export default function CashierPage() {
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     
     // New Order Form State
+    const [customerName, setCustomerName] = useState('');
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<string>('');
     const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
@@ -93,16 +94,16 @@ export default function CashierPage() {
                     return false;
                 }
 
-                const availability = item.availability.toLowerCase();
+                const availability = item.availability?.toLowerCase() || 'always';
                 if (availability.includes('always') || availability.includes('all day')) {
                     return true;
                 }
                 
-                if (availability.includes('lunch time') && currentHour >= 17) {
+                if (availability.includes('lunch') && currentHour >= 17) {
                     return false;
                 }
 
-                if (availability.includes('dinner time') && currentHour < 17) {
+                if (availability.includes('dinner') && currentHour < 17) {
                     return false;
                 }
                 
@@ -145,6 +146,7 @@ export default function CashierPage() {
     const occupiedTables = tables.filter(t => t.status === 'Occupied');
     
     const resetForm = () => {
+        setCustomerName('');
         setGuestCount(2);
         setSelectedPackage('');
         setSelectedFlavors([]);
@@ -156,13 +158,13 @@ export default function CashierPage() {
     }
     
     const handleNewOrder = async () => {
-      if (!firestore || !selectedStoreId || !selectedTable || !selectedPackage || selectedFlavors.length === 0) {
-        alert("Please ensure all required fields are filled: Guests, Package, and at least one Flavor.");
+      if (!firestore || !selectedStoreId || !selectedTable || !selectedPackage || selectedFlavors.length === 0 || !customerName) {
+        alert("Please ensure all required fields are filled: Customer Name, Guests, Package, and at least one Flavor.");
         return;
       }
     
       const newOrderRef = doc(collection(firestore, 'orders'));
-      const tableRef = doc(firestore, 'tables', selectedTable.id);
+      const tableRef = doc(collection(firestore, 'tables'), selectedTable.id);
       const pkg = unlimitedPackages.find(p => p.id === selectedPackage);
       if(!pkg) {
           alert("Selected package not found. Please try again.");
@@ -178,6 +180,7 @@ export default function CashierPage() {
           tableLabel: selectedTable.tableName,
           status: 'Active',
           guestCount: guestCount,
+          customerName: customerName,
           orderTimestamp: serverTimestamp(),
           totalAmount: guestCount * pkg.price,
           notes: notes,
@@ -279,6 +282,7 @@ export default function CashierPage() {
                             </CardHeader>
                              <CardContent className="p-4 pt-0">
                                 <div className="text-sm">
+                                    <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
                                     <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
                                     <p><span className="font-semibold">Order ID:</span> <span className="text-xs">{table.activeOrderId || 'N/A'}</span></p>
                                     {/* Placeholder for timer */}
@@ -313,7 +317,11 @@ export default function CashierPage() {
                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
                         </div>
                     </div>
-                    <div className="space-y-2 col-span-2">
+                     <div className="space-y-2">
+                        <Label htmlFor="customerName">Customer Name</Label>
+                        <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
                         <Label htmlFor="package">Package</Label>
                         <Select value={selectedPackage} onValueChange={setSelectedPackage} required>
                             <SelectTrigger id="package">
