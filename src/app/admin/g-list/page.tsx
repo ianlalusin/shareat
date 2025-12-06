@@ -50,6 +50,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -193,6 +195,36 @@ export default function GListPage() {
     acc[category].push(item);
     return acc;
   }, {} as Record<string, GListItem[]>);
+  
+  const handleDownload = () => {
+    if (items.length === 0) {
+      alert("No data to download.");
+      return;
+    }
+
+    const dataToExport = items.map(item => ({
+      'Item': item.item,
+      'Category': item.category,
+      'Status': item.is_active ? 'Active' : 'Inactive',
+      'Assigned Stores': getStoreNames(item.storeIds),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "G-List");
+
+    const cols = [
+      { wch: 30 }, // Item
+      { wch: 20 }, // Category
+      { wch: 10 }, // Status
+      { wch: 40 }, // Assigned Stores
+    ];
+    worksheet['!cols'] = cols;
+    
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: 'application/octet-stream' });
+    saveAs(data, 'G-List.xlsx');
+  };
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -348,7 +380,7 @@ export default function GListPage() {
         ))}
       </Accordion>
       <div className="mt-4 flex justify-end">
-        <Button>
+        <Button onClick={handleDownload}>
           <Download className="mr-2 h-4 w-4" />
           Download
         </Button>
