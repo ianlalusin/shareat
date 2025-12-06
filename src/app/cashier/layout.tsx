@@ -1,10 +1,4 @@
-import { AdminSidebar } from "@/components/admin/sidebar";
 import { AdminHeader } from "@/components/admin/header";
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarInset,
-} from "@/components/ui/sidebar";
 
 export default function CashierLayout({
   children,
@@ -12,14 +6,9 @@ export default function CashierLayout({
   children: React.ReactNode;
 }) {
   return (
-    <SidebarProvider>
-      <Sidebar collapsible="icon">
-        <AdminSidebar />
-      </Sidebar>
-      <SidebarInset>
-        <AdminHeader />
-        {children}
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex min-h-svh w-full flex-col bg-background">
+      <AdminHeader />
+      {children}
+    </div>
   );
 }
