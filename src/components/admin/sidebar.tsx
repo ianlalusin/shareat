@@ -20,6 +20,7 @@ import {
   CircleUser,
   LayoutDashboard,
   ListChecks,
+  LayoutGrid,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,6 +29,7 @@ const menuItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/store", label: "Store", icon: Store },
   { href: "/admin/staff", label: "Staff", icon: Users },
+  { href: "/admin/table-management", label: "Table Management", icon: LayoutGrid },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "#inventory", label: "Inventory", icon: Boxes },
   { href: "#reports", label: "Reports", icon: AreaChart },
