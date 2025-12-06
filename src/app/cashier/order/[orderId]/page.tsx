@@ -13,8 +13,10 @@ import {
   where,
   addDoc,
   serverTimestamp,
+  getDoc,
+  writeBatch,
 } from 'firebase/firestore';
-import { Order, OrderItem, GListItem, OrderTransaction } from '@/lib/types';
+import { Order, OrderItem, GListItem, OrderTransaction, Store } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PaymentModal } from '@/components/cashier/payment-modal';
 
 
 // Reducer for complex state management of TIN input
@@ -54,15 +57,17 @@ const tinReducer = (state: any, action: any) => {
 
 const formatTIN = (value: string): string => {
   if (!value) return '';
-  const digits = value.replace(/\D/g, '').slice(0, 9);
+  const digits = value.replace(/\D/g, '');
   if (!digits) return '';
 
-  const parts = [];
-  if (digits.length > 0) parts.push(digits.slice(0, 3));
-  if (digits.length > 3) parts.push(digits.slice(3, 6));
-  if (digits.length > 6) parts.push(digits.slice(6, 9));
-  
-  return parts.join('-');
+  return [
+    digits.slice(0, 3),
+    digits.slice(3, 6),
+    digits.slice(6, 9),
+  ]
+    .filter(Boolean)
+    .join('-')
+    .slice(0, 11);
 };
 
 const unformatTIN = (value: string) => {
@@ -76,6 +81,7 @@ export default function OrderDetailPage() {
   const router = useRouter();
 
   const [order, setOrder] = useState<Order | null>(null);
+  const [store, setStore] = useState<Store | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,6 +104,8 @@ export default function OrderDetailPage() {
   const [selectedCharge, setSelectedCharge] = useState('');
   const [customChargeType, setCustomChargeType] = useState('');
   const [chargeTypes, setChargeTypes] = useState<GListItem[]>([]);
+  
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
 
   const firestore = useFirestore();
@@ -141,6 +149,13 @@ export default function OrderDetailPage() {
   
   useEffect(() => {
     if (firestore && order?.storeId) {
+      const storeRef = doc(firestore, 'stores', order.storeId);
+      const storeUnsubscribe = onSnapshot(storeRef, (docSnap) => {
+        if(docSnap.exists()){
+          setStore({ id: docSnap.id, ...docSnap.data() } as Store);
+        }
+      });
+      
       const discountsQuery = query(
         collection(firestore, 'lists'),
         where('category', '==', 'discount type'),
@@ -165,13 +180,14 @@ export default function OrderDetailPage() {
       });
 
       return () => {
+        storeUnsubscribe();
         discountsUnsubscribe();
         chargesUnsubscribe();
       }
     }
   }, [firestore, order?.storeId]);
   
-  const subtotal = useMemo(() => order?.totalAmount || 0, [order]);
+  const subtotal = useMemo(() => orderItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), [orderItems]);
 
   const grandTotal = useMemo(() => {
     return transactions.reduce((acc, trans) => {
@@ -297,6 +313,11 @@ export default function OrderDetailPage() {
         alert('Failed to apply charge.');
     }
   };
+  
+  const handleFinalizeSuccess = () => {
+    setIsPaymentModalOpen(false);
+    router.push('/cashier');
+  };
 
 
   if (loading) {
@@ -324,6 +345,7 @@ export default function OrderDetailPage() {
 
 
   return (
+    <>
     <main className="flex-1 p-4 lg:p-6">
       <div className="flex items-center gap-4 mb-4">
         <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => router.back()}>
@@ -502,12 +524,23 @@ export default function OrderDetailPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                 <Button className="w-full" size="lg">Finalize Bill</Button>
+                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)}>Finalize Bill</Button>
               </CardFooter>
             </Card>
           </div>
        </div>
-
     </main>
+    
+    {isPaymentModalOpen && order && store && (
+        <PaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => setIsPaymentModalOpen(false)}
+          order={order}
+          store={store}
+          totalAmount={grandTotal}
+          onFinalizeSuccess={handleFinalizeSuccess}
+        />
+    )}
+    </>
   );
 }
