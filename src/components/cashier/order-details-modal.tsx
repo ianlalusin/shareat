@@ -129,13 +129,15 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
           </div>
         </div>
         <DialogFooter className="mt-4 sm:justify-between">
-           {pendingItems.length > 0 && <div className="flex items-center gap-1.5 text-sm text-destructive font-medium mr-auto"><AlertTriangle className="h-4 w-4" />{pendingItems.length} item(s) pending</div>}
+           <div className="flex items-center gap-2">
+            {pendingItems.length > 0 && <div className="flex items-center gap-1.5 text-sm text-destructive font-medium"><AlertTriangle className="h-4 w-4" />{pendingItems.length} item(s) pending</div>}
+           </div>
            <div className="flex gap-2 justify-end">
-             <Button variant="outline" onClick={onClose}>
-                Close
-             </Button>
              <Button variant="outline" onClick={() => setIsUpdateSelectionModalOpen(true)}>
                 Update Order
+             </Button>
+             <Button variant="outline" onClick={onClose}>
+                Close
              </Button>
              <Button onClick={handleBuzz} disabled={pendingItems.length === 0}>
                 <BellRing className="mr-2 h-4 w-4" />
