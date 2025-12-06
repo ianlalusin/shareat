@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -65,6 +65,7 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -118,6 +119,9 @@ export default function MenuPage() {
   const [variantFormData, setVariantFormData] = useState<VariantFormData>(initialVariantFormState);
   
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string, variantCost: string, variantPrice: string }>({ cost: '', price: '', variantCost: '', variantPrice: '' });
+
+  const [tagInput, setTagInput] = useState('');
+  const [variantTagInput, setVariantTagInput] = useState('');
   
   const firestore = useFirestore();
   const storage = useStorage();
@@ -145,7 +149,7 @@ export default function MenuPage() {
     }
 }, [firestore, selectedStoreId]);
 
-  useEffect(() => {
+useEffect(() => {
     if (firestore) {
       const availabilityQuery = query(
         collection(firestore, 'lists'),
@@ -154,7 +158,7 @@ export default function MenuPage() {
       );
   
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
         setAvailabilityOptions(availabilityData);
       });
   
@@ -177,7 +181,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
           setTaxRates(taxRateData);
         });
       } else {
@@ -200,6 +204,7 @@ export default function MenuPage() {
         ...editingItem,
         specialTags: editingItem.specialTags || [],
       });
+      setTagInput((editingItem.specialTags || []).join(', '));
        setDisplayValues({
          cost: formatCurrency(editingItem.cost),
          price: formatCurrency(editingItem.price),
@@ -208,6 +213,7 @@ export default function MenuPage() {
        });
     } else {
         setFormData(initialItemState);
+        setTagInput('');
         setDisplayValues({
           cost: formatCurrency(initialItemState.cost),
           price: formatCurrency(initialItemState.price),
@@ -222,6 +228,7 @@ export default function MenuPage() {
     if (!isModalOpen) {
       setEditingItem(null);
       setFormData(initialItemState);
+      setTagInput('');
       setDisplayValues({ cost: '', price: '', variantCost: '', variantPrice: '' });
       setIsAddingVariant(false);
       setVariantFormData(initialVariantFormState);
@@ -306,24 +313,36 @@ export default function MenuPage() {
     setVariantFormData(prev => ({ ...prev, [name]: checked }));
   }
 
-  const handleSpecialTagChange = (tag: string) => {
-    setFormData(prev => {
-      const currentTags = prev.specialTags || [];
-      const newTags = currentTags.includes(tag)
-        ? currentTags.filter(t => t !== tag)
-        : [...currentTags, tag];
-      return { ...prev, specialTags: newTags };
-    });
+  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setTagInput(value);
+    const tags = value.split(',').map(tag => tag.trim()).filter(Boolean);
+    setFormData(prev => ({ ...prev, specialTags: tags }));
   };
 
-  const handleVariantSpecialTagChange = (tag: string) => {
-    setVariantFormData(prev => {
-      const currentTags = prev.specialTags || [];
-      const newTags = currentTags.includes(tag)
-        ? currentTags.filter(t => t !== tag)
-        : [...currentTags, tag];
-      return { ...prev, specialTags: newTags };
-    });
+  const handleVariantTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setVariantTagInput(value);
+    const tags = value.split(',').map(tag => tag.trim()).filter(Boolean);
+    setVariantFormData(prev => ({ ...prev, specialTags: tags }));
+  };
+
+  const addTag = (tag: string) => {
+    const currentTags = tagInput.split(',').map(t => t.trim()).filter(Boolean);
+    if (!currentTags.includes(tag)) {
+      const newTagInput = [...currentTags, tag].join(', ');
+      setTagInput(newTagInput);
+      setFormData(prev => ({ ...prev, specialTags: [...currentTags, tag] }));
+    }
+  };
+
+  const addVariantTag = (tag: string) => {
+    const currentTags = variantTagInput.split(',').map(t => t.trim()).filter(Boolean);
+    if (!currentTags.includes(tag)) {
+      const newTagInput = [...currentTags, tag].join(', ');
+      setVariantTagInput(newTagInput);
+      setVariantFormData(prev => ({ ...prev, specialTags: [...currentTags, tag] }));
+    }
   };
 
 
@@ -336,6 +355,8 @@ export default function MenuPage() {
       const snapshot = await uploadBytes(imageRef, variantImageFile);
       variantImageUrl = await getDownloadURL(snapshot.ref);
     }
+    
+    const variantTags = variantTagInput.split(',').map(tag => tag.trim()).filter(Boolean);
 
     const newVariant: Omit<MenuItem, 'id'> = {
       // Inherited properties
@@ -355,7 +376,7 @@ export default function MenuPage() {
       barcode: variantFormData.barcode ?? '',
       isAvailable: variantFormData.isAvailable ?? true,
       publicDescription: variantFormData.publicDescription ?? editingItem.publicDescription,
-      specialTags: variantFormData.specialTags ?? editingItem.specialTags,
+      specialTags: variantTags,
       imageUrl: variantImageUrl,
       trackInventory: variantFormData.trackInventory ?? false,
       alertLevel: variantFormData.alertLevel ?? 0,
@@ -371,6 +392,7 @@ export default function MenuPage() {
 
   const handleAddNewVariantClick = () => {
     setVariantFormData(initialVariantFormState);
+    setVariantTagInput('');
     setDisplayValues(prev => ({...prev, variantCost: formatCurrency(0), variantPrice: formatCurrency(0)}));
     setVariantImageFile(null);
     setIsAddingVariant(true);
@@ -378,6 +400,7 @@ export default function MenuPage() {
 
   const handleCancelVariant = () => {
     setVariantFormData(initialVariantFormState);
+    setVariantTagInput('');
     setDisplayValues(prev => ({...prev, variantCost: '', variantPrice: ''}));
     setVariantImageFile(null);
     setIsAddingVariant(false);
@@ -394,7 +417,8 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
     }
     
-    const dataToSave: Omit<MenuItem, 'id'> = { ...formData, imageUrl, specialTags: formData.specialTags || [] };
+    const tags = tagInput.split(',').map(tag => tag.trim()).filter(Boolean);
+    const dataToSave: Omit<MenuItem, 'id'> = { ...formData, imageUrl, specialTags: tags };
 
     try {
       if (editingItem) {
@@ -484,17 +508,6 @@ export default function MenuPage() {
     setIsModalOpen(true);
   }
   
-  const getSelectedTagNames = (tags: string[] | undefined) => {
-    const selectedCount = tags?.length || 0;
-    if (selectedCount === 0) return "Select special tags";
-    if (specialTags.length > 0 && selectedCount === specialTags.length) return "All tags selected";
-    if (selectedCount > 2) return `${selectedCount} tags selected`;
-    return specialTags
-        .filter(t => tags?.includes(t.item))
-        .map(t => t.item)
-        .join(', ');
-  };
-
   const calculateProfit = (cost: number, price: number) => {
     if (price <= cost || price <= 0) return '0.00%';
     const profit = ((price - cost) / price) * 100;
@@ -530,6 +543,14 @@ export default function MenuPage() {
   }, [items]);
   
   const isVariant = !!formData.parentMenuId;
+
+  const filteredTags = tagInput.length > 0
+    ? specialTags.filter(tag => tag.item.toLowerCase().includes(tagInput.split(',').pop()!.trim().toLowerCase()))
+    : specialTags;
+
+  const filteredVariantTags = variantTagInput.length > 0
+    ? specialTags.filter(tag => tag.item.toLowerCase().includes(variantTagInput.split(',').pop()!.trim().toLowerCase()))
+    : specialTags;
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -621,28 +642,26 @@ export default function MenuPage() {
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                  <Label>Special Tags</Label>
-                                  <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                      <Button variant="outline" className="w-full justify-between font-normal">
-                                          <span>{getSelectedTagNames(variantFormData.specialTags)}</span>
-                                          <ChevronDown className="h-4 w-4" />
-                                      </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                        {specialTags.map(tag => (
-                                              <DropdownMenuCheckboxItem
-                                                  key={tag.id}
-                                                  checked={variantFormData.specialTags?.includes(tag.item)}
-                                                  onSelect={(e) => e.preventDefault()}
-                                                  onClick={() => handleVariantSpecialTagChange(tag.item)}
-                                              >
-                                                  {tag.item}
-                                              </DropdownMenuCheckboxItem>
-                                          ))}
-                                          {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
-                                      </DropdownMenuContent>
-                                  </DropdownMenu>
+                                  <Label htmlFor="variantSpecialTags">Special Tags</Label>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Input
+                                        id="variantSpecialTags"
+                                        name="specialTags"
+                                        value={variantTagInput}
+                                        onChange={handleVariantTagInputChange}
+                                        placeholder="e.g. spicy, vegan, new"
+                                      />
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                                      <div className="flex flex-wrap gap-1 p-2">
+                                        {filteredVariantTags.map(tag => (
+                                          <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addVariantTag(tag.item)}>{tag.item}</Button>
+                                        ))}
+                                        {filteredVariantTags.length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching tags.</p>}
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="variantImage">Image</Label>
@@ -731,29 +750,28 @@ export default function MenuPage() {
                         </SelectContent>
                         </Select>
                     </div>
-                    <div className="space-y-2">
-                        <Label>Special Tags</Label>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between font-normal" disabled={isVariant}>
-                                <span>{getSelectedTagNames(formData.specialTags)}</span>
-                                <ChevronDown className="h-4 w-4" />
-                            </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                            {specialTags.map(tag => (
-                                    <DropdownMenuCheckboxItem
-                                        key={tag.id}
-                                        checked={formData.specialTags?.includes(tag.item)}
-                                        onSelect={(e) => e.preventDefault()}
-                                        onClick={() => handleSpecialTagChange(tag.item)}
-                                    >
-                                        {tag.item}
-                                    </DropdownMenuCheckboxItem>
-                                ))}
-                                {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                     <div className="space-y-2">
+                        <Label htmlFor="specialTags">Special Tags</Label>
+                         <Popover>
+                            <PopoverTrigger asChild>
+                              <Input
+                                id="specialTags"
+                                name="specialTags"
+                                value={tagInput}
+                                onChange={handleTagInputChange}
+                                placeholder="e.g. spicy, vegan, new"
+                                disabled={isVariant}
+                              />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                                <div className="flex flex-wrap gap-1 p-2">
+                                    {filteredTags.map(tag => (
+                                        <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addTag(tag.item)}>{tag.item}</Button>
+                                    ))}
+                                    {filteredTags.length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching tags.</p>}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="imageUrl">Image</Label>
@@ -953,5 +971,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
