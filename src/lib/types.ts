@@ -69,3 +69,37 @@ export type Table = {
     resetCounter: number;
     location: string;
 };
+
+export type Order = {
+  id: string;
+  storeId: string;
+  tableLabel: string;
+  status: 'Active' | 'Completed' | 'Cancelled';
+  guestCount: number;
+  orderTimestamp: any; // Firestore ServerTimestamp
+  completedTimestamp?: any; // Firestore ServerTimestamp
+  totalAmount: number;
+  notes?: string;
+};
+
+export type OrderItem = {
+  id: string;
+  orderId: string;
+  menuItemId: string;
+  menuName: string;
+  quantity: number;
+  priceAtOrder: number;
+  isRefill: boolean;
+  targetStation?: 'Hot' | 'Cold';
+  timestamp: any; // Firestore ServerTimestamp
+};
+
+export type OrderTransaction = {
+  id: string;
+  orderId: string;
+  type: 'Payment' | 'Discount' | 'Charge';
+  amount: number;
+  method?: string; // e.g., 'Cash', 'Card', or from G.List
+  notes?: string;
+  timestamp: any; // Firestore ServerTimestamp
+};
