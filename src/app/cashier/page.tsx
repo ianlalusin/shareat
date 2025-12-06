@@ -25,6 +25,7 @@ import { PlusCircle, Minus, Plus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { OrderTimer } from '@/components/cashier/order-timer';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -284,8 +285,7 @@ export default function CashierPage() {
                                 <div className="text-sm">
                                     <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
                                     <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
-                                    {/* Placeholder for timer */}
-                                    <p><span className="font-semibold">Time:</span> 00:00:00</p>
+                                    <OrderTimer startTime={order?.orderTimestamp} />
                                 </div>
                             </CardContent>
                             <CardFooter className="p-4 pt-0">
@@ -308,7 +308,7 @@ export default function CashierPage() {
             </DialogHeader>
             <div className="grid gap-6 py-4">
                 <div className="grid grid-cols-3 items-end gap-4">
-                    <div className="space-y-2">
+                     <div className="space-y-2">
                         <Label htmlFor="guestCount">No. of Guests</Label>
                         <div className="flex items-center gap-2">
                             <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
