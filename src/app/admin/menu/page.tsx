@@ -715,7 +715,7 @@ export default function MenuPage() {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="taxRate">Tax Rate</Label>
                     <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)} disabled={isVariant}>
@@ -727,9 +727,7 @@ export default function MenuPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                 
-                </div>
-                <div className="space-y-2">
+                  <div className="space-y-2">
                     <Label>Special Tags</Label>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -752,16 +750,15 @@ export default function MenuPage() {
                             {specialTags.length === 0 && <DropdownMenuItem disabled>No special tags found</DropdownMenuItem>}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  </div>
                   <div className="space-y-2">
                       <Label htmlFor="imageUrl">Image</Label>
                       <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} disabled={isVariant} />
                   </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="publicDescription">Public Description</Label>
-                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
-                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="publicDescription">Public Description</Label>
+                    <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
