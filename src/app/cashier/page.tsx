@@ -275,8 +275,11 @@ export default function CashierPage() {
                     const order = orders.find(o => o.id === table.activeOrderId);
                     return (
                         <Card key={table.id} className="bg-muted/30">
-                            <CardHeader className="p-4 flex-row items-center justify-between space-y-0">
-                                <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
+                            <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
+                                <div>
+                                    <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
+                                    <p className="text-xs text-muted-foreground font-medium">{order?.packageName}</p>
+                                </div>
                                 <Badge className={cn("text-white", getStatusColor(table.status))}>
                                     {table.status}
                                 </Badge>
