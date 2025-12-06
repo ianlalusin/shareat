@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { doc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
-import { notFound, useRouter } from 'next/navigation';
+import { notFound, useRouter, useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -14,7 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/types';
 
 
-export default function StoreDetailPage({ params: { storeId } }: { params: { storeId: string } }) {
+export default function StoreDetailPage() {
+  const params = useParams();
+  const storeId = params.storeId as string;
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();

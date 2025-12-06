@@ -136,7 +136,7 @@ export default function StaffDetailPage() {
   );
 }
 
-function InfoItem({ label, value, className }: { label: string; value?: string; className?: string}) {
+function InfoItem({ label, value, className }: { label: string; value?: string | number; className?: string}) {
     return (
         <div className={cn("space-y-1", className)}>
             <p className="text-sm font-medium text-muted-foreground">{label}</p>

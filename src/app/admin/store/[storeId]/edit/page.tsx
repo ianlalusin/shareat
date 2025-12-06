@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { notFound, useRouter } from 'next/navigation';
+import { notFound, useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from "lucide-react";
 import { Button } from '@/components/ui/button';
@@ -34,8 +34,9 @@ import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
 
 
-export default function EditStorePage({ params }: { params: { storeId: string } }) {
-  const storeId = params.storeId;
+export default function EditStorePage() {
+  const params = useParams();
+  const storeId = params.storeId as string;
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
