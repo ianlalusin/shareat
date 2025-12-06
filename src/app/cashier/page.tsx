@@ -284,7 +284,6 @@ export default function CashierPage() {
                                 <div className="text-sm">
                                     <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
                                     <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
-                                    <p><span className="font-semibold">Order ID:</span> <span className="text-xs">{table.activeOrderId || 'N/A'}</span></p>
                                     {/* Placeholder for timer */}
                                     <p><span className="font-semibold">Time:</span> 00:00:00</p>
                                 </div>
@@ -308,16 +307,16 @@ export default function CashierPage() {
                  </DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
-                 <div className="grid grid-cols-3 items-end gap-4">
+                <div className="grid grid-cols-3 items-end gap-4">
                     <div className="space-y-2">
-                        <Label htmlFor="guestCount">No of Guests</Label>
-                         <div className="flex items-center gap-2">
-                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-16 text-center" />
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                        <Label htmlFor="guestCount">No. of Guests</Label>
+                        <div className="flex items-center gap-2">
+                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
+                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-full text-center" />
+                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
                         </div>
                     </div>
-                     <div className="space-y-2">
+                    <div className="space-y-2">
                         <Label htmlFor="customerName">Customer Name</Label>
                         <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
                     </div>
@@ -358,7 +357,7 @@ export default function CashierPage() {
                         <Label htmlFor="rice">Rice</Label>
                         <div className="flex items-center gap-2">
                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="rice" type="number" value={riceCount} onChange={e => setRiceCount(Number(e.target.value))} className="w-16 text-center" />
+                            <Input id="rice" type="number" value={riceCount} onChange={e => setRiceCount(Number(e.target.value))} className="w-full text-center" />
                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
                         </div>
                      </div>
@@ -366,7 +365,7 @@ export default function CashierPage() {
                         <Label htmlFor="cheese">Cheese</Label>
                         <div className="flex items-center gap-2">
                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="cheese" type="number" value={cheeseCount} onChange={e => setCheeseCount(Number(e.target.value))} className="w-16 text-center" />
+                            <Input id="cheese" type="number" value={cheeseCount} onChange={e => setCheeseCount(Number(e.target.value))} className="w-full text-center" />
                              <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
                         </div>
                      </div>
