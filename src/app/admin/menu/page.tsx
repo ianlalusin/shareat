@@ -546,11 +546,11 @@ useEffect(() => {
 
   const filteredTags = tagInput.length > 0
     ? specialTags.filter(tag => tag.item.toLowerCase().includes(tagInput.split(',').pop()!.trim().toLowerCase()))
-    : specialTags;
+    : [];
 
   const filteredVariantTags = variantTagInput.length > 0
     ? specialTags.filter(tag => tag.item.toLowerCase().includes(variantTagInput.split(',').pop()!.trim().toLowerCase()))
-    : specialTags;
+    : [];
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -643,25 +643,20 @@ useEffect(() => {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                   <Label htmlFor="variantSpecialTags">Special Tags</Label>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <Input
-                                        id="variantSpecialTags"
-                                        name="specialTags"
-                                        value={variantTagInput}
-                                        onChange={handleVariantTagInputChange}
-                                        placeholder="e.g. spicy, vegan, new"
-                                      />
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                                      <div className="flex flex-wrap gap-1 p-2">
-                                        {filteredVariantTags.map(tag => (
-                                          <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addVariantTag(tag.item)}>{tag.item}</Button>
-                                        ))}
-                                        {filteredVariantTags.length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching tags.</p>}
-                                      </div>
-                                    </PopoverContent>
-                                  </Popover>
+                                    <Input
+                                      id="variantSpecialTags"
+                                      name="specialTags"
+                                      value={variantTagInput}
+                                      onChange={handleVariantTagInputChange}
+                                      placeholder="e.g. spicy, vegan, new"
+                                    />
+                                     {filteredVariantTags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 p-2 border rounded-md">
+                                            {filteredVariantTags.map(tag => (
+                                            <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addVariantTag(tag.item)}>{tag.item}</Button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="variantImage">Image</Label>
@@ -752,26 +747,21 @@ useEffect(() => {
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
-                         <Popover>
-                            <PopoverTrigger asChild>
-                              <Input
-                                id="specialTags"
-                                name="specialTags"
-                                value={tagInput}
-                                onChange={handleTagInputChange}
-                                placeholder="e.g. spicy, vegan, new"
-                                disabled={isVariant}
-                              />
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                                <div className="flex flex-wrap gap-1 p-2">
-                                    {filteredTags.map(tag => (
-                                        <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addTag(tag.item)}>{tag.item}</Button>
-                                    ))}
-                                    {filteredTags.length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching tags.</p>}
-                                </div>
-                            </PopoverContent>
-                        </Popover>
+                          <Input
+                            id="specialTags"
+                            name="specialTags"
+                            value={tagInput}
+                            onChange={handleTagInputChange}
+                            placeholder="e.g. spicy, vegan, new"
+                            disabled={isVariant}
+                          />
+                          {filteredTags.length > 0 && !isVariant && (
+                            <div className="flex flex-wrap gap-1 p-2 border rounded-md">
+                              {filteredTags.map(tag => (
+                                <Button key={tag.id} variant="outline" size="sm" className="h-7" onClick={() => addTag(tag.item)}>{tag.item}</Button>
+                              ))}
+                            </div>
+                          )}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="imageUrl">Image</Label>
@@ -971,3 +961,5 @@ useEffect(() => {
       </main>
   );
 }
+
+    
