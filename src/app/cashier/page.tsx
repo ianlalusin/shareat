@@ -291,7 +291,7 @@ export default function CashierPage() {
                     </div>
                 </div>
 
-                <div className="space-y-2 col-span-3">
+                <div className="space-y-2">
                     <Label>Initial Flavors (Max 3)</Label>
                     <div className="flex flex-wrap gap-2 rounded-lg border p-4">
                          {meatFlavors.map(flavor => (
