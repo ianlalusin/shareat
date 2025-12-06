@@ -156,8 +156,8 @@ export default function OrderDetailPage() {
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value;
-    const digits = unformatTIN(input);
-    const formatted = formatTIN(digits);
+    const digitsOnly = input.replace(/\D/g, '');
+    const formatted = formatTIN(digitsOnly);
     dispatch({ type: 'SET_INPUT', payload: formatted });
   };
   
@@ -272,16 +272,16 @@ export default function OrderDetailPage() {
                         </div>
                       )}
                       {showDiscountForm && (
-                        <div className="flex items-center gap-2 rounded-lg border p-2">
+                        <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
                             <Label htmlFor="discount-value" className="sr-only">Value</Label>
-                           <div className="flex">
+                           <div className="flex flex-auto">
                                 <Input 
                                     id="discount-value"
                                     type="number"
                                     value={discountValue}
                                     onChange={(e) => setDiscountValue(e.target.value)}
                                     placeholder="Value"
-                                    className="rounded-r-none focus-visible:ring-offset-0 w-24"
+                                    className="rounded-r-none focus-visible:ring-offset-0"
                                 />
                                 <Button
                                     type="button"
@@ -295,22 +295,22 @@ export default function OrderDetailPage() {
                            
                            <Label htmlFor="discount-type" className="sr-only">Type</Label>
                             <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
-                                <SelectTrigger id="discount-type" className="flex-1">
+                                <SelectTrigger id="discount-type" className="flex-auto">
                                     <SelectValue placeholder="Type" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
                                 </SelectContent>
                             </Select>
-                            <Button type="button" size="sm">Apply</Button>
-                            <Button type="button" size="icon" variant="ghost" onClick={() => setShowDiscountForm(false)}>
+                            <Button type="button" size="sm" className="flex-none">Apply</Button>
+                            <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowDiscountForm(false)}>
                                 <X className="h-4 w-4"/>
                                 <span className="sr-only">Cancel</span>
                             </Button>
                         </div>
                       )}
                       {showChargeForm && (
-                        <div className="flex items-center gap-2 rounded-lg border p-2">
+                        <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
                            <Label htmlFor="charge-value" className="sr-only">Value</Label>
                            <Input 
                                 id="charge-value"
@@ -318,12 +318,12 @@ export default function OrderDetailPage() {
                                 value={chargeValue}
                                 onChange={(e) => setChargeValue(e.target.value)}
                                 placeholder="Amount"
-                                className="focus-visible:ring-offset-0 w-28"
+                                className="focus-visible:ring-offset-0 flex-auto"
                             />
                            <Label htmlFor="charge-type" className="sr-only">Type</Label>
                            {chargeTypes.length > 0 ? (
                              <Select value={selectedCharge} onValueChange={setSelectedCharge}>
-                                 <SelectTrigger id="charge-type" className="flex-1">
+                                 <SelectTrigger id="charge-type" className="flex-auto">
                                      <SelectValue placeholder="Type" />
                                  </SelectTrigger>
                                  <SelectContent>
@@ -336,11 +336,11 @@ export default function OrderDetailPage() {
                                 value={customChargeType}
                                 onChange={(e) => setCustomChargeType(e.target.value)}
                                 placeholder="Charge Type"
-                                className="flex-1"
+                                className="flex-auto"
                              />
                            )}
-                            <Button type="button" size="sm">Apply</Button>
-                            <Button type="button" size="icon" variant="ghost" onClick={() => setShowChargeForm(false)}>
+                            <Button type="button" size="sm" className="flex-none">Apply</Button>
+                            <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowChargeForm(false)}>
                                 <X className="h-4 w-4"/>
                                 <span className="sr-only">Cancel</span>
                             </Button>
@@ -392,3 +392,6 @@ export default function OrderDetailPage() {
     </main>
   );
 }
+
+
+    
