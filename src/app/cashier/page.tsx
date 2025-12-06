@@ -85,9 +85,30 @@ export default function CashierPage() {
                 id: doc.id,
                 ...doc.data(),
               })) as MenuItem[];
-              const filteredPackages = menuData.filter(
-                (item) => item.category === 'Unlimited' && item.isAvailable
-              );
+
+              const currentHour = new Date().getHours();
+
+              const filteredPackages = menuData.filter((item) => {
+                if (item.category !== 'Unlimited' || !item.isAvailable) {
+                    return false;
+                }
+
+                const availability = item.availability.toLowerCase();
+                if (availability.includes('always') || availability.includes('all day')) {
+                    return true;
+                }
+                
+                if (availability.includes('lunch time') && currentHour >= 17) {
+                    return false;
+                }
+
+                if (availability.includes('dinner time') && currentHour < 17) {
+                    return false;
+                }
+                
+                return true;
+              });
+
               setUnlimitedPackages(filteredPackages);
             });
 
