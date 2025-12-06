@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, addDoc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -71,20 +71,49 @@ export default function CashierPage() {
     const availableTables = tables.filter(t => t.status === 'Available');
     const occupiedTables = tables.filter(t => t.status === 'Occupied');
     
-    const handleNewOrder = () => {
-        if (!selectedTable || guestCount < 1) {
-            alert("Please select a table and enter a valid number of guests.");
-            return;
-        }
-        // Logic to create a new order will be added here
-        console.log(`Creating new order for table ${selectedTable.tableName} with ${guestCount} guests.`);
+    const handleNewOrder = async () => {
+      if (!firestore || !selectedStoreId || !selectedTable || guestCount < 1) {
+        alert("Please select a table and enter a valid number of guests.");
+        return;
+      }
+    
+      const newOrderRef = doc(collection(firestore, 'orders'));
+      const tableRef = doc(firestore, 'tables', selectedTable.id);
+    
+      try {
+        const batch = writeBatch(firestore);
+    
+        // 1. Create a new order
+        batch.set(newOrderRef, {
+          storeId: selectedStoreId,
+          tableLabel: selectedTable.tableName,
+          status: 'Active',
+          guestCount: guestCount,
+          orderTimestamp: serverTimestamp(),
+          totalAmount: 0,
+        });
+    
+        // 2. Update the table
+        batch.update(tableRef, {
+          status: 'Occupied',
+          activeOrderId: newOrderRef.id,
+          resetCounter: (selectedTable.resetCounter || 0) + 1,
+        });
+    
+        await batch.commit();
+    
         setIsNewOrderModalOpen(false);
         setSelectedTable(null);
         setGuestCount(1);
-    }
+      } catch (error) {
+        console.error("Error creating new order: ", error);
+        alert("Failed to create new order. Please try again.");
+      }
+    };
     
     const handleAvailableTableClick = (table: TableType) => {
         setSelectedTable(table);
+        setGuestCount(1);
         setIsNewOrderModalOpen(true);
     }
 
