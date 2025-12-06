@@ -1,6 +1,7 @@
 
 
 
+
 export type Store = {
   id: string;
   storeName: string;
@@ -43,30 +44,22 @@ export type Staff = {
 
 export type MenuItem = {
   id: string;
-  // Linking variants
-  parentMenuId?: string; // If this is present, it's a variant.
-  variantName?: string;  // e.g., "Small", "Large", "Spicy"
-
-  // Shared properties (copied from parent for variants)
+  menuName: string;
   category: string;
-  menuName: string; // The name of the main dish, e.g., "Pizza"
-  storeId: string;
-  availability: string; // 'always', or from G.List
-  targetStation?: 'Hot' | 'Cold';
   soldBy: 'unit' | 'fraction';
-  
-  // Can be shared or overridden by variant
-  imageUrl?: string;
-  publicDescription?: string;
-  specialTags: string[];
-  taxRate: string;
-
-  // Individual properties for every item/variant
-  isAvailable: boolean; 
   cost: number;
   price: number;
   barcode: string;
+  isAvailable: boolean;
+  storeId: string;
+  availability: string;
+  imageUrl?: string;
+  publicDescription?: string;
+  targetStation?: 'Hot' | 'Cold';
+  taxRate: string;
   trackInventory: boolean;
   alertLevel: number;
+  specialTags: string[];
 };
+
 
