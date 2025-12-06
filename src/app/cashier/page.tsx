@@ -105,15 +105,15 @@ export default function CashierPage() {
         {/* Left Panel: Available Tables */}
         <div className="w-1/3 border-r border-border p-4 overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4 font-headline">Available Tables ({availableTables.length})</h2>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+            <div className="grid grid-cols-2 gap-4">
                 {availableTables.map(table => (
                     <Card 
                         key={table.id} 
-                        className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center"
+                        className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center border-2 border-green-500"
                         onClick={() => handleAvailableTableClick(table)}
                     >
                         <CardContent className="p-1 text-center">
-                            <p className="font-bold text-lg sm:text-xl md:text-2xl">{table.tableName}</p>
+                            <p className="font-bold text-2xl">{table.tableName}</p>
                         </CardContent>
                     </Card>
                 ))}
