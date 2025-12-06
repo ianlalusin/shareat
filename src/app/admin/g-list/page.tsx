@@ -50,8 +50,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -196,11 +194,15 @@ export default function GListPage() {
     return acc;
   }, {} as Record<string, GListItem[]>);
   
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (items.length === 0) {
       alert("No data to download.");
       return;
     }
+    
+    // Dynamically import libraries here
+    const XLSX = await import('xlsx');
+    const { saveAs } = await import('file-saver');
 
     const dataToExport = items.map(item => ({
       'Item': item.item,
