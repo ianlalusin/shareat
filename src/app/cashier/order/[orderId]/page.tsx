@@ -1,18 +1,61 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, updateDoc } from 'firebase/firestore';
 import { Order, OrderItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+
+
+// Reducer for complex state management of TIN input
+const tinReducer = (state: any, action: any) => {
+  switch (action.type) {
+    case 'SET_MASKED':
+      return { ...state, masked: action.payload };
+    case 'SET_UNMASKED':
+      return { ...state, unmasked: action.payload };
+    case 'SET_FORMATTED':
+      return { ...state, formatted: action.payload };
+    default:
+      return state;
+  }
+};
+
+const formatTIN = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 9);
+  let formatted = '';
+  if (digits.length > 0) {
+    formatted = digits.slice(0, 3);
+  }
+  if (digits.length > 3) {
+    formatted += `-${digits.slice(3, 6)}`;
+  }
+  if (digits.length > 6) {
+    formatted += `-${digits.slice(6, 9)}`;
+  }
+  return formatted ? `${formatted}-000` : '';
+};
+
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -22,6 +65,15 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customerName, setCustomerName] = useState('');
+  const [address, setAddress] = useState('');
+
+  const [tin, dispatch] = useReducer(tinReducer, {
+    masked: '',
+    unmasked: '',
+    formatted: '',
+  });
+
 
   const firestore = useFirestore();
 
@@ -31,19 +83,54 @@ export default function OrderDetailPage() {
     const orderRef = doc(firestore, 'orders', orderId);
     const orderUnsubscribe = onSnapshot(orderRef, (docSnap) => {
       if (docSnap.exists()) {
-        setOrder({ id: docSnap.id, ...docSnap.data() } as Order);
+        const orderData = { id: docSnap.id, ...docSnap.data() } as Order;
+        setOrder(orderData);
+        setCustomerName(orderData.customerName);
+        setAddress(orderData.address || '');
+        const unmaskedTin = (orderData.tin || '').replace(/\D/g, '').slice(0, 9);
+        dispatch({ type: 'SET_UNMASKED', payload: unmaskedTin });
+        dispatch({ type: 'SET_FORMATTED', payload: formatTIN(unmaskedTin) });
+
       } else {
         setOrder(null);
       }
       setLoading(false);
     });
 
-    // We'll add fetching for orderItems later
+    const itemsRef = collection(firestore, 'orders', orderId, 'orderItems');
+    const itemsUnsubscribe = onSnapshot(itemsRef, (snapshot) => {
+        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OrderItem));
+        setOrderItems(itemsData);
+    });
     
     return () => {
       orderUnsubscribe();
+      itemsUnsubscribe();
     };
   }, [firestore, orderId]);
+
+  const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '').slice(0, 9);
+    dispatch({ type: 'SET_UNMASKED', payload: value });
+    dispatch({ type: 'SET_FORMATTED', payload: formatTIN(value) });
+  };
+  
+  const handleUpdateDetails = async () => {
+    if (!firestore || !order) return;
+    const orderRef = doc(firestore, 'orders', order.id);
+    try {
+      await updateDoc(orderRef, {
+        customerName: customerName,
+        address: address,
+        tin: tin.unmasked ? tin.formatted : ''
+      });
+      // Add a toast notification for success
+    } catch (error) {
+      console.error("Error updating customer details: ", error);
+      // Add a toast notification for error
+    }
+  };
+
 
   if (loading) {
     return (
@@ -90,42 +177,73 @@ export default function OrderDetailPage() {
                 <CardHeader>
                     <CardTitle>Order Summary</CardTitle>
                 </CardHeader>
-                 <CardContent>
-                    <p>This is where the list of ordered items will go.</p>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Item</TableHead>
+                                <TableHead className="text-center">Qty</TableHead>
+                                <TableHead className="text-right">Price</TableHead>
+                                <TableHead className="text-right">Total</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {orderItems.map(item => (
+                                <TableRow key={item.id}>
+                                    <TableCell className="font-medium">{item.menuName}</TableCell>
+                                    <TableCell className="text-center">{item.quantity}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.priceAtOrder)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.quantity * item.priceAtOrder)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
                 </CardContent>
+                <CardFooter className="flex flex-col items-end gap-2">
+                    <div className="flex justify-between w-full max-w-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-end gap-2 w-full">
+                        <Button variant="outline">
+                            <Plus className="mr-2 h-4 w-4" /> Add Discount
+                        </Button>
+                        <Button variant="outline">
+                            <Plus className="mr-2 h-4 w-4" /> Add Charge
+                        </Button>
+                    </div>
+                    <Separator className="my-2 w-full max-w-sm"/>
+                     <div className="flex justify-between w-full max-w-sm text-lg font-semibold">
+                        <span>Total</span>
+                        <span>{formatCurrency(order.totalAmount)}</span>
+                    </div>
+                </CardFooter>
             </Card>
           </div>
 
           <div className="space-y-6">
              <Card>
               <CardHeader>
-                <CardTitle>Details</CardTitle>
+                <CardTitle>Customer Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Package</span>
-                  <span className="font-medium">{order.packageName}</span>
+                 <div className="space-y-2">
+                  <Label htmlFor="customerName">Name</Label>
+                  <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} onBlur={handleUpdateDetails} />
                 </div>
-                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Guests</span>
-                  <span className="font-medium">{order.guestCount}</span>
+                 <div className="space-y-2">
+                  <Label htmlFor="tin">TIN No. (Optional)</Label>
+                  <Input 
+                    id="tin" 
+                    value={tin.formatted}
+                    onChange={handleTinChange}
+                    onBlur={handleUpdateDetails}
+                    placeholder="xxx-xxx-xxx-000"
+                  />
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status</span>
-                  <Badge variant={order.status === 'Active' ? 'default' : 'secondary'} className={order.status === 'Active' ? 'bg-green-500' : ''}>
-                    {order.status}
-                  </Badge>
-                </div>
-                 {orderDate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Date</span>
-                      <span className="font-medium">{format(orderDate, 'PPpp')}</span>
-                    </div>
-                 )}
-                 <Separator />
-                 <div className="flex justify-between text-lg font-semibold">
-                  <span>Total</span>
-                  <span>{formatCurrency(order.totalAmount)}</span>
+                 <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea id="address" value={address} onChange={(e) => setAddress(e.target.value)} onBlur={handleUpdateDetails} />
                 </div>
               </CardContent>
               <CardFooter>

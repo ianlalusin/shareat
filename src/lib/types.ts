@@ -1,4 +1,5 @@
 
+import type { Timestamp } from 'firebase/firestore';
 
 export type Store = {
   id: string;
@@ -78,8 +79,10 @@ export type Order = {
   status: 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
   customerName: string;
-  orderTimestamp: any; // Firestore ServerTimestamp, marks the start of the 2-hour limit
-  completedTimestamp?: any; // Firestore ServerTimestamp
+  address?: string;
+  tin?: string;
+  orderTimestamp: Timestamp; // Firestore ServerTimestamp, marks the start of the 2-hour limit
+  completedTimestamp?: Timestamp; // Firestore ServerTimestamp
   totalAmount: number;
   notes?: string;
   initialFlavors: string[];
