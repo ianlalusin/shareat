@@ -11,6 +11,7 @@ export type Store = {
   description: string;
   status: 'Active' | 'Inactive';
   tags: string[];
+  mopAccepted: string[];
   openingDate?: string;
 };
 

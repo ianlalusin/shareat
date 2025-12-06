@@ -27,7 +27,7 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as Omit<Store, 'id'>;
-        setStore({ id: docSnap.id, ...data, tags: data.tags || [] });
+        setStore({ id: docSnap.id, ...data, tags: data.tags || [], mopAccepted: data.mopAccepted || [] });
       } else {
         setStore(null);
       }
@@ -172,6 +172,17 @@ export default function StoreDetailPage({ params: { storeId } }: { params: { sto
                         {tag}
                         </Badge>
                     ))}
+                </div>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+                <p className="text-sm font-medium text-muted-foreground">MOP Accepted</p>
+                <div className="flex flex-wrap gap-1">
+                    {store.mopAccepted.map((mop) => (
+                        <Badge key={mop} variant="outline">
+                        {mop}
+                        </Badge>
+                    ))}
+                    {store.mopAccepted.length === 0 && <p className="text-sm text-muted-foreground">N/A</p>}
                 </div>
             </div>
         </CardContent>

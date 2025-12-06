@@ -38,6 +38,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   description: '',
   status: 'Active',
   tags: [],
+  mopAccepted: [],
   logo: '',
   openingDate: '',
 };
@@ -47,6 +48,7 @@ export default function NewStorePage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
+  const [mopOptions, setMopOptions] = useState<GListItem[]>([]);
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -58,11 +60,25 @@ export default function NewStorePage() {
         where('category', '==', 'store tags'),
         where('is_active', '==', true)
       );
-      const unsubscribe = onSnapshot(tagsQuery, (snapshot) => {
+      const tagsUnsubscribe = onSnapshot(tagsQuery, (snapshot) => {
         const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setStoreTags(tagsData);
       });
-      return () => unsubscribe();
+      
+      const mopQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'MOP'),
+        where('is_active', '==', true)
+      );
+      const mopUnsubscribe = onSnapshot(mopQuery, (snapshot) => {
+        const mopData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+        setMopOptions(mopData);
+      });
+
+      return () => {
+        tagsUnsubscribe();
+        mopUnsubscribe();
+      };
     }
   }, [firestore]);
 
@@ -111,6 +127,15 @@ export default function NewStorePage() {
         ? prev.tags.filter(t => t !== tag)
         : [...prev.tags, tag];
       return { ...prev, tags: newTags };
+    });
+  };
+
+  const handleMopChange = (mop: string) => {
+    setFormData(prev => {
+      const newMops = prev.mopAccepted.includes(mop)
+        ? prev.mopAccepted.filter(m => m !== mop)
+        : [...prev.mopAccepted, mop];
+      return { ...prev, mopAccepted: newMops };
     });
   };
 
@@ -224,6 +249,23 @@ export default function NewStorePage() {
                                 {tag.item}
                             </Button>
                             ))}
+                             {storeTags.length === 0 && <p className='text-sm text-muted-foreground'>No tags found. Add them in G.List.</p>}
+                        </div>
+                    </div>
+                    <div className="md:col-span-2 space-y-2">
+                        <Label>MOP Accepted</Label>
+                        <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
+                            {mopOptions.map((mop) => (
+                            <Button
+                                key={mop.id}
+                                type="button"
+                                variant={formData.mopAccepted.includes(mop.item) ? 'default' : 'outline'}
+                                onClick={() => handleMopChange(mop.item)}
+                            >
+                                {mop.item}
+                            </Button>
+                            ))}
+                             {mopOptions.length === 0 && <p className='text-sm text-muted-foreground'>No MOPs found. Add them in G.List.</p>}
                         </div>
                     </div>
                 </div>
