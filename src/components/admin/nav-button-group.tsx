@@ -1,38 +1,43 @@
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
+'use client';
+
+import { usePathname } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { cn } from '@/lib/utils';
+
+const navLinks = [
+  { href: '/cashier', label: 'Cashier' },
+  { href: '/kitchen', label: 'Kitchen', disabled: true },
+  { href: '/refill', label: 'Refill', disabled: true },
+  { href: '/admin', label: 'Admin' },
+];
 
 export function NavButtonGroup() {
+  const pathname = usePathname();
+
+  const getVariant = (href: string) => {
+    return pathname.startsWith(href) ? 'secondary' : 'ghost';
+  };
+  
+  const getClassName = (href: string) => {
+    return pathname.startsWith(href)
+      ? 'bg-primary-foreground text-primary shadow-sm hover:bg-primary-foreground/90'
+      : 'text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground';
+  }
+
   return (
     <div className="hidden md:flex items-center gap-1 rounded-lg bg-primary-foreground/10 p-1">
-      <Button
-        asChild
-        variant="ghost"
-        size="sm"
-        className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-      >
-        <Link href="/cashier">Cashier</Link>
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-      >
-        Kitchen
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-      >
-        Refill
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="bg-primary-foreground text-primary shadow-sm hover:bg-primary-foreground/90"
-      >
-        Admin
-      </Button>
+      {navLinks.map(({ href, label, disabled }) => (
+        <Button
+          key={href}
+          asChild
+          variant={getVariant(href)}
+          size="sm"
+          className={cn(getClassName(href), disabled && 'pointer-events-none opacity-50')}
+        >
+          <Link href={disabled ? '#' : href}>{label}</Link>
+        </Button>
+      ))}
     </div>
   );
 }
