@@ -32,7 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Store, GListItem } from '@/lib/types';
-import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
 
 
@@ -100,20 +100,11 @@ export default function EditStorePage() {
   }, [firestore, storeId]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    let updatedValue = value;
-
     if (!formData) return;
-
-    // Automatically add "/" after month and day
-    if (value.length > (formData.openingDate?.length || 0)) {
-      if (value.length === 2 && !value.includes('/')) {
-        updatedValue = `${value}/`;
-      } else if (value.length === 5 && value.split('/').length === 2) {
-        updatedValue = `${value}/`;
-      }
-    }
-
+    const { name, value } = e.target;
+    const previousValue = formData.openingDate || '';
+    const updatedValue = autoformatDate(value, previousValue);
+    
     setFormData((prev) => (prev ? { ...prev, [name]: updatedValue } : null));
      if (updatedValue === '') {
         setDateError(undefined);

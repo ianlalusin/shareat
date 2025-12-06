@@ -24,7 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
-import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 
 
@@ -65,16 +65,8 @@ export default function NewStaffPage() {
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    let updatedValue = value;
-
-    // Automatically add "/" after month and day
-    if (value.length > (formData[name as 'birthday' | 'dateHired']?.length || 0)) {
-      if (value.length === 2 && !value.includes('/')) {
-        updatedValue = `${value}/`;
-      } else if (value.length === 5 && value.split('/').length === 2) {
-        updatedValue = `${value}/`;
-      }
-    }
+    const previousValue = formData[name as 'birthday' | 'dateHired'] || '';
+    const updatedValue = autoformatDate(value, previousValue);
 
     setFormData((prev) => ({ ...prev, [name]: updatedValue }));
      if (updatedValue === '') {

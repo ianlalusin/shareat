@@ -27,7 +27,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Store, GListItem } from '@/lib/types';
-import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
 
 
@@ -88,17 +88,9 @@ export default function NewStorePage() {
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    let updatedValue = value;
-
-    // Automatically add "/" after month and day
-    if (value.length > (formData.openingDate?.length || 0)) {
-      if (value.length === 2 && !value.includes('/')) {
-        updatedValue = `${value}/`;
-      } else if (value.length === 5 && value.split('/').length === 2) {
-        updatedValue = `${value}/`;
-      }
-    }
-
+    const previousValue = formData.openingDate || '';
+    const updatedValue = autoformatDate(value, previousValue);
+    
     setFormData((prev) => ({ ...prev, [name]: updatedValue }));
     if (updatedValue === '') {
         setDateError(undefined);

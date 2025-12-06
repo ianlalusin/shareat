@@ -42,6 +42,19 @@ export function revertToInputFormat(dateString: string): string {
     return dateString;
 }
 
+export function autoformatDate(currentValue: string, previousValue: string): string {
+  let updatedValue = currentValue;
+  // Automatically add "/" after month and day
+  if (currentValue.length > (previousValue?.length || 0)) {
+    if (currentValue.length === 2 && !currentValue.includes('/')) {
+      updatedValue = `${currentValue}/`;
+    } else if (currentValue.length === 5 && currentValue.split('/').length === 2) {
+      updatedValue = `${currentValue}/`;
+    }
+  }
+  return updatedValue;
+}
+
 export function formatCurrency(value: number | string | undefined | null) {
   const numericValue = Number(value);
   if (isNaN(numericValue)) {
