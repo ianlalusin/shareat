@@ -165,9 +165,6 @@ export default function OrderDetailPage() {
         </Button>
         <div>
             <h1 className="text-2xl font-semibold font-headline">Order #{order.id.substring(0, 6)}</h1>
-             <p className="text-sm text-muted-foreground">
-                For {order.customerName} on Table {order.tableLabel}
-             </p>
         </div>
       </div>
       
