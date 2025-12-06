@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { addDays, format } from "date-fns"
+import { addDays, format, subDays, startOfMonth, endOfMonth } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { DateRange } from "react-day-picker"
 
@@ -14,51 +14,45 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+
+const PRESETS = [
+  { label: "Today", getValue: () => ({ from: new Date(), to: new Date() }) },
+  { label: "Yesterday", getValue: () => ({ from: subDays(new Date(), 1), to: subDays(new Date(), 1) }) },
+  { label: "Last 7 days", getValue: () => ({ from: subDays(new Date(), 6), to: new Date() }) },
+  { label: "Last 30 days", getValue: () => ({ from: subDays(new Date(), 29), to: new Date() }) },
+  { label: "Current month", getValue: () => ({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) }) },
+]
+
 
 export function DateRangePicker({
   className,
 }: React.HTMLAttributes<HTMLDivElement>) {
   const [date, setDate] = React.useState<DateRange | undefined>({
-    from: new Date(),
+    from: subDays(new Date(), 6),
     to: new Date(),
   })
+  const [isOpen, setIsOpen] = React.useState(false)
 
-  const handlePresetChange = (value: string) => {
-    const now = new Date()
-    switch (value) {
-      case "today":
-        setDate({ from: now, to: now });
-        break;
-      case "yesterday":
-        setDate({ from: addDays(now, -1), to: addDays(now, -1) });
-        break;
-      case "last7":
-        setDate({ from: addDays(now, -7), to: now });
-        break;
-      case "last30":
-        setDate({ from: addDays(now, -30), to: now });
-        break;
-      default:
-        setDate(undefined);
-    }
+  const handlePresetClick = (preset: typeof PRESETS[0]) => {
+    setDate(preset.getValue())
+  }
+  
+  const handleApply = () => {
+    // Here you would typically call a function passed via props
+    // to update the parent component's state, e.g., onUpdate(date)
+    console.log("Applied date range:", date);
+    setIsOpen(false);
   }
 
   return (
     <div className={cn("grid gap-2", className)}>
-      <Popover>
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild>
           <Button
             id="date"
             variant={"outline"}
             className={cn(
-              "w-[240px] justify-start text-left font-normal",
+              "w-[260px] justify-start text-left font-normal",
               !date && "text-muted-foreground"
             )}
           >
@@ -78,20 +72,19 @@ export function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
-            <div className="flex items-center justify-center p-2">
-                <Select onValueChange={handlePresetChange}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Select a preset" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="today">Today</SelectItem>
-                        <SelectItem value="yesterday">Yesterday</SelectItem>
-                        <SelectItem value="last7">Last 7 days</SelectItem>
-                        <SelectItem value="last30">Last 30 days</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            <div className="border-t">
+            <div className="flex">
+                <div className="flex flex-col space-y-2 border-r p-4">
+                    {PRESETS.map((preset) => (
+                        <Button
+                        key={preset.label}
+                        onClick={() => handlePresetClick(preset)}
+                        variant="ghost"
+                        className="w-full justify-start"
+                        >
+                        {preset.label}
+                        </Button>
+                    ))}
+                </div>
                 <Calendar
                     initialFocus
                     mode="range"
@@ -100,6 +93,10 @@ export function DateRangePicker({
                     onSelect={setDate}
                     numberOfMonths={2}
                 />
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+                <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+                <Button onClick={handleApply}>Apply</Button>
             </div>
         </PopoverContent>
       </Popover>
