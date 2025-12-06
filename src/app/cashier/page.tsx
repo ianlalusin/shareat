@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, addDoc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, GListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Minus, Plus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -37,9 +40,21 @@ const getStatusColor = (status: TableType['status']) => {
 export default function CashierPage() {
     const [tables, setTables] = useState<TableType[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
+    const [unlimitedPackages, setUnlimitedPackages] = useState<MenuItem[]>([]);
+    const [meatFlavors, setMeatFlavors] = useState<GListItem[]>([]);
+    
     const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
-    const [guestCount, setGuestCount] = useState(1);
+    
+    // New Order Form State
+    const [guestCount, setGuestCount] = useState(2);
+    const [selectedPackage, setSelectedPackage] = useState<string>('');
+    const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
+    const [riceCount, setRiceCount] = useState(2);
+    const [cheeseCount, setCheeseCount] = useState(2);
+    const [showNotes, setShowNotes] = useState(false);
+    const [notes, setNotes] = useState('');
+
 
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
@@ -56,30 +71,68 @@ export default function CashierPage() {
             const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
                 const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
                 setOrders(ordersData);
-            })
+            });
+            
+            const packagesQuery = query(collection(firestore, 'menu'), where('storeId', '==', selectedStoreId), where('category', '==', 'unlimited'));
+            const packagesUnsubscribe = onSnapshot(packagesQuery, (snapshot) => {
+                const packagesData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()})) as MenuItem[];
+                setUnlimitedPackages(packagesData);
+            });
+
+            const flavorsQuery = query(collection(firestore, 'lists'), where('category', '==', 'meat flavor'), where('is_active', '==', true), where('storeIds', 'array-contains', selectedStoreId));
+            const flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
+                const flavorsData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()})) as GListItem[];
+                setMeatFlavors(flavorsData);
+            });
+
 
             return () => {
                 tablesUnsubscribe();
                 ordersUnsubscribe();
+                packagesUnsubscribe();
+                flavorsUnsubscribe();
             };
         } else {
             setTables([]);
             setOrders([]);
+            setUnlimitedPackages([]);
+            setMeatFlavors([]);
         }
     }, [firestore, selectedStoreId]);
+
+    useEffect(() => {
+        setRiceCount(guestCount);
+        setCheeseCount(guestCount);
+    }, [guestCount]);
 
     const availableTables = tables.filter(t => t.status === 'Available');
     const occupiedTables = tables.filter(t => t.status === 'Occupied');
     
+    const resetForm = () => {
+        setGuestCount(2);
+        setSelectedPackage('');
+        setSelectedFlavors([]);
+        setRiceCount(2);
+        setCheeseCount(2);
+        setShowNotes(false);
+        setNotes('');
+        setSelectedTable(null);
+    }
+    
     const handleNewOrder = async () => {
-      if (!firestore || !selectedStoreId || !selectedTable || guestCount < 1) {
-        alert("Please select a table and enter a valid number of guests.");
+      if (!firestore || !selectedStoreId || !selectedTable || !selectedPackage || selectedFlavors.length === 0) {
+        alert("Please ensure all required fields are filled: Guests, Package, and at least one Flavor.");
         return;
       }
     
       const newOrderRef = doc(collection(firestore, 'orders'));
       const tableRef = doc(firestore, 'tables', selectedTable.id);
-    
+      const pkg = unlimitedPackages.find(p => p.id === selectedPackage);
+      if(!pkg) {
+          alert("Selected package not found. Please try again.");
+          return;
+      }
+
       try {
         const batch = writeBatch(firestore);
     
@@ -90,10 +143,24 @@ export default function CashierPage() {
           status: 'Active',
           guestCount: guestCount,
           orderTimestamp: serverTimestamp(),
-          totalAmount: 0,
+          totalAmount: guestCount * pkg.price,
+          notes: notes,
+          initialFlavors: selectedFlavors,
+          packageName: pkg.menuName,
+        } as Omit<Order, 'id'>);
+        
+        // 2. Add main package to orderItems
+        const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
+        batch.set(orderItemRef, {
+            menuItemId: pkg.id,
+            menuName: pkg.menuName,
+            quantity: guestCount,
+            priceAtOrder: pkg.price,
+            isRefill: false,
+            timestamp: serverTimestamp(),
         });
-    
-        // 2. Update the table
+
+        // 3. Update the table
         batch.update(tableRef, {
           status: 'Occupied',
           activeOrderId: newOrderRef.id,
@@ -103,8 +170,7 @@ export default function CashierPage() {
         await batch.commit();
     
         setIsNewOrderModalOpen(false);
-        setSelectedTable(null);
-        setGuestCount(1);
+        resetForm();
       } catch (error) {
         console.error("Error creating new order: ", error);
         alert("Failed to create new order. Please try again.");
@@ -112,9 +178,21 @@ export default function CashierPage() {
     };
     
     const handleAvailableTableClick = (table: TableType) => {
+        resetForm();
         setSelectedTable(table);
-        setGuestCount(1);
         setIsNewOrderModalOpen(true);
+    }
+    
+    const handleFlavorClick = (flavor: string) => {
+        setSelectedFlavors(prev => {
+            if (prev.includes(flavor)) {
+                return prev.filter(f => f !== flavor);
+            }
+            if (prev.length < 3) {
+                return [...prev, flavor];
+            }
+            return prev;
+        });
     }
 
     if (!selectedStoreId) {
@@ -182,25 +260,89 @@ export default function CashierPage() {
         </div>
 
         {/* New Order Modal */}
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-3xl">
             <DialogHeader>
-                <DialogTitle>New Order for Table {selectedTable?.tableName}</DialogTitle>
+                <DialogTitle>New Order for {selectedTable?.tableName}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="guestCount">Number of Guests</Label>
-                    <Input 
-                        id="guestCount" 
-                        type="number"
-                        value={guestCount}
-                        onChange={(e) => setGuestCount(Number(e.target.value))}
-                        min="1"
-                        required
-                        autoFocus
-                    />
+                <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="guestCount">No of Guests</Label>
+                        <Input 
+                            id="guestCount" 
+                            type="number"
+                            value={guestCount}
+                            onChange={(e) => setGuestCount(Number(e.target.value))}
+                            min="1"
+                            required
+                        />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                        <Label htmlFor="package">Package</Label>
+                        <Select value={selectedPackage} onValueChange={setSelectedPackage} required>
+                            <SelectTrigger id="package">
+                                <SelectValue placeholder="Select a package" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {unlimitedPackages.map(pkg => (
+                                    <SelectItem key={pkg.id} value={pkg.id}>{pkg.menuName}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
+
+                <div className="space-y-2 col-span-3">
+                    <Label>Initial Flavors (Max 3)</Label>
+                    <div className="flex flex-wrap gap-2 rounded-lg border p-4">
+                         {meatFlavors.map(flavor => (
+                            <Button 
+                                key={flavor.id}
+                                type="button"
+                                variant={selectedFlavors.includes(flavor.item) ? 'default' : 'outline'}
+                                onClick={() => handleFlavorClick(flavor.item)}
+                                disabled={!selectedFlavors.includes(flavor.item) && selectedFlavors.length >= 3}
+                            >
+                                {flavor.item}
+                            </Button>
+                         ))}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 items-end">
+                     <div className="space-y-2">
+                        <Label htmlFor="rice">Rice</Label>
+                        <div className="flex items-center gap-2">
+                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
+                            <Input id="rice" type="number" value={riceCount} onChange={e => setRiceCount(Number(e.target.value))} className="w-16 text-center" />
+                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setRiceCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                        </div>
+                     </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="cheese">Cheese</Label>
+                        <div className="flex items-center gap-2">
+                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
+                            <Input id="cheese" type="number" value={cheeseCount} onChange={e => setCheeseCount(Number(e.target.value))} className="w-16 text-center" />
+                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCheeseCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                        </div>
+                     </div>
+                     <div className="flex items-center space-x-2">
+                        <Switch id="show-notes" checked={showNotes} onCheckedChange={setShowNotes} />
+                        <Label htmlFor="show-notes">Add Notes</Label>
+                    </div>
+                </div>
+
+                {showNotes && (
+                    <div className="col-span-3 space-y-2">
+                         <Label htmlFor="notes">Notes</Label>
+                         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                    </div>
+                )}
             </div>
             <DialogFooter>
+                <Button type="button" variant="ghost" onClick={resetForm}>
+                    Clear
+                </Button>
                 <DialogClose asChild>
                     <Button type="button" variant="outline">
                     Cancel

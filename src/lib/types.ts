@@ -81,6 +81,8 @@ export type Order = {
   completedTimestamp?: any; // Firestore ServerTimestamp
   totalAmount: number;
   notes?: string;
+  initialFlavors: string[];
+  packageName: string;
 };
 
 // Represents only PAID items for an order
@@ -93,6 +95,7 @@ export type OrderItem = {
   priceAtOrder: number;
   targetStation?: 'Hot' | 'Cold';
   timestamp: any; // Firestore ServerTimestamp
+  isRefill: boolean;
 };
 
 // Represents FREE refill items, kept separate for operational analysis
