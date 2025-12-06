@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 
 
 export default function StaffDetailPage() {
@@ -122,7 +122,7 @@ export default function StaffDetailPage() {
           <InfoItem label="Address" value={staff.address} />
           <InfoItem label="Birthday" value={staff.birthday} />
           <InfoItem label="Date Hired" value={staff.dateHired} />
-          <InfoItem label="Rate" value={staff.rate?.toString() ?? 'N/A'} />
+          <InfoItem label="Rate" value={formatCurrency(staff.rate)} />
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">Employment Status</p>
             <Badge variant={staff.employmentStatus === 'Active' ? 'default' : 'secondary'} className={staff.employmentStatus === 'Active' ? 'bg-green-500' : ''}>
