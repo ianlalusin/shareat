@@ -102,7 +102,7 @@ export default function OrderDetailPage() {
         setOrder(orderData);
         setCustomerName(orderData.customerName || '');
         setAddress(orderData.address || '');
-        dispatch({ type: 'SET_ALL', payload: { saved: orderData.tin }});
+        dispatch({ type: 'SET_ALL', payload: { saved: orderData.tin || '' }});
 
       } else {
         setOrder(null);
@@ -156,8 +156,22 @@ export default function OrderDetailPage() {
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value;
-    const digitsOnly = input.replace(/\D/g, '');
-    const formatted = formatTIN(digitsOnly);
+    const lastChar = input.slice(-1);
+    const currentDigits = (tin.inputValue.match(/\d/g) || []).join('');
+    
+    // Allow deleting even with formatting
+    if (input.length < tin.inputValue.length) {
+        dispatch({ type: 'SET_INPUT', payload: input });
+        return;
+    }
+    
+    // Only add numbers, up to 9
+    if (!/\d/.test(lastChar) || currentDigits.length >= 9) {
+        return;
+    }
+    
+    const newDigits = (input.match(/\d/g) || []).join('');
+    const formatted = formatTIN(newDigits);
     dispatch({ type: 'SET_INPUT', payload: formatted });
   };
   
@@ -255,100 +269,101 @@ export default function OrderDetailPage() {
                         </TableBody>
                     </Table>
                 </CardContent>
-                <CardFooter className="flex flex-col items-end gap-2">
-                    <div className="flex justify-between w-full max-w-sm">
+                <CardFooter className="flex flex-col items-stretch gap-2">
+                    <div className="flex justify-between w-full max-w-sm self-end">
                         <span className="text-muted-foreground">Subtotal</span>
                         <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
                     </div>
-                     <div className="flex flex-col items-stretch gap-2 w-full max-w-sm self-end">
+
+                    <div className="space-y-2 py-2">
                         {!showDiscountForm && !showChargeForm && (
-                        <div className="flex justify-end gap-2 w-full">
-                            <Button variant="outline" onClick={() => setShowDiscountForm(true)}>
-                                <Plus className="mr-2 h-4 w-4" /> Add Discount
-                            </Button>
-                            <Button variant="outline" onClick={() => setShowChargeForm(true)}>
-                                <Plus className="mr-2 h-4 w-4" /> Add Charge
-                            </Button>
-                        </div>
-                      )}
-                      {showDiscountForm && (
-                        <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
-                            <Label htmlFor="discount-value" className="sr-only">Value</Label>
-                           <div className="flex flex-auto">
-                                <Input 
-                                    id="discount-value"
-                                    type="number"
-                                    value={discountValue}
-                                    onChange={(e) => setDiscountValue(e.target.value)}
-                                    placeholder="Value"
-                                    className="rounded-r-none focus-visible:ring-offset-0"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="rounded-l-none border-l-0 px-3 font-bold"
-                                    onClick={() => setDiscountType(prev => prev === '₱' ? '%' : '₱')}
-                                >
-                                    {discountType}
+                            <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setShowDiscountForm(true)}>
+                                    <Plus className="mr-2 h-4 w-4" /> Add Discount
                                 </Button>
-                           </div>
-                           
-                           <Label htmlFor="discount-type" className="sr-only">Type</Label>
-                            <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
-                                <SelectTrigger id="discount-type" className="flex-auto">
-                                    <SelectValue placeholder="Type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                            <Button type="button" size="sm" className="flex-none">Apply</Button>
-                            <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowDiscountForm(false)}>
-                                <X className="h-4 w-4"/>
-                                <span className="sr-only">Cancel</span>
-                            </Button>
-                        </div>
-                      )}
-                      {showChargeForm && (
-                        <div className="flex items-stretch gap-2 rounded-lg border p-2 w-full">
-                           <Label htmlFor="charge-value" className="sr-only">Value</Label>
-                           <Input 
-                                id="charge-value"
-                                type="number"
-                                value={chargeValue}
-                                onChange={(e) => setChargeValue(e.target.value)}
-                                placeholder="Amount"
-                                className="focus-visible:ring-offset-0 flex-auto"
-                            />
-                           <Label htmlFor="charge-type" className="sr-only">Type</Label>
-                           {chargeTypes.length > 0 ? (
-                             <Select value={selectedCharge} onValueChange={setSelectedCharge}>
-                                 <SelectTrigger id="charge-type" className="flex-auto">
-                                     <SelectValue placeholder="Type" />
-                                 </SelectTrigger>
-                                 <SelectContent>
-                                     {chargeTypes.map(c => <SelectItem key={c.id} value={c.item}>{c.item}</SelectItem>)}
-                                 </SelectContent>
-                             </Select>
-                           ) : (
-                             <Input
-                                id="custom-charge-type"
-                                value={customChargeType}
-                                onChange={(e) => setCustomChargeType(e.target.value)}
-                                placeholder="Charge Type"
-                                className="flex-auto"
-                             />
-                           )}
-                            <Button type="button" size="sm" className="flex-none">Apply</Button>
-                            <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowChargeForm(false)}>
-                                <X className="h-4 w-4"/>
-                                <span className="sr-only">Cancel</span>
-                            </Button>
-                        </div>
-                      )}
+                                <Button variant="outline" onClick={() => setShowChargeForm(true)}>
+                                    <Plus className="mr-2 h-4 w-4" /> Add Charge
+                                </Button>
+                            </div>
+                        )}
+                        {showDiscountForm && (
+                            <div className="flex items-stretch gap-2 rounded-lg border p-2">
+                                <Label htmlFor="discount-value" className="sr-only">Value</Label>
+                               <div className="flex flex-auto">
+                                    <Input 
+                                        id="discount-value"
+                                        type="number"
+                                        value={discountValue}
+                                        onChange={(e) => setDiscountValue(e.target.value)}
+                                        placeholder="Value"
+                                        className="rounded-r-none focus-visible:ring-offset-0"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="rounded-l-none border-l-0 px-3 font-bold"
+                                        onClick={() => setDiscountType(prev => prev === '₱' ? '%' : '₱')}
+                                    >
+                                        {discountType}
+                                    </Button>
+                               </div>
+                               
+                               <Label htmlFor="discount-type" className="sr-only">Type</Label>
+                                <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
+                                    <SelectTrigger id="discount-type" className="flex-auto">
+                                        <SelectValue placeholder="Type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                                <Button type="button" size="sm" className="flex-none">Apply</Button>
+                                <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowDiscountForm(false)}>
+                                    <X className="h-4 w-4"/>
+                                    <span className="sr-only">Cancel</span>
+                                </Button>
+                            </div>
+                        )}
+                        {showChargeForm && (
+                            <div className="flex items-stretch gap-2 rounded-lg border p-2">
+                               <Label htmlFor="charge-value" className="sr-only">Value</Label>
+                               <Input 
+                                    id="charge-value"
+                                    type="number"
+                                    value={chargeValue}
+                                    onChange={(e) => setChargeValue(e.target.value)}
+                                    placeholder="Amount"
+                                    className="focus-visible:ring-offset-0 flex-auto"
+                                />
+                               <Label htmlFor="charge-type" className="sr-only">Type</Label>
+                               {chargeTypes.length > 0 ? (
+                                 <Select value={selectedCharge} onValueChange={setSelectedCharge}>
+                                     <SelectTrigger id="charge-type" className="flex-auto">
+                                         <SelectValue placeholder="Type" />
+                                     </SelectTrigger>
+                                     <SelectContent>
+                                         {chargeTypes.map(c => <SelectItem key={c.id} value={c.item}>{c.item}</SelectItem>)}
+                                     </SelectContent>
+                                 </Select>
+                               ) : (
+                                 <Input
+                                    id="custom-charge-type"
+                                    value={customChargeType}
+                                    onChange={(e) => setCustomChargeType(e.target.value)}
+                                    placeholder="Charge Type"
+                                    className="flex-auto"
+                                 />
+                               )}
+                                <Button type="button" size="sm" className="flex-none">Apply</Button>
+                                <Button type="button" size="icon" variant="ghost" className="flex-none" onClick={() => setShowChargeForm(false)}>
+                                    <X className="h-4 w-4"/>
+                                    <span className="sr-only">Cancel</span>
+                                </Button>
+                            </div>
+                        )}
                     </div>
-                    <Separator className="my-2 w-full max-w-sm"/>
-                     <div className="flex justify-between w-full max-w-sm text-lg font-semibold">
+                    <Separator className="my-2"/>
+                     <div className="flex justify-between w-full max-w-sm self-end text-lg font-semibold">
                         <span>Total</span>
                         <span>{formatCurrency(order.totalAmount)}</span>
                     </div>
@@ -392,6 +407,3 @@ export default function OrderDetailPage() {
     </main>
   );
 }
-
-
-    
