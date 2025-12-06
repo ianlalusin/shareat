@@ -76,7 +76,12 @@ export default function CashierPage() {
                 setOrders(ordersData);
             });
             
-            const packagesQuery = query(collection(firestore, 'menu'), where('storeId', '==', selectedStoreId), where('category', '==', 'unlimited'));
+            const packagesQuery = query(
+              collection(firestore, 'menu'), 
+              where('storeId', '==', selectedStoreId), 
+              where('category', '==', 'unlimited'),
+              where('isAvailable', '==', true)
+            );
             const packagesUnsubscribe = onSnapshot(packagesQuery, (snapshot) => {
                 const packagesData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()})) as MenuItem[];
                 setUnlimitedPackages(packagesData);
@@ -362,3 +367,5 @@ export default function CashierPage() {
     </Dialog>
   );
 }
+
+    
