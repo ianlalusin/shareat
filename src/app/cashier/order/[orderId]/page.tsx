@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -53,12 +53,8 @@ const formatTIN = (value: string) => {
   return formatted;
 };
 
-const formatFinalTIN = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 9);
-    if (digits.length === 9) {
-        return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6,9)}-000`;
-    }
-    return '';
+const unformatTIN = (value: string) => {
+    return value.replace(/-/g, '');
 }
 
 
@@ -98,8 +94,7 @@ export default function OrderDetailPage() {
         setCustomerName(orderData.customerName || '');
         setAddress(orderData.address || '');
         const savedTin = orderData.tin || '';
-        const inputTin = savedTin.replace(/-000$/, '').replace(/-/g, '');
-        dispatch({ type: 'SET_ALL', payload: { input: formatTIN(inputTin), saved: savedTin }});
+        dispatch({ type: 'SET_ALL', payload: { input: formatTIN(savedTin), saved: savedTin }});
 
       } else {
         setOrder(null);
@@ -148,10 +143,10 @@ export default function OrderDetailPage() {
     let dataToUpdate: Partial<Order> = {};
 
     if (field === 'tin') {
-        const finalTin = formatFinalTIN(tin.inputValue);
-        if(finalTin !== tin.savedValue) {
-            dataToUpdate.tin = finalTin;
-            dispatch({ type: 'SET_SAVED', payload: finalTin });
+        const unformattedTin = unformatTIN(tin.inputValue);
+        if(unformattedTin !== tin.savedValue && unformattedTin.length <= 9) {
+            dataToUpdate.tin = unformattedTin;
+            dispatch({ type: 'SET_SAVED', payload: unformattedTin });
         }
     } else if (field === 'customerName' && customerName !== order.customerName) {
         dataToUpdate.customerName = customerName;
@@ -162,10 +157,8 @@ export default function OrderDetailPage() {
     if (Object.keys(dataToUpdate).length > 0) {
         try {
             await updateDoc(orderRef, dataToUpdate);
-            // Add a toast notification for success
         } catch (error) {
             console.error(`Error updating ${field}:`, error);
-            // Add a toast notification for error
         }
     }
   };
@@ -252,44 +245,41 @@ export default function OrderDetailPage() {
                         </div>
                       )}
                       {showDiscountForm && (
-                        <div className="grid grid-cols-1 gap-2 rounded-lg border p-4">
-                            <div className="grid grid-cols-3 gap-2">
-                               <div className="space-y-1 col-span-2">
-                                   <Label htmlFor="discount-value" className="text-xs">Value</Label>
-                                   <div className="flex">
-                                        <Input 
-                                            id="discount-value"
-                                            type="number"
-                                            value={discountValue}
-                                            onChange={(e) => setDiscountValue(e.target.value)}
-                                            className="rounded-r-none focus-visible:ring-offset-0"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            className="rounded-l-none border-l-0 px-3 font-bold"
-                                            onClick={() => setDiscountType(prev => prev === '₱' ? '%' : '₱')}
-                                        >
-                                            {discountType}
-                                        </Button>
-                                   </div>
-                               </div>
-                               <div className="space-y-1">
-                                   <Label htmlFor="discount-type" className="text-xs">Type</Label>
-                                    <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
-                                        <SelectTrigger id="discount-type">
-                                            <SelectValue placeholder="Select..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                               </div>
-                            </div>
-                             <div className="flex justify-end gap-2 mt-2">
-                                <Button type="button" size="sm" variant="ghost" onClick={() => setShowDiscountForm(false)}>Cancel</Button>
-                                <Button type="button" size="sm">Apply</Button>
-                            </div>
+                        <div className="flex items-center gap-2 rounded-lg border p-2">
+                            <Label htmlFor="discount-value" className="sr-only">Value</Label>
+                           <div className="flex">
+                                <Input 
+                                    id="discount-value"
+                                    type="number"
+                                    value={discountValue}
+                                    onChange={(e) => setDiscountValue(e.target.value)}
+                                    placeholder="Value"
+                                    className="rounded-r-none focus-visible:ring-offset-0 w-24"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="rounded-l-none border-l-0 px-3 font-bold"
+                                    onClick={() => setDiscountType(prev => prev === '₱' ? '%' : '₱')}
+                                >
+                                    {discountType}
+                                </Button>
+                           </div>
+                           
+                           <Label htmlFor="discount-type" className="sr-only">Type</Label>
+                            <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
+                                <SelectTrigger id="discount-type" className="flex-1">
+                                    <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Button type="button" size="sm">Apply</Button>
+                            <Button type="button" size="icon" variant="ghost" onClick={() => setShowDiscountForm(false)}>
+                                <X className="h-4 w-4"/>
+                                <span className="sr-only">Cancel</span>
+                            </Button>
                         </div>
                       )}
                     </div>
