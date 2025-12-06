@@ -24,8 +24,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
-import { formatAndValidateDate } from '@/lib/utils';
-import { parse } from 'date-fns';
+import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { parse, isValid, format } from 'date-fns';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -73,6 +73,7 @@ export default function NewStaffPage() {
 
   const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    if (!value) return;
     const { formatted, error } = formatAndValidateDate(value);
     setFormData(prev => ({ ...prev, [name]: formatted }));
     setDateErrors(prev => ({ ...prev, [name]: error }));
@@ -81,14 +82,8 @@ export default function NewStaffPage() {
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    try {
-      const parsedDate = parse(value, 'MMMM dd, yyyy', new Date());
-      if (isValid(parsedDate)) {
-        setFormData(prev => ({ ...prev, [name]: format(parsedDate, 'M/d/yyyy')}));
-      }
-    } catch (error) {
-      // If parsing fails, it's not in the long format, so we leave it as is.
-    }
+    const formattedValue = revertToInputFormat(value);
+    setFormData(prev => ({ ...prev, [name]: formattedValue }));
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
