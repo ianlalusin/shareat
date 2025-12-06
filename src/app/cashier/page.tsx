@@ -76,16 +76,21 @@ export default function CashierPage() {
                 setOrders(ordersData);
             });
             
-            const packagesQuery = query(
-              collection(firestore, 'menu'), 
-              where('storeId', '==', selectedStoreId), 
-              where('category', '==', 'unlimited'),
-              where('isAvailable', '==', true)
+            const menuQuery = query(
+              collection(firestore, 'menu'),
+              where('storeId', '==', selectedStoreId)
             );
-            const packagesUnsubscribe = onSnapshot(packagesQuery, (snapshot) => {
-                const packagesData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()})) as MenuItem[];
-                setUnlimitedPackages(packagesData);
+            const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
+              const menuData = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+              })) as MenuItem[];
+              const filteredPackages = menuData.filter(
+                (item) => item.category === 'unlimited' && item.isAvailable
+              );
+              setUnlimitedPackages(filteredPackages);
             });
+
 
             const flavorsQuery = query(collection(firestore, 'lists'), where('category', '==', 'meat flavor'), where('is_active', '==', true), where('storeIds', 'array-contains', selectedStoreId));
             const flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
@@ -97,7 +102,7 @@ export default function CashierPage() {
             return () => {
                 tablesUnsubscribe();
                 ordersUnsubscribe();
-                packagesUnsubscribe();
+                menuUnsubscribe();
                 flavorsUnsubscribe();
             };
         } else {
@@ -367,5 +372,3 @@ export default function CashierPage() {
     </Dialog>
   );
 }
-
-    
