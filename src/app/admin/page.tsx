@@ -9,7 +9,6 @@ import {
 import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DateRange } from 'react-day-picker';
@@ -18,17 +17,28 @@ import { format } from 'date-fns';
 export default function AdminPage() {
   const [showCustomPicker, setShowCustomPicker] = React.useState(false);
   const [date, setDate] = React.useState<DateRange | undefined>();
+  const [startDateInput, setStartDateInput] = React.useState('');
+  const [endDateInput, setEndDateInput] = React.useState('');
+
 
   const handleCustomClick = () => {
     setShowCustomPicker(true);
-    // Optionally close the collapsible trigger if it's open
-    // This depends on the desired UX, for now we'll let it stay as is.
+    setStartDateInput(date?.from ? format(date.from, 'MM/dd/yyyy') : '');
+    setEndDateInput(date?.to ? format(date.to, 'MM/dd/yyyy') : '');
   };
 
   const handlePresetClick = () => {
     setShowCustomPicker(false);
     // Here you would also set the date based on the preset
   };
+  
+  const handleApplyCustomDate = () => {
+      // Basic validation can be added here
+      const from = new Date(startDateInput);
+      const to = new Date(endDateInput);
+      setDate({ from, to });
+      setShowCustomPicker(false);
+  }
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
@@ -70,23 +80,16 @@ export default function AdminPage() {
                         <div className="flex items-center gap-4">
                            <div className="grid gap-2">
                                 <Label htmlFor="start-date">Start date</Label>
-                                <Input id="start-date" value={date?.from ? format(date.from, "MM/dd/yyyy") : ''} placeholder="mm/dd/yyyy" />
+                                <Input id="start-date" value={startDateInput} onChange={e => setStartDateInput(e.target.value)} placeholder="mm/dd/yyyy" />
                            </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="end-date">End date</Label>
-                                <Input id="end-date" value={date?.to ? format(date.to, "MM/dd/yyyy") : ''} placeholder="mm/dd/yyyy" />
+                                <Input id="end-date" value={endDateInput} onChange={e => setEndDateInput(e.target.value)} placeholder="mm/dd/yyyy" />
                             </div>
                         </div>
-                        <Calendar
-                            mode="range"
-                            selected={date}
-                            onSelect={setDate}
-                            className="rounded-md border p-0"
-                            numberOfMonths={1}
-                        />
                          <div className="flex justify-end gap-2">
                             <Button variant="ghost" onClick={() => setShowCustomPicker(false)}>Cancel</Button>
-                            <Button>Apply</Button>
+                            <Button onClick={handleApplyCustomDate}>Apply</Button>
                          </div>
                     </div>
                   )}
