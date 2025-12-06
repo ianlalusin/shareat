@@ -2,8 +2,8 @@
 'use client';
 
 import * as React from 'react';
-import { addDays, format, subDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { addDays, format, subDays, startOfMonth, endOfMonth, isSameDay, subMonths } from 'date-fns';
+import { Calendar as CalendarIcon, ChevronRight } from 'lucide-react';
 import { DateRange } from 'react-day-picker';
 
 import { cn } from '@/lib/utils';
@@ -29,15 +29,11 @@ const PRESETS = [
     getValue: () => ({ from: subDays(new Date(), 6), to: new Date() }),
   },
   {
-    label: 'Last 30 days',
-    getValue: () => ({ from: subDays(new Date(), 29), to: new Date() }),
-  },
-  {
-    label: 'Current month',
-    getValue: () => ({
-      from: startOfMonth(new Date()),
-      to: endOfMonth(new Date()),
-    }),
+    label: 'Last Month',
+    getValue: () => {
+        const lastMonth = subMonths(new Date(), 1);
+        return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    }
   },
 ];
 
@@ -46,15 +42,9 @@ export default function AdminPage() {
     from: subDays(new Date(), 6),
     to: new Date(),
   });
-  const [isOpen, setIsOpen] = React.useState(false);
 
   const handlePresetClick = (preset: (typeof PRESETS)[0]) => {
     setDate(preset.getValue());
-  };
-
-  const handleApply = () => {
-    console.log('Applied date range:', date);
-    setIsOpen(false);
   };
   
   const isPresetActive = (preset: (typeof PRESETS)[0]) => {
@@ -74,72 +64,15 @@ export default function AdminPage() {
           Dashboard
         </h1>
         <div className="flex items-center gap-2">
-            {PRESETS.slice(0, 4).map((preset) => (
-                <Button 
-                    key={preset.label}
-                    variant={isPresetActive(preset) ? 'secondary' : 'outline'}
-                    size="sm"
-                    onClick={() => handlePresetClick(preset)}
-                    className="hidden md:inline-flex"
-                >
-                    {preset.label}
-                </Button>
-            ))}
-            <Popover open={isOpen} onOpenChange={setIsOpen}>
-                <PopoverTrigger asChild>
-                <Button
-                    id="date"
-                    variant={'outline'}
-                    size="sm"
-                    className={cn(
-                    'w-[240px] justify-start text-left font-normal',
-                    !date && 'text-muted-foreground'
-                    )}
-                >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date?.from ? (
-                    date.to ? (
-                        <>
-                        {format(date.from, 'LLL dd, y')} -{' '}
-                        {format(date.to, 'LLL dd, y')}
-                        </>
-                    ) : (
-                        format(date.from, 'LLL dd, y')
-                    )
-                    ) : (
-                    <span>Pick a date</span>
-                    )}
-                </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                <div className="flex">
-                    <div className="flex flex-col space-y-2 border-r p-4">
-                        {PRESETS.map((preset) => (
-                            <Button
-                            key={preset.label}
-                            onClick={() => handlePresetClick(preset)}
-                            variant={isPresetActive(preset) ? 'secondary' : 'ghost'}
-                            className="w-full justify-start"
-                            >
-                            {preset.label}
-                            </Button>
-                        ))}
-                    </div>
-                    <Calendar
-                        initialFocus
-                        mode="range"
-                        defaultMonth={date?.from}
-                        selected={date}
-                        onSelect={setDate}
-                        numberOfMonths={2}
-                    />
-                </div>
-                <div className="flex justify-end gap-2 p-4 border-t">
-                    <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-                    <Button onClick={handleApply}>Apply</Button>
-                </div>
-                </PopoverContent>
-            </Popover>
+            <Button variant="outline" size="sm">Today</Button>
+            <Button variant="outline" size="icon" className="h-9 w-9">
+                <ChevronRight className="h-4 w-4" />
+            </Button>
+            {/* The buttons below will be part of the collapsible section */}
+            {/* <Button variant="outline" size="sm">Yesterday</Button>
+            <Button variant="outline" size="sm">Last 7 Days</Button>
+            <Button variant="outline" size="sm">Last Month</Button>
+            <Button variant="outline" size="sm">Custom</Button> */}
         </div>
       </div>
       <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm bg-background">
