@@ -756,11 +756,11 @@ export default function MenuPage() {
                       <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} disabled={isVariant} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                    <Label htmlFor="publicDescription">Public Description</Label>
-                    <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="publicDescription">Public Description</Label>
+                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange} disabled={isVariant}/>
+                    </div>
                     <div className="space-y-2">
                         <div className="flex items-center gap-4">
                           <div className="flex items-center space-x-2">
@@ -781,10 +781,10 @@ export default function MenuPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                    </div>
-                     <div className="flex items-center space-x-2">
-                        <Label htmlFor="isAvailable">Available</Label>
-                        <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                         <div className="flex items-center space-x-2 pt-4">
+                            <Label htmlFor="isAvailable">Available</Label>
+                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                        </div>
                     </div>
                 </div>
               </div>
@@ -949,3 +949,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
