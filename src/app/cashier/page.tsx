@@ -101,8 +101,10 @@ export default function CashierPage() {
     }, [firestore, selectedStoreId]);
 
     useEffect(() => {
-        setRiceCount(guestCount);
-        setCheeseCount(guestCount);
+        if (guestCount > 0) {
+            setRiceCount(guestCount);
+            setCheeseCount(guestCount);
+        }
     }, [guestCount]);
 
     const availableTables = tables.filter(t => t.status === 'Available');
@@ -220,7 +222,7 @@ export default function CashierPage() {
                         onClick={() => handleAvailableTableClick(table)}
                     >
                         <CardContent className="p-1 text-center">
-                            <p className="font-bold text-2xl">{table.tableName}</p>
+                            <p className="font-bold text-2xl md:text-3xl lg:text-4xl">{table.tableName}</p>
                         </CardContent>
                     </Card>
                 ))}
@@ -260,7 +262,7 @@ export default function CashierPage() {
         </div>
 
         {/* New Order Modal */}
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="sm:max-w-xl">
             <DialogHeader>
                 <DialogTitle>New Order for {selectedTable?.tableName}</DialogTitle>
             </DialogHeader>
@@ -268,14 +270,11 @@ export default function CashierPage() {
                 <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="guestCount">No of Guests</Label>
-                        <Input 
-                            id="guestCount" 
-                            type="number"
-                            value={guestCount}
-                            onChange={(e) => setGuestCount(Number(e.target.value))}
-                            min="1"
-                            required
-                        />
+                         <div className="flex items-center gap-2">
+                             <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
+                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-16 text-center" />
+                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                        </div>
                     </div>
                     <div className="space-y-2 col-span-2">
                         <Label htmlFor="package">Package</Label>
