@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -25,7 +26,6 @@ interface OrderDetailsModalProps {
 
 const calculateLapseTime = (start: Timestamp | undefined, end: Timestamp | undefined) => {
   if (!start || !end) return '';
-  // Ensure timestamps are valid objects before calling toMillis
   if (typeof start.toMillis !== 'function' || typeof end.toMillis !== 'function') return '';
   const diff = end.toMillis() - start.toMillis();
   const minutes = Math.floor(diff / 60000);
@@ -37,6 +37,8 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const firestore = useFirestore();
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
+  const [isUpdateSelectionModalOpen, setIsUpdateSelectionModalOpen] = useState(false);
+
 
   useEffect(() => {
     if (!firestore || !order.id) return;
@@ -69,13 +71,12 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const pendingItems = allItems.filter(item => item.status === 'Pending');
 
   const handleBuzz = () => {
-    // In a real app, this would trigger a notification to the kitchen/bar.
-    // For now, we can just log it to the console.
     console.log(`Buzzing kitchen for order ${order.id} for pending items!`);
     alert(`Kitchen has been notified about ${pendingItems.length} pending item(s).`);
   }
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -133,6 +134,9 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
              <Button variant="outline" onClick={onClose}>
                 Close
              </Button>
+             <Button variant="outline" onClick={() => setIsUpdateSelectionModalOpen(true)}>
+                Update Order
+             </Button>
              <Button onClick={handleBuzz} disabled={pendingItems.length === 0}>
                 <BellRing className="mr-2 h-4 w-4" />
                 Buzz Kitchen
@@ -141,5 +145,21 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={isUpdateSelectionModalOpen} onOpenChange={setIsUpdateSelectionModalOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Update Order</DialogTitle>
+                <DialogDescription>
+                    What would you like to update for this order?
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                <Button variant="outline" size="lg">Update Guest Count</Button>
+                <Button variant="outline" size="lg">Update Package</Button>
+            </div>
+        </DialogContent>
+    </Dialog>
+    </>
   );
 }
