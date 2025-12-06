@@ -49,6 +49,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -150,12 +151,10 @@ export default function GListPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this item?')) {
-      try {
-        await deleteDoc(doc(firestore, 'lists', itemId));
-      } catch (error) {
-        console.error("Error deleting document: ", error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'lists', itemId));
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
 
@@ -332,7 +331,9 @@ export default function GListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handleDelete(item.id)}>Delete</DropdownMenuItem>
+                                <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
+                                  <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
+                                </DeleteConfirmationDialog>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>

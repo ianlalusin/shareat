@@ -30,6 +30,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -49,15 +50,12 @@ export default function StaffPage() {
     }
   }, [firestore]);
 
-  const handleDelete = async (e: React.MouseEvent, staffId: string) => {
-    e.stopPropagation();
+  const handleDelete = async (staffId: string) => {
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this staff member?')) {
-      try {
-        await deleteDoc(doc(firestore, 'staff', staffId));
-      } catch (error) {
-        console.error('Error deleting document: ', error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'staff', staffId));
+    } catch (error) {
+      console.error('Error deleting document: ', error);
     }
   };
 
@@ -133,12 +131,14 @@ export default function StaffPage() {
                       <DropdownMenuItem onSelect={() => router.push(`/admin/staff/${member.id}/edit`)}>
                         Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, member.id)}
-                        className="text-destructive"
-                      >
-                        Delete
-                      </DropdownMenuItem>
+                      <DeleteConfirmationDialog onConfirm={() => handleDelete(member.id)}>
+                        <DropdownMenuItem
+                          onSelect={(e) => e.preventDefault()}
+                          className="text-destructive"
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DeleteConfirmationDialog>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

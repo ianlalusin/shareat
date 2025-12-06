@@ -31,6 +31,7 @@ import {
 } from 'firebase/firestore';
 import Link from 'next/link';
 import { Store, GListItem } from '@/lib/types';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 function TagFetcher() {
@@ -104,15 +105,12 @@ export default function StorePage() {
   }, [firestore]);
 
 
-  const handleDelete = async (e: React.MouseEvent, storeId: string) => {
-    e.stopPropagation();
+  const handleDelete = async (storeId: string) => {
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this store?')) {
-      try {
-        await deleteDoc(doc(firestore, 'stores', storeId));
-      } catch (error) {
-        console.error("Error deleting document: ", error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'stores', storeId));
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
   
@@ -181,7 +179,9 @@ export default function StorePage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, store.id)}>Delete</DropdownMenuItem>
+                      <DeleteConfirmationDialog onConfirm={() => handleDelete(store.id)}>
+                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
+                      </DeleteConfirmationDialog>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

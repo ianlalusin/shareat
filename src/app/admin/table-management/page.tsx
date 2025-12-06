@@ -39,6 +39,7 @@ import { Table } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialTableState: Omit<Table, 'id' | 'storeId'> = {
   tableName: '',
@@ -133,12 +134,10 @@ export default function TableManagementPage() {
   
   const handleDelete = async (tableId: string) => {
     if (!firestore) return;
-    if (window.confirm('Are you sure you want to delete this table?')) {
-      try {
-        await deleteDoc(doc(firestore, 'tables', tableId));
-      } catch (error) {
-        console.error("Error deleting document: ", error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'tables', tableId));
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
 
@@ -257,10 +256,12 @@ export default function TableManagementPage() {
                         <Edit className="h-4 w-4" />
                         <span className="sr-only">Edit</span>
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(table.id)}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Delete</span>
-                    </Button>
+                    <DeleteConfirmationDialog onConfirm={() => handleDelete(table.id)}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                      </Button>
+                    </DeleteConfirmationDialog>
                 </CardFooter>
             </Card>
             ))}

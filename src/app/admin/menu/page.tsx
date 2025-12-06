@@ -62,6 +62,7 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TagsInput } from '@/components/ui/tags-input';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -272,16 +273,12 @@ useEffect(() => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (event: React.MouseEvent, itemToDelete: MenuItem) => {
-    event.stopPropagation();
+  const handleDelete = async (itemId: string) => {
     if (!firestore) return;
-    if (window.confirm(`Are you sure you want to delete this item?`)) {
-      try {
-        const itemRef = doc(firestore, 'menu', itemToDelete.id);
-        await deleteDoc(itemRef);
-      } catch (error) {
-        console.error("Error deleting document(s): ", error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'menu', itemId));
+    } catch (error) {
+      console.error("Error deleting document(s): ", error);
     }
   };
 
@@ -579,7 +576,9 @@ useEffect(() => {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={(e) => handleDelete(e as unknown as React.MouseEvent, item)}>Delete</DropdownMenuItem>
+                                  <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
+                                  </DeleteConfirmationDialog>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
