@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -12,6 +13,7 @@ import { Store as StoreIcon, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/types';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 export default function StoreDetailPage() {
@@ -29,7 +31,7 @@ export default function StoreDetailPage() {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as Omit<Store, 'id'>;
-        setStore({ id: docSnap.id, ...data, tags: data.tags || [], mopAccepted: data.mopAccepted || [] });
+        setStore({ id: docSnap.id, ...data, tags: data.tags || [], mopAccepted: data.mopAccepted || [], tableLocations: data.tableLocations || [] });
       } else {
         setStore(null);
       }
@@ -41,13 +43,12 @@ export default function StoreDetailPage() {
 
   const handleDelete = async () => {
     if (!firestore || !storeId) return;
-    if (window.confirm('Are you sure you want to delete this store?')) {
-      try {
-        await deleteDoc(doc(firestore, 'stores', storeId));
-        router.push('/admin/store');
-      } catch (error) {
-        console.error("Error deleting document: ", error);
-      }
+    // The confirmation is handled by the DeleteConfirmationDialog
+    try {
+      await deleteDoc(doc(firestore, 'stores', storeId));
+      router.push('/admin/store');
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
 
@@ -122,9 +123,11 @@ export default function StoreDetailPage() {
                     <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Link>
             </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-                <Trash2 className="mr-2 h-4 w-4" /> Delete
-            </Button>
+             <DeleteConfirmationDialog onConfirm={handleDelete}>
+                <Button variant="destructive">
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
+            </DeleteConfirmationDialog>
         </div>
       </div>
       
@@ -174,9 +177,21 @@ export default function StoreDetailPage() {
                         {tag}
                         </Badge>
                     ))}
+                     {store.tags.length === 0 && <p className="text-sm text-muted-foreground">N/A</p>}
                 </div>
             </div>
-            <div className="space-y-1 md:col-span-2">
+            <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Table Locations</p>
+                <div className="flex flex-wrap gap-1">
+                    {store.tableLocations.map((loc) => (
+                        <Badge key={loc} variant="outline">
+                        {loc}
+                        </Badge>
+                    ))}
+                    {store.tableLocations.length === 0 && <p className="text-sm text-muted-foreground">N/A</p>}
+                </div>
+            </div>
+            <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">MOP Accepted</p>
                 <div className="flex flex-wrap gap-1">
                     {store.mopAccepted.map((mop) => (

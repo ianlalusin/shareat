@@ -12,6 +12,7 @@ export type Store = {
   tags: string[];
   mopAccepted: string[];
   openingDate?: string;
+  tableLocations: string[];
 };
 
 export type GListItem = {
@@ -66,4 +67,5 @@ export type Table = {
     status: 'Available' | 'Occupied' | 'Reserved' | 'Inactive';
     activeOrderId?: string;
     resetCounter: number;
+    location: string;
 };

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -27,6 +28,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { TagsInput } from '@/components/ui/tags-input';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -41,6 +43,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   mopAccepted: [],
   logo: '',
   openingDate: '',
+  tableLocations: [],
 };
 
 export default function NewStorePage() {
@@ -137,6 +140,10 @@ export default function NewStorePage() {
         : [...prev.mopAccepted, mop];
       return { ...prev, mopAccepted: newMops };
     });
+  };
+  
+  const handleTableLocationsChange = (newLocations: string[]) => {
+    setFormData(prev => ({ ...prev, tableLocations: newLocations }));
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -252,7 +259,16 @@ export default function NewStorePage() {
                              {storeTags.length === 0 && <p className='text-sm text-muted-foreground'>No tags found. Add them in G.List.</p>}
                         </div>
                     </div>
-                    <div className="md:col-span-2 space-y-2">
+                     <div className="space-y-2">
+                        <Label htmlFor="tableLocations">Table Locations</Label>
+                        <TagsInput
+                          id="tableLocations"
+                          value={formData.tableLocations}
+                          onChange={handleTableLocationsChange}
+                          placeholder="Add locations..."
+                        />
+                    </div>
+                    <div className="space-y-2">
                         <Label>MOP Accepted</Label>
                         <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
                             {mopOptions.map((mop) => (

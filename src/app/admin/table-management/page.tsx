@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -32,10 +33,11 @@ import {
   deleteDoc,
   query,
   where,
-  writeBatch
+  writeBatch,
+  getDoc,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table } from '@/lib/types';
+import { Table, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -46,10 +48,12 @@ const initialTableState: Omit<Table, 'id' | 'storeId'> = {
   status: 'Available',
   activeOrderId: '',
   resetCounter: 0,
+  location: '',
 };
 
 export default function TableManagementPage() {
   const [tables, setTables] = useState<Table[]>([]);
+  const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [formData, setFormData] = useState(initialTableState);
@@ -63,9 +67,23 @@ export default function TableManagementPage() {
         const tablesData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Table[];
         setTables(tablesData.sort((a, b) => a.tableName.localeCompare(b.tableName, undefined, { numeric: true })));
       });
-      return () => unsubscribe();
+
+      const storeDocRef = doc(firestore, 'stores', selectedStoreId);
+      const storeUnsubscribe = onSnapshot(storeDocRef, (docSnap) => {
+        if(docSnap.exists()){
+          setCurrentStore({id: docSnap.id, ...docSnap.data()} as Store);
+        } else {
+          setCurrentStore(null);
+        }
+      });
+
+      return () => {
+        unsubscribe();
+        storeUnsubscribe();
+      }
     } else {
       setTables([]);
+      setCurrentStore(null);
     }
   }, [firestore, selectedStoreId]);
 
@@ -76,6 +94,7 @@ export default function TableManagementPage() {
         status: editingTable.status,
         activeOrderId: editingTable.activeOrderId || '',
         resetCounter: editingTable.resetCounter || 0,
+        location: editingTable.location || '',
       });
     } else {
       setFormData(initialTableState);
@@ -87,8 +106,8 @@ export default function TableManagementPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSelectChange = (value: Table['status']) => {
-    setFormData((prev) => ({ ...prev, status: value }));
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value as any }));
   };
   
   const handleOpenModal = (table: Table | null) => {
@@ -103,12 +122,18 @@ export default function TableManagementPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!firestore || !selectedStoreId) return;
+    
+    if (currentStore && currentStore.tableLocations.length > 0 && !formData.location) {
+      alert('Please select a table location.');
+      return;
+    }
 
     const dataToSave = {
       tableName: formData.tableName,
       status: formData.status,
       activeOrderId: formData.activeOrderId,
       resetCounter: formData.resetCounter,
+      location: formData.location,
       storeId: selectedStoreId,
     };
 
@@ -118,6 +143,7 @@ export default function TableManagementPage() {
         await updateDoc(tableRef, {
             tableName: dataToSave.tableName,
             status: dataToSave.status,
+            location: dataToSave.location,
         });
       } else {
         await addDoc(collection(firestore, 'tables'), {
@@ -194,9 +220,24 @@ export default function TableManagementPage() {
                     <Label htmlFor="tableName">Table Name</Label>
                     <Input id="tableName" name="tableName" value={formData.tableName} onChange={handleInputChange} required />
                   </div>
+                   {currentStore && currentStore.tableLocations && currentStore.tableLocations.length > 0 && (
+                     <div className="space-y-2">
+                      <Label htmlFor="location">Location</Label>
+                      <Select name="location" value={formData.location} onValueChange={(value) => handleSelectChange('location', value)} required>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select location" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {currentStore.tableLocations.map(loc => (
+                               <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                    </div>
+                   )}
                   <div className="space-y-2">
                     <Label htmlFor="status">Status</Label>
-                    <Select name="status" value={formData.status} onValueChange={handleSelectChange} required>
+                    <Select name="status" value={formData.status} onValueChange={(value) => handleSelectChange('status', value as Table['status'])} required>
                         <SelectTrigger>
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
@@ -245,6 +286,7 @@ export default function TableManagementPage() {
             <Card key={table.id} className="flex flex-col">
                 <CardHeader className="flex-grow pb-2">
                     <CardTitle className="text-base font-bold">{table.tableName}</CardTitle>
+                    {table.location && <Badge variant="outline" className="w-fit">{table.location}</Badge>}
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2">
                      <Badge className={cn("text-white w-full justify-center", getStatusColor(table.status))}>{table.status}</Badge>

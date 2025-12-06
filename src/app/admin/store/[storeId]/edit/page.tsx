@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -32,6 +33,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat } from '@/lib/utils';
+import { TagsInput } from '@/components/ui/tags-input';
 
 
 export default function EditStorePage() {
@@ -58,7 +60,7 @@ export default function EditStorePage() {
 
         if (docSnap.exists()) {
             const storeData = docSnap.data() as Omit<Store, 'id'>;
-            setFormData({ ...storeData, tags: storeData.tags || [], mopAccepted: storeData.mopAccepted || [] });
+            setFormData({ ...storeData, tags: storeData.tags || [], mopAccepted: storeData.mopAccepted || [], tableLocations: storeData.tableLocations || [] });
             if (storeData.logo) {
                 setLogoPreview(storeData.logo);
             }
@@ -166,6 +168,11 @@ export default function EditStorePage() {
         : [...prev.mopAccepted, mop];
       return { ...prev, mopAccepted: newMops };
     });
+  };
+  
+  const handleTableLocationsChange = (newLocations: string[]) => {
+    if (!formData) return;
+    setFormData(prev => (prev ? { ...prev, tableLocations: newLocations } : null));
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -317,7 +324,16 @@ export default function EditStorePage() {
                              {storeTags.length === 0 && <p className='text-sm text-muted-foreground'>No tags found. Add them in G.List.</p>}
                         </div>
                     </div>
-                     <div className="md:col-span-2 space-y-2">
+                    <div className="space-y-2">
+                        <Label htmlFor="tableLocations">Table Locations</Label>
+                        <TagsInput
+                          id="tableLocations"
+                          value={formData.tableLocations}
+                          onChange={handleTableLocationsChange}
+                          placeholder="Add locations..."
+                        />
+                    </div>
+                     <div className="space-y-2">
                         <Label>MOP Accepted</Label>
                         <div className="flex flex-wrap gap-2 rounded-lg border p-4 h-32 overflow-auto">
                             {mopOptions.map((mop) => (
