@@ -234,69 +234,75 @@ export default function GListPage() {
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           G.List
         </h1>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="flex items-center gap-2" onClick={openAddModal}>
-              <PlusCircle className="h-4 w-4" />
-              <span>Add Item</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
-                 <div className="space-y-2">
-                  <Label htmlFor="storeIds">Store (required)</Label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
-                        <span>{getSelectedStoreNames()}</span>
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {stores.map(store => (
-                            <DropdownMenuCheckboxItem
-                                key={store.id}
-                                checked={formData.storeIds.includes(store.id)}
-                                onSelect={(e) => e.preventDefault()}
-                                onClick={() => handleStoreIdChange(store.id)}
-                            >
-                                {store.storeName}
-                            </DropdownMenuCheckboxItem>
-                        ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+        <div className="flex items-center gap-2">
+           <Button size="sm" variant="outline" onClick={handleDownload}>
+            <Download className="h-4 w-4 mr-2" />
+            Download
+          </Button>
+          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="flex items-center gap-2" onClick={openAddModal}>
+                <PlusCircle className="h-4 w-4" />
+                <span>Add Item</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit}>
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="storeIds">Store (required)</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                          <span>{getSelectedStoreNames()}</span>
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {stores.map(store => (
+                              <DropdownMenuCheckboxItem
+                                  key={store.id}
+                                  checked={formData.storeIds.includes(store.id)}
+                                  onSelect={(e) => e.preventDefault()}
+                                  onClick={() => handleStoreIdChange(store.id)}
+                              >
+                                  {store.storeName}
+                              </DropdownMenuCheckboxItem>
+                          ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="item">Item</Label>
+                    <Input id="item" name="item" value={formData.item} onChange={handleInputChange} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="category">Category</Label>
+                    <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="is_active">Active</Label>
+                    <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={handleSwitchChange} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="item">Item</Label>
-                  <Input id="item" name="item" value={formData.item} onChange={handleInputChange} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Label htmlFor="is_active">Active</Label>
-                  <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={handleSwitchChange} />
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                    Cancel
-                  </Button>
-                </DialogClose>
-                <Button type="submit">{editingItem ? 'Save Changes' : 'Save'}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit">{editingItem ? 'Save Changes' : 'Save'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
       
       <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedItems)}>
@@ -381,12 +387,6 @@ export default function GListPage() {
           </AccordionItem>
         ))}
       </Accordion>
-      <div className="mt-4 flex justify-end">
-        <Button onClick={handleDownload}>
-          <Download className="mr-2 h-4 w-4" />
-          Download
-        </Button>
-      </div>
       </main>
   );
 }
