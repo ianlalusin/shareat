@@ -45,9 +45,13 @@ const bottomMenuItems = [
 export function AdminSidebar() {
   const pathname = usePathname();
   
-  // A simple way to check active state for placeholder hrefs
   const isActive = (href: string) => {
     if (href.startsWith('#')) return false;
+    // Exact match for the main admin/dashboard page
+    if (href === "/admin") {
+      return pathname === href;
+    }
+    // StartsWith for all other nested pages
     return pathname.startsWith(href);
   }
 
