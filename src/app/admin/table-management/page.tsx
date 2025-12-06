@@ -158,33 +158,6 @@ export default function TableManagementPage() {
     }
   };
   
-    const seedTables = async () => {
-    if (!firestore || !selectedStoreId) {
-      alert('Please select a store first.');
-      return;
-    }
-    if (window.confirm('This will add tables 2 to 30 for the selected store. Proceed?')) {
-      const batch = writeBatch(firestore);
-      for (let i = 2; i <= 30; i++) {
-        const newTableRef = doc(collection(firestore, 'tables'));
-        batch.set(newTableRef, {
-          tableName: `Table ${i}`,
-          storeId: selectedStoreId,
-          status: 'Available',
-          activeOrderId: '',
-          resetCounter: 0,
-        });
-      }
-      try {
-        await batch.commit();
-        alert('Tables 2-30 have been successfully created.');
-      } catch (error) {
-        console.error('Error seeding tables: ', error);
-        alert('An error occurred while seeding tables. Check the console.');
-      }
-    }
-  };
-
   const getStatusColor = (status: Table['status']) => {
     switch (status) {
       case 'Available': return 'bg-green-500';
@@ -202,9 +175,6 @@ export default function TableManagementPage() {
           Table Management
         </h1>
         <div className="flex items-center gap-2">
-           <Button onClick={seedTables} disabled={!selectedStoreId}>
-            Seed Tables (2-30)
-          </Button>
            <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0}>
             Reset All Counters
           </Button>
@@ -238,10 +208,6 @@ export default function TableManagementPage() {
                           <SelectItem value="Inactive">Inactive</SelectItem>
                         </SelectContent>
                       </Select>
-                  </div>
-                   <div className="space-y-2">
-                    <Label htmlFor="activeOrderId">Active Order ID</Label>
-                    <Input id="activeOrderId" name="activeOrderId" value={formData.activeOrderId} onChange={handleInputChange} disabled />
                   </div>
                 </div>
                 <DialogFooter>
