@@ -31,12 +31,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // Reducer for complex state management of TIN input
 const tinReducer = (state: any, action: any) => {
   switch (action.type) {
-    case 'SET_FORMATTED':
-      return { ...state, formatted: action.payload };
-    case 'SET_UNMASKED':
-       return { ...state, unmasked: action.payload };
+    case 'SET_INPUT':
+      return { ...state, inputValue: action.payload };
+    case 'SET_SAVED':
+      return { ...state, savedValue: action.payload };
     case 'SET_ALL':
-        return { formatted: action.payload.formatted, unmasked: action.payload.unmasked };
+      return { inputValue: action.payload.input, savedValue: action.payload.saved };
     default:
       return state;
   }
@@ -44,18 +44,22 @@ const tinReducer = (state: any, action: any) => {
 
 const formatTIN = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 9);
-  let formatted = '';
-  if (digits.length > 0) {
-    formatted = digits.slice(0, 3);
-  }
-  if (digits.length > 3) {
-    formatted += `-${digits.slice(3, 6)}`;
-  }
+  let formatted = digits;
   if (digits.length > 6) {
-    formatted += `-${digits.slice(6, 9)}`;
+    formatted = `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  } else if (digits.length > 3) {
+    formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
   }
-  return formatted ? `${formatted}-000` : '';
+  return formatted;
 };
+
+const formatFinalTIN = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 9);
+    if (digits.length === 9) {
+        return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6,9)}-000`;
+    }
+    return '';
+}
 
 
 export default function OrderDetailPage() {
@@ -70,8 +74,8 @@ export default function OrderDetailPage() {
   const [address, setAddress] = useState('');
 
   const [tin, dispatch] = useReducer(tinReducer, {
-    formatted: '',
-    unmasked: '',
+    inputValue: '',
+    savedValue: '',
   });
 
   const [showDiscountForm, setShowDiscountForm] = useState(false);
@@ -93,8 +97,9 @@ export default function OrderDetailPage() {
         setOrder(orderData);
         setCustomerName(orderData.customerName || '');
         setAddress(orderData.address || '');
-        const unmaskedTin = (orderData.tin || '').replace(/\D/g, '').slice(0, 9);
-        dispatch({ type: 'SET_ALL', payload: { unmasked: unmaskedTin, formatted: formatTIN(unmaskedTin) } });
+        const savedTin = orderData.tin || '';
+        const inputTin = savedTin.replace(/-000$/, '').replace(/-/g, '');
+        dispatch({ type: 'SET_ALL', payload: { input: formatTIN(inputTin), saved: savedTin }});
 
       } else {
         setOrder(null);
@@ -133,24 +138,35 @@ export default function OrderDetailPage() {
   }, [firestore, order?.storeId]);
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '').slice(0, 9);
-    dispatch({ type: 'SET_UNMASKED', payload: value });
-    dispatch({ type: 'SET_FORMATTED', payload: formatTIN(value) });
+    const formatted = formatTIN(e.target.value);
+    dispatch({ type: 'SET_INPUT', payload: formatted });
   };
   
-  const handleUpdateDetails = async () => {
+  const handleDetailsUpdate = async (field: 'customerName' | 'address' | 'tin') => {
     if (!firestore || !order) return;
     const orderRef = doc(firestore, 'orders', order.id);
-    try {
-      await updateDoc(orderRef, {
-        customerName: customerName,
-        address: address,
-        tin: tin.unmasked ? tin.formatted : ''
-      });
-      // Add a toast notification for success
-    } catch (error) {
-      console.error("Error updating customer details: ", error);
-      // Add a toast notification for error
+    let dataToUpdate: Partial<Order> = {};
+
+    if (field === 'tin') {
+        const finalTin = formatFinalTIN(tin.inputValue);
+        if(finalTin !== tin.savedValue) {
+            dataToUpdate.tin = finalTin;
+            dispatch({ type: 'SET_SAVED', payload: finalTin });
+        }
+    } else if (field === 'customerName' && customerName !== order.customerName) {
+        dataToUpdate.customerName = customerName;
+    } else if (field === 'address' && address !== order.address) {
+        dataToUpdate.address = address;
+    }
+
+    if (Object.keys(dataToUpdate).length > 0) {
+        try {
+            await updateDoc(orderRef, dataToUpdate);
+            // Add a toast notification for success
+        } catch (error) {
+            console.error(`Error updating ${field}:`, error);
+            // Add a toast notification for error
+        }
     }
   };
 
@@ -294,21 +310,22 @@ export default function OrderDetailPage() {
               <CardContent className="space-y-4">
                  <div className="space-y-2">
                   <Label htmlFor="customerName">Name</Label>
-                  <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} onBlur={handleUpdateDetails} />
+                  <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} onBlur={() => handleDetailsUpdate('customerName')} />
                 </div>
                  <div className="space-y-2">
                   <Label htmlFor="tin">TIN No. (Optional)</Label>
                   <Input 
                     id="tin" 
-                    value={tin.formatted}
+                    value={tin.inputValue}
                     onChange={handleTinChange}
-                    onBlur={handleUpdateDetails}
-                    placeholder="xxx-xxx-xxx-000"
+                    onBlur={() => handleDetailsUpdate('tin')}
+                    placeholder="xxx-xxx-xxx"
+                    maxLength={11}
                   />
                 </div>
                  <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
-                  <Textarea id="address" value={address} onChange={(e) => setAddress(e.target.value)} onBlur={handleUpdateDetails} />
+                  <Textarea id="address" value={address} onChange={(e) => setAddress(e.target.value)} onBlur={() => handleDetailsUpdate('address')} />
                 </div>
               </CardContent>
               <CardFooter>
