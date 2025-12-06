@@ -269,11 +269,11 @@ export default function CashierPage() {
                   {availableTables.map(table => (
                       <Card 
                           key={table.id} 
-                          className="cursor-pointer hover:shadow-lg transition-shadow aspect-square flex items-center justify-center border-2 border-green-500"
+                          className="cursor-pointer hover:shadow-lg transition-shadow h-28 flex items-center justify-center border-2 border-green-500"
                           onClick={() => handleAvailableTableClick(table)}
                       >
                           <CardContent className="p-1 text-center">
-                              <p className="font-bold text-2xl md:text-3xl lg:text-4xl">{table.tableName}</p>
+                              <p className="font-bold text-xl md:text-2xl lg:text-3xl">{table.tableName}</p>
                           </CardContent>
                       </Card>
                   ))}
