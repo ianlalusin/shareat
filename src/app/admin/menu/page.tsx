@@ -154,7 +154,7 @@ export default function MenuPage() {
       );
   
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[];
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
         setAvailabilityOptions(availabilityData);
       });
   
@@ -177,7 +177,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
           setTaxRates(taxRateData);
         });
       } else {
@@ -953,3 +953,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
