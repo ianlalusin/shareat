@@ -175,7 +175,7 @@ export default function OrderDetailPage() {
           <div className="md:col-span-2 space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Order Summary</CardTitle>
+                    <CardTitle>Billing Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <Table>
