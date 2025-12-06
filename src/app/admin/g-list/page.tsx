@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, ChevronDown, Plus } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, ChevronDown, Plus, Download } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -347,6 +347,12 @@ export default function GListPage() {
           </AccordionItem>
         ))}
       </Accordion>
+      <div className="mt-4 flex justify-end">
+        <Button>
+          <Download className="mr-2 h-4 w-4" />
+          Download
+        </Button>
+      </div>
       </main>
   );
 }
