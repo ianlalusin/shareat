@@ -58,3 +58,12 @@ export type MenuItem = {
   alertLevel: number;
   specialTags: string[];
 };
+
+export type Table = {
+    id: string;
+    tableName: string;
+    storeId: string;
+    status: 'Available' | 'Occupied' | 'Reserved' | 'Inactive';
+    activeOrderId?: string;
+    resetCounter: number;
+};
