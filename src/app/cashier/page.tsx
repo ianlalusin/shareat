@@ -55,6 +55,9 @@ export default function CashierPage() {
     const [showNotes, setShowNotes] = useState(false);
     const [notes, setNotes] = useState('');
 
+    // TODO: Replace with actual user data
+    const userName = "Jane Doe";
+
 
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
@@ -264,7 +267,10 @@ export default function CashierPage() {
         {/* New Order Modal */}
         <DialogContent className="sm:max-w-xl">
             <DialogHeader>
-                <DialogTitle>New Order for {selectedTable?.tableName}</DialogTitle>
+                 <DialogTitle>
+                    New Order for {selectedTable?.tableName}
+                    <span className="text-sm text-muted-foreground font-normal ml-2">by {userName}</span>
+                 </DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
                 <div className="grid grid-cols-3 gap-4">
