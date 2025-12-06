@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem } from '@/lib/types';
 import {
   Dialog,
@@ -12,7 +12,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, BellRing, CheckCircle, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +25,8 @@ interface OrderDetailsModalProps {
 
 const calculateLapseTime = (start: Timestamp | undefined, end: Timestamp | undefined) => {
   if (!start || !end) return '';
+  // Ensure timestamps are valid objects before calling toMillis
+  if (typeof start.toMillis !== 'function' || typeof end.toMillis !== 'function') return '';
   const diff = end.toMillis() - start.toMillis();
   const minutes = Math.floor(diff / 60000);
   const seconds = Math.floor((diff % 60000) / 1000);
@@ -58,7 +59,12 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
     };
   }, [firestore, order.id]);
 
-  const allItems = [...orderItems, ...refillItems].sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+  const allItems = [...orderItems, ...refillItems].sort((a, b) => {
+    if (a.timestamp && b.timestamp) {
+        return a.timestamp.toMillis() - b.timestamp.toMillis();
+    }
+    return 0;
+  });
 
   const pendingItems = allItems.filter(item => item.status === 'Pending');
 
@@ -89,7 +95,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
                         <span className="font-medium">{item.quantity}x {item.menuName}</span>
                     </div>
-                    {item.status === 'Served' && (
+                    {item.status === 'Served' && item.servedTimestamp && (
                         <span className="text-xs text-muted-foreground">
                             {calculateLapseTime(item.timestamp, item.servedTimestamp)}
                         </span>
@@ -110,7 +116,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
                         <span className="font-medium">{item.quantity}x Refill - {item.menuName}</span>
                     </div>
-                     {item.status === 'Served' && (
+                     {item.status === 'Served' && item.servedTimestamp && (
                         <span className="text-xs text-muted-foreground">
                             {calculateLapseTime(item.timestamp, item.servedTimestamp)}
                         </span>
@@ -121,15 +127,17 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
             </div>
           </div>
         </div>
-        <DialogFooter className="mt-4">
-           {pendingItems.length > 0 && <Badge variant="destructive" className="mr-auto gap-1"><AlertTriangle className="h-3 w-3" />{pendingItems.length} item(s) pending</Badge>}
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={handleBuzz} disabled={pendingItems.length === 0}>
-            <BellRing className="mr-2 h-4 w-4" />
-            Buzz Kitchen
-          </Button>
+        <DialogFooter className="mt-4 sm:justify-between">
+           {pendingItems.length > 0 && <div className="flex items-center gap-1.5 text-sm text-destructive font-medium mr-auto"><AlertTriangle className="h-4 w-4" />{pendingItems.length} item(s) pending</div>}
+           <div className="flex gap-2 justify-end">
+             <Button variant="outline" onClick={onClose}>
+                Close
+             </Button>
+             <Button onClick={handleBuzz} disabled={pendingItems.length === 0}>
+                <BellRing className="mr-2 h-4 w-4" />
+                Buzz Kitchen
+             </Button>
+           </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
