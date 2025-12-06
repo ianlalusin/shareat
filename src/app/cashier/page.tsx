@@ -113,7 +113,7 @@ export default function CashierPage() {
                         onClick={() => handleAvailableTableClick(table)}
                     >
                         <CardContent className="p-1 text-center">
-                            <p className="text-2xl font-bold">{table.tableName}</p>
+                            <p className="font-bold text-lg sm:text-xl md:text-2xl">{table.tableName}</p>
                         </CardContent>
                     </Card>
                 ))}
