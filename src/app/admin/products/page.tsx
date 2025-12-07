@@ -86,24 +86,24 @@ export default function ProductsPage() {
 
 
   useEffect(() => {
-    if (editingItem) {
-      setFormData({
-        ...initialItemState,
-        ...editingItem,
-        specialTags: editingItem.specialTags || [],
-      });
-      setDisplayValues({
-        defaultCost: formatCurrency(editingItem.defaultCost),
-        defaultPrice: formatCurrency(editingItem.defaultPrice),
-      });
+    if (isModalOpen) {
+        if (editingItem) {
+            setFormData({
+                ...initialItemState,
+                ...editingItem,
+                specialTags: editingItem.specialTags || [],
+            });
+            setDisplayValues({
+                defaultCost: formatCurrency(editingItem.defaultCost),
+                defaultPrice: formatCurrency(editingItem.defaultPrice),
+            });
+        }
     } else {
-      setFormData(initialItemState);
-      setDisplayValues({
-        defaultCost: formatCurrency(initialItemState.defaultCost),
-        defaultPrice: formatCurrency(initialItemState.defaultPrice),
-      });
+        setEditingItem(null);
+        setFormData(initialItemState);
+        setDisplayValues({ defaultCost: '', defaultPrice: '' });
     }
-  }, [editingItem, isModalOpen]);
+}, [isModalOpen, editingItem]);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -164,7 +164,7 @@ export default function ProductsPage() {
           createdAt: serverTimestamp(),
         });
       }
-      setIsModalOpen(false);
+      setIsModalOpen(false); // Close modal only after successful save
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -398,3 +398,5 @@ export default function ProductsPage() {
       </main>
   );
 }
+
+    

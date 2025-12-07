@@ -159,34 +159,27 @@ useEffect(() => {
 
 
   useEffect(() => {
-    if (editingItem) {
-      setFormData({
-        ...initialItemState,
-        ...editingItem,
-        specialTags: editingItem.specialTags || [],
-      });
-       setDisplayValues({
-         cost: formatCurrency(editingItem.cost),
-         price: formatCurrency(editingItem.price),
-       });
+    if (isModalOpen) {
+        if (editingItem) {
+            setFormData({
+                ...initialItemState,
+                ...editingItem,
+                specialTags: editingItem.specialTags || [],
+            });
+            setDisplayValues({
+                cost: formatCurrency(editingItem.cost),
+                price: formatCurrency(editingItem.price),
+            });
+        }
     } else {
+        // When modal closes, reset everything
+        setEditingItem(null);
         setFormData(initialItemState);
-        setDisplayValues({
-          cost: formatCurrency(initialItemState.cost),
-          price: formatCurrency(initialItemState.price),
-        })
+        setDisplayValues({ cost: '', price: '' });
+        setImageFile(null);
     }
-    setImageFile(null);
-  }, [editingItem]);
+}, [isModalOpen, editingItem]);
   
-   useEffect(() => {
-    if (!isModalOpen) {
-      setEditingItem(null);
-      setFormData(initialItemState);
-      setDisplayValues({ cost: '', price: '' });
-    }
-  }, [isModalOpen]);
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     const { type } = e.target as HTMLInputElement;
@@ -261,7 +254,7 @@ useEffect(() => {
         await addDoc(collection(firestore, 'menu'), {...dataToSave, storeId: selectedStoreId});
       }
 
-      setIsModalOpen(false);
+      setIsModalOpen(false); // Close modal only after successful save
     } catch (error) {
       console.error("Error saving document: ", error);
     }
@@ -602,3 +595,5 @@ useEffect(() => {
       </main>
   );
 }
+
+    

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -88,18 +87,21 @@ export default function TableManagementPage() {
   }, [firestore, selectedStoreId]);
 
   useEffect(() => {
-    if (editingTable) {
-      setFormData({
-        tableName: editingTable.tableName,
-        status: editingTable.status,
-        activeOrderId: editingTable.activeOrderId || '',
-        resetCounter: editingTable.resetCounter || 0,
-        location: editingTable.location || '',
-      });
+    if (isModalOpen) {
+        if (editingTable) {
+            setFormData({
+                tableName: editingTable.tableName,
+                status: editingTable.status,
+                activeOrderId: editingTable.activeOrderId || '',
+                resetCounter: editingTable.resetCounter || 0,
+                location: editingTable.location || '',
+            });
+        }
     } else {
-      setFormData(initialTableState);
+        setEditingTable(null);
+        setFormData(initialTableState);
     }
-  }, [editingTable]);
+  }, [isModalOpen, editingTable]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -152,7 +154,7 @@ export default function TableManagementPage() {
             resetCounter: 0
         });
       }
-      setIsModalOpen(false);
+      setIsModalOpen(false); // Close modal only after successful save
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -310,3 +312,5 @@ export default function TableManagementPage() {
     </main>
   );
 }
+
+    

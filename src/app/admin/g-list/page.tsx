@@ -87,17 +87,25 @@ export default function GListPage() {
 
 
   useEffect(() => {
-    if (editingItem) {
-      setFormData({
-        item: editingItem.item,
-        category: editingItem.category,
-        is_active: editingItem.is_active,
-        storeIds: editingItem.storeIds || [],
-      });
+    if (isModalOpen) {
+        if (editingItem) {
+            setFormData({
+                item: editingItem.item,
+                category: editingItem.category,
+                is_active: editingItem.is_active,
+                storeIds: editingItem.storeIds || [],
+            });
+        } else {
+            // If we are not editing, it's a new item.
+            // We might want to preserve the category if `openAddModalForCategory` was used.
+            // This is handled by `openAddModal` and `openAddModalForCategory` now.
+        }
     } else {
-      // For new items, formData is managed by openAddModal and openAddModalForCategory
+        // When modal closes, reset everything
+        setEditingItem(null);
+        setFormData(initialItemState);
     }
-  }, [editingItem]);
+}, [isModalOpen, editingItem]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,9 +144,7 @@ export default function GListPage() {
       } else {
         await addDoc(collection(firestore, 'lists'), dataToSave);
       }
-      setIsModalOpen(false);
-      setEditingItem(null);
-      setFormData(initialItemState);
+      setIsModalOpen(false); // Close modal only after successful save
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -388,3 +394,5 @@ export default function GListPage() {
       </main>
   );
 }
+
+    
