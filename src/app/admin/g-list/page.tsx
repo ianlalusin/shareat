@@ -164,7 +164,7 @@ export default function GListPage() {
       await deleteDoc(doc(firestore, 'lists', itemId));
       openSuccessModal();
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      // Error is intentionally not logged to prevent screen freeze
     }
   };
 
@@ -396,5 +396,3 @@ export default function GListPage() {
       </main>
   );
 }
-
-    

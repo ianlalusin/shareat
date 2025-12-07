@@ -169,7 +169,7 @@ export default function TableManagementPage() {
       await deleteDoc(doc(firestore, 'tables', tableId));
       openSuccessModal();
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      // Error is intentionally not logged
     }
   };
 

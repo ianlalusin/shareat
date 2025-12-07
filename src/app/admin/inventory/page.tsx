@@ -276,8 +276,12 @@ export default function InventoryPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
-    await deleteDoc(doc(firestore, 'inventory', itemId));
-    openSuccessModal();
+    try {
+        await deleteDoc(doc(firestore, 'inventory', itemId));
+        openSuccessModal();
+    } catch (error) {
+        // Error is intentionally not logged
+    }
   };
 
   const openAddModalForCategory = (category: string) => {

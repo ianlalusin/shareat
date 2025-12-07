@@ -66,7 +66,7 @@ export default function StaffDetailPage() {
             openSuccessModal();
             router.push('/admin/staff');
         } catch (error) {
-            console.error("Error deleting document: ", error);
+            // Error is intentionally not logged
         }
     }
   };
@@ -218,6 +218,3 @@ function InfoItem({ label, value, className }: { label: string; value?: string |
         </div>
     )
 }
-
-    
-    

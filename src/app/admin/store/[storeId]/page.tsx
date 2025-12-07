@@ -50,7 +50,7 @@ export default function StoreDetailPage() {
       openSuccessModal();
       router.push('/admin/store');
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      // Error is intentionally not logged
     }
   };
 

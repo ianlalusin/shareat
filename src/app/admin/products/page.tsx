@@ -218,7 +218,7 @@ export default function ProductsPage() {
       await deleteDoc(doc(firestore, 'products', itemId));
       openSuccessModal();
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      // Error is intentionally not logged
     }
   };
 
