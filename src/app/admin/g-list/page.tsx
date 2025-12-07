@@ -89,27 +89,31 @@ export default function GListPage() {
 
 
   useEffect(() => {
-    if (isModalOpen) {
-        if (editingItem) {
-            setFormData({
-                item: editingItem.item,
-                category: editingItem.category,
-                is_active: editingItem.is_active,
-                storeIds: editingItem.storeIds || [],
-            });
-        }
-    } else {
-        // When modal closes, reset everything
-        setEditingItem(null);
-        // Reset with a new object to ensure state change is detected
+    if (editingItem) {
         setFormData({
-          item: '',
-          category: '',
-          is_active: true,
-          storeIds: [],
+            item: editingItem.item,
+            category: editingItem.category,
+            is_active: editingItem.is_active,
+            storeIds: editingItem.storeIds || [],
         });
+    } else {
+        // When there is no item to edit, ensure form is reset, but respect category if set.
+        setFormData(prev => ({
+            item: '',
+            category: prev.category,
+            is_active: true,
+            storeIds: [],
+        }));
     }
-}, [isModalOpen, editingItem]);
+  }, [editingItem]);
+  
+  // This effect handles resetting the form when the modal is closed.
+  useEffect(() => {
+    if (!isModalOpen) {
+      setEditingItem(null);
+      setFormData(initialItemState);
+    }
+  }, [isModalOpen]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -397,3 +401,5 @@ export default function GListPage() {
       </main>
   );
 }
+
+    
