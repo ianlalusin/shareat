@@ -94,28 +94,16 @@ export default function ProductsPage() {
     }
   }, [firestore]);
 
-
-  useEffect(() => {
-    if (isModalOpen) {
-        if (editingItem) {
-            setFormData({
-                ...initialItemState,
-                ...editingItem,
-                specialTags: editingItem.specialTags || [],
-            });
-            setDisplayValues({
-              defaultCost: formatCurrency(editingItem.defaultCost),
-              defaultPrice: formatCurrency(editingItem.defaultPrice),
-            });
-        }
-    } else {
-        setEditingItem(null);
-        setFormData(initialItemState);
-        setDisplayValues({ defaultCost: '', defaultPrice: '' });
-        setImageFile(null);
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open) {
+      setEditingItem(null);
+      setFormData(initialItemState);
+      setDisplayValues({ defaultCost: '', defaultPrice: '' });
+      setImageFile(null);
     }
-}, [isModalOpen, editingItem]);
-  
+  }
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -174,8 +162,6 @@ export default function ProductsPage() {
             const snapshot = await uploadBytes(imageRef, imageFile);
             imageUrl = await getDownloadURL(snapshot.ref);
         } catch (error) {
-            console.error("Image upload failed:", error);
-            // Optionally show an error to the user
         }
     }
 
@@ -200,15 +186,23 @@ export default function ProductsPage() {
           createdAt: serverTimestamp(),
         });
       }
-      setIsModalOpen(false);
+      handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
-      console.error('Error saving document: ', error);
     }
   };
   
   const handleEdit = (item: Product) => {
     setEditingItem(item);
+    setFormData({
+        ...initialItemState,
+        ...item,
+        specialTags: item.specialTags || [],
+    });
+    setDisplayValues({
+      defaultCost: formatCurrency(item.defaultCost),
+      defaultPrice: formatCurrency(item.defaultPrice),
+    });
     setIsModalOpen(true);
   };
 
@@ -222,17 +216,14 @@ export default function ProductsPage() {
     }
   };
 
-  const openAddModal = () => {
+  const openAddModal = (category?: string) => {
     setEditingItem(null);
-    setFormData(initialItemState);
+    const newFormData = category ? {...initialItemState, category} : initialItemState;
+    setFormData(newFormData);
+    setDisplayValues({ defaultCost: '', defaultPrice: '' });
+    setImageFile(null);
     setIsModalOpen(true);
   }
-  
-  const openAddModalForCategory = (category: string) => {
-    setEditingItem(null);
-    setFormData({...initialItemState, category});
-    setIsModalOpen(true);
-  };
 
   const groupedItems = useMemo(() => {
     const grouped = items.reduce((acc, item) => {
@@ -261,9 +252,9 @@ export default function ProductsPage() {
           Product Manager
         </h1>
         <div className="flex items-center gap-2">
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
             <DialogTrigger asChild>
-              <Button size="sm" className="flex items-center gap-2" onClick={openAddModal}>
+              <Button size="sm" className="flex items-center gap-2" onClick={() => openAddModal()}>
                 <PlusCircle className="h-4 w-4" />
                 <span>Add Product</span>
               </Button>
@@ -341,7 +332,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
                 <DialogFooter className="flex-row justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleModalOpenChange(false)}>
                     Cancel
                   </Button>
                   <Button type="submit">{editingItem ? 'Save Changes' : 'Save Product'}</Button>
@@ -369,7 +360,7 @@ export default function ProductsPage() {
                   className="mr-2 h-7 w-7 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    openAddModalForCategory(category);
+                    openAddModal(category);
                   }}
                 >
                   <Plus className="h-4 w-4" />
@@ -453,4 +444,3 @@ export default function ProductsPage() {
       </main>
   );
 }
-

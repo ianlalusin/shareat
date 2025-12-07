@@ -140,36 +140,16 @@ export default function InventoryPage() {
         });
     }
   }, [selectedProduct, editingItem]);
-
-  useEffect(() => {
-    if (isModalOpen) {
-        if (editingItem) {
-            let expiryDateStr = '';
-            if (editingItem.expiryDate) {
-                try {
-                    expiryDateStr = formatAndValidateDate(editingItem.expiryDate.toDate().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })).formatted;
-                } catch (e) {
-                    // handle cases where expiryDate is not a valid Timestamp
-                }
-            }
-
-            setFormData({
-                ...initialItemState,
-                ...editingItem,
-                expiryDate: expiryDateStr,
-            });
-            setDisplayValues({
-                costPerUnit: formatCurrency(editingItem.costPerUnit),
-                sellingPrice: formatCurrency(editingItem.sellingPrice || 0),
-            });
-        }
-    } else {
-        setEditingItem(null);
-        setFormData(initialItemState);
-        setDisplayValues({ costPerUnit: '', sellingPrice: '' });
-        setDateError(undefined);
+  
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open) {
+      setEditingItem(null);
+      setFormData(initialItemState);
+      setDisplayValues({ costPerUnit: '', sellingPrice: '' });
+      setDateError(undefined);
     }
-  }, [isModalOpen, editingItem]);
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
@@ -262,14 +242,32 @@ export default function InventoryPage() {
           createdAt: serverTimestamp(),
         });
       }
-      setIsModalOpen(false);
+      handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
-      console.error('Error saving document: ', error);
     }
   };
   
   const handleEdit = (item: InventoryItem) => {
+    let expiryDateStr = '';
+    if (item.expiryDate) {
+        try {
+            expiryDateStr = formatAndValidateDate(item.expiryDate.toDate().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })).formatted;
+        } catch (e) {
+            // handle cases where expiryDate is not a valid Timestamp
+        }
+    }
+
+    setFormData({
+        ...initialItemState,
+        ...item,
+        expiryDate: expiryDateStr,
+    });
+    setDisplayValues({
+        costPerUnit: formatCurrency(item.costPerUnit),
+        sellingPrice: formatCurrency(item.sellingPrice || 0),
+    });
+
     setEditingItem(item);
     setIsModalOpen(true);
   };
@@ -283,10 +281,13 @@ export default function InventoryPage() {
         // Error is intentionally not logged
     }
   };
-
-  const openAddModalForCategory = (category: string) => {
+  
+  const handleOpenAddModal = (category?: string) => {
     setEditingItem(null);
-    setFormData({...initialItemState, category});
+    const newFormState = category ? {...initialItemState, category} : initialItemState;
+    setFormData(newFormState);
+    setDisplayValues({ costPerUnit: '', sellingPrice: '' });
+    setDateError(undefined);
     setIsModalOpen(true);
   };
   
@@ -342,9 +343,9 @@ export default function InventoryPage() {
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Inventory
         </h1>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
             <DialogTrigger asChild>
-                <Button size="sm" className="flex items-center gap-2" onClick={() => setIsModalOpen(true)} disabled={!selectedStoreId}>
+                <Button size="sm" className="flex items-center gap-2" onClick={() => handleOpenAddModal()} disabled={!selectedStoreId}>
                     <PlusCircle className="h-4 w-4" />
                     <span>Add Inventory Item</span>
                 </Button>
@@ -454,7 +455,7 @@ export default function InventoryPage() {
                     )}
                 </div>
                 <DialogFooter className="flex-row justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleModalOpenChange(false)}>
                     Cancel
                   </Button>
                   <Button type="submit">{editingItem ? 'Save Changes' : 'Save Item'}</Button>
@@ -487,7 +488,7 @@ export default function InventoryPage() {
                         className="mr-2 h-7 w-7 p-0"
                         onClick={(e) => {
                             e.stopPropagation();
-                            openAddModalForCategory(category);
+                            handleOpenAddModal(category);
                         }}
                         >
                         <Plus className="h-4 w-4" />
@@ -562,4 +563,3 @@ export default function InventoryPage() {
       </main>
   );
 }
-

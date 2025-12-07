@@ -88,22 +88,13 @@ export default function TableManagementPage() {
     }
   }, [firestore, selectedStoreId]);
 
-  useEffect(() => {
-    if (isModalOpen) {
-        if (editingTable) {
-            setFormData({
-                tableName: editingTable.tableName,
-                status: editingTable.status,
-                activeOrderId: editingTable.activeOrderId || '',
-                resetCounter: editingTable.resetCounter || 0,
-                location: editingTable.location || '',
-            });
-        }
-    } else {
-        setEditingTable(null);
-        setFormData(initialTableState);
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open) {
+      setEditingTable(null);
+      setFormData(initialTableState);
     }
-  }, [isModalOpen, editingTable]);
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -119,7 +110,19 @@ export default function TableManagementPage() {
       alert('Please select a store first.');
       return;
     }
-    setEditingTable(table);
+    if (table) {
+      setFormData({
+        tableName: table.tableName,
+        status: table.status,
+        activeOrderId: table.activeOrderId || '',
+        resetCounter: table.resetCounter || 0,
+        location: table.location || '',
+      });
+      setEditingTable(table);
+    } else {
+      setFormData(initialTableState);
+      setEditingTable(null);
+    }
     setIsModalOpen(true);
   };
 
@@ -156,10 +159,9 @@ export default function TableManagementPage() {
             resetCounter: 0
         });
       }
-      setIsModalOpen(false); // Close modal only after successful save
+      handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
-      console.error('Error saving document: ', error);
     }
   };
   
@@ -185,7 +187,6 @@ export default function TableManagementPage() {
         await batch.commit();
         openSuccessModal();
       } catch (error) {
-        console.error("Error resetting counters: ", error);
       }
     }
   };
@@ -210,7 +211,7 @@ export default function TableManagementPage() {
            <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0}>
             Reset All Counters
           </Button>
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
             <DialogTrigger asChild>
               <Button size="sm" className="flex items-center gap-2" onClick={() => handleOpenModal(null)} disabled={!selectedStoreId}>
                 <PlusCircle className="h-4 w-4" />
@@ -258,7 +259,7 @@ export default function TableManagementPage() {
                   </div>
                 </div>
                 <DialogFooter className="flex-row justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleModalOpenChange(false)}>
                     Cancel
                   </Button>
                   <Button type="submit">{editingTable ? 'Save Changes' : 'Save'}</Button>
@@ -315,4 +316,3 @@ export default function TableManagementPage() {
     </main>
   );
 }
-

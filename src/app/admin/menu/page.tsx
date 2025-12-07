@@ -187,28 +187,16 @@ export default function MenuPage() {
   }, [firestore, selectedStoreId]);
 
 
-  useEffect(() => {
-    if (isModalOpen) {
-        if (editingItem) {
-            setFormData({
-                ...initialItemState,
-                ...editingItem,
-                specialTags: editingItem.specialTags || [],
-            });
-            setDisplayValues({
-                cost: formatCurrency(editingItem.cost),
-                price: formatCurrency(editingItem.price),
-            });
-        }
-    } else {
-        // When modal closes, reset everything
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open) {
         setEditingItem(null);
         setFormData(initialItemState);
         setDisplayValues({ cost: '', price: '' });
         setImageFile(null);
         setFormError(null);
     }
-  }, [isModalOpen, editingItem]);
+  }
 
   const selectedInventoryItem = useMemo(() => {
     return inventoryItems.find(i => i.id === formData.inventoryItemId);
@@ -328,15 +316,23 @@ export default function MenuPage() {
         await addDoc(collection(firestore, 'menu'), {...dataToSave, storeId: selectedStoreId});
       }
 
-      setIsModalOpen(false); // Close modal only after successful save
+      handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
-        console.error("Error saving document: ", error);
     }
   };
   
   const handleEdit = (item: MenuItem) => {
     setEditingItem(item);
+    setFormData({
+        ...initialItemState,
+        ...item,
+        specialTags: item.specialTags || [],
+    });
+    setDisplayValues({
+        cost: formatCurrency(item.cost),
+        price: formatCurrency(item.price),
+    });
     setIsModalOpen(true);
   };
 
@@ -357,17 +353,20 @@ export default function MenuPage() {
       await updateDoc(itemRef, { isAvailable: newStatus });
       openSuccessModal();
     } catch (error) {
-      console.error("Error updating item availability: ", error);
     }
   };
 
-  const openAddModal = () => {
+  const openAddModal = (category?: string) => {
     if (!selectedStoreId) {
       alert("Please select a store first.");
       return;
     }
     setEditingItem(null);
-    setFormData({...initialItemState, storeId: selectedStoreId});
+    const newFormData = category ? {...initialItemState, category, storeId: selectedStoreId} : {...initialItemState, storeId: selectedStoreId};
+    setFormData(newFormData);
+    setDisplayValues({ cost: '', price: '' });
+    setImageFile(null);
+    setFormError(null);
     setIsModalOpen(true);
   }
   
@@ -431,9 +430,9 @@ export default function MenuPage() {
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Menu
         </h1>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
           <DialogTrigger asChild>
-            <Button size="sm" className="flex items-center gap-2" onClick={openAddModal}>
+            <Button size="sm" className="flex items-center gap-2" onClick={() => openAddModal()}>
               <PlusCircle className="h-4 w-4" />
               <span>Add Menu Item</span>
             </Button>
@@ -621,7 +620,7 @@ export default function MenuPage() {
                  
               </div>
               <DialogFooter className="flex-row justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => handleModalOpenChange(false)}>
                   Cancel
                 </Button>
                 <Button type="submit">{editingItem ? 'Save Changes' : 'Save'}</Button>
@@ -648,13 +647,7 @@ export default function MenuPage() {
                   className="mr-2 h-7 w-7 p-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!selectedStoreId) {
-                      alert("Please select a store first.");
-                      return;
-                    }
-                    setEditingItem(null);
-                    setFormData({...initialItemState, category, storeId: selectedStoreId});
-                    setIsModalOpen(true);
+                    openAddModal(category);
                   }}
                 >
                   <Plus className="h-4 w-4" />
@@ -740,5 +733,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
