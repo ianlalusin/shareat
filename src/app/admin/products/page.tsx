@@ -148,8 +148,14 @@ export default function ProductsPage() {
     if (!firestore) return;
 
     const user = auth?.currentUser;
+
+    const finalFormData = { ...formData };
+    if (!finalFormData.barcode) {
+      finalFormData.barcode = String(Date.now());
+    }
+
     const dataToSave = {
-      ...formData,
+      ...finalFormData,
       updatedAt: serverTimestamp(),
       lastUpdatedBy: user?.displayName || user?.email || 'Unknown User',
     };
@@ -164,7 +170,7 @@ export default function ProductsPage() {
           createdAt: serverTimestamp(),
         });
       }
-      setIsModalOpen(false); // Close modal only after successful save
+      setIsModalOpen(false);
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -186,6 +192,7 @@ export default function ProductsPage() {
 
   const openAddModal = () => {
     setEditingItem(null);
+    setFormData(initialItemState);
     setIsModalOpen(true);
   }
   
@@ -398,5 +405,3 @@ export default function ProductsPage() {
       </main>
   );
 }
-
-    
