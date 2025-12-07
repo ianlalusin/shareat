@@ -99,6 +99,7 @@ export default function InventoryPage() {
       const productsQuery = query(collection(firestore, 'products'), where('isActive', '==', true));
       const productsUnsubscribe = onSnapshot(productsQuery, (snapshot) => {
         const prodData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        prodData.sort((a, b) => a.productName.localeCompare(b.productName));
         setProducts(prodData);
       });
 
@@ -265,11 +266,7 @@ export default function InventoryPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
-    try {
-      await deleteDoc(doc(firestore, 'inventory', itemId));
-    } catch (error) {
-      console.error("Error deleting document: ", error);
-    }
+    await deleteDoc(doc(firestore, 'inventory', itemId));
   };
 
   const openAddModalForCategory = (category: string) => {
