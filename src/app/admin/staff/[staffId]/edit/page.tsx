@@ -166,7 +166,7 @@ export default function EditStaffPage() {
 
     try {
       const staffRef = doc(firestore, 'staff', staffId);
-      await updateDoc(staffRef, dataToSave);
+      await updateDoc(staffRef, dataToSave as Partial<Staff>);
       router.push(`/admin/staff/${staffId}`);
     } catch (error) {
       console.error('Error updating document: ', error);
