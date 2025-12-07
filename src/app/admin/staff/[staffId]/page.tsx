@@ -69,8 +69,9 @@ export default function StaffDetailPage() {
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setNewPhotoFile(e.target.files[0]);
-      handlePhotoUpload(e.target.files[0]); // Directly upload
+      const file = e.target.files[0];
+      setNewPhotoFile(file);
+      handlePhotoUpload(file); // Directly upload
     }
   };
 
@@ -207,3 +208,5 @@ function InfoItem({ label, value, className }: { label: string; value?: string |
         </div>
     )
 }
+
+    
