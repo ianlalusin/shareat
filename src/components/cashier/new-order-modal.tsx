@@ -115,7 +115,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         <Dialog open={isOpen} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
-                <DialogTitle>New Order for Table {table?.tableName}</DialogTitle>
+                <DialogTitle>New Order for {table?.tableName}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
                 <div className="space-y-2">
@@ -146,15 +146,15 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                     </div>
                 </div>
             </div>
-            <DialogFooter>
-            <DialogClose asChild>
-                <Button type="button" variant="outline">
-                Cancel
+            <DialogFooter className="flex-row justify-end">
+                <DialogClose asChild>
+                    <Button type="button" variant="outline">
+                    Cancel
+                    </Button>
+                </DialogClose>
+                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Start Order
                 </Button>
-            </DialogClose>
-            <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Start Order
-            </Button>
             </DialogFooter>
         </DialogContent>
         </Dialog>
