@@ -62,7 +62,6 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TagsInput } from '@/components/ui/tags-input';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -297,10 +296,9 @@ export default function MenuPage() {
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
     try {
-      await deleteDoc(doc(firestore, 'menu', itemId));
+      await deleteDoc(doc(firestore, "menu", itemId));
     } catch (error) {
-      // It's better to handle errors with a toast notification
-      // rather than console.error in a final product.
+      console.error("Error deleting document: ", error);
     }
   };
 
@@ -615,9 +613,7 @@ export default function MenuPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
-                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
-                                  </DeleteConfirmationDialog>
+                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>

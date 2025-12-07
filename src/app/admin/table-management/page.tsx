@@ -40,7 +40,6 @@ import { Table, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialTableState: Omit<Table, 'id' | 'storeId'> = {
   tableName: '',
@@ -298,12 +297,10 @@ export default function TableManagementPage() {
                         <Edit className="h-4 w-4" />
                         <span className="sr-only">Edit</span>
                     </Button>
-                    <DeleteConfirmationDialog onConfirm={() => handleDelete(table.id)}>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete</span>
-                      </Button>
-                    </DeleteConfirmationDialog>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(table.id)}>
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Delete</span>
+                    </Button>
                 </CardFooter>
             </Card>
             ))}
@@ -312,5 +309,3 @@ export default function TableManagementPage() {
     </main>
   );
 }
-
-    

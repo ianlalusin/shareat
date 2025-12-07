@@ -30,7 +30,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -131,14 +130,12 @@ export default function StaffPage() {
                       <DropdownMenuItem onSelect={() => router.push(`/admin/staff/${member.id}/edit`)}>
                         Edit
                       </DropdownMenuItem>
-                      <DeleteConfirmationDialog onConfirm={() => handleDelete(member.id)}>
-                        <DropdownMenuItem
-                          onSelect={(e) => e.preventDefault()}
-                          className="text-destructive"
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DeleteConfirmationDialog>
+                      <DropdownMenuItem
+                        onSelect={() => handleDelete(member.id)}
+                        className="text-destructive"
+                      >
+                        Delete
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

@@ -49,7 +49,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -375,9 +374,7 @@ export default function GListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
-                                  <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
-                                </DeleteConfirmationDialog>
+                                <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>

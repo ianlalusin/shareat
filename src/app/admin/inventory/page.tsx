@@ -47,7 +47,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS, formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -481,9 +480,7 @@ export default function InventoryPage() {
                                     <DropdownMenuContent align="end">
                                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                         <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                        <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
-                                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
-                                        </DeleteConfirmationDialog>
+                                        <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>

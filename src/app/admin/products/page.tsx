@@ -48,7 +48,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { TagsInput } from '@/components/ui/tags-input';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -387,9 +386,7 @@ export default function ProductsPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
-                                  <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
-                                </DeleteConfirmationDialog>
+                                <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>

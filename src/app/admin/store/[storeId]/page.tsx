@@ -13,7 +13,6 @@ import { Store as StoreIcon, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/types';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 export default function StoreDetailPage() {
@@ -43,7 +42,6 @@ export default function StoreDetailPage() {
 
   const handleDelete = async () => {
     if (!firestore || !storeId) return;
-    // The confirmation is handled by the DeleteConfirmationDialog
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
       router.push('/admin/store');
@@ -123,11 +121,9 @@ export default function StoreDetailPage() {
                     <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Link>
             </Button>
-             <DeleteConfirmationDialog onConfirm={handleDelete}>
-                <Button variant="destructive">
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete
-                </Button>
-            </DeleteConfirmationDialog>
+            <Button variant="destructive" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
         </div>
       </div>
       

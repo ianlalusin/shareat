@@ -30,7 +30,6 @@ import {
 } from 'firebase/firestore';
 import Link from 'next/link';
 import { Store } from '@/lib/types';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 export default function StorePage() {
@@ -121,9 +120,7 @@ export default function StorePage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
-                      <DeleteConfirmationDialog onConfirm={() => handleDelete(store.id)}>
-                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
-                      </DeleteConfirmationDialog>
+                      <DropdownMenuItem onSelect={() => handleDelete(store.id)} className="text-destructive">Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

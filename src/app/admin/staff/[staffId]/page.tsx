@@ -14,7 +14,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { cn, formatCurrency } from '@/lib/utils';
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 export default function StaffDetailPage() {
@@ -102,11 +101,9 @@ export default function StaffDetailPage() {
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Link>
           </Button>
-          <DeleteConfirmationDialog onConfirm={handleDelete}>
-            <Button variant="destructive">
-              <Trash2 className="mr-2 h-4 w-4" /> Delete
-            </Button>
-          </DeleteConfirmationDialog>
+          <Button variant="destructive" onClick={handleDelete}>
+            <Trash2 className="mr-2 h-4 w-4" /> Delete
+          </Button>
         </div>
       </div>
 
