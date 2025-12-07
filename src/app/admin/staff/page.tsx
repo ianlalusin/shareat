@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -75,7 +76,7 @@ export default function StaffPage() {
           </Link>
         </Button>
       </div>
-      <div className="rounded-lg border shadow-sm bg-background">
+      <div className="rounded-lg border shadow-sm bg-background overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

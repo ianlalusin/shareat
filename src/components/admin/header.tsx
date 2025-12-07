@@ -1,10 +1,18 @@
+
 "use client";
 
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { StoreSelector } from "./store-selector";
-import { NavButtonGroup } from "./nav-button-group";
+import { NavButtonGroup, NavButtonGroupMobile } from "./nav-button-group";
 import { Logo } from "./logo";
 import { cn } from "@/lib/utils";
+import { MoreVertical } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 export function AdminHeader() {
   const { state } = useSidebar();
@@ -29,6 +37,25 @@ export function AdminHeader() {
       <div className="flex w-full items-center justify-end gap-4 md:gap-2 lg:gap-4">
         <StoreSelector />
         <NavButtonGroup />
+        
+        {/* Mobile-only menu */}
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-primary-foreground hover:bg-primary-foreground/10"
+              >
+                <MoreVertical className="h-6 w-6" />
+                <span className="sr-only">More options</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <NavButtonGroupMobile />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   );

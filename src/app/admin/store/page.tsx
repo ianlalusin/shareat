@@ -76,7 +76,7 @@ export default function StorePage() {
         </Button>
       </div>
       
-      <div className="rounded-lg border shadow-sm bg-background">
+      <div className="rounded-lg border shadow-sm bg-background overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
