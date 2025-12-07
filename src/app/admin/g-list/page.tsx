@@ -87,27 +87,14 @@ export default function GListPage() {
     }
   }, [firestore]);
 
-
-  useEffect(() => {
-    if (isModalOpen) {
-      if (editingItem) {
-        // If we are editing, populate the form with the item's data.
-        setFormData({
-            item: editingItem.item,
-            category: editingItem.category,
-            is_active: editingItem.is_active,
-            storeIds: editingItem.storeIds || [],
-        });
-      }
-      // If adding a new item, formData is already in its initial (or category-prefilled) state.
-    } else {
-      // When the modal is closed, reset everything.
+  const handleModalOpenChange = (open: boolean) => {
+    setIsModalOpen(open);
+    if (!open) {
       setEditingItem(null);
       setFormData(initialItemState);
     }
-  }, [isModalOpen, editingItem]);
-
-
+  };
+  
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -144,7 +131,7 @@ export default function GListPage() {
       } else {
         await addDoc(collection(firestore, 'lists'), dataToSave);
       }
-      setIsModalOpen(false); // Close modal only after successful save
+      handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
     }
@@ -152,6 +139,12 @@ export default function GListPage() {
   
   const handleEdit = (item: GListItem) => {
     setEditingItem(item);
+    setFormData({
+      item: item.item,
+      category: item.category,
+      is_active: item.is_active,
+      storeIds: item.storeIds || [],
+    });
     setIsModalOpen(true);
   };
 
@@ -246,7 +239,7 @@ export default function GListPage() {
             <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
             <DialogTrigger asChild>
               <Button size="sm" className="flex items-center gap-2" onClick={openAddModal}>
                 <PlusCircle className="h-4 w-4" />
@@ -299,7 +292,7 @@ export default function GListPage() {
                   </div>
                 </div>
                 <DialogFooter className="flex-row justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleModalOpenChange(false)}>
                     Cancel
                   </Button>
                   <Button type="submit">{editingItem ? 'Save Changes' : 'Save'}</Button>
@@ -393,6 +386,3 @@ export default function GListPage() {
       </main>
   );
 }
-
-    
-
