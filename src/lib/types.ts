@@ -93,7 +93,6 @@ export type MenuItem = {
   id: string;
   menuName: string;
   category: string;
-  unit: string;
   cost: number;
   price: number;
   barcode: string;
@@ -105,9 +104,12 @@ export type MenuItem = {
   targetStation?: 'Hot' | 'Cold';
   taxRate: string;
   trackInventory: boolean;
+  inventoryItemId?: string | null;
   alertLevel: number;
   specialTags: string[];
   productId?: string | null;
+  unit: string;
+  soldBy: string;
 };
 
 export type Table = {

@@ -43,7 +43,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, GListItem, Product } from '@/lib/types';
+import { MenuItem, Store, GListItem, Product, InventoryItem } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -68,6 +68,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
   unit: 'pc',
+  soldBy: 'pc',
   cost: 0,
   price: 0,
   barcode: '',
@@ -79,6 +80,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   targetStation: undefined,
   taxRate: '',
   trackInventory: false,
+  inventoryItemId: null,
   alertLevel: 0,
   specialTags: [],
   productId: null,
@@ -89,6 +91,7 @@ export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [taxRates, setTaxRates] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,14 +125,23 @@ export default function MenuPage() {
           setProducts(prodData);
         });
 
+        const inventoryQuery = query(collection(firestore, 'inventory'), where('storeId', '==', selectedStoreId));
+        const inventoryUnsubscribe = onSnapshot(inventoryQuery, (snapshot) => {
+            const invData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
+            setInventoryItems(invData);
+        });
+
+
         return () => {
             menuUnsubscribe();
             storesUnsubscribe();
             productsUnsubscribe();
+            inventoryUnsubscribe();
         }
     } else {
         setItems([]);
         setProducts([]);
+        setInventoryItems([]);
     }
 }, [firestore, selectedStoreId]);
 
@@ -201,6 +213,7 @@ export default function MenuPage() {
             category: selectedProduct.category,
             barcode: selectedProduct.barcode,
             unit: selectedProduct.unit,
+            soldBy: selectedProduct.unit,
             cost: selectedProduct.defaultCost || 0,
             price: selectedProduct.defaultPrice || 0,
             specialTags: selectedProduct.specialTags || [],
@@ -212,6 +225,26 @@ export default function MenuPage() {
     }
   }, [formData.productId, products, editingItem]);
   
+  useEffect(() => {
+    if (formData.trackInventory && formData.inventoryItemId) {
+        const linkedItem = inventoryItems.find(i => i.id === formData.inventoryItemId);
+        if (linkedItem) {
+            setFormData(prev => ({
+                ...prev,
+                cost: linkedItem.costPerUnit,
+                price: linkedItem.sellingPrice || 0,
+                barcode: linkedItem.sku,
+                soldBy: linkedItem.unit
+            }));
+            setDisplayValues({
+                cost: formatCurrency(linkedItem.costPerUnit),
+                price: formatCurrency(linkedItem.sellingPrice || 0),
+            });
+        }
+    }
+  }, [formData.trackInventory, formData.inventoryItemId, inventoryItems]);
+
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     const { type } = e.target as HTMLInputElement;
@@ -255,7 +288,11 @@ export default function MenuPage() {
   };
 
   const handleSwitchChange = (name: string, checked: boolean) => {
-    setFormData((prev) => ({ ...prev, [name]: checked }));
+    const newFormData = { ...formData, [name]: checked };
+    if (name === 'trackInventory' && !checked) {
+        newFormData.inventoryItemId = null;
+    }
+    setFormData(newFormData);
   }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -284,7 +321,7 @@ export default function MenuPage() {
 
       setIsModalOpen(false); // Close modal only after successful save
     } catch (error) {
-      console.error("Error saving document: ", error);
+        console.error("Error saving document: ", error);
     }
   };
   
@@ -352,9 +389,10 @@ export default function MenuPage() {
   }, [stores, selectedStoreId]);
 
   const availableProducts = useMemo(() => {
+    if (editingItem) return products; // Show all products when editing
     const existingProductIds = items.map(item => item.productId).filter(Boolean);
     return products.filter(p => !existingProductIds.includes(p.id));
-  }, [items, products]);
+  }, [items, products, editingItem]);
 
   const groupedAvailableProducts = useMemo(() => {
     return availableProducts.reduce((acc, product) => {
@@ -423,11 +461,11 @@ export default function MenuPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="cost">Cost</Label>
-                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && !!formData.inventoryItemId} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="price">Price</Label>
-                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && !!formData.inventoryItemId}/>
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="unit">Unit</Label>
@@ -505,19 +543,43 @@ export default function MenuPage() {
                         <Label htmlFor="publicDescription">Public Description</Label>
                         <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange}/>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                         <div className="flex items-center gap-4">
+                          <div className="flex items-center space-x-2">
+                            <Label htmlFor="isAvailable">Available</Label>
+                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                        </div>
                           <div className="flex items-center space-x-2">
                             <Label htmlFor="trackInventory">Track Inventory</Label>
                             <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
                           </div>
-                          {formData.trackInventory && (
-                              <div className="flex items-center space-x-2">
-                                  <Label htmlFor="alertLevel">Alert Level</Label>
-                                  <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
-                              </div>
-                          )}
                         </div>
+
+                        {formData.trackInventory && (
+                            <div className='space-y-2'>
+                                <Label htmlFor="inventoryItemId">Linked Inventory Item</Label>
+                                <Select name="inventoryItemId" value={formData.inventoryItemId || ''} onValueChange={(v) => handleSelectChange('inventoryItemId', v)} required>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select an inventory item to link" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {inventoryItems.length > 0 ? inventoryItems.map(item => (
+                                            <SelectItem key={item.id} value={item.id}>
+                                                {item.name} ({item.sku})
+                                            </SelectItem>
+                                        )) : <SelectItem value="no-items" disabled>No inventory items in this store</SelectItem>}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+
+                        {formData.trackInventory && (
+                            <div className="flex items-center space-x-2">
+                                <Label htmlFor="alertLevel">Alert Level</Label>
+                                <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
+                            </div>
+                        )}
+
                         {formData.trackInventory && (
                             <Alert>
                                 <AlertDescription>
@@ -525,10 +587,6 @@ export default function MenuPage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                         <div className="flex items-center space-x-2 pt-4">
-                            <Label htmlFor="isAvailable">Available</Label>
-                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
-                        </div>
                     </div>
                 </div>
                  
