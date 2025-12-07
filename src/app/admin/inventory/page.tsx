@@ -62,7 +62,7 @@ type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId'
 };
 
 const initialItemState: FormData = {
-    itemType: 'raw',
+    itemType: 'saleable',
     name: '',
     sku: '',
     category: '',
@@ -547,5 +547,3 @@ export default function InventoryPage() {
       </main>
   );
 }
-
-    
