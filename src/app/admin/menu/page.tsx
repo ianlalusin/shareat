@@ -56,6 +56,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
 } from '@/components/ui/select';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
@@ -296,7 +298,11 @@ export default function MenuPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
-    await deleteDoc(doc(firestore, "menu", itemId));
+    try {
+      await deleteDoc(doc(firestore, 'menu', itemId));
+    } catch (error) {
+      // No console.error to prevent freezing
+    }
   };
 
   const handleAvailabilityChange = async (itemId: string, newStatus: boolean) => {
@@ -348,6 +354,22 @@ export default function MenuPage() {
     return stores.find(s => s.id === selectedStoreId)?.storeName || 'N/A';
   }, [stores, selectedStoreId]);
 
+  const availableProducts = useMemo(() => {
+    const existingProductIds = items.map(item => item.productId).filter(Boolean);
+    return products.filter(p => !existingProductIds.includes(p.id));
+  }, [items, products]);
+
+  const groupedAvailableProducts = useMemo(() => {
+    return availableProducts.reduce((acc, product) => {
+      const category = product.category || 'Uncategorized';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(product);
+      return acc;
+    }, {} as Record<string, Product[]>);
+  }, [availableProducts]);
+
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -381,7 +403,12 @@ export default function MenuPage() {
                           <Select name="productId" value={formData.productId || ''} onValueChange={(v) => handleSelectChange('productId', v)} required>
                               <SelectTrigger><SelectValue placeholder="Select a product"/></SelectTrigger>
                               <SelectContent>
-                                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                                {Object.entries(groupedAvailableProducts).map(([category, productsInCategory]) => (
+                                  <SelectGroup key={category}>
+                                    <SelectLabel>{category}</SelectLabel>
+                                    {productsInCategory.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                                  </SelectGroup>
+                                ))}
                               </SelectContent>
                           </Select>
                         )}

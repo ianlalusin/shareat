@@ -45,7 +45,7 @@ import {
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS, formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
@@ -301,6 +301,22 @@ export default function InventoryPage() {
     );
   }, [inventory]);
 
+  const availableProducts = useMemo(() => {
+    const existingProductIds = inventory.map(item => item.productId).filter(Boolean);
+    return products.filter(p => !existingProductIds.includes(p.id));
+  }, [inventory, products]);
+
+  const groupedAvailableProducts = useMemo(() => {
+    return availableProducts.reduce((acc, product) => {
+      const category = product.category || 'Uncategorized';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(product);
+      return acc;
+    }, {} as Record<string, Product[]>);
+  }, [availableProducts]);
+
   return (
       <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
@@ -329,7 +345,12 @@ export default function InventoryPage() {
                           <Select name="productId" value={formData.productId || ''} onValueChange={(v) => handleSelectChange('productId', v)} required>
                               <SelectTrigger><SelectValue placeholder="Select a product"/></SelectTrigger>
                               <SelectContent>
-                                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                                {Object.entries(groupedAvailableProducts).map(([category, productsInCategory]) => (
+                                  <SelectGroup key={category}>
+                                    <SelectLabel>{category}</SelectLabel>
+                                    {productsInCategory.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                                  </SelectGroup>
+                                ))}
                               </SelectContent>
                           </Select>
                         )}
@@ -496,3 +517,4 @@ export default function InventoryPage() {
   );
 
     
+
