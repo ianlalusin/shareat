@@ -48,6 +48,13 @@ import { formatCurrency, parseCurrency, UNIT_OPTIONS, formatAndValidateDate, rev
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
