@@ -67,16 +67,12 @@ export default function StaffDetailPage() {
     }
   };
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setNewPhotoFile(file);
-      handlePhotoUpload(file); // Directly upload
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || !firestore || !storage || !staffId) {
+        return;
     }
-  };
-
-  const handlePhotoUpload = async (file: File | null) => {
-    if (!file || !firestore || !storage || !staffId) return;
+    const file = e.target.files[0];
+    
     setIsUploading(true);
     try {
       const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${file.name}`);
@@ -88,6 +84,7 @@ export default function StaffDetailPage() {
       
       setNewPhotoFile(null);
       setIsPhotoModalOpen(false);
+
     } catch (error) {
       console.error('Error uploading new photo: ', error);
       alert('Failed to upload photo. Please try again.');
