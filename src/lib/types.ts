@@ -83,8 +83,7 @@ export interface InventoryItem {
 
   trackInventory: boolean;     // if this should be included in stock alerts / dashboards
 
-  menuItemId?: string | null;
-  productId?: string | null;   // when you later introduce the master products collection
+  productId: string | null;   // Link to the master product
 
   createdAt: Timestamp;
   updatedAt: Timestamp;

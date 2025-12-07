@@ -207,58 +207,52 @@ export default function MenuPage() {
     }
   }, [isModalOpen, editingItem]);
 
+  const selectedInventoryItem = useMemo(() => {
+    return inventoryItems.find(i => i.id === formData.inventoryItemId);
+  }, [formData.inventoryItemId, inventoryItems]);
+
   useEffect(() => {
-    const selectedProduct = products.find(p => p.id === formData.productId);
-    if (selectedProduct && !editingItem) {
+    if (selectedInventoryItem && !editingItem) {
+        const product = products.find(p => p.id === selectedInventoryItem.productId);
         setFormData(prev => ({
             ...prev,
-            menuName: selectedProduct.productName,
-            category: selectedProduct.category,
-            barcode: selectedProduct.barcode,
-            unit: selectedProduct.unit,
-            cost: selectedProduct.defaultCost || 0,
-            price: selectedProduct.defaultPrice || 0,
-            specialTags: selectedProduct.specialTags || [],
-            imageUrl: selectedProduct.imageUrl || '',
+            menuName: selectedInventoryItem.name,
+            category: selectedInventoryItem.category,
+            barcode: selectedInventoryItem.sku,
+            unit: selectedInventoryItem.unit,
+            cost: selectedInventoryItem.costPerUnit,
+            price: selectedInventoryItem.sellingPrice || 0,
+            specialTags: product?.specialTags || [],
+            imageUrl: product?.imageUrl || '',
+            productId: selectedInventoryItem.productId,
         }));
         setDisplayValues({
-            cost: formatCurrency(selectedProduct.defaultCost || 0),
-            price: formatCurrency(selectedProduct.defaultPrice || 0),
+            cost: formatCurrency(selectedInventoryItem.costPerUnit || 0),
+            price: formatCurrency(selectedInventoryItem.sellingPrice || 0),
         });
     }
-  }, [formData.productId, products, editingItem]);
+  }, [selectedInventoryItem, products, editingItem]);
   
   useEffect(() => {
     setFormError(null); // Clear previous errors
     if (formData.trackInventory) {
-      if (formData.productId) {
-        const linkedItem = inventoryItems.find(i => i.productId === formData.productId);
-        if (linkedItem) {
-            setFormData(prev => ({
-                ...prev,
-                inventoryItemId: linkedItem.id,
-                cost: linkedItem.costPerUnit,
-                price: linkedItem.sellingPrice || 0,
-                barcode: linkedItem.sku,
-                unit: linkedItem.unit
-            }));
-            setDisplayValues({
-                cost: formatCurrency(linkedItem.costPerUnit),
-                price: formatCurrency(linkedItem.sellingPrice || 0),
-            });
-        } else {
-             setFormData(prev => ({ ...prev, inventoryItemId: null }));
-             setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
-        }
+      if (selectedInventoryItem) {
+        setFormData(prev => ({
+            ...prev,
+            cost: selectedInventoryItem.costPerUnit,
+            price: selectedInventoryItem.sellingPrice || prev.price,
+            barcode: selectedInventoryItem.sku,
+            unit: selectedInventoryItem.unit
+        }));
+        setDisplayValues({
+            cost: formatCurrency(selectedInventoryItem.costPerUnit),
+            price: formatCurrency(selectedInventoryItem.sellingPrice || formData.price),
+        });
       } else {
-         setFormData(prev => ({ ...prev, inventoryItemId: null }));
-         setFormError("Select a product to link inventory.");
+         setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
       }
-    } else {
-      // If tracking is turned off, clear the link and error
-      setFormData(prev => ({ ...prev, inventoryItemId: null }));
     }
-  }, [formData.trackInventory, formData.productId, inventoryItems]);
+  }, [formData.trackInventory, selectedInventoryItem]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -305,6 +299,9 @@ export default function MenuPage() {
 
   const handleSwitchChange = (name: string, checked: boolean) => {
     const newFormData = { ...formData, [name]: checked };
+    if (name === 'trackInventory' && !checked) {
+        newFormData.inventoryItemId = null;
+    }
     setFormData(newFormData);
   }
 
@@ -315,21 +312,9 @@ export default function MenuPage() {
         return;
     }
     if (!firestore || !storage || !selectedStoreId) return;
-
-    let imageUrl = formData.imageUrl || '';
-    if (imageFile) {
-      try {
-        const imageRef = ref(storage, `Shareat Hub/menu_items/${Date.now()}_${imageFile.name}`);
-        const snapshot = await uploadBytes(imageRef, imageFile);
-        imageUrl = await getDownloadURL(snapshot.ref);
-      } catch (error) {
-        console.error("Image upload failed:", error);
-      }
-    }
     
     const dataToSave: Omit<MenuItem, 'id'> = {
       ...formData,
-      imageUrl,
     };
     
     try {
@@ -409,22 +394,22 @@ export default function MenuPage() {
     return stores.find(s => s.id === selectedStoreId)?.storeName || 'N/A';
   }, [stores, selectedStoreId]);
 
-  const availableProducts = useMemo(() => {
-    if (editingItem) return products; // Show all products when editing
-    const existingProductIds = items.map(item => item.productId).filter(Boolean);
-    return products.filter(p => !existingProductIds.includes(p.id));
-  }, [items, products, editingItem]);
+  const availableInventoryItems = useMemo(() => {
+    if (editingItem) return inventoryItems; // Show all items when editing
+    const existingInventoryItemIds = items.map(item => item.inventoryItemId).filter(Boolean);
+    return inventoryItems.filter(invItem => !existingInventoryItemIds.includes(invItem.id));
+  }, [items, inventoryItems, editingItem]);
 
-  const groupedAvailableProducts = useMemo(() => {
-    return availableProducts.reduce((acc, product) => {
-      const category = product.category || 'Uncategorized';
+  const groupedAvailableInventoryItems = useMemo(() => {
+    return availableInventoryItems.reduce((acc, item) => {
+      const category = item.category || 'Uncategorized';
       if (!acc[category]) {
         acc[category] = [];
       }
-      acc[category].push(product);
+      acc[category].push(item);
       return acc;
-    }, {} as Record<string, Product[]>);
-  }, [availableProducts]);
+    }, {} as Record<string, InventoryItem[]>);
+  }, [availableInventoryItems]);
 
   const linkedInventoryItem = useMemo(() => {
     if (formData.inventoryItemId) {
@@ -459,17 +444,17 @@ export default function MenuPage() {
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                        <Label htmlFor="productId">Menu Name</Label>
+                        <Label htmlFor="inventoryItemId">Menu Name</Label>
                          {editingItem ? (
                            <Input id="menuName" name="menuName" value={formData.menuName} readOnly disabled />
                         ) : (
-                          <Select name="productId" value={formData.productId || ''} onValueChange={(v) => handleSelectChange('productId', v)} required>
-                              <SelectTrigger><SelectValue placeholder="Select a product"/></SelectTrigger>
+                          <Select name="inventoryItemId" value={formData.inventoryItemId || ''} onValueChange={(v) => handleSelectChange('inventoryItemId', v)} required>
+                              <SelectTrigger><SelectValue placeholder="Select an inventory item"/></SelectTrigger>
                               <SelectContent>
-                                {Object.entries(groupedAvailableProducts).map(([category, productsInCategory]) => (
+                                {Object.entries(groupedAvailableInventoryItems).map(([category, invItems]) => (
                                   <SelectGroup key={category}>
                                     <SelectLabel>{category}</SelectLabel>
-                                    {productsInCategory.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                                    {invItems.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
                                   </SelectGroup>
                                 ))}
                               </SelectContent>
@@ -489,11 +474,11 @@ export default function MenuPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="cost">Cost</Label>
-                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory} />
+                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required readOnly disabled />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="price">Price</Label>
-                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory}/>
+                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && selectedInventoryItem?.itemType === 'saleable'}/>
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="unit">Unit</Label>
@@ -585,11 +570,11 @@ export default function MenuPage() {
                         </div>
                           <div className="flex items-center space-x-2">
                             <Label htmlFor="trackInventory">Track Inventory</Label>
-                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
                           </div>
                         </div>
 
-                        {formData.trackInventory && (
+                        {formData.inventoryItemId && (
                             <div className='space-y-2'>
                                 <Label>Linked Inventory Item</Label>
                                 {linkedInventoryItem && (
@@ -749,3 +734,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    
