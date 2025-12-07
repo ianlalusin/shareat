@@ -614,7 +614,7 @@ export default function MenuPage() {
                 </div>
                  
               </div>
-              <DialogFooter>
+              <DialogFooter className="flex-row justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                   Cancel
                 </Button>

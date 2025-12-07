@@ -251,7 +251,7 @@ export default function TableManagementPage() {
                       </Select>
                   </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="flex-row justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                     Cancel
                   </Button>

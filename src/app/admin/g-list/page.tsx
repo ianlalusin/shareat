@@ -296,7 +296,7 @@ export default function GListPage() {
                     <Switch id="is_active" name="is_active" checked={formData.is_active} onCheckedChange={handleSwitchChange} />
                   </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="flex-row justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                     Cancel
                   </Button>
