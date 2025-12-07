@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -68,7 +68,6 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
   unit: 'pc',
-  soldBy: 'pc',
   cost: 0,
   price: 0,
   barcode: '',
@@ -98,6 +97,7 @@ export default function MenuPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
   
@@ -201,6 +201,7 @@ export default function MenuPage() {
         setFormData(initialItemState);
         setDisplayValues({ cost: '', price: '' });
         setImageFile(null);
+        setFormError(null);
     }
   }, [isModalOpen, editingItem]);
 
@@ -213,7 +214,6 @@ export default function MenuPage() {
             category: selectedProduct.category,
             barcode: selectedProduct.barcode,
             unit: selectedProduct.unit,
-            soldBy: selectedProduct.unit,
             cost: selectedProduct.defaultCost || 0,
             price: selectedProduct.defaultPrice || 0,
             specialTags: selectedProduct.specialTags || [],
@@ -226,23 +226,36 @@ export default function MenuPage() {
   }, [formData.productId, products, editingItem]);
   
   useEffect(() => {
-    if (formData.trackInventory && formData.inventoryItemId) {
-        const linkedItem = inventoryItems.find(i => i.id === formData.inventoryItemId);
+    setFormError(null); // Clear previous errors
+    if (formData.trackInventory) {
+      if (formData.productId) {
+        const linkedItem = inventoryItems.find(i => i.productId === formData.productId);
         if (linkedItem) {
             setFormData(prev => ({
                 ...prev,
+                inventoryItemId: linkedItem.id,
                 cost: linkedItem.costPerUnit,
                 price: linkedItem.sellingPrice || 0,
                 barcode: linkedItem.sku,
-                soldBy: linkedItem.unit
+                unit: linkedItem.unit
             }));
             setDisplayValues({
                 cost: formatCurrency(linkedItem.costPerUnit),
                 price: formatCurrency(linkedItem.sellingPrice || 0),
             });
+        } else {
+             setFormData(prev => ({ ...prev, inventoryItemId: null }));
+             setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
         }
+      } else {
+         setFormData(prev => ({ ...prev, inventoryItemId: null }));
+         setFormError("Select a product to link inventory.");
+      }
+    } else {
+      // If tracking is turned off, clear the link and error
+      setFormData(prev => ({ ...prev, inventoryItemId: null }));
     }
-  }, [formData.trackInventory, formData.inventoryItemId, inventoryItems]);
+  }, [formData.trackInventory, formData.productId, inventoryItems]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -289,14 +302,15 @@ export default function MenuPage() {
 
   const handleSwitchChange = (name: string, checked: boolean) => {
     const newFormData = { ...formData, [name]: checked };
-    if (name === 'trackInventory' && !checked) {
-        newFormData.inventoryItemId = null;
-    }
     setFormData(newFormData);
   }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (formError) {
+        alert(formError);
+        return;
+    }
     if (!firestore || !storage || !selectedStoreId) return;
 
     let imageUrl = formData.imageUrl || '';
@@ -405,6 +419,13 @@ export default function MenuPage() {
     }, {} as Record<string, Product[]>);
   }, [availableProducts]);
 
+  const linkedInventoryItem = useMemo(() => {
+    if (formData.inventoryItemId) {
+        return inventoryItems.find(i => i.id === formData.inventoryItemId);
+    }
+    return null;
+  }, [formData.inventoryItemId, inventoryItems]);
+
 
   return (
       <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
@@ -461,11 +482,11 @@ export default function MenuPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="cost">Cost</Label>
-                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && !!formData.inventoryItemId} />
+                    <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="price">Price</Label>
-                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && !!formData.inventoryItemId}/>
+                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory}/>
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="unit">Unit</Label>
@@ -519,7 +540,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                      <div className="space-y-2">
                         <Label htmlFor="imageUrl">Image</Label>
                         <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
@@ -557,19 +578,23 @@ export default function MenuPage() {
 
                         {formData.trackInventory && (
                             <div className='space-y-2'>
-                                <Label htmlFor="inventoryItemId">Linked Inventory Item</Label>
-                                <Select name="inventoryItemId" value={formData.inventoryItemId || ''} onValueChange={(v) => handleSelectChange('inventoryItemId', v)} required>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select an inventory item to link" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {inventoryItems.length > 0 ? inventoryItems.map(item => (
-                                            <SelectItem key={item.id} value={item.id}>
-                                                {item.name} ({item.sku})
-                                            </SelectItem>
-                                        )) : <SelectItem value="no-items" disabled>No inventory items in this store</SelectItem>}
-                                    </SelectContent>
-                                </Select>
+                                <Label>Linked Inventory Item</Label>
+                                {linkedInventoryItem && (
+                                    <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
+                                        <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
+                                        <Badge variant="secondary">Auto-linked</Badge>
+                                    </div>
+                                )}
+                                {formError && (
+                                     <Alert variant="destructive" className="p-2">
+                                        <div className="flex items-center gap-2">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <AlertDescription className="text-xs">
+                                                {formError}
+                                            </AlertDescription>
+                                        </div>
+                                    </Alert>
+                                )}
                             </div>
                         )}
 
@@ -580,10 +605,10 @@ export default function MenuPage() {
                             </div>
                         )}
 
-                        {formData.trackInventory && (
+                        {formData.trackInventory && !formError && (
                             <Alert>
                                 <AlertDescription>
-                                    Low stock alerts will be triggered when the quantity in stock reaches the alert level.
+                                    Cost, Price, Barcode, and Unit are now locked to the linked inventory item. Low stock alerts will be triggered when the quantity in stock reaches the alert level.
                                 </AlertDescription>
                             </Alert>
                         )}

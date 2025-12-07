@@ -109,7 +109,6 @@ export type MenuItem = {
   specialTags: string[];
   productId?: string | null;
   unit: string;
-  soldBy: string;
 };
 
 export type Table = {
