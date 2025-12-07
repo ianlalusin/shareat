@@ -4,17 +4,18 @@ import * as React from 'react';
 import { X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { Command, CommandInput } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 
 interface TagsInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   value: string[];
   onChange: (value: string[]) => void;
   placeholder?: string;
+  id?: string;
+  name?: string;
 }
 
 const TagsInput = React.forwardRef<HTMLInputElement, TagsInputProps>(
-  ({ value, onChange, placeholder, className, ...props }, ref) => {
+  ({ value, onChange, placeholder, className, id, name, ...props }, ref) => {
     const [inputValue, setInputValue] = React.useState('');
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -55,6 +56,8 @@ const TagsInput = React.forwardRef<HTMLInputElement, TagsInputProps>(
         ))}
         <input
           ref={ref}
+          id={id}
+          name={name}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}

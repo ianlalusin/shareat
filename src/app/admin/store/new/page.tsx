@@ -266,6 +266,7 @@ export default function NewStorePage() {
                         <Label htmlFor="tableLocations">Table Locations</Label>
                         <TagsInput
                           id="tableLocations"
+                          name="tableLocations"
                           value={formData.tableLocations}
                           onChange={handleTableLocationsChange}
                           placeholder="Add locations..."

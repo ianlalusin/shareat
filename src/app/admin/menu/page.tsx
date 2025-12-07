@@ -9,7 +9,6 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-  DialogClose,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -446,6 +445,7 @@ useEffect(() => {
                         <Label htmlFor="specialTags">Special Tags</Label>
                         <TagsInput
                           id="specialTags"
+                          name="specialTags"
                           value={formData.specialTags}
                           onChange={handleTagsChange}
                           placeholder="Add tags..."
