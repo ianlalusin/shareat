@@ -107,6 +107,7 @@ export type MenuItem = {
   trackInventory: boolean;
   alertLevel: number;
   specialTags: string[];
+  productId?: string | null;
 };
 
 export type Table = {

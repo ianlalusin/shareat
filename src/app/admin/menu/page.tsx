@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -42,7 +43,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, GListItem } from '@/lib/types';
+import { MenuItem, Store, GListItem, Product } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -80,12 +81,14 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   trackInventory: false,
   alertLevel: 0,
   specialTags: [],
+  productId: null,
 };
 
 
 export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [taxRates, setTaxRates] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -111,17 +114,25 @@ export default function MenuPage() {
             const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
             setStores(storesData);
         });
+        
+        const productsQuery = query(collection(firestore, 'products'), where('isActive', '==', true));
+        const productsUnsubscribe = onSnapshot(productsQuery, (snapshot) => {
+          const prodData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+          setProducts(prodData);
+        });
 
         return () => {
             menuUnsubscribe();
             storesUnsubscribe();
+            productsUnsubscribe();
         }
     } else {
-        setItems([]); // Clear items if no store is selected
+        setItems([]);
+        setProducts([]);
     }
 }, [firestore, selectedStoreId]);
 
-useEffect(() => {
+  useEffect(() => {
     if (firestore) {
       const availabilityQuery = query(
         collection(firestore, 'lists'),
@@ -178,7 +189,25 @@ useEffect(() => {
         setDisplayValues({ cost: '', price: '' });
         setImageFile(null);
     }
-}, [isModalOpen, editingItem]);
+  }, [isModalOpen, editingItem]);
+
+  useEffect(() => {
+    const selectedProduct = products.find(p => p.id === formData.productId);
+    if (selectedProduct && !editingItem) {
+        setFormData(prev => ({
+            ...prev,
+            menuName: selectedProduct.productName,
+            category: selectedProduct.category,
+            barcode: selectedProduct.barcode,
+            cost: selectedProduct.defaultCost || 0,
+            price: selectedProduct.defaultPrice || 0,
+        }));
+        setDisplayValues({
+            cost: formatCurrency(selectedProduct.defaultCost || 0),
+            price: formatCurrency(selectedProduct.defaultPrice || 0),
+        });
+    }
+  }, [formData.productId, products, editingItem]);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -349,12 +378,21 @@ useEffect(() => {
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                        <Label htmlFor="menuName">Menu Name</Label>
-                        <Input id="menuName" name="menuName" value={formData.menuName} onChange={handleInputChange} required />
+                        <Label htmlFor="productId">Menu Name</Label>
+                         {editingItem ? (
+                           <Input id="menuName" name="menuName" value={formData.menuName} readOnly disabled />
+                        ) : (
+                          <Select name="productId" value={formData.productId || ''} onValueChange={(v) => handleSelectChange('productId', v)} required>
+                              <SelectTrigger><SelectValue placeholder="Select a product"/></SelectTrigger>
+                              <SelectContent>
+                                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                              </SelectContent>
+                          </Select>
+                        )}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="category">Category</Label>
-                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required readOnly disabled />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="store">Store</Label>
@@ -373,7 +411,7 @@ useEffect(() => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="barcode">Barcode</Label>
-                    <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                    <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                   </div>
                 </div>
 
