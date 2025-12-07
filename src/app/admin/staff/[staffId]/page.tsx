@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -13,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { cn, formatCurrency } from '@/lib/utils';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
 
 export default function StaffDetailPage() {
@@ -41,13 +43,11 @@ export default function StaffDetailPage() {
   
   const handleDelete = async () => {
     if (!firestore || !staffId) return;
-    if (window.confirm('Are you sure you want to delete this staff member?')) {
-      try {
-        await deleteDoc(doc(firestore, 'staff', staffId));
-        router.push('/admin/staff');
-      } catch (error) {
-        console.error("Error deleting document: ", error);
-      }
+    try {
+      await deleteDoc(doc(firestore, 'staff', staffId));
+      router.push('/admin/staff');
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
 
@@ -102,9 +102,11 @@ export default function StaffDetailPage() {
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Link>
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
-             <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
+          <DeleteConfirmationDialog onConfirm={handleDelete}>
+            <Button variant="destructive">
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
+          </DeleteConfirmationDialog>
         </div>
       </div>
 
