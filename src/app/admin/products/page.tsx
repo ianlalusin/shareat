@@ -50,7 +50,7 @@ import {
 } from '@/components/ui/accordion';
 import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import { TagsInput } from '@/components/ui/tags-input';
-import { UNIT_OPTIONS } from '@/lib/utils';
+import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
@@ -60,6 +60,8 @@ const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUp
   unit: 'pc',
   specialTags: [],
   isActive: true,
+  defaultCost: 0,
+  defaultPrice: 0,
 };
 
 export default function ProductsPage() {
@@ -67,6 +69,7 @@ export default function ProductsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'>>(initialItemState);
+  const [displayValues, setDisplayValues] = useState<{ defaultCost: string; defaultPrice: string }>({ defaultCost: '', defaultPrice: '' });
   
   const firestore = useFirestore();
   const auth = useAuth();
@@ -91,10 +94,15 @@ export default function ProductsPage() {
                 ...editingItem,
                 specialTags: editingItem.specialTags || [],
             });
+            setDisplayValues({
+              defaultCost: formatCurrency(editingItem.defaultCost),
+              defaultPrice: formatCurrency(editingItem.defaultPrice),
+            });
         }
     } else {
         setEditingItem(null);
         setFormData(initialItemState);
+        setDisplayValues({ defaultCost: '', defaultPrice: '' });
     }
 }, [isModalOpen, editingItem]);
   
@@ -102,6 +110,27 @@ export default function ProductsPage() {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
+  
+  const handleCurrencyInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    
+    setDisplayValues(prev => ({ ...prev, [name as keyof typeof displayValues]: numericValue }));
+    setFormData(prev => ({ ...prev, [name as keyof typeof displayValues]: parseCurrency(numericValue) }));
+  }
+
+  const handleCurrencyInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = parseCurrency(value);
+    setDisplayValues(prev => ({ ...prev, [name as keyof typeof displayValues]: formatCurrency(numericValue) }));
+  }
+
+  const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name } = e.target;
+    const fieldName = name as keyof typeof displayValues;
+    const fieldValue = formData[fieldName];
+    setDisplayValues(prev => ({ ...prev, [fieldName]: fieldValue === 0 ? '' : String(fieldValue) }));
+  }
 
   const handleSwitchChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, isActive: checked }));
@@ -208,7 +237,7 @@ export default function ProductsPage() {
                 <span>Add Product</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
+            <DialogContent className="sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>{editingItem ? 'Edit Product' : 'Add New Product'}</DialogTitle>
               </DialogHeader>
@@ -242,6 +271,17 @@ export default function ProductsPage() {
                                 ))}
                             </SelectContent>
                         </Select>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultCost">Default Cost</Label>
+                      <Input id="defaultCost" name="defaultCost" type="text" inputMode="decimal" value={displayValues.defaultCost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                    </div>
+                     <div className="space-y-2">
+                      <Label htmlFor="defaultPrice">Default Price</Label>
+                      <Input id="defaultPrice" name="defaultPrice" type="text" inputMode="decimal" value={displayValues.defaultPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
                     </div>
                   </div>
 
@@ -304,6 +344,8 @@ export default function ProductsPage() {
                         <TableHead className="px-2 h-10">Product Name</TableHead>
                         <TableHead className="px-2 h-10">Barcode/SKU</TableHead>
                         <TableHead className="px-2 h-10">Unit</TableHead>
+                        <TableHead className="px-2 h-10 text-right">Cost</TableHead>
+                        <TableHead className="px-2 h-10 text-right">Price</TableHead>
                         <TableHead className="px-2 h-10">Tags</TableHead>
                         <TableHead className="px-2 h-10">Status</TableHead>
                         <TableHead className="px-2 h-10">
@@ -317,6 +359,8 @@ export default function ProductsPage() {
                           <TableCell className="p-2 font-medium">{item.productName}</TableCell>
                            <TableCell className="p-2">{item.barcode}</TableCell>
                           <TableCell className="p-2">{item.unit}</TableCell>
+                          <TableCell className="p-2 text-right">{formatCurrency(item.defaultCost)}</TableCell>
+                          <TableCell className="p-2 text-right">{formatCurrency(item.defaultPrice)}</TableCell>
                           <TableCell className="p-2">
                             <div className="flex flex-wrap gap-1">
                               {item.specialTags?.map(tag => (

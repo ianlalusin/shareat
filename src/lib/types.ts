@@ -50,6 +50,8 @@ export type Product = {
   unit: string;
   specialTags: string[];
   isActive: boolean;
+  defaultCost?: number;
+  defaultPrice?: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastUpdatedBy: string;
@@ -171,4 +173,3 @@ export type OrderTransaction = {
   notes?: string;
   timestamp: Timestamp; 
 };
-
