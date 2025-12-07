@@ -347,7 +347,7 @@ export default function ProductsPage() {
                     </TableHeader>
                     <TableBody>
                       {itemsInCategory.map((item) => (
-                        <TableRow key={item.id}>
+                        <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
                           <TableCell className="p-2 font-medium">{item.productName}</TableCell>
                            <TableCell className="p-2">{item.barcode}</TableCell>
                           <TableCell className="p-2">{item.unit}</TableCell>
@@ -368,7 +368,7 @@ export default function ProductsPage() {
                               {item.isActive ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="p-2">
+                          <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button aria-haspopup="true" size="icon" variant="ghost">
