@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -32,7 +33,7 @@ const menuItems = [
   { href: "/admin/staff", label: "Staff", icon: Users },
   { href: "/admin/table-management", label: "Table Management", icon: LayoutGrid },
   { href: "/admin/products", label: "Products", icon: Boxes },
-  { href: "#inventory", label: "Inventory", icon: Warehouse },
+  { href: "/admin/inventory", label: "Inventory", icon: Warehouse },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "#reports", label: "Reports", icon: AreaChart },
   { href: "/admin/g-list", label: "G.List", icon: ListChecks },

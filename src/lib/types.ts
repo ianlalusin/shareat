@@ -42,6 +42,30 @@ export type Staff = {
   encoder: string;
 };
 
+export type Product = {
+  id: string;
+  productName: string;
+  category: string;
+  barcode: string;
+  unit: string;
+  specialTags: string[];
+  isActive: boolean;
+  defaultCost: number;
+  defaultPrice: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  lastUpdatedBy: string;
+};
+
+export type Inventory = {
+    id: string;
+    productId: string;
+    storeId: string;
+    quantity: number;
+    updatedAt: Timestamp;
+    lastUpdatedBy: string;
+};
+
 export type MenuItem = {
   id: string;
   menuName: string;
@@ -126,3 +150,4 @@ export type OrderTransaction = {
   notes?: string;
   timestamp: Timestamp; 
 };
+
