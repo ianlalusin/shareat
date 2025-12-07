@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LayoutGrid,
+  Warehouse,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,6 +33,7 @@ const menuItems = [
   { href: "/admin/table-management", label: "Table Management", icon: LayoutGrid },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "/admin/products", label: "Products", icon: Boxes },
+  { href: "#inventory", label: "Inventory", icon: Warehouse },
   { href: "#reports", label: "Reports", icon: AreaChart },
   { href: "/admin/g-list", label: "G.List", icon: ListChecks },
   { href: "#maintenance", label: "Maintenance", icon: Wrench },
