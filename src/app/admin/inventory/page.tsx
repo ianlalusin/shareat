@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle, TrendingUp, TrendingDown, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore } from '@/firebase';
 import {
@@ -54,6 +54,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Image from 'next/image';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
@@ -113,8 +114,12 @@ export default function InventoryPage() {
     }
   }, [firestore, selectedStoreId]);
 
+  const selectedProduct = useMemo(() => {
+    return products.find(p => p.id === formData.productId);
+  }, [formData.productId, products]);
+
+
   useEffect(() => {
-    const selectedProduct = products.find(p => p.id === formData.productId);
     if (selectedProduct && !editingItem) {
         setFormData(prev => ({
             ...prev,
@@ -130,7 +135,7 @@ export default function InventoryPage() {
             sellingPrice: formatCurrency(selectedProduct.defaultPrice || 0),
         });
     }
-  }, [formData.productId, products, editingItem]);
+  }, [selectedProduct, editingItem]);
 
   useEffect(() => {
     if (isModalOpen) {
@@ -281,6 +286,10 @@ export default function InventoryPage() {
     if (item.currentQty <= item.reorderPoint) return <Badge className="bg-yellow-500 text-white"><TrendingDown className="mr-1 h-3 w-3" /> Low Stock</Badge>;
     return <Badge className="bg-green-500 text-white"><TrendingUp className="mr-1 h-3 w-3" /> In Stock</Badge>;
   };
+  
+  const getProductForInventoryItem = (item: InventoryItem) => {
+      return products.find(p => p.id === item.productId);
+  }
 
   const groupedItems = useMemo(() => {
     const grouped = inventory.reduce((acc, item) => {
@@ -335,7 +344,15 @@ export default function InventoryPage() {
                 <DialogTitle>{editingItem ? `Edit ${editingItem.name}`: 'Add New Inventory Item'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 py-4">
+                     {/* Image Preview */}
+                    {selectedProduct?.imageUrl && (
+                        <div className="md:col-span-3 mb-4 flex justify-center">
+                            <div className="w-32 h-32 rounded-lg bg-muted overflow-hidden relative">
+                                <Image src={selectedProduct.imageUrl} alt={selectedProduct.productName} layout="fill" objectFit="cover" />
+                            </div>
+                        </div>
+                    )}
                     {/* Row 1 */}
                     <div className="space-y-2">
                         <Label htmlFor="productId">Item Name</Label>
@@ -465,6 +482,7 @@ export default function InventoryPage() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="px-2 h-10 w-16"></TableHead>
                             <TableHead className="px-2 h-10">Name</TableHead>
                             <TableHead className="px-2 h-10">SKU</TableHead>
                             <TableHead className="px-2 h-10">Type</TableHead>
@@ -478,32 +496,44 @@ export default function InventoryPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {itemsInCategory.map((item) => (
-                            <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
-                              <TableCell className="p-2 font-medium">{item.name}</TableCell>
-                              <TableCell className="p-2 text-muted-foreground">{item.sku}</TableCell>
-                               <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
-                              <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
-                              <TableCell className="p-2">{item.unit}</TableCell>
-                              <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
-                              <TableCell className="p-2">{getStockLevel(item)}</TableCell>
-                              <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button aria-haspopup="true" size="icon" variant="ghost">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                        <span className="sr-only">Toggle menu</span>
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                        <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                        <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                          {itemsInCategory.map((item) => {
+                              const product = getProductForInventoryItem(item);
+                              return (
+                                <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
+                                  <TableCell className="p-2">
+                                     <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
+                                        {product?.imageUrl ? (
+                                            <Image src={product.imageUrl} alt={item.name} width={40} height={40} className="object-cover h-full w-full" />
+                                        ) : (
+                                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                        )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="p-2 font-medium">{item.name}</TableCell>
+                                  <TableCell className="p-2 text-muted-foreground">{item.sku}</TableCell>
+                                   <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
+                                  <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
+                                  <TableCell className="p-2">{item.unit}</TableCell>
+                                  <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
+                                  <TableCell className="p-2">{getStockLevel(item)}</TableCell>
+                                  <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button aria-haspopup="true" size="icon" variant="ghost">
+                                            <MoreHorizontal className="h-4 w-4" />
+                                            <span className="sr-only">Toggle menu</span>
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                            <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                            <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -515,6 +545,3 @@ export default function InventoryPage() {
       )}
       </main>
   );
-
-    
-

@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -30,7 +30,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useFirestore, useAuth } from '@/firebase';
+import { useFirestore, useAuth, useStorage } from '@/firebase';
 import {
   addDoc,
   collection,
@@ -40,6 +40,7 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
 import { Product } from '@/lib/types';
 import {
@@ -51,6 +52,7 @@ import {
 import { TagsInput } from '@/components/ui/tags-input';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Image from 'next/image';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
   productName: '',
@@ -61,6 +63,7 @@ const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUp
   isActive: true,
   defaultCost: 0,
   defaultPrice: 0,
+  imageUrl: '',
 };
 
 export default function ProductsPage() {
@@ -69,9 +72,11 @@ export default function ProductsPage() {
   const [editingItem, setEditingItem] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'>>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ defaultCost: string; defaultPrice: string }>({ defaultCost: '', defaultPrice: '' });
+  const [imageFile, setImageFile] = useState<File | null>(null);
   
   const firestore = useFirestore();
   const auth = useAuth();
+  const storage = useStorage();
 
 
   useEffect(() => {
@@ -102,6 +107,7 @@ export default function ProductsPage() {
         setEditingItem(null);
         setFormData(initialItemState);
         setDisplayValues({ defaultCost: '', defaultPrice: '' });
+        setImageFile(null);
     }
 }, [isModalOpen, editingItem]);
   
@@ -130,6 +136,12 @@ export default function ProductsPage() {
     const fieldValue = formData[fieldName];
     setDisplayValues(prev => ({ ...prev, [fieldName]: fieldValue === 0 ? '' : String(fieldValue) }));
   }
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+    }
+  };
 
   const handleSwitchChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, isActive: checked }));
@@ -145,11 +157,22 @@ export default function ProductsPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore) return;
+    if (!firestore || !storage) return;
 
     const user = auth?.currentUser;
 
-    const finalFormData = { ...formData };
+    let imageUrl = formData.imageUrl || '';
+    if (imageFile) {
+        try {
+            const imageRef = ref(storage, `Shareat Hub/products/${Date.now()}_${imageFile.name}`);
+            const snapshot = await uploadBytes(imageRef, imageFile);
+            imageUrl = await getDownloadURL(snapshot.ref);
+        } catch (error) {
+            console.error("Image upload failed:", error);
+        }
+    }
+
+    const finalFormData = { ...formData, imageUrl };
     if (!finalFormData.barcode) {
       finalFormData.barcode = String(Date.now());
     }
@@ -283,6 +306,11 @@ export default function ProductsPage() {
                       <Input id="defaultPrice" name="defaultPrice" type="text" inputMode="decimal" value={displayValues.defaultPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
                     </div>
                   </div>
+                  
+                   <div className="space-y-2">
+                        <Label htmlFor="imageUrl">Product Image</Label>
+                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="specialTags">Special Tags</Label>
@@ -340,6 +368,7 @@ export default function ProductsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="px-2 h-10 w-16"></TableHead>
                         <TableHead className="px-2 h-10">Product Name</TableHead>
                         <TableHead className="px-2 h-10">Barcode/SKU</TableHead>
                         <TableHead className="px-2 h-10">Unit</TableHead>
@@ -355,6 +384,15 @@ export default function ProductsPage() {
                     <TableBody>
                       {itemsInCategory.map((item) => (
                         <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
+                          <TableCell className="p-2">
+                             <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
+                                {item.imageUrl ? (
+                                    <Image src={item.imageUrl} alt={item.productName} width={40} height={40} className="object-cover h-full w-full" />
+                                ) : (
+                                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                )}
+                            </div>
+                          </TableCell>
                           <TableCell className="p-2 font-medium">{item.productName}</TableCell>
                            <TableCell className="p-2">{item.barcode}</TableCell>
                           <TableCell className="p-2">{item.unit}</TableCell>

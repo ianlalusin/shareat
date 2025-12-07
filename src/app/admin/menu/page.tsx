@@ -21,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus, AlertCircle } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -63,6 +63,7 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import Image from 'next/image';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -217,6 +218,7 @@ export default function MenuPage() {
             cost: selectedProduct.defaultCost || 0,
             price: selectedProduct.defaultPrice || 0,
             specialTags: selectedProduct.specialTags || [],
+            imageUrl: selectedProduct.imageUrl || '',
         }));
         setDisplayValues({
             cost: formatCurrency(selectedProduct.defaultCost || 0),
@@ -321,8 +323,6 @@ export default function MenuPage() {
         imageUrl = await getDownloadURL(snapshot.ref);
       } catch (error) {
         console.error("Image upload failed:", error);
-        // Do not block saving if image upload fails.
-        // The old imageUrl (or empty string) will be used.
       }
     }
     
@@ -548,8 +548,14 @@ export default function MenuPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                      <div className="space-y-2">
-                        <Label htmlFor="imageUrl">Image</Label>
-                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                        <Label>Image</Label>
+                         <div className="h-24 w-24 flex items-center justify-center rounded-md bg-muted overflow-hidden relative">
+                            {formData.imageUrl ? (
+                                <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                            ) : (
+                                <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                            )}
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
@@ -667,6 +673,7 @@ export default function MenuPage() {
                   <Table className="text-xs">
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="p-2 h-10 w-16"></TableHead>
                         <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
@@ -683,6 +690,15 @@ export default function MenuPage() {
                     <TableBody>
                       {itemsInCategory.map((item) => (
                           <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium">
+                             <TableCell className="p-2">
+                                 <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
+                                    {item.imageUrl ? (
+                                        <Image src={item.imageUrl} alt={item.menuName} width={40} height={40} className="object-cover h-full w-full" />
+                                    ) : (
+                                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                    )}
+                                </div>
+                            </TableCell>
                             <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
                             <TableCell className="p-2 text-xs">
                               <Badge variant="outline" className="mr-1 mb-1 whitespace-nowrap">

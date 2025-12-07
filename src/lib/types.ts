@@ -55,6 +55,7 @@ export type Product = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastUpdatedBy: string;
+  imageUrl?: string;
 };
 
 export type InventoryItemType = "raw" | "saleable";
