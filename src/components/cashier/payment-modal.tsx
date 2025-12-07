@@ -55,11 +55,15 @@ export function PaymentModal({
 
   useEffect(() => {
     if (isOpen) {
+      const defaultMethod = store.mopAccepted.includes('Cash') 
+        ? 'Cash' 
+        : store.mopAccepted[0] || '';
+
       setPayments([
         {
           id: 1,
           amount: formatCurrency(totalAmount).replace('₱', ''),
-          method: store.mopAccepted[0] || 'Cash',
+          method: defaultMethod,
         },
       ]);
     }
@@ -234,4 +238,3 @@ export function PaymentModal({
     </Dialog>
   );
 }
-
