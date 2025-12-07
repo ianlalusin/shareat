@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { doc, onSnapshot, deleteDoc, updateDoc } from 'firebase/firestore';
@@ -37,7 +37,7 @@ export default function StaffDetailPage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!firestore || !staffId) return;
