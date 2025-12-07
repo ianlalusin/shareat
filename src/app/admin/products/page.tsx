@@ -307,25 +307,25 @@ export default function ProductsPage() {
                     </div>
                   </div>
                   
-                   <div className="space-y-2">
-                        <Label htmlFor="imageUrl">Product Image</Label>
-                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="imageUrl">Product Image</Label>
+                      <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
                     </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="specialTags">Special Tags</Label>
-                    <TagsInput
-                        id="specialTags"
-                        name="specialTags"
-                        value={formData.specialTags}
-                        onChange={handleTagsChange}
-                        placeholder="Add tags..."
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2 pt-2">
-                    <Label htmlFor="isActive">Active</Label>
-                    <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
+                     <div className="space-y-2">
+                        <Label htmlFor="specialTags">Special Tags</Label>
+                        <TagsInput
+                            id="specialTags"
+                            name="specialTags"
+                            value={formData.specialTags}
+                            onChange={handleTagsChange}
+                            placeholder="Add tags..."
+                        />
+                     </div>
+                     <div className="flex items-end pb-2 space-x-2">
+                        <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
+                        <Label htmlFor="isActive">Active</Label>
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>
