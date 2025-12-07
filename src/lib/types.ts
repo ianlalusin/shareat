@@ -50,8 +50,8 @@ export type Product = {
   unit: string;
   specialTags: string[];
   isActive: boolean;
-  defaultCost?: number;
-  defaultPrice?: number;
+  defaultCost: number;
+  defaultPrice: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastUpdatedBy: string;
@@ -94,6 +94,7 @@ export type MenuItem = {
   menuName: string;
   category: string;
   soldBy: 'unit' | 'fraction';
+  unit: string;
   cost: number;
   price: number;
   barcode: string;

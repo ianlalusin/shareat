@@ -63,12 +63,12 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { TagsInput } from '@/components/ui/tags-input';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
   soldBy: 'unit',
+  unit: 'pc',
   cost: 0,
   price: 0,
   barcode: '',
@@ -201,8 +201,10 @@ export default function MenuPage() {
             menuName: selectedProduct.productName,
             category: selectedProduct.category,
             barcode: selectedProduct.barcode,
+            unit: selectedProduct.unit,
             cost: selectedProduct.defaultCost || 0,
             price: selectedProduct.defaultPrice || 0,
+            specialTags: selectedProduct.specialTags || [],
         }));
         setDisplayValues({
             cost: formatCurrency(selectedProduct.defaultCost || 0),
@@ -257,10 +259,6 @@ export default function MenuPage() {
     setFormData((prev) => ({ ...prev, [name]: checked }));
   }
 
-  const handleTagsChange = (newTags: string[]) => {
-    setFormData(prev => ({ ...prev, specialTags: newTags }));
-  };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!firestore || !storage || !selectedStoreId) return;
@@ -301,7 +299,7 @@ export default function MenuPage() {
     try {
       await deleteDoc(doc(firestore, 'menu', itemId));
     } catch (error) {
-      // No console.error to prevent freezing
+        // Error is intentionally not logged to prevent screen freeze
     }
   };
 
@@ -432,9 +430,9 @@ export default function MenuPage() {
                     <Label htmlFor="price">Price</Label>
                     <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="barcode">Barcode</Label>
-                    <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                   <div className="space-y-2">
+                    <Label htmlFor="unit">Unit</Label>
+                    <Input id="unit" name="unit" value={formData.unit} readOnly disabled />
                   </div>
                 </div>
 
@@ -451,7 +449,7 @@ export default function MenuPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="availability">Availability</Label>
-                    <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)}>
+                    <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)} required>
                       <SelectTrigger><SelectValue placeholder="Select availability" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="always">Always Available</SelectItem>
@@ -463,7 +461,7 @@ export default function MenuPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="targetStation">Target Station</Label>
-                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)} required>
                       <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Hot">
@@ -497,21 +495,19 @@ export default function MenuPage() {
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
-                        <TagsInput
-                          id="specialTags"
-                          name="specialTags"
-                          value={formData.specialTags}
-                          onChange={handleTagsChange}
-                          placeholder="Add tags..."
-                        />
+                        <div className="flex flex-wrap gap-1 rounded-md border min-h-10 items-center p-2 bg-muted">
+                           {formData.specialTags?.length > 0 ? formData.specialTags.map(tag => (
+                            <Badge key={tag} variant="outline" className="bg-background">{tag}</Badge>
+                           )) : <span className='text-sm text-muted-foreground'>No tags</span>}
+                        </div>
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="imageUrl">Image</Label>
-                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                      <Label htmlFor="barcode">Barcode</Label>
+                      <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div className="space-y-2">
                         <Label htmlFor="publicDescription">Public Description</Label>
                         <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange}/>
                     </div>
@@ -540,6 +536,10 @@ export default function MenuPage() {
                             <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         </div>
                     </div>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="imageUrl">Image</Label>
+                    <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
                 </div>
               </div>
               <DialogFooter>
@@ -637,7 +637,7 @@ export default function MenuPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -654,5 +654,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
