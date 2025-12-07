@@ -97,15 +97,17 @@ export default function GListPage() {
                 is_active: editingItem.is_active,
                 storeIds: editingItem.storeIds || [],
             });
-        } else {
-            // If we are not editing, it's a new item.
-            // We might want to preserve the category if `openAddModalForCategory` was used.
-            // This is handled by `openAddModal` and `openAddModalForCategory` now.
         }
     } else {
         // When modal closes, reset everything
         setEditingItem(null);
-        setFormData(initialItemState);
+        // Reset with a new object to ensure state change is detected
+        setFormData({
+          item: '',
+          category: '',
+          is_active: true,
+          storeIds: [],
+        });
     }
 }, [isModalOpen, editingItem]);
 
@@ -149,7 +151,6 @@ export default function GListPage() {
       setIsModalOpen(false); // Close modal only after successful save
       openSuccessModal();
     } catch (error) {
-      console.error('Error saving document: ', error);
     }
   };
   
