@@ -93,7 +93,6 @@ export type MenuItem = {
   id: string;
   menuName: string;
   category: string;
-  soldBy: 'unit' | 'fraction';
   unit: string;
   cost: number;
   price: number;

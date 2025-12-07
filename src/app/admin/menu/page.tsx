@@ -67,7 +67,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
   category: '',
-  soldBy: 'unit',
   unit: 'pc',
   cost: 0,
   price: 0,
@@ -438,16 +437,6 @@ export default function MenuPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="soldBy">Sold By</Label>
-                    <Select name="soldBy" value={formData.soldBy} onValueChange={(value) => handleSelectChange('soldBy', value)} required>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unit">Unit</SelectItem>
-                        <SelectItem value="fraction">Fraction</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
                     <Label htmlFor="availability">Availability</Label>
                     <Select name="availability" value={formData.availability} onValueChange={(value) => handleSelectChange('availability', value)} required>
                       <SelectTrigger><SelectValue placeholder="Select availability" /></SelectTrigger>
@@ -479,9 +468,6 @@ export default function MenuPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label htmlFor="taxRate">Tax Rate</Label>
                         <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
@@ -493,6 +479,9 @@ export default function MenuPage() {
                         </SelectContent>
                         </Select>
                     </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
                         <div className="flex flex-wrap gap-1 rounded-md border min-h-10 items-center p-2 bg-muted">
@@ -590,7 +579,6 @@ export default function MenuPage() {
                         <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
                         <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Sold By</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
                         <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
@@ -611,7 +599,6 @@ export default function MenuPage() {
                               </Badge>
                             </TableCell>
                             <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
-                            <TableCell className="p-2 capitalize text-xs">{item.soldBy}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
                             <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
