@@ -32,8 +32,8 @@ export type Staff = {
   address: string;
   email: string;
   contactNo: string;
-  birthday: string;
-  dateHired: string;
+  birthday: string | Timestamp;
+  dateHired: string | Timestamp;
   position: string;
   rate: number;
   employmentStatus: 'Active' | 'Inactive' | 'Resigned' | 'AWOL';
@@ -175,3 +175,5 @@ export type OrderTransaction = {
   notes?: string;
   timestamp: Timestamp; 
 };
+
+    

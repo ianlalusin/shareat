@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
-import { doc, onSnapshot, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { useFirestore, useStorage } from '@/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -24,6 +24,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { format } from 'date-fns';
 
 export default function StaffDetailPage() {
   const params = useParams();
@@ -31,7 +32,6 @@ export default function StaffDetailPage() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
-  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
   const firestore = useFirestore();
@@ -82,7 +82,6 @@ export default function StaffDetailPage() {
       const staffRef = doc(firestore, 'staff', staffId);
       await updateDoc(staffRef, { picture: pictureUrl });
       
-      setNewPhotoFile(null);
       setIsPhotoModalOpen(false);
 
     } catch (error) {
@@ -92,6 +91,15 @@ export default function StaffDetailPage() {
       setIsUploading(false);
     }
   };
+
+  const formatDate = (dateValue: string | Timestamp | undefined) => {
+    if (!dateValue) return 'N/A';
+    if (dateValue instanceof Timestamp) {
+      return format(dateValue.toDate(), 'MMMM dd, yyyy');
+    }
+    // It might already be a string from older data, return as is.
+    return dateValue;
+  }
 
 
   if (loading) {
@@ -181,8 +189,8 @@ export default function StaffDetailPage() {
           <InfoItem label="Email" value={staff.email} />
           <InfoItem label="Contact No." value={staff.contactNo} />
           <InfoItem label="Address" value={staff.address} />
-          <InfoItem label="Birthday" value={staff.birthday} />
-          <InfoItem label="Date Hired" value={staff.dateHired} />
+          <InfoItem label="Birthday" value={formatDate(staff.birthday)} />
+          <InfoItem label="Date Hired" value={formatDate(staff.dateHired)} />
           <InfoItem label="Rate" value={formatCurrency(staff.rate)} />
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">Employment Status</p>
@@ -206,4 +214,5 @@ function InfoItem({ label, value, className }: { label: string; value?: string |
     )
 }
 
+    
     

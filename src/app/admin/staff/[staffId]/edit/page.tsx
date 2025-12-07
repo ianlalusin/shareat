@@ -53,7 +53,14 @@ export default function EditStaffPage() {
 
         if (docSnap.exists()) {
             const staffData = docSnap.data() as Omit<Staff, 'id'>;
-            setFormData(staffData);
+            
+            const formattedData = {
+              ...staffData,
+              birthday: staffData.birthday ? formatAndValidateDate(staffData.birthday).formatted : '',
+              dateHired: staffData.dateHired ? formatAndValidateDate(staffData.dateHired).formatted : ''
+            }
+
+            setFormData(formattedData);
 
             if (staffData.picture) {
                 setPicturePreview(staffData.picture);
@@ -146,9 +153,15 @@ export default function EditStaffPage() {
       pictureUrl = await getDownloadURL(snapshot.ref);
     }
     
+    // Convert formatted date strings back to valid Date objects for Firestore
+    const birthdayDate = formData.birthday ? parse(formData.birthday, 'MMMM dd, yyyy', new Date()) : null;
+    const dateHiredDate = formData.dateHired ? parse(formData.dateHired, 'MMMM dd, yyyy', new Date()) : null;
+
     const dataToSave = {
       ...formData,
       picture: pictureUrl,
+      birthday: isValid(birthdayDate) ? birthdayDate : null,
+      dateHired: isValid(dateHiredDate) ? dateHiredDate : null,
     };
 
     try {
