@@ -146,7 +146,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                     </div>
                 </div>
             </div>
-            <DialogFooter className="flex-row justify-end">
+            <DialogFooter className="flex-row justify-end gap-2">
                 <DialogClose asChild>
                     <Button type="button" variant="outline">
                     Cancel
