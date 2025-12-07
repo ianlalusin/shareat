@@ -221,17 +221,16 @@ export function PaymentModal({
                 </div>
             )}
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex-row justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isProcessing}>
+            Cancel
+          </Button>
           <Button
             type="button"
             onClick={handleFinalize}
             disabled={balance > 0.01 || isProcessing}
-            className="w-full sm:w-32"
           >
             {isProcessing ? <Loader2 className="animate-spin" /> : 'Charge'}
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose} disabled={isProcessing} className="w-full sm:w-auto">
-            Cancel
           </Button>
         </DialogFooter>
       </DialogContent>
