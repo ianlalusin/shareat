@@ -315,9 +315,15 @@ export default function MenuPage() {
 
     let imageUrl = formData.imageUrl || '';
     if (imageFile) {
+      try {
         const imageRef = ref(storage, `Shareat Hub/menu_items/${Date.now()}_${imageFile.name}`);
         const snapshot = await uploadBytes(imageRef, imageFile);
         imageUrl = await getDownloadURL(snapshot.ref);
+      } catch (error) {
+        console.error("Image upload failed:", error);
+        // Do not block saving if image upload fails.
+        // The old imageUrl (or empty string) will be used.
+      }
     }
     
     const dataToSave: Omit<MenuItem, 'id'> = {
