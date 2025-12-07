@@ -82,7 +82,7 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [formData, setFormData] = useState<FormData>(initialItemState);
+  const [formData, setFormData] = useState<any>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ costPerUnit: string, sellingPrice: string }>({ costPerUnit: '', sellingPrice: '' });
   const [dateError, setDateError] = useState<string | undefined>();
   
@@ -166,7 +166,7 @@ export default function InventoryPage() {
     const { name, value, type } = e.target;
     setFormData(prev => ({
         ...prev,
-        [name]: type === 'number' ? parseFloat(value) || 0 : value
+        [name]: type === 'number' ? (value === '' ? '' : parseFloat(value)) : value
     }));
   };
 
@@ -228,9 +228,16 @@ export default function InventoryPage() {
     }
 
     const { expiryDate, ...restOfData } = formData;
+    
+    const numericData = {
+      ...restOfData,
+      currentQty: parseFloat(restOfData.currentQty) || 0,
+      reorderPoint: parseFloat(restOfData.reorderPoint) || 0,
+      criticalPoint: parseFloat(restOfData.criticalPoint) || 0,
+    };
 
     const dataToSave = {
-        ...restOfData,
+        ...numericData,
         storeId: selectedStoreId,
         updatedAt: serverTimestamp(),
         expiryDate: formData.isPerishable && expiryDate ? new Date(expiryDate) : null,
@@ -493,4 +500,5 @@ export default function InventoryPage() {
       )}
       </main>
   );
-}
+
+    
