@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -28,11 +29,11 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon } from 'lucide-react';
 import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
+import { ImageUpload } from '@/components/ui/image-upload';
 
 
 export default function EditStorePage() {
@@ -41,7 +42,6 @@ export default function EditStorePage() {
   const [formData, setFormData] = useState<Omit<Store, 'id'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
   const [storeTags, setStoreTags] = useState<GListItem[]>([]);
   const [mopOptions, setMopOptions] = useState<GListItem[]>([]);
@@ -60,9 +60,6 @@ export default function EditStorePage() {
         if (docSnap.exists()) {
             const storeData = docSnap.data() as Omit<Store, 'id'>;
             setFormData({ ...storeData, tags: storeData.tags || [], mopAccepted: storeData.mopAccepted || [], tableLocations: storeData.tableLocations || [] });
-            if (storeData.logo) {
-                setLogoPreview(storeData.logo);
-            }
         } else {
             setFormData(null);
         }
@@ -132,11 +129,10 @@ export default function EditStorePage() {
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
   };
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setLogoFile(file);
-      setLogoPreview(URL.createObjectURL(file));
+  const handleFileChange = (file: File | null) => {
+    setLogoFile(file);
+    if(file && formData){
+        setFormData({...formData, logo: URL.createObjectURL(file)})
     }
   };
 
@@ -184,9 +180,13 @@ export default function EditStorePage() {
 
     let logoUrl = formData.logo || '';
     if (logoFile) {
-        const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
-        const snapshot = await uploadBytes(logoRef, logoFile);
-        logoUrl = await getDownloadURL(snapshot.ref);
+        try {
+            const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
+            const snapshot = await uploadBytes(logoRef, logoFile);
+            logoUrl = await getDownloadURL(snapshot.ref);
+        } catch(e) {
+             console.error('Error uploading logo: ', e);
+        }
     }
     
     const dataToSave = {
@@ -297,15 +297,11 @@ export default function EditStorePage() {
                     </div>
                     <div className="md:col-span-2 space-y-2">
                         <Label htmlFor="logo">Logo</Label>
-                        <div className="flex items-center gap-4">
-                            <Avatar className="h-20 w-20 border">
-                                {logoPreview ? <AvatarImage src={logoPreview} alt="Logo Preview" /> : null}
-                                <AvatarFallback>
-                                    <StoreIcon className="h-10 w-10" />
-                                </AvatarFallback>
-                            </Avatar>
-                            <Input id="logo" name="logo" type="file" onChange={handleFileChange} className="max-w-xs" />
-                        </div>
+                        <ImageUpload
+                            imageUrl={formData.logo}
+                            onFileChange={handleFileChange}
+                            icon={<StoreIcon className="h-10 w-10 text-muted-foreground" />}
+                        />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="description">Description</Label>
@@ -366,5 +362,3 @@ export default function EditStorePage() {
     </main>
   );
 }
-
-    

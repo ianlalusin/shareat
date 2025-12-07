@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -28,6 +29,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
+import { ImageUpload } from '@/components/ui/image-upload';
+import { Store as StoreIcon } from 'lucide-react';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -116,9 +119,10 @@ export default function NewStorePage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setLogoFile(e.target.files[0]);
+  const handleFileChange = (file: File | null) => {
+    setLogoFile(file);
+    if(file){
+        setFormData(prev => ({...prev, logo: URL.createObjectURL(file)}))
     }
   };
 
@@ -154,9 +158,13 @@ export default function NewStorePage() {
 
     let logoUrl = '';
     if (logoFile) {
-      const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
-      const snapshot = await uploadBytes(logoRef, logoFile);
-      logoUrl = await getDownloadURL(snapshot.ref);
+      try {
+        const logoRef = ref(storage, `Shareat Hub/logos/${Date.now()}_${logoFile.name}`);
+        const snapshot = await uploadBytes(logoRef, logoFile);
+        logoUrl = await getDownloadURL(snapshot.ref);
+      } catch (error) {
+        console.error("Logo upload failed:", error);
+      }
     }
     
     const dataToSave = {
@@ -239,7 +247,11 @@ export default function NewStorePage() {
                     </div>
                     <div className="md:col-span-2 space-y-2">
                       <Label htmlFor="logo">Logo</Label>
-                      <Input id="logo" name="logo" type="file" onChange={handleFileChange} />
+                       <ImageUpload 
+                            imageUrl={formData.logo} 
+                            onFileChange={handleFileChange} 
+                            icon={<StoreIcon className="h-10 w-10 text-muted-foreground" />}
+                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="description">Description</Label>
@@ -300,5 +312,3 @@ export default function NewStorePage() {
     </main>
   );
 }
-
-    

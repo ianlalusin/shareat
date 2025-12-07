@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -24,12 +25,12 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ArrowLeft, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Staff, Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
+import { ImageUpload } from '@/components/ui/image-upload';
 
 export default function EditStaffPage() {
   const params = useParams();
@@ -38,7 +39,6 @@ export default function EditStaffPage() {
   const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState<Store[]>([]);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
-  const [picturePreview, setPicturePreview] = useState<string | null>(null);
   const [dateErrors, setDateErrors] = useState<{ birthday?: string; dateHired?: string }>({});
   const firestore = useFirestore();
   const storage = useStorage();
@@ -61,10 +61,6 @@ export default function EditStaffPage() {
             }
 
             setFormData(formattedData);
-
-            if (staffData.picture) {
-                setPicturePreview(staffData.picture);
-            }
         } else {
             setFormData(null); // Not found
         }
@@ -127,11 +123,10 @@ export default function EditStaffPage() {
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setPictureFile(file);
-      setPicturePreview(URL.createObjectURL(file));
+  const handleFileChange = (file: File | null) => {
+    setPictureFile(file);
+    if(file){
+        setFormData(prev => prev ? ({ ...prev, picture: URL.createObjectURL(file) }) : null);
     }
   };
   
@@ -148,9 +143,14 @@ export default function EditStaffPage() {
 
     let pictureUrl = formData.picture || '';
     if (pictureFile) {
-      const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${pictureFile.name}`);
-      const snapshot = await uploadBytes(pictureRef, pictureFile);
-      pictureUrl = await getDownloadURL(snapshot.ref);
+      try {
+        const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${pictureFile.name}`);
+        const snapshot = await uploadBytes(pictureRef, pictureFile);
+        pictureUrl = await getDownloadURL(snapshot.ref);
+      } catch (error) {
+        console.error("Error uploading image:", error);
+        // Do not block saving if image upload fails, but log it.
+      }
     }
     
     // Convert formatted date strings back to valid Date objects for Firestore
@@ -213,15 +213,12 @@ export default function EditStaffPage() {
         <CardContent>
           <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-3 flex items-center gap-6">
-                <Avatar className="h-24 w-24 border">
-                    <AvatarImage src={picturePreview || undefined} alt="Staff picture" />
-                    <AvatarFallback><User className="h-12 w-12" /></AvatarFallback>
-                </Avatar>
-                <div className="space-y-2 flex-grow">
-                    <Label htmlFor="picture">Staff Picture</Label>
-                    <Input id="picture" name="picture" type="file" onChange={handleFileChange} />
-                </div>
+              <div className="md:col-span-3">
+                 <Label>Staff Picture</Label>
+                 <ImageUpload
+                    imageUrl={formData.picture}
+                    onFileChange={handleFileChange}
+                 />
               </div>
 
               <div className="space-y-2">
@@ -304,5 +301,3 @@ export default function EditStaffPage() {
     </main>
   );
 }
-
-    

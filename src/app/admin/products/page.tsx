@@ -54,6 +54,7 @@ import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
+import { ImageUpload } from '@/components/ui/image-upload';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
   productName: '',
@@ -138,9 +139,10 @@ export default function ProductsPage() {
     setDisplayValues(prev => ({ ...prev, [fieldName]: fieldValue === 0 ? '' : String(fieldValue) }));
   }
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setImageFile(e.target.files[0]);
+  const handleFileChange = (file: File | null) => {
+    setImageFile(file);
+    if(file){
+        setFormData(prev => ({ ...prev, imageUrl: URL.createObjectURL(file) }));
     }
   };
 
@@ -162,7 +164,7 @@ export default function ProductsPage() {
 
     const user = auth?.currentUser;
 
-    let imageUrl = formData.imageUrl || '';
+    let imageUrl = editingItem?.imageUrl || ''; // Keep existing image if not changed
     if (imageFile) {
         try {
             const imageRef = ref(storage, `Shareat Hub/products/${Date.now()}_${imageFile.name}`);
@@ -170,6 +172,7 @@ export default function ProductsPage() {
             imageUrl = await getDownloadURL(snapshot.ref);
         } catch (error) {
             console.error("Image upload failed:", error);
+            // Optionally show an error to the user
         }
     }
 
@@ -308,10 +311,13 @@ export default function ProductsPage() {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                     <div className="space-y-2">
-                      <Label htmlFor="imageUrl">Product Image</Label>
-                      <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                        <Label>Product Image</Label>
+                        <ImageUpload
+                            imageUrl={formData.imageUrl}
+                            onFileChange={handleFileChange}
+                        />
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
@@ -323,7 +329,7 @@ export default function ProductsPage() {
                             placeholder="Add tags..."
                         />
                      </div>
-                     <div className="flex items-end pb-2 space-x-2">
+                     <div className="flex items-center space-x-2 self-end pb-2">
                         <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
                         <Label htmlFor="isActive">Active</Label>
                     </div>

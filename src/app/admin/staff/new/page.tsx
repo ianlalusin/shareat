@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -26,6 +27,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
+import { ImageUpload } from '@/components/ui/image-upload';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -104,9 +106,10 @@ export default function NewStaffPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setPictureFile(e.target.files[0]);
+  const handleFileChange = (file: File | null) => {
+    setPictureFile(file);
+     if(file){
+        setFormData(prev => ({ ...prev, picture: URL.createObjectURL(file) }));
     }
   };
 
@@ -116,9 +119,13 @@ export default function NewStaffPage() {
 
     let pictureUrl = '';
     if (pictureFile) {
-      const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${pictureFile.name}`);
-      const snapshot = await uploadBytes(pictureRef, pictureFile);
-      pictureUrl = await getDownloadURL(snapshot.ref);
+      try {
+        const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${pictureFile.name}`);
+        const snapshot = await uploadBytes(pictureRef, pictureFile);
+        pictureUrl = await getDownloadURL(snapshot.ref);
+      } catch (error) {
+        console.error("Image upload failed:", error);
+      }
     }
     
     const dataToSave = {
@@ -213,8 +220,8 @@ export default function NewStaffPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="picture">Picture</Label>
-                <Input id="picture" name="picture" type="file" onChange={handleFileChange} />
+                <Label>Picture</Label>
+                <ImageUpload imageUrl={formData.picture} onFileChange={handleFileChange} />
               </div>
               <div className="md:col-span-3 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
@@ -237,5 +244,3 @@ export default function NewStaffPage() {
     </main>
   );
 }
-
-    
