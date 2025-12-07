@@ -481,8 +481,12 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                      <div className="space-y-2">
+                        <Label htmlFor="imageUrl">Image</Label>
+                        <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
+                    </div>
+                    <div className="space-y-2">
                         <Label htmlFor="specialTags">Special Tags</Label>
                         <div className="flex flex-wrap gap-1 rounded-md border min-h-10 items-center p-2 bg-muted">
                            {formData.specialTags?.length > 0 ? formData.specialTags.map(tag => (
@@ -495,6 +499,7 @@ export default function MenuPage() {
                       <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
                 </div>
+
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="space-y-2">
                         <Label htmlFor="publicDescription">Public Description</Label>
@@ -526,10 +531,7 @@ export default function MenuPage() {
                         </div>
                     </div>
                 </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="imageUrl">Image</Label>
-                    <Input id="imageUrl" name="imageUrl" type="file" onChange={handleFileChange} />
-                </div>
+                 
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
