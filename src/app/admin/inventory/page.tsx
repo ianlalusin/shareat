@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/table';
 import { PlusCircle, MoreHorizontal, Plus, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { useFirestore, useAuth } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import {
   collection,
   doc,
@@ -35,7 +35,7 @@ import {
   addDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import { InventoryItem, InventoryItemType } from '@/lib/types';
+import { InventoryItem, InventoryItemType, Product } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -74,10 +74,12 @@ const initialItemState: FormData = {
     isPerishable: false,
     expiryDate: '',
     trackInventory: true,
+    productId: null,
 };
 
 export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [formData, setFormData] = useState<FormData>(initialItemState);
@@ -89,16 +91,46 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
-      const q = query(collection(firestore, 'inventory'), where('storeId', '==', selectedStoreId));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const invQuery = query(collection(firestore, 'inventory'), where('storeId', '==', selectedStoreId));
+      const invUnsubscribe = onSnapshot(invQuery, (snapshot) => {
         const invData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
         setInventory(invData);
       });
-      return () => unsubscribe();
+
+      const productsQuery = query(collection(firestore, 'products'), where('isActive', '==', true));
+      const productsUnsubscribe = onSnapshot(productsQuery, (snapshot) => {
+        const prodData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        setProducts(prodData);
+      });
+
+      return () => {
+        invUnsubscribe();
+        productsUnsubscribe();
+      };
     } else {
       setInventory([]);
+      setProducts([]);
     }
   }, [firestore, selectedStoreId]);
+
+  useEffect(() => {
+    const selectedProduct = products.find(p => p.id === formData.productId);
+    if (selectedProduct && !editingItem) {
+        setFormData(prev => ({
+            ...prev,
+            name: selectedProduct.productName,
+            category: selectedProduct.category,
+            sku: selectedProduct.barcode,
+            unit: selectedProduct.unit,
+            costPerUnit: selectedProduct.defaultCost || 0,
+            sellingPrice: selectedProduct.defaultPrice || 0,
+        }));
+        setDisplayValues({
+            costPerUnit: formatCurrency(selectedProduct.defaultCost || 0),
+            sellingPrice: formatCurrency(selectedProduct.defaultPrice || 0),
+        });
+    }
+  }, [formData.productId, products, editingItem]);
 
   useEffect(() => {
     if (isModalOpen) {
@@ -287,16 +319,25 @@ export default function InventoryPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
                     {/* Row 1 */}
                     <div className="space-y-2">
-                        <Label htmlFor="name">Item Name</Label>
-                        <Input id="name" name="name" value={formData.name} onChange={handleInputChange} required />
+                        <Label htmlFor="productId">Item Name</Label>
+                        {editingItem ? (
+                           <Input id="name" name="name" value={formData.name} readOnly disabled />
+                        ) : (
+                          <Select name="productId" value={formData.productId || ''} onValueChange={(v) => handleSelectChange('productId', v)} required>
+                              <SelectTrigger><SelectValue placeholder="Select a product"/></SelectTrigger>
+                              <SelectContent>
+                                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.productName}</SelectItem>)}
+                              </SelectContent>
+                          </Select>
+                        )}
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="category">Category</Label>
-                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required readOnly disabled />
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="sku">SKU / Barcode</Label>
-                        <Input id="sku" name="sku" value={formData.sku} onChange={handleInputChange} />
+                        <Input id="sku" name="sku" value={formData.sku} onChange={handleInputChange} readOnly disabled />
                     </div>
                     {/* Row 2 */}
                      <div className="space-y-2">
@@ -311,12 +352,7 @@ export default function InventoryPage() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="unit">Unit of Measure</Label>
-                        <Select name="unit" value={formData.unit} onValueChange={(v) => handleSelectChange('unit', v)} required>
-                           <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {UNIT_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                         <Input id="unit" name="unit" value={formData.unit} readOnly disabled />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="currentQty">Current Quantity</Label>
