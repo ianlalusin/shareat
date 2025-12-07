@@ -50,21 +50,42 @@ export type Product = {
   unit: string;
   specialTags: string[];
   isActive: boolean;
-  defaultCost: number;
-  defaultPrice: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastUpdatedBy: string;
 };
 
-export type Inventory = {
-    id: string;
-    productId: string;
-    storeId: string;
-    quantity: number;
-    updatedAt: Timestamp;
-    lastUpdatedBy: string;
-};
+export type InventoryItemType = "raw" | "saleable";
+
+export interface InventoryItem {
+  id: string;                  // Firestore doc id
+  storeId: string;             // which branch (same as in your other collections)
+
+  itemType: InventoryItemType; // "raw" = raw mats, "saleable" = beer/soda/etc.
+
+  name: string;                // human readable name: "Pork Belly Sliced", "Coke 1.5L"
+  sku: string;                 // internal code or barcode (for now)
+  category: string;            // "Meat", "Vegetable", "Beverage", etc.
+  unit: string;                // canonical: "kg", "g", "L", "ml", "pc", "bottle", "can", "pack"
+
+  currentQty: number;          // current on-hand stock (in `unit`)
+  reorderPoint: number;        // when <= this → low stock
+  criticalPoint: number;       // when <= this → critical stock
+
+  costPerUnit: number;         // base cost per unit for this store
+  sellingPrice?: number | null;// for saleable items (beer, soda); null for pure raw mats
+
+  isPerishable: boolean;       // if true, watch expiry
+  expiryDate?: Timestamp | null;
+
+  trackInventory: boolean;     // if this should be included in stock alerts / dashboards
+
+  menuItemId?: string | null;
+  productId?: string | null;
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
 
 export type MenuItem = {
   id: string;

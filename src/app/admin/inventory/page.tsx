@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +21,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MinusCircle } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore, useAuth } from '@/firebase';
 import {
@@ -31,10 +32,10 @@ import {
   serverTimestamp,
   query,
   where,
-  getDocs,
-  writeBatch,
+  addDoc,
+  deleteDoc,
 } from 'firebase/firestore';
-import { Product, Inventory } from '@/lib/types';
+import { InventoryItem, InventoryItemType } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -43,147 +44,324 @@ import {
 } from '@/components/ui/accordion';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { formatCurrency, parseCurrency, UNIT_OPTIONS, formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 
-type AdjustmentType = 'add' | 'set';
+type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
+    expiryDate: string;
+};
+
+const initialItemState: FormData = {
+    itemType: 'raw',
+    name: '',
+    sku: '',
+    category: '',
+    unit: 'pc',
+    currentQty: 0,
+    reorderPoint: 0,
+    criticalPoint: 0,
+    costPerUnit: 0,
+    sellingPrice: 0,
+    isPerishable: false,
+    expiryDate: '',
+    trackInventory: true,
+};
 
 export default function InventoryPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [inventory, setInventory] = useState<Inventory[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('add');
-  const [quantity, setQuantity] = useState<number | ''>('');
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [formData, setFormData] = useState<FormData>(initialItemState);
+  const [displayValues, setDisplayValues] = useState<{ costPerUnit: string, sellingPrice: string }>({ costPerUnit: '', sellingPrice: '' });
+  const [dateError, setDateError] = useState<string | undefined>();
   
   const firestore = useFirestore();
-  const auth = useAuth();
   const { selectedStoreId } = useStoreSelector();
 
   useEffect(() => {
-    if (firestore) {
-      const productsUnsubscribe = onSnapshot(collection(firestore, 'products'), (snapshot) => {
-        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Product[];
-        setProducts(itemsData);
+    if (firestore && selectedStoreId) {
+      const q = query(collection(firestore, 'inventory'), where('storeId', '==', selectedStoreId));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const invData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
+        setInventory(invData);
       });
-
-      if (selectedStoreId) {
-        const inventoryQuery = query(collection(firestore, 'inventory'), where('storeId', '==', selectedStoreId));
-        const inventoryUnsubscribe = onSnapshot(inventoryQuery, (snapshot) => {
-          const invData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inventory));
-          setInventory(invData);
-        });
-
-        return () => {
-          productsUnsubscribe();
-          inventoryUnsubscribe();
-        };
-      } else {
-        setInventory([]);
-      }
-
-      return () => productsUnsubscribe();
+      return () => unsubscribe();
+    } else {
+      setInventory([]);
     }
   }, [firestore, selectedStoreId]);
 
-  const openModal = (product: Product, type: AdjustmentType) => {
-    setSelectedProduct(product);
-    setAdjustmentType(type);
-    setIsModalOpen(true);
-    setQuantity('');
+  useEffect(() => {
+    if (isModalOpen) {
+        if (editingItem) {
+            let expiryDateStr = '';
+            if (editingItem.expiryDate) {
+                try {
+                    expiryDateStr = formatAndValidateDate(editingItem.expiryDate.toDate().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })).formatted;
+                } catch (e) {
+                    // handle cases where expiryDate is not a valid Timestamp
+                }
+            }
+
+            setFormData({
+                ...initialItemState,
+                ...editingItem,
+                expiryDate: expiryDateStr,
+            });
+            setDisplayValues({
+                costPerUnit: formatCurrency(editingItem.costPerUnit),
+                sellingPrice: formatCurrency(editingItem.sellingPrice || 0),
+            });
+        }
+    } else {
+        setEditingItem(null);
+        setFormData(initialItemState);
+        setDisplayValues({ costPerUnit: '', sellingPrice: '' });
+        setDateError(undefined);
+    }
+  }, [isModalOpen, editingItem]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+        ...prev,
+        [name]: type === 'number' ? parseFloat(value) || 0 : value
+    }));
   };
 
-  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setQuantity(value === '' ? '' : Number(value));
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSwitchChange = (name: string, checked: boolean) => {
+    setFormData(prev => ({ ...prev, [name]: checked }));
+  };
+  
+  const handleCurrencyInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    
+    setDisplayValues(prev => ({ ...prev, [name as keyof typeof displayValues]: numericValue }));
+    setFormData(prev => ({ ...prev, [name as keyof typeof displayValues]: parseCurrency(numericValue) }));
+  }
+
+  const handleCurrencyInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const numericValue = parseCurrency(value);
+    setDisplayValues(prev => ({ ...prev, [name as keyof typeof displayValues]: formatCurrency(numericValue) }));
+  }
+
+  const handleCurrencyInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name } = e.target;
+    const fieldName = name as keyof typeof displayValues;
+    const fieldValue = formData[fieldName];
+    setDisplayValues(prev => ({ ...prev, [fieldName]: fieldValue === 0 ? '' : String(fieldValue) }));
+  }
+  
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    const previousValue = formData.expiryDate || '';
+    const updatedValue = autoformatDate(value, previousValue);
+
+    setFormData((prev) => ({ ...prev, [name]: updatedValue }));
+     if (updatedValue === '') {
+      setDateError(undefined);
+    }
+  };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    const { formatted, error } = formatAndValidateDate(value);
+    setFormData(prev => ({ ...prev, [name]: formatted }));
+    setDateError(error);
   };
   
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !auth?.currentUser || !selectedProduct || !selectedStoreId || quantity === '') return;
+    if (!firestore || !selectedStoreId) return;
 
-    const user = auth.currentUser;
-    const inventoryQuery = query(
-      collection(firestore, 'inventory'),
-      where('storeId', '==', selectedStoreId),
-      where('productId', '==', selectedProduct.id)
-    );
+    if (formData.isPerishable && dateError) {
+        alert('Please fix the date format.');
+        return;
+    }
+
+    const { expiryDate, ...restOfData } = formData;
+
+    const dataToSave = {
+        ...restOfData,
+        storeId: selectedStoreId,
+        updatedAt: serverTimestamp(),
+        expiryDate: formData.isPerishable && expiryDate ? new Date(expiryDate) : null,
+    };
 
     try {
-      const querySnapshot = await getDocs(inventoryQuery);
-      const batch = writeBatch(firestore);
-      let newQuantity = 0;
-      let inventoryDocRef;
-
-      if (!querySnapshot.empty) {
-        // Update existing inventory item
-        const inventoryDoc = querySnapshot.docs[0];
-        inventoryDocRef = inventoryDoc.ref;
-        const currentQuantity = inventoryDoc.data().quantity || 0;
-
-        if (adjustmentType === 'add') {
-          newQuantity = currentQuantity + Number(quantity);
-        } else { // 'set'
-          newQuantity = Number(quantity);
-        }
-        
-        batch.update(inventoryDocRef, {
-          quantity: newQuantity,
-          updatedAt: serverTimestamp(),
-          lastUpdatedBy: user.displayName || user.email,
-        });
-
+      if (editingItem) {
+        const itemRef = doc(firestore, 'inventory', editingItem.id);
+        await updateDoc(itemRef, dataToSave);
       } else {
-        // Create new inventory item
-        inventoryDocRef = doc(collection(firestore, 'inventory'));
-        newQuantity = adjustmentType === 'add' ? Number(quantity) : Number(quantity);
-        
-        batch.set(inventoryDocRef, {
-          productId: selectedProduct.id,
-          storeId: selectedStoreId,
-          quantity: newQuantity,
-          updatedAt: serverTimestamp(),
-          lastUpdatedBy: user.displayName || user.email,
+        await addDoc(collection(firestore, 'inventory'), {
+          ...dataToSave,
+          createdAt: serverTimestamp(),
         });
       }
-      
-      await batch.commit();
       setIsModalOpen(false);
     } catch (error) {
-      console.error('Error updating inventory: ', error);
+      console.error('Error saving document: ', error);
+    }
+  };
+  
+  const handleEdit = (item: InventoryItem) => {
+    setEditingItem(item);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (itemId: string) => {
+    if (!firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'inventory', itemId));
+    } catch (error) {
+      console.error("Error deleting document: ", error);
     }
   };
 
-
-  const getProductInventory = (productId: string) => {
-    const item = inventory.find(inv => inv.productId === productId);
-    return item ? item.quantity : 0;
+  const openAddModalForCategory = (category: string) => {
+    setEditingItem(null);
+    setFormData({...initialItemState, category});
+    setIsModalOpen(true);
+  };
+  
+  const getStockLevel = (item: InventoryItem) => {
+    if (!item.trackInventory) return <Badge variant="secondary">Not Tracked</Badge>;
+    if (item.currentQty <= item.criticalPoint) return <Badge className="bg-red-600 text-white"><AlertCircle className="mr-1 h-3 w-3" /> Critical</Badge>;
+    if (item.currentQty <= item.reorderPoint) return <Badge className="bg-yellow-500 text-white"><TrendingDown className="mr-1 h-3 w-3" /> Low Stock</Badge>;
+    return <Badge className="bg-green-500 text-white"><TrendingUp className="mr-1 h-3 w-3" /> In Stock</Badge>;
   };
 
-  const groupedProducts = useMemo(() => {
-    const grouped = products.reduce((acc, item) => {
+  const groupedItems = useMemo(() => {
+    const grouped = inventory.reduce((acc, item) => {
       const category = item.category || 'Uncategorized';
       if (!acc[category]) {
         acc[category] = [];
       }
       acc[category].push(item);
       return acc;
-    }, {} as Record<string, Product[]>);
+    }, {} as Record<string, InventoryItem[]>);
     
     return Object.keys(grouped).sort().reduce(
       (obj, key) => { 
-        obj[key] = grouped[key].sort((a, b) => a.productName.localeCompare(b.productName)); 
+        obj[key] = grouped[key].sort((a, b) => a.name.localeCompare(b.name)); 
         return obj;
       }, 
-      {} as Record<string, Product[]>
+      {} as Record<string, InventoryItem[]>
     );
-  }, [products]);
-  
+  }, [inventory]);
 
   return (
-      <main className="flex flex-1 flex-col gap-2 p-2 lg:gap-3 lg:p-3">
+      <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
-          Inventory Management
+          Inventory
         </h1>
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" className="flex items-center gap-2" onClick={() => setIsModalOpen(true)} disabled={!selectedStoreId}>
+                    <PlusCircle className="h-4 w-4" />
+                    <span>Add Inventory Item</span>
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingItem ? `Edit ${editingItem.name}`: 'Add New Inventory Item'}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
+                    {/* Row 1 */}
+                    <div className="space-y-2">
+                        <Label htmlFor="name">Item Name</Label>
+                        <Input id="name" name="name" value={formData.name} onChange={handleInputChange} required />
+                    </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="category">Category</Label>
+                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required />
+                    </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="sku">SKU / Barcode</Label>
+                        <Input id="sku" name="sku" value={formData.sku} onChange={handleInputChange} />
+                    </div>
+                    {/* Row 2 */}
+                     <div className="space-y-2">
+                        <Label htmlFor="itemType">Item Type</Label>
+                        <Select name="itemType" value={formData.itemType} onValueChange={(v) => handleSelectChange('itemType', v)} required>
+                           <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="raw">Raw Material</SelectItem>
+                                <SelectItem value="saleable">Saleable Item</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="unit">Unit of Measure</Label>
+                        <Select name="unit" value={formData.unit} onValueChange={(v) => handleSelectChange('unit', v)} required>
+                           <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {UNIT_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="currentQty">Current Quantity</Label>
+                        <Input id="currentQty" name="currentQty" type="number" value={formData.currentQty} onChange={handleInputChange} required/>
+                    </div>
+                    {/* Row 3 */}
+                    <div className="space-y-2">
+                        <Label htmlFor="reorderPoint">Re-order Point</Label>
+                        <Input id="reorderPoint" name="reorderPoint" type="number" value={formData.reorderPoint} onChange={handleInputChange} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="criticalPoint">Critical Point</Label>
+                        <Input id="criticalPoint" name="criticalPoint" type="number" value={formData.criticalPoint} onChange={handleInputChange} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="costPerUnit">Cost per Unit</Label>
+                        <Input id="costPerUnit" name="costPerUnit" type="text" inputMode='decimal' value={displayValues.costPerUnit} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required/>
+                    </div>
+                     {/* Row 4 */}
+                    {formData.itemType === 'saleable' && (
+                        <div className="space-y-2">
+                            <Label htmlFor="sellingPrice">Selling Price</Label>
+                            <Input id="sellingPrice" name="sellingPrice" type="text" inputMode='decimal' value={displayValues.sellingPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
+                        </div>
+                    )}
+                    <div className="flex items-center gap-4 col-span-1">
+                        <div className="flex items-center space-x-2 pt-6">
+                            <Switch id="isPerishable" name="isPerishable" checked={formData.isPerishable} onCheckedChange={(c) => handleSwitchChange('isPerishable', c)} />
+                            <Label htmlFor="isPerishable">Perishable</Label>
+                        </div>
+                        <div className="flex items-center space-x-2 pt-6">
+                            <Switch id="trackInventory" name="trackInventory" checked={formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} />
+                            <Label htmlFor="trackInventory">Track</Label>
+                        </div>
+                    </div>
+                    {formData.isPerishable && (
+                        <div className="space-y-2">
+                            <Label htmlFor="expiryDate">Expiry Date</Label>
+                            <Input id="expiryDate" name="expiryDate" value={formData.expiryDate} onChange={handleDateChange} onBlur={handleDateBlur} placeholder="MM/DD/YYYY" maxLength={10} />
+                            {dateError && <p className="text-sm text-destructive">{dateError}</p>}
+                        </div>
+                    )}
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">{editingItem ? 'Save Changes' : 'Save Item'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+        </Dialog>
       </div>
 
        {!selectedStoreId ? (
@@ -192,8 +370,8 @@ export default function InventoryPage() {
             <AlertDescription>Please select a store from the dropdown above to manage its inventory.</AlertDescription>
           </Alert>
         ) : (
-          <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedProducts)}>
-            {Object.entries(groupedProducts).map(([category, itemsInCategory]) => (
+          <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedItems)}>
+            {Object.entries(groupedItems).map(([category, itemsInCategory]) => (
               <AccordionItem key={category} value={category} className="border-0">
                  <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
                    <div className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80">
@@ -203,15 +381,30 @@ export default function InventoryPage() {
                           <Badge variant="secondary">{itemsInCategory.length}</Badge>
                       </div>
                     </AccordionTrigger>
+                     <Button
+                        size="sm"
+                        variant="ghost"
+                        className="mr-2 h-7 w-7 p-0"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            openAddModalForCategory(category);
+                        }}
+                        >
+                        <Plus className="h-4 w-4" />
+                    </Button>
                    </div>
                   <AccordionContent className="p-0">
                     <div className="border-t overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="px-2 h-10">Product Name</TableHead>
-                            <TableHead className="px-2 h-10 text-right">Quantity</TableHead>
+                            <TableHead className="px-2 h-10">Name</TableHead>
+                            <TableHead className="px-2 h-10">SKU</TableHead>
+                            <TableHead className="px-2 h-10">Type</TableHead>
+                            <TableHead className="px-2 h-10 text-right">Qty</TableHead>
                             <TableHead className="px-2 h-10">Unit</TableHead>
+                            <TableHead className="px-2 h-10 text-right">Cost</TableHead>
+                            <TableHead className="px-2 h-10">Stock Level</TableHead>
                             <TableHead className="px-2 h-10">
                               <span className="sr-only">Actions</span>
                             </TableHead>
@@ -219,18 +412,30 @@ export default function InventoryPage() {
                         </TableHeader>
                         <TableBody>
                           {itemsInCategory.map((item) => (
-                            <TableRow key={item.id} className="cursor-pointer">
-                              <TableCell className="p-2 font-medium">{item.productName}</TableCell>
-                              <TableCell className="p-2 text-right font-bold text-lg">{getProductInventory(item.id)}</TableCell>
+                            <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
+                              <TableCell className="p-2 font-medium">{item.name}</TableCell>
+                              <TableCell className="p-2 text-muted-foreground">{item.sku}</TableCell>
+                               <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
+                              <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
                               <TableCell className="p-2">{item.unit}</TableCell>
-                              <TableCell className="p-2 text-right">
-                                  <Button size="sm" variant="outline" className="mr-2" onClick={() => openModal(item, 'add')}>
-                                    <PlusCircle className="mr-2 h-4 w-4" />
-                                    Add Stock
-                                  </Button>
-                                  <Button size="sm" onClick={() => openModal(item, 'set')}>
-                                      Set Stock
-                                  </Button>
+                              <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
+                              <TableCell className="p-2">{getStockLevel(item)}</TableCell>
+                              <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button aria-haspopup="true" size="icon" variant="ghost">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                        <span className="sr-only">Toggle menu</span>
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                        <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                        <DeleteConfirmationDialog onConfirm={() => handleDelete(item.id)}>
+                                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">Delete</DropdownMenuItem>
+                                        </DeleteConfirmationDialog>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -243,39 +448,6 @@ export default function InventoryPage() {
             ))}
           </Accordion>
       )}
-
-      {selectedProduct && (
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{adjustmentType === 'add' ? 'Add to' : 'Set'} Stock: {selectedProduct.productName}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit}>
-                <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="quantity">Quantity</Label>
-                      <Input 
-                        id="quantity" 
-                        name="quantity" 
-                        type="number" 
-                        value={quantity}
-                        onChange={handleQuantityChange}
-                        required 
-                      />
-                    </div>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">Save</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-        </Dialog>
-      )}
-
       </main>
   );
 }
-
