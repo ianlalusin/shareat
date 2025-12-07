@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -10,7 +11,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
@@ -206,7 +207,13 @@ const Sidebar = React.forwardRef<
             }
             side={side}
           >
-            <div className="flex h-full w-full flex-col">{children}</div>
+            <SheetHeader className="p-2 border-b border-sidebar-border absolute top-0 left-0 right-0">
+                <SheetTitle className="sr-only">Sidebar Navigation</SheetTitle>
+                <SheetDescription className="sr-only">
+                    Main navigation menu for the application.
+                </SheetDescription>
+            </SheetHeader>
+            <div className="flex h-full w-full flex-col pt-12">{children}</div>
           </SheetContent>
         </Sheet>
       )
