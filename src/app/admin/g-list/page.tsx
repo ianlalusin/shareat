@@ -133,12 +133,12 @@ export default function GListPage() {
       if (editingItem) {
         const itemRef = doc(firestore, 'lists', editingItem.id);
         await updateDoc(itemRef, dataToSave);
-        setEditingItem(null);
       } else {
         await addDoc(collection(firestore, 'lists'), dataToSave);
       }
-      setFormData(initialItemState);
       setIsModalOpen(false);
+      setEditingItem(null);
+      setFormData(initialItemState);
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -292,11 +292,9 @@ export default function GListPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                      Cancel
-                    </Button>
-                  </DialogClose>
+                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                    Cancel
+                  </Button>
                   <Button type="submit">{editingItem ? 'Save Changes' : 'Save'}</Button>
                 </DialogFooter>
               </form>

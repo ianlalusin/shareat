@@ -251,11 +251,9 @@ export default function TableManagementPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                      Cancel
-                    </Button>
-                  </DialogClose>
+                  <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                    Cancel
+                  </Button>
                   <Button type="submit">{editingTable ? 'Save Changes' : 'Save'}</Button>
                 </DialogFooter>
               </form>
