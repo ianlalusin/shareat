@@ -4,25 +4,40 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
-import { doc, onSnapshot, deleteDoc } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { doc, onSnapshot, deleteDoc, updateDoc } from 'firebase/firestore';
+import { useFirestore, useStorage } from '@/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Pencil, Trash2, User } from 'lucide-react';
+import { ArrowLeft, Pencil, Trash2, User, Upload } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { cn, formatCurrency } from '@/lib/utils';
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 export default function StaffDetailPage() {
   const params = useParams();
   const staffId = params.staffId as string;
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
   const firestore = useFirestore();
+  const storage = useStorage();
   const router = useRouter();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -42,11 +57,41 @@ export default function StaffDetailPage() {
   
   const handleDelete = async () => {
     if (!firestore || !staffId) return;
+    if (window.confirm('Are you sure you want to delete this staff member?')) {
+        try {
+            await deleteDoc(doc(firestore, 'staff', staffId));
+            router.push('/admin/staff');
+        } catch (error) {
+            console.error("Error deleting document: ", error);
+        }
+    }
+  };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setNewPhotoFile(e.target.files[0]);
+      handlePhotoUpload(e.target.files[0]); // Directly upload
+    }
+  };
+
+  const handlePhotoUpload = async (file: File | null) => {
+    if (!file || !firestore || !storage || !staffId) return;
+    setIsUploading(true);
     try {
-      await deleteDoc(doc(firestore, 'staff', staffId));
-      router.push('/admin/staff');
+      const pictureRef = ref(storage, `Shareat Hub/staff/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(pictureRef, file);
+      const pictureUrl = await getDownloadURL(snapshot.ref);
+
+      const staffRef = doc(firestore, 'staff', staffId);
+      await updateDoc(staffRef, { picture: pictureUrl });
+      
+      setNewPhotoFile(null);
+      setIsPhotoModalOpen(false);
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      console.error('Error uploading new photo: ', error);
+      alert('Failed to upload photo. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -87,10 +132,29 @@ export default function StaffDetailPage() {
               <span className="sr-only">Back</span>
             </Link>
           </Button>
-          <Avatar className="h-16 w-16 border">
-            <AvatarImage src={staff.picture} alt={staff.fullName} />
-            <AvatarFallback><User className="h-8 w-8" /></AvatarFallback>
-          </Avatar>
+          <Dialog open={isPhotoModalOpen} onOpenChange={setIsPhotoModalOpen}>
+            <DialogTrigger asChild>
+                <Avatar className="h-16 w-16 border cursor-pointer">
+                    <AvatarImage src={staff.picture} alt={staff.fullName} />
+                    <AvatarFallback><User className="h-8 w-8" /></AvatarFallback>
+                </Avatar>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{staff.fullName}&apos;s Photo</DialogTitle>
+                </DialogHeader>
+                <div className="flex items-center justify-center p-4">
+                    <img src={staff.picture || '/placeholder-user.jpg'} alt={staff.fullName} className="max-h-80 w-auto rounded-md object-contain" />
+                </div>
+                <DialogFooter>
+                    <Input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        {isUploading ? 'Uploading...' : 'Upload New Photo'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <h1 className="text-2xl font-bold tracking-tight font-headline">
             {staff.fullName}
           </h1>
