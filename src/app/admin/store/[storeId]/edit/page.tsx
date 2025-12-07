@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -34,6 +35,7 @@ import { Store, GListItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 export default function EditStorePage() {
@@ -48,6 +50,7 @@ export default function EditStorePage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
 
   useEffect(() => {
@@ -197,6 +200,7 @@ export default function EditStorePage() {
     try {
       const storeRef = doc(firestore, 'stores', storeId);
       await updateDoc(storeRef, dataToSave);
+      openSuccessModal();
       router.push(`/admin/store/${storeId}`);
     } catch (error)      {
       console.error('Error saving document: ', error);
@@ -362,3 +366,4 @@ export default function EditStorePage() {
     </main>
   );
 }
+

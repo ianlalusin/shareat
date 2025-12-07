@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -55,6 +56,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
   productName: '',
@@ -79,6 +81,7 @@ export default function ProductsPage() {
   const firestore = useFirestore();
   const auth = useAuth();
   const storage = useStorage();
+  const { openSuccessModal } = useSuccessModal();
 
 
   useEffect(() => {
@@ -198,6 +201,7 @@ export default function ProductsPage() {
         });
       }
       setIsModalOpen(false);
+      openSuccessModal();
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -212,6 +216,7 @@ export default function ProductsPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'products', itemId));
+      openSuccessModal();
     } catch (error) {
       console.error("Error deleting document: ", error);
     }
@@ -448,3 +453,4 @@ export default function ProductsPage() {
       </main>
   );
 }
+

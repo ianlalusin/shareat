@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -56,6 +57,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
@@ -89,6 +91,7 @@ export default function InventoryPage() {
   
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -260,6 +263,7 @@ export default function InventoryPage() {
         });
       }
       setIsModalOpen(false);
+      openSuccessModal();
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -273,6 +277,7 @@ export default function InventoryPage() {
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
     await deleteDoc(doc(firestore, 'inventory', itemId));
+    openSuccessModal();
   };
 
   const openAddModalForCategory = (category: string) => {
@@ -553,3 +558,4 @@ export default function InventoryPage() {
       </main>
   );
 }
+

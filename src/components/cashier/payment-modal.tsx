@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -19,6 +20,7 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where } from 'firebase/firestore';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 interface Payment {
   id: number;
@@ -46,6 +48,7 @@ export function PaymentModal({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const firestore = useFirestore();
+  const { openSuccessModal } = useSuccessModal();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
   const balance = totalAmount - totalPaid;
@@ -144,8 +147,6 @@ export function PaymentModal({
       console.log('Print receipt if printer is available...');
       console.log('------------------------------------');
       
-      alert("Payment successful!"); // Temporary success feedback
-
       onFinalizeSuccess();
 
     } catch (error) {
@@ -237,3 +238,4 @@ export function PaymentModal({
     </Dialog>
   );
 }
+

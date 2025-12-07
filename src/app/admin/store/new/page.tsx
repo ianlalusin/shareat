@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -31,6 +32,7 @@ import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/li
 import { TagsInput } from '@/components/ui/tags-input';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { Store as StoreIcon } from 'lucide-react';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -57,6 +59,7 @@ export default function NewStorePage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -174,6 +177,7 @@ export default function NewStorePage() {
 
     try {
       await addDoc(collection(firestore, 'stores'), dataToSave);
+      openSuccessModal();
       router.push('/admin/store');
     } catch (error) {
       console.error('Error saving document: ', error);
@@ -312,3 +316,4 @@ export default function NewStorePage() {
     </main>
   );
 }
+

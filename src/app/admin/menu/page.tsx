@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -65,6 +66,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -106,6 +108,7 @@ export default function MenuPage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const { selectedStoreId } = useStoreSelector();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -326,6 +329,7 @@ export default function MenuPage() {
       }
 
       setIsModalOpen(false); // Close modal only after successful save
+      openSuccessModal();
     } catch (error) {
         console.error("Error saving document: ", error);
     }
@@ -340,6 +344,7 @@ export default function MenuPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'menu', itemId));
+      openSuccessModal();
     } catch (error) {
         // Error is intentionally not logged to prevent screen freeze
     }
@@ -350,6 +355,7 @@ export default function MenuPage() {
     const itemRef = doc(firestore, 'menu', itemId);
     try {
       await updateDoc(itemRef, { isAvailable: newStatus });
+      openSuccessModal();
     } catch (error) {
       console.error("Error updating item availability: ", error);
     }

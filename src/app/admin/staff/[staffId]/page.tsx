@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 export default function StaffDetailPage() {
   const params = useParams();
@@ -38,6 +40,7 @@ export default function StaffDetailPage() {
   const storage = useStorage();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -60,6 +63,7 @@ export default function StaffDetailPage() {
     if (window.confirm('Are you sure you want to delete this staff member?')) {
         try {
             await deleteDoc(doc(firestore, 'staff', staffId));
+            openSuccessModal();
             router.push('/admin/staff');
         } catch (error) {
             console.error("Error deleting document: ", error);
@@ -83,6 +87,7 @@ export default function StaffDetailPage() {
       await updateDoc(staffRef, { picture: pictureUrl });
       
       setIsPhotoModalOpen(false);
+      openSuccessModal();
 
     } catch (error) {
       console.error('Error uploading new photo: ', error);
@@ -152,7 +157,7 @@ export default function StaffDetailPage() {
                 <div className="flex items-center justify-center p-4">
                     <img src={staff.picture || '/placeholder-user.jpg'} alt={staff.fullName} className="max-h-80 w-auto rounded-md object-contain" />
                 </div>
-                <DialogFooter>
+                <DialogFooter className="flex-row justify-end gap-2">
                     <Input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
                     <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                         <Upload className="mr-2 h-4 w-4" />

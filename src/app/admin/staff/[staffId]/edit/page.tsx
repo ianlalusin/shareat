@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -31,6 +32,7 @@ import { Staff, Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 export default function EditStaffPage() {
   const params = useParams();
@@ -43,6 +45,7 @@ export default function EditStaffPage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -167,6 +170,7 @@ export default function EditStaffPage() {
     try {
       const staffRef = doc(firestore, 'staff', staffId);
       await updateDoc(staffRef, dataToSave as Partial<Staff>);
+      openSuccessModal();
       router.push(`/admin/staff/${staffId}`);
     } catch (error) {
       console.error('Error updating document: ', error);
@@ -301,3 +305,4 @@ export default function EditStaffPage() {
     </main>
   );
 }
+

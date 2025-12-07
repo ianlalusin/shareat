@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useReducer, useMemo } from 'react';
@@ -38,6 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PaymentModal } from '@/components/cashier/payment-modal';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 // Reducer for complex state management of TIN input
@@ -109,6 +111,7 @@ export default function OrderDetailPage() {
 
 
   const firestore = useFirestore();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (!firestore || !orderId) return;
@@ -225,6 +228,7 @@ export default function OrderDetailPage() {
         } else if (unformattedTin.length > 0 && unformattedTin.length < 9) {
             // Revert to saved value if input is invalid and blurred
             dispatch({ type: 'SET_INPUT', payload: formatTIN(tin.savedValue) });
+            return;
         }
     } else if (field === 'customerName' && customerName !== order.customerName) {
         dataToUpdate.customerName = customerName;
@@ -235,6 +239,7 @@ export default function OrderDetailPage() {
     if (Object.keys(dataToUpdate).length > 0) {
         try {
             await updateDoc(orderRef, dataToUpdate);
+            openSuccessModal();
         } catch (error) {
             console.error(`Error updating ${field}:`, error);
         }
@@ -274,6 +279,7 @@ export default function OrderDetailPage() {
         setDiscountValue('');
         setSelectedDiscount('');
         setShowDiscountForm(false);
+        openSuccessModal();
     } catch (error) {
         console.error('Error applying discount:', error);
         alert('Failed to apply discount.');
@@ -308,6 +314,7 @@ export default function OrderDetailPage() {
         setSelectedCharge('');
         setCustomChargeType('');
         setShowChargeForm(false);
+        openSuccessModal();
     } catch (error) {
         console.error('Error applying charge:', error);
         alert('Failed to apply charge.');
@@ -316,6 +323,7 @@ export default function OrderDetailPage() {
   
   const handleFinalizeSuccess = () => {
     setIsPaymentModalOpen(false);
+    openSuccessModal();
     router.push('/cashier');
   };
 
@@ -544,3 +552,4 @@ export default function OrderDetailPage() {
     </>
   );
 }
+

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -18,6 +19,7 @@ import { Table as TableType, MenuItem, Order, OrderItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 interface NewOrderModalProps {
     isOpen: boolean;
@@ -33,6 +35,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
     
     const firestore = useFirestore();
+    const { openSuccessModal } = useSuccessModal();
 
     const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
 
@@ -103,6 +106,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             await batch.commit();
         
             handleClose();
+            openSuccessModal();
 
         } catch (error) {
             console.error("Error creating new order: ", error);
@@ -147,11 +151,9 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 </div>
             </div>
             <DialogFooter className="flex-row justify-end gap-2">
-                <DialogClose asChild>
-                    <Button type="button" variant="outline">
+                <Button type="button" variant="outline" onClick={handleClose}>
                     Cancel
-                    </Button>
-                </DialogClose>
+                </Button>
                 <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Start Order
                 </Button>
@@ -160,3 +162,4 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         </Dialog>
     )
 }
+

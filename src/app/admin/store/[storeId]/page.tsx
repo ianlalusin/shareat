@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -13,6 +14,7 @@ import { Store as StoreIcon, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/types';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 export default function StoreDetailPage() {
@@ -22,6 +24,7 @@ export default function StoreDetailPage() {
   const [loading, setLoading] = useState(true);
   const firestore = useFirestore();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (!firestore || !storeId) return;
@@ -44,6 +47,7 @@ export default function StoreDetailPage() {
     if (!firestore || !storeId) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
+      openSuccessModal();
       router.push('/admin/store');
     } catch (error) {
       console.error("Error deleting document: ", error);
@@ -204,3 +208,4 @@ export default function StoreDetailPage() {
     </main>
   );
 }
+

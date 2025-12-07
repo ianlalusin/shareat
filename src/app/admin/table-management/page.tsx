@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -40,6 +41,7 @@ import { Table, Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 const initialTableState: Omit<Table, 'id' | 'storeId'> = {
   tableName: '',
@@ -57,6 +59,7 @@ export default function TableManagementPage() {
   const [formData, setFormData] = useState(initialTableState);
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -154,6 +157,7 @@ export default function TableManagementPage() {
         });
       }
       setIsModalOpen(false); // Close modal only after successful save
+      openSuccessModal();
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -163,6 +167,7 @@ export default function TableManagementPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'tables', tableId));
+      openSuccessModal();
     } catch (error) {
       console.error("Error deleting document: ", error);
     }
@@ -178,6 +183,7 @@ export default function TableManagementPage() {
       });
       try {
         await batch.commit();
+        openSuccessModal();
       } catch (error) {
         console.error("Error resetting counters: ", error);
       }
@@ -309,3 +315,4 @@ export default function TableManagementPage() {
     </main>
   );
 }
+

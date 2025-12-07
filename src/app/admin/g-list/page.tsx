@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -49,6 +50,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -64,6 +66,7 @@ export default function GListPage() {
   const [editingItem, setEditingItem] = useState<GListItem | null>(null);
   const [formData, setFormData] = useState<Omit<GListItem, 'id'>>(initialItemState);
   const firestore = useFirestore();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -144,6 +147,7 @@ export default function GListPage() {
         await addDoc(collection(firestore, 'lists'), dataToSave);
       }
       setIsModalOpen(false); // Close modal only after successful save
+      openSuccessModal();
     } catch (error) {
       console.error('Error saving document: ', error);
     }
@@ -158,6 +162,7 @@ export default function GListPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'lists', itemId));
+      openSuccessModal();
     } catch (error) {
       console.error("Error deleting document: ", error);
     }

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -31,11 +32,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User } from 'lucide-react';
 import { Staff } from '@/lib/types';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const firestore = useFirestore();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -54,6 +57,7 @@ export default function StaffPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'staff', staffId));
+      openSuccessModal();
     } catch (error) {
       console.error('Error deleting document: ', error);
     }
@@ -148,3 +152,4 @@ export default function StaffPage() {
     </main>
   );
 }
+

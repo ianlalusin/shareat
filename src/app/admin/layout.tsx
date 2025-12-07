@@ -1,3 +1,4 @@
+
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { AdminHeader } from "@/components/admin/header";
 import {
@@ -5,6 +6,7 @@ import {
   Sidebar,
   SidebarInset,
 } from "@/components/ui/sidebar";
+import { SuccessConfirm } from "@/components/ui/success-confirm";
 
 export default function AdminLayout({
   children,
@@ -19,6 +21,7 @@ export default function AdminLayout({
       <SidebarInset>
         <AdminHeader />
         {children}
+        <SuccessConfirm />
       </SidebarInset>
     </SidebarProvider>
   );

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -28,6 +29,7 @@ import { Staff, Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -54,6 +56,7 @@ export default function NewStaffPage() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -135,6 +138,7 @@ export default function NewStaffPage() {
 
     try {
       await addDoc(collection(firestore, 'staff'), dataToSave);
+      openSuccessModal();
       router.push('/admin/staff');
     } catch (error) {
       console.error('Error adding document: ', error);
@@ -244,3 +248,4 @@ export default function NewStaffPage() {
     </main>
   );
 }
+

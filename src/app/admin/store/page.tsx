@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -30,12 +31,14 @@ import {
 } from 'firebase/firestore';
 import Link from 'next/link';
 import { Store } from '@/lib/types';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 export default function StorePage() {
   const [stores, setStores] = useState<Store[]>([]);
   const firestore = useFirestore();
   const router = useRouter();
+  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -52,6 +55,7 @@ export default function StorePage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
+      openSuccessModal();
     } catch (error) {
       console.error("Error deleting document: ", error);
     }
@@ -132,3 +136,4 @@ export default function StorePage() {
       </main>
   );
 }
+
