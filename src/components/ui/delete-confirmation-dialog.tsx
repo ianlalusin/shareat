@@ -28,9 +28,11 @@ export function DeleteConfirmationDialog({
   dialogTitle = 'Are you absolutely sure?',
   dialogDescription = 'This action cannot be undone. This will permanently delete the data from our servers.',
 }: DeleteConfirmationDialogProps) {
+  const [isOpen, setIsOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     setIsDeleting(true);
     try {
       await onConfirm();
@@ -38,15 +40,14 @@ export function DeleteConfirmationDialog({
       console.error('Deletion failed:', error);
       // Optionally show a toast notification for the error
     } finally {
-      // The dialog closes automatically on action click, so we just need to reset state.
-      // A small delay might be needed if the dialog closing feels abrupt after deletion.
       setIsDeleting(false);
+      setIsOpen(false);
     }
   };
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      <AlertDialogTrigger asChild onClick={() => setIsOpen(true)}>{children}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{dialogTitle}</AlertDialogTitle>
