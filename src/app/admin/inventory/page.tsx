@@ -396,19 +396,25 @@ export default function InventoryPage() {
                         <Label htmlFor="unit">Unit of Measure</Label>
                          <Input id="unit" name="unit" value={formData.unit} readOnly disabled />
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="currentQty">Current Quantity</Label>
-                        <Input id="currentQty" name="currentQty" type="number" value={formData.currentQty} onChange={handleInputChange} required/>
-                    </div>
+                    {formData.trackInventory && (
+                        <div className="space-y-2">
+                            <Label htmlFor="currentQty">Current Quantity</Label>
+                            <Input id="currentQty" name="currentQty" type="number" value={formData.currentQty} onChange={handleInputChange} required/>
+                        </div>
+                    )}
                     {/* Row 3 */}
-                    <div className="space-y-2">
-                        <Label htmlFor="reorderPoint">Re-order Point</Label>
-                        <Input id="reorderPoint" name="reorderPoint" type="number" value={formData.reorderPoint} onChange={handleInputChange} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="criticalPoint">Critical Point</Label>
-                        <Input id="criticalPoint" name="criticalPoint" type="number" value={formData.criticalPoint} onChange={handleInputChange} />
-                    </div>
+                    {formData.trackInventory && (
+                      <>
+                        <div className="space-y-2">
+                            <Label htmlFor="reorderPoint">Re-order Point</Label>
+                            <Input id="reorderPoint" name="reorderPoint" type="number" value={formData.reorderPoint} onChange={handleInputChange} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="criticalPoint">Critical Point</Label>
+                            <Input id="criticalPoint" name="criticalPoint" type="number" value={formData.criticalPoint} onChange={handleInputChange} />
+                        </div>
+                      </>
+                    )}
                     <div className="space-y-2">
                         <Label htmlFor="costPerUnit">Cost per Unit</Label>
                         <Input id="costPerUnit" name="costPerUnit" type="text" inputMode='decimal' value={displayValues.costPerUnit} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required/>
