@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Check } from 'lucide-react';
 import { useSuccessModal } from '@/store/use-success-modal';
 
@@ -21,6 +21,9 @@ export function SuccessConfirm() {
   return (
     <Dialog open={isSuccessModalOpen} onOpenChange={closeSuccessModal}>
       <DialogContent className="sm:max-w-xs p-8 bg-background/90 backdrop-blur-sm border-none shadow-2xl">
+        <DialogHeader>
+            <DialogTitle className="sr-only">Success</DialogTitle>
+        </DialogHeader>
         <div className="flex flex-col items-center justify-center gap-4">
           <div className="relative h-20 w-20">
             <div className="absolute inset-0 bg-green-500 rounded-full animate-ping-slow opacity-30" />
@@ -34,4 +37,3 @@ export function SuccessConfirm() {
     </Dialog>
   );
 }
-
