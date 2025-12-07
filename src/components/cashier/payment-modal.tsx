@@ -221,7 +221,7 @@ export function PaymentModal({
                 </div>
             )}
         </div>
-        <DialogFooter className="flex-row justify-end gap-2">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={isProcessing}>
             Cancel
           </Button>
