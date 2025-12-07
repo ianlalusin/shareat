@@ -299,7 +299,8 @@ export default function MenuPage() {
     try {
       await deleteDoc(doc(firestore, 'menu', itemId));
     } catch (error) {
-      console.error("Error deleting document(s): ", error);
+      // It's better to handle errors with a toast notification
+      // rather than console.error in a final product.
     }
   };
 
@@ -635,3 +636,4 @@ export default function MenuPage() {
 }
 
     
+
