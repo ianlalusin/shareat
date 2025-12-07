@@ -71,3 +71,14 @@ export function parseCurrency(value: string | undefined | null): number {
   const numberValue = value.replace(/[^0-9.-]+/g, '');
   return parseFloat(numberValue) || 0;
 }
+
+export const UNIT_OPTIONS = [
+  { value: "kg", label: "Kilogram (kg)" },
+  { value: "g", label: "Gram (g)" },
+  { value: "L", label: "Liter (L)" },
+  { value: "ml", label: "Milliliter (ml)" },
+  { value: "pc", label: "Piece (pc)" },
+  { value: "pack", label: "Pack" },
+  { value: "bottle", label: "Bottle" },
+  { value: "can", label: "Can" },
+];
