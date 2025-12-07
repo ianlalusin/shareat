@@ -55,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Image from 'next/image';
+import { BarcodeInput } from '@/components/ui/barcode-input';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
@@ -378,7 +379,7 @@ export default function InventoryPage() {
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="sku">SKU / Barcode</Label>
-                        <Input id="sku" name="sku" value={formData.sku} onChange={handleInputChange} readOnly disabled />
+                        <BarcodeInput id="sku" name="sku" value={formData.sku} onChange={handleInputChange} readOnly disabled />
                     </div>
                     {/* Row 2 */}
                      <div className="space-y-2">

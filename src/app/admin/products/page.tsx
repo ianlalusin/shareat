@@ -53,6 +53,7 @@ import { TagsInput } from '@/components/ui/tags-input';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Image from 'next/image';
+import { BarcodeInput } from '@/components/ui/barcode-input';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
   productName: '',
@@ -279,7 +280,7 @@ export default function ProductsPage() {
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="barcode">Barcode/SKU</Label>
-                      <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
+                      <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} />
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="unit">Unit</Label>

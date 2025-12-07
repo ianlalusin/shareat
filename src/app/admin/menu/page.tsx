@@ -64,6 +64,7 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Image from 'next/image';
+import { BarcodeInput } from '@/components/ui/barcode-input';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -567,7 +568,7 @@ export default function MenuPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="barcode">Barcode</Label>
-                      <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                      <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
                 </div>
 
