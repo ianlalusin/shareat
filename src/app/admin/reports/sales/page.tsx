@@ -147,11 +147,23 @@ export default function SalesReportPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date())});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [isReceiptsPanelOpen, setIsReceiptsPanelOpen] = useState(false);
 
   const [selectedOrderForView, setSelectedOrderForView] = useState<Order | null>(null);
 
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
+
+  useEffect(() => {
+    if (firestore) {
+      const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
+        setStores(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Store));
+      });
+      return () => storesUnsubscribe();
+    }
+  }, [firestore]);
+
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -293,11 +305,12 @@ export default function SalesReportPage() {
     
     return Object.entries(salesByDate).map(([date, total]) => ({ date, total })).reverse();
   }, [transactions, dateRange]);
+  
+  const selectedOrderStore = useMemo(() => {
+      if (!selectedOrderForView) return null;
+      return stores.find(s => s.id === selectedOrderForView.storeId) || null;
+  }, [selectedOrderForView, stores]);
 
-  const selectedStore = useMemo(() => {
-    // This is a bit of a placeholder. In a real app you'd fetch this properly.
-    return { id: selectedStoreId, storeName: 'Selected Store' } as Store;
-  }, [selectedStoreId]);
 
   return (
     <>
@@ -340,7 +353,7 @@ export default function SalesReportPage() {
                 <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
             </CardContent>
         </Card>
-        <Sheet>
+        <Sheet open={isReceiptsPanelOpen} onOpenChange={setIsReceiptsPanelOpen}>
           <SheetTrigger asChild>
              <Card className="cursor-pointer hover:bg-muted/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -370,7 +383,7 @@ export default function SalesReportPage() {
                 </TableHeader>
                 <TableBody>
                   {completedOrders.map(order => (
-                    <TableRow key={order.id} onClick={() => setSelectedOrderForView(order)} className="cursor-pointer">
+                    <TableRow key={order.id} onClick={() => { setSelectedOrderForView(order); setIsReceiptsPanelOpen(false); }} className="cursor-pointer">
                       <TableCell className="text-xs">
                           {order.completedTimestamp ? format(order.completedTimestamp.toDate(), 'MM/dd/yy hh:mm a') : 'N/A'}
                       </TableCell>
@@ -503,7 +516,7 @@ export default function SalesReportPage() {
         isOpen={!!selectedOrderForView}
         onClose={() => setSelectedOrderForView(null)}
         order={selectedOrderForView}
-        store={selectedStore}
+        store={selectedOrderStore}
         items={orderItems.filter(item => item.orderId === selectedOrderForView?.id)}
         transactions={transactions.filter(trans => trans.orderId === selectedOrderForView?.id)}
     />
