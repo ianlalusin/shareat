@@ -14,6 +14,7 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  orderBy,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { OrderItem, RefillItem, Order } from '@/lib/types';
@@ -65,7 +66,8 @@ export default function KitchenPage() {
     const pendingOrderItemsQuery = query(
       collectionGroup(firestore, 'orderItems'),
       where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Pending')
+      where('status', '==', 'Pending'),
+      orderBy('timestamp')
     );
     const unsubOrderItems = onSnapshot(pendingOrderItemsQuery, (snapshot) => {
       const data = snapshot.docs.map(
@@ -77,7 +79,8 @@ export default function KitchenPage() {
     const pendingRefillsQuery = query(
       collectionGroup(firestore, 'refills'),
       where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Pending')
+      where('status', '==', 'Pending'),
+      orderBy('timestamp')
     );
     const unsubRefills = onSnapshot(pendingRefillsQuery, (snapshot) => {
       const data = snapshot.docs.map(
