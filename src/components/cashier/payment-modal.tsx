@@ -19,7 +19,7 @@ import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
-import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction } from 'firebase/firestore';
+import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
 import { useSuccessModal } from '@/store/use-success-modal';
 
 interface Payment {
@@ -109,65 +109,60 @@ export function PaymentModal({
     const user = auth?.currentUser;
 
     try {
-      await runTransaction(firestore, async (transaction) => {
-        // 1. Get receipt settings for the store to get the next number
-        const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
-        const settingsSnap = await transaction.get(settingsRef);
-        if (!settingsSnap.exists()) {
-          throw new Error("Receipt settings for this store not found!");
-        }
-        const settings = settingsSnap.data() as ReceiptSettings;
-        const nextNumber = settings.nextReceiptNumber || 1;
-
-        // 2. Format receipt number
-        const receiptNumber = `${settings.receiptNumberPrefix || ''}${String(nextNumber).padStart(6, '0')}`;
-        
-        // 3. Prepare receipt details object to be saved on the order
-        const receiptDetails = {
-          receiptNumber: receiptNumber,
-          cashierName: user?.displayName || user?.email || 'System',
-        };
-
-        // --- Start Batch ---
-        const batch = writeBatch(transaction); // Use the transaction's batch
-
-        // Create Payment Transaction records
-        const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
-        payments.forEach(payment => {
-          const paymentData: Omit<OrderTransaction, 'id'> = {
-            orderId: order.id,
-            type: 'Payment',
-            amount: parseCurrency(payment.amount),
-            method: payment.method,
-            timestamp: serverTimestamp(),
-          };
-          batch.set(doc(transactionsRef), paymentData);
-        });
-        
-        // Update Order to Completed
-        const orderRef = doc(firestore, 'orders', order.id);
-        batch.update(orderRef, {
-            status: 'Completed',
-            completedTimestamp: serverTimestamp(),
-            totalAmount: totalAmount,
-            receiptDetails: receiptDetails,
-        });
-
-        // Update Table to Available
+        // Find the table associated with the order *before* starting the transaction
         const tablesRef = collection(firestore, 'tables');
         const q = query(tablesRef, where('storeId', '==', order.storeId), where('activeOrderId', '==', order.id));
         const tableSnapshot = await getDocs(q);
-        if (!tableSnapshot.empty) {
-            const tableDoc = tableSnapshot.docs[0];
-            batch.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
-        }
-        
-        // 4. Update the receipt number counter in settings
-        transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
-        
-        // Commit the batch as part of the transaction
-        await batch.commit();
-      });
+        const tableDoc = tableSnapshot.empty ? null : tableSnapshot.docs[0];
+
+        await runTransaction(firestore, async (transaction) => {
+            const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
+            const settingsSnap = await transaction.get(settingsRef);
+
+            if (!settingsSnap.exists()) {
+                throw new Error("Receipt settings for this store not found!");
+            }
+            const settings = settingsSnap.data() as ReceiptSettings;
+            const nextNumber = settings.nextReceiptNumber || 1;
+            const receiptNumber = `${settings.receiptNumberPrefix || ''}${String(nextNumber).padStart(6, '0')}`;
+            
+            const receiptDetails = {
+                receiptNumber: receiptNumber,
+                cashierName: user?.displayName || user?.email || 'System',
+            };
+
+            // Transactions can only operate on documents, not queries. 
+            // We can only update the table if we found it before the transaction.
+            if (tableDoc) {
+                transaction.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
+            }
+
+            // Create Payment Transaction records
+            const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
+            payments.forEach(payment => {
+                const newPaymentRef = doc(transactionsRef);
+                const paymentData: Omit<OrderTransaction, 'id'> = {
+                    orderId: order.id,
+                    type: 'Payment',
+                    amount: parseCurrency(payment.amount),
+                    method: payment.method,
+                    timestamp: serverTimestamp(),
+                };
+                transaction.set(newPaymentRef, paymentData);
+            });
+            
+            // Update Order to Completed
+            const orderRef = doc(firestore, 'orders', order.id);
+            transaction.update(orderRef, {
+                status: 'Completed',
+                completedTimestamp: serverTimestamp(),
+                totalAmount: totalAmount,
+                receiptDetails: receiptDetails,
+            });
+
+            // Update the receipt number counter in settings
+            transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
+        });
 
       console.log('--- FINALIZATION ACTIONS (STUBBED) ---');
       console.log('Open cash drawer if connected...');
