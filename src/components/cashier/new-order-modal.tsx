@@ -106,7 +106,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     
     const getSelectedFlavorText = () => {
         if (selectedFlavors.length === 0) return 'Select up to 3 flavors';
-        if (selectedFlavors.length > 2) return `${'selectedFlavors.length'} flavors selected`;
+        if (selectedFlavors.length > 2) return `${selectedFlavors.length} flavors selected`;
         return selectedFlavors.join(', ');
     };
     
@@ -212,32 +212,33 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                     </div>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4">
-                     <div className="space-y-2 col-span-1">
-                         <Label htmlFor="flavor">Flavor</Label>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="w-full justify-between h-10">
-                                    <span>{getSelectedFlavorText()}</span>
-                                    <ChevronDown className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                {flavorOptions.map(opt => (
-                                    <DropdownMenuCheckboxItem
-                                        key={opt.id}
-                                        checked={selectedFlavors.includes(opt.item)}
-                                        onSelect={(e) => e.preventDefault()}
-                                        onClick={() => handleFlavorSelect(opt.item)}
-                                        disabled={!selectedFlavors.includes(opt.item) && selectedFlavors.length >= 3}
-                                    >
-                                        {opt.item}
-                                    </DropdownMenuCheckboxItem>
-                                ))}
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                     </div>
-                     <div className="space-y-2 col-span-1">
+                <div className="space-y-2">
+                    <Label htmlFor="flavor">Flavor</Label>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between h-10">
+                                <span>{getSelectedFlavorText()}</span>
+                                <ChevronDown className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                            {flavorOptions.map(opt => (
+                                <DropdownMenuCheckboxItem
+                                    key={opt.id}
+                                    checked={selectedFlavors.includes(opt.item)}
+                                    onSelect={(e) => e.preventDefault()}
+                                    onClick={() => handleFlavorSelect(opt.item)}
+                                    disabled={!selectedFlavors.includes(opt.item) && selectedFlavors.length >= 3}
+                                >
+                                    {opt.item}
+                                </DropdownMenuCheckboxItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-2">
                          <Label htmlFor="rice" className="text-center block">Rice</Label>
                          <div className="flex items-center gap-1">
                              <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => Math.max(0, r - 1))}><Minus className="h-4 w-4"/></Button>
@@ -245,7 +246,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                              <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => r + 1)}><Plus className="h-4 w-4"/></Button>
                          </div>
                      </div>
-                      <div className="space-y-2 col-span-1">
+                      <div className="space-y-2">
                          <Label htmlFor="cheese" className="text-center block">Cheese</Label>
                          <div className="flex items-center gap-1">
                              <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setCheese(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
