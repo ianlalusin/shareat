@@ -5,12 +5,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore } from '@/firebase';
 import {
-  collectionGroup,
+  collection,
   query,
   where,
   onSnapshot,
   doc,
   getDoc,
+  collectionGroup,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { OrderItem, RefillItem, Order } from '@/lib/types';
@@ -33,52 +34,84 @@ export default function KitchenPage() {
       return;
     }
 
-    const orderItemsQuery = query(
-        collectionGroup(firestore, 'orderItems'),
-        where('storeId', '==', selectedStoreId),
-        where('status', '==', 'Pending')
-    );
-    
-    const refillsQuery = query(
-        collectionGroup(firestore, 'refills'),
-        where('storeId', '==', selectedStoreId),
-        where('status', '==', 'Pending')
+    // 1. Listen for active orders in the current store
+    const activeOrdersQuery = query(
+      collection(firestore, 'orders'),
+      where('storeId', '==', selectedStoreId),
+      where('status', '==', 'Active')
     );
 
-    const processSnapshot = (snapshot: any) => {
-        snapshot.docChanges().forEach(async (change: any) => {
-            const data = change.doc.data() as OrderItem | RefillItem;
-            const orderId = change.doc.ref.parent.parent.id;
-            
+    const ordersUnsubscribe = onSnapshot(activeOrdersQuery, (ordersSnapshot) => {
+      const activeOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      const activeOrderIds = activeOrders.map(o => o.id);
+
+      if (activeOrderIds.length === 0) {
+        setItems([]);
+        return;
+      }
+      
+      const allItems: KitchenItem[] = [];
+
+      // Create a map of orderId to order data for quick lookup
+      const ordersMap = new Map(activeOrders.map(o => [o.id, o]));
+
+      // Helper function to process snapshots for items/refills
+      const processSnapshot = (snapshot: any, itemType: 'orderItem' | 'refillItem') => {
+        snapshot.docChanges().forEach((change: any) => {
+          const docData = change.doc.data();
+          const orderId = change.doc.ref.parent.parent.id;
+
+          // Only process items that belong to one of the active orders
+          if (activeOrderIds.includes(orderId)) {
+            const newItem: KitchenItem = {
+              ...docData,
+              id: change.doc.id,
+              orderId: orderId,
+              order: ordersMap.get(orderId)
+            };
+
+            const existingIndex = allItems.findIndex(i => i.id === newItem.id);
+
             if (change.type === 'added' || change.type === 'modified') {
-                const orderRef = doc(firestore, 'orders', orderId);
-                const orderSnap = await getDoc(orderRef);
-                const orderData = orderSnap.data() as Order;
-
-                const newItem: KitchenItem = { ...data, id: change.doc.id, orderId: orderId, order: orderData };
-
-                setItems(prevItems => {
-                    const existingIndex = prevItems.findIndex(i => i.id === newItem.id);
-                    if (existingIndex > -1) {
-                        const newItems = [...prevItems];
-                        newItems[existingIndex] = newItem;
-                        return newItems;
-                    }
-                    return [...prevItems, newItem];
-                });
+              if (existingIndex > -1) {
+                allItems[existingIndex] = newItem;
+              } else {
+                allItems.push(newItem);
+              }
+            } else if (change.type === 'removed') {
+              if (existingIndex > -1) {
+                allItems.splice(existingIndex, 1);
+              }
             }
-            if (change.type === 'removed') {
-                setItems(prevItems => prevItems.filter(i => i.id !== change.doc.id));
-            }
+          }
         });
-    }
 
-    const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => processSnapshot(snapshot));
-    const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => processSnapshot(snapshot));
+         // Filter only for pending items and update the state
+        setItems([...allItems].filter(item => item.status === 'Pending'));
+      };
+
+      // 2. Listen to subcollections (orderItems and refills)
+      const orderItemsQuery = query(
+        collectionGroup(firestore, 'orderItems'),
+        where('storeId', '==', selectedStoreId)
+      );
+      const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => processSnapshot(snapshot, 'orderItem'));
+
+      const refillsQuery = query(
+        collectionGroup(firestore, 'refills'),
+        where('storeId', '==', selectedStoreId)
+      );
+      const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => processSnapshot(snapshot, 'refillItem'));
+      
+      // Return cleanup function
+      return () => {
+        orderItemsUnsubscribe();
+        refillsUnsubscribe();
+      };
+    });
 
     return () => {
-      orderItemsUnsubscribe();
-      refillsUnsubscribe();
+      ordersUnsubscribe();
       setItems([]);
     };
   }, [firestore, selectedStoreId]);
