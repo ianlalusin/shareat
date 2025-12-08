@@ -83,7 +83,7 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [formData, setFormData] = useState<any>(initialItemState);
+  const [formData, setFormData] = useState<FormData>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ costPerUnit: string }>({ costPerUnit: ''});
   const [dateError, setDateError] = useState<string | undefined>();
   
@@ -216,9 +216,9 @@ export default function InventoryPage() {
     
     const numericData = {
       ...restOfData,
-      currentQty: parseFloat(restOfData.currentQty) || 0,
-      reorderPoint: parseFloat(restOfData.reorderPoint) || 0,
-      criticalPoint: parseFloat(restOfData.criticalPoint) || 0,
+      currentQty: parseFloat(restOfData.currentQty as any) || 0,
+      reorderPoint: parseFloat(restOfData.reorderPoint as any) || 0,
+      criticalPoint: parseFloat(restOfData.criticalPoint as any) || 0,
     };
 
     const dataToSave = {
@@ -253,10 +253,16 @@ export default function InventoryPage() {
             // handle cases where expiryDate is not a valid Timestamp
         }
     }
+    
+    const product = products.find(p => p.id === item.productId);
 
     setFormData({
         ...initialItemState,
         ...item,
+        name: product?.productName ?? item.name,
+        category: product?.category ?? item.category,
+        sku: product?.barcode ?? item.sku,
+        unit: product?.unit ?? item.unit,
         expiryDate: expiryDateStr,
     });
     setDisplayValues({
@@ -514,11 +520,11 @@ export default function InventoryPage() {
                                         )}
                                     </div>
                                   </TableCell>
-                                  <TableCell className="p-2 font-medium">{item.name}</TableCell>
-                                  <TableCell className="p-2 text-muted-foreground">{item.sku}</TableCell>
+                                  <TableCell className="p-2 font-medium">{product?.productName ?? item.name}</TableCell>
+                                  <TableCell className="p-2 text-muted-foreground">{product?.barcode ?? item.sku}</TableCell>
                                    <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
                                   <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
-                                  <TableCell className="p-2">{item.unit}</TableCell>
+                                  <TableCell className="p-2">{product?.unit ?? item.unit}</TableCell>
                                   <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
                                   <TableCell className="p-2">{getStockLevel(item)}</TableCell>
                                   <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
