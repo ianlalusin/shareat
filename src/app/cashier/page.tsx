@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,6 +15,7 @@ import { OrderTimer } from '@/components/cashier/order-timer';
 import { useRouter } from 'next/navigation';
 import { OrderDetailsModal } from '@/components/cashier/order-details-modal';
 import { NewOrderModal } from '@/components/cashier/new-order-modal';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -39,6 +41,7 @@ export default function CashierPage() {
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
     const router = useRouter();
+    const { openSuccessModal } = useSuccessModal();
     
     useEffect(() => {
         if (firestore && selectedStoreId) {
@@ -93,6 +96,74 @@ export default function CashierPage() {
         setIsDetailsModalOpen(true);
       }
     }
+
+    const handleCreateOrder = async (
+      table: TableType, 
+      orderData: { 
+        customerName: string; 
+        guestCount: number; 
+        selectedPackage: MenuItem; 
+        selectedFlavors: string[]; 
+        rice: number; 
+        cheese: number;
+      }
+    ) => {
+      if (!firestore || !selectedStoreId) return;
+      
+      const { customerName, guestCount, selectedPackage, selectedFlavors, rice, cheese } = orderData;
+      
+      const newOrderRef = doc(collection(firestore, 'orders'));
+      const tableRef = doc(firestore, 'tables', table.id);
+
+      try {
+        const batch = writeBatch(firestore);
+
+        const initialItems = [];
+        if (rice > 0) initialItems.push({ name: 'Rice', quantity: rice });
+        if (cheese > 0) initialItems.push({ name: 'Cheese', quantity: cheese });
+
+        batch.set(newOrderRef, {
+          storeId: selectedStoreId,
+          tableLabel: table.tableName,
+          status: 'Active',
+          guestCount,
+          customerName,
+          orderTimestamp: serverTimestamp(),
+          totalAmount: selectedPackage.price * guestCount,
+          notes: '',
+          initialItems,
+          packageName: selectedPackage.menuName,
+          selectedFlavors,
+        });
+
+        const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
+        batch.set(orderItemRef, {
+          storeId: selectedStoreId,
+          menuItemId: selectedPackage.id,
+          menuName: selectedPackage.menuName,
+          quantity: guestCount,
+          priceAtOrder: selectedPackage.price,
+          isRefill: false,
+          timestamp: serverTimestamp(),
+          status: 'Pending',
+          targetStation: selectedPackage.targetStation,
+          sourceTag: 'cashier',
+        });
+
+        batch.update(tableRef, {
+          status: 'Occupied',
+          activeOrderId: newOrderRef.id,
+          resetCounter: (table.resetCounter || 0) + 1,
+        });
+    
+        await batch.commit();
+        setIsNewOrderModalOpen(false);
+        openSuccessModal();
+      } catch (error) {
+        console.error("Error creating new order: ", error);
+        alert("Failed to create new order. Please try again.");
+      }
+    };
     
     if (!selectedStoreId) {
         return (
@@ -168,6 +239,7 @@ export default function CashierPage() {
             table={selectedTable}
             menu={menu}
             storeId={selectedStoreId}
+            onCreateOrder={handleCreateOrder}
         />
       )}
       

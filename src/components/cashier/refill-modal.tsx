@@ -32,21 +32,7 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Image from 'next/image';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { Badge } from '../ui/badge';
-
-interface RefillModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  table: TableType;
-  order: Order;
-  menu: MenuItem[];
-}
-
-interface RefillSelection {
-    meatType: string;
-    flavors: string[];
-}
 
 interface RefillCartItem {
     meatType: string;
@@ -59,7 +45,21 @@ interface CartItem extends MenuItem {
     quantity: number;
 }
 
-export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModalProps) {
+interface RefillModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  table: TableType;
+  order: Order;
+  menu: MenuItem[];
+  onPlaceOrder: (order: Order, refillCart: RefillCartItem[], cart: CartItem[]) => void;
+}
+
+interface RefillSelection {
+    meatType: string;
+    flavors: string[];
+}
+
+export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder }: RefillModalProps) {
     const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
     const [refillSelections, setRefillSelections] = useState<Record<string, RefillSelection>>({});
     const [refillCart, setRefillCart] = useState<RefillCartItem[]>([]);
@@ -68,7 +68,6 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
     const [searchTerm, setSearchTerm] = useState('');
 
     const firestore = useFirestore();
-    const { openSuccessModal } = useSuccessModal();
     
     const packageDetails = useMemo(() => {
         return menu.find(m => m.menuName === order.packageName && m.category === 'Unlimited');
@@ -196,59 +195,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
         }
     };
     
-    const handlePlaceOrder = async () => {
-        if (!firestore) return;
-
-        const batch = writeBatch(firestore);
-
-        // Process Refills
-        if (refillCart.length > 0) {
-            const refillsRef = collection(firestore, 'orders', order.id, 'refills');
-            refillCart.forEach(refill => {
-                const newRefillRef = doc(refillsRef);
-                const refillData: Omit<RefillItem, 'id'> = {
-                    orderId: order.id,
-                    storeId: order.storeId,
-                    menuItemId: refill.meatType.toLowerCase(),
-                    menuName: `${refill.meatType} - ${refill.flavor}`,
-                    quantity: refill.quantity,
-                    targetStation: 'Cold',
-                    timestamp: serverTimestamp(),
-                    status: 'Pending',
-                };
-                batch.set(newRefillRef, refillData);
-            });
-        }
-
-        // Process Add-ons
-        if (cart.length > 0) {
-            const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
-            cart.forEach(cartItem => {
-                const newItemRef = doc(orderItemsRef);
-                const orderItemData: Omit<OrderItem, 'id' | 'orderId'> = {
-                    storeId: order.storeId,
-                    menuItemId: cartItem.id,
-                    menuName: cartItem.menuName,
-                    quantity: cartItem.quantity,
-                    priceAtOrder: cartItem.price,
-                    isRefill: false,
-                    timestamp: serverTimestamp(),
-                    status: 'Pending',
-                    targetStation: cartItem.targetStation,
-                    sourceTag: 'refill',
-                };
-                batch.set(newItemRef, orderItemData);
-            });
-        }
-
-        try {
-            await batch.commit();
-            openSuccessModal();
-            onClose();
-        } catch (error) {
-            console.error("Error placing order:", error);
-            alert("Failed to place order.");
-        }
+    const handlePlaceOrderClick = () => {
+        onPlaceOrder(order, refillCart, cart);
     }
     
     const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + (item.price * item.quantity), 0), [cart]);
@@ -421,7 +369,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                     <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                     <Button 
                         size="lg" 
-                        onClick={handlePlaceOrder} 
+                        onClick={handlePlaceOrderClick} 
                         disabled={refillCart.length === 0 && cart.length === 0}
                     >
                         Place Order
@@ -431,5 +379,3 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
         </Dialog>
     );
 }
-
-    

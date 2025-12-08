@@ -3,9 +3,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, RefillItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem, OrderItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { OrderTimer } from '@/components/cashier/order-timer';
 import { RefillModal } from '@/components/cashier/refill-modal';
 import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -38,6 +39,7 @@ export default function RefillPage() {
     
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
+    const { openSuccessModal } = useSuccessModal();
     
     useEffect(() => {
         if (firestore && selectedStoreId) {
@@ -95,6 +97,63 @@ export default function RefillPage() {
             setIsRefillModalOpen(true);
         }
     }
+
+    const handlePlaceOrder = async (
+        order: Order,
+        refillCart: { meatType: string; flavor: string; quantity: number; }[],
+        cart: { id: string; menuName: string; price: number; quantity: number; targetStation?: 'Hot' | 'Cold' }[]
+    ) => {
+        if (!firestore) return;
+
+        const batch = writeBatch(firestore);
+
+        if (refillCart.length > 0) {
+            const refillsRef = collection(firestore, 'orders', order.id, 'refills');
+            refillCart.forEach(refill => {
+                const newRefillRef = doc(refillsRef);
+                const refillData: Omit<RefillItem, 'id'> = {
+                    orderId: order.id,
+                    storeId: order.storeId,
+                    menuItemId: refill.meatType.toLowerCase(),
+                    menuName: `${refill.meatType} - ${refill.flavor}`,
+                    quantity: refill.quantity,
+                    targetStation: 'Cold',
+                    timestamp: serverTimestamp(),
+                    status: 'Pending',
+                };
+                batch.set(newRefillRef, refillData);
+            });
+        }
+
+        if (cart.length > 0) {
+            const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
+            cart.forEach(cartItem => {
+                const newItemRef = doc(orderItemsRef);
+                const orderItemData: Omit<OrderItem, 'id' | 'orderId'> = {
+                    storeId: order.storeId,
+                    menuItemId: cartItem.id,
+                    menuName: cartItem.menuName,
+                    quantity: cartItem.quantity,
+                    priceAtOrder: cartItem.price,
+                    isRefill: false,
+                    timestamp: serverTimestamp(),
+                    status: 'Pending',
+                    targetStation: cartItem.targetStation,
+                    sourceTag: 'refill',
+                };
+                batch.set(newItemRef, orderItemData);
+            });
+        }
+
+        try {
+            await batch.commit();
+            openSuccessModal();
+            setIsRefillModalOpen(false);
+        } catch (error) {
+            console.error("Error placing order:", error);
+            alert("Failed to place order.");
+        }
+    };
     
     if (!selectedStoreId) {
         return (
@@ -165,6 +224,7 @@ export default function RefillPage() {
             table={selectedTable}
             order={selectedOrder}
             menu={menu}
+            onPlaceOrder={handlePlaceOrder}
         />
       )}
     </>

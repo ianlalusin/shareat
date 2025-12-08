@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { PlusCircle, Minus, Plus, ChevronDown } from 'lucide-react';
 import { Table as TableType, MenuItem, Order, OrderItem, GListItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
-import { collection, doc, writeBatch, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -23,7 +23,6 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
-import { useSuccessModal } from '@/store/use-success-modal';
 
 interface NewOrderModalProps {
     isOpen: boolean;
@@ -31,9 +30,17 @@ interface NewOrderModalProps {
     table: TableType;
     menu: MenuItem[];
     storeId: string;
+    onCreateOrder: (table: TableType, orderData: {
+      customerName: string;
+      guestCount: number;
+      selectedPackage: MenuItem;
+      selectedFlavors: string[];
+      rice: number;
+      cheese: number;
+    }) => void;
 }
 
-export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrderModalProps) {
+export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateOrder }: NewOrderModalProps) {
     const [customerName, setCustomerName] = useState('');
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
@@ -43,7 +50,6 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
     
     const firestore = useFirestore();
-    const { openSuccessModal } = useSuccessModal();
 
     const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
     
@@ -110,67 +116,19 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         return selectedFlavors.join(', ');
     };
     
-    const handleStartOrder = async () => {
-        if (!firestore || !table || !selectedPackage || selectedFlavors.length === 0) {
-          alert("Please ensure a Package and at least one Flavor are selected.");
-          return;
+    const handleStartOrder = () => {
+        if (!selectedPackage || selectedFlavors.length === 0) {
+            alert("Please ensure a Package and at least one Flavor are selected.");
+            return;
         }
-
-        const newOrderRef = doc(collection(firestore, 'orders'));
-        const tableRef = doc(firestore, 'tables', table.id);
-
-        try {
-            const batch = writeBatch(firestore);
-
-            const initialItems = [];
-            if (rice > 0) initialItems.push({ name: 'Rice', quantity: rice });
-            if (cheese > 0) initialItems.push({ name: 'Cheese', quantity: cheese });
-
-            // 1. Create the new order
-            batch.set(newOrderRef, {
-                storeId: storeId,
-                tableLabel: table.tableName,
-                status: 'Active',
-                guestCount: guestCount,
-                customerName: customerName,
-                orderTimestamp: serverTimestamp(),
-                totalAmount: selectedPackage.price * guestCount, // Initial total
-                notes: '',
-                initialItems: initialItems,
-                packageName: selectedPackage.menuName,
-                selectedFlavors: selectedFlavors,
-            } as Omit<Order, 'id'>);
-
-            // 2. Add the selected package as the first order item
-            const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
-            batch.set(orderItemRef, {
-                storeId: storeId,
-                menuItemId: selectedPackage.id,
-                menuName: selectedPackage.menuName,
-                quantity: guestCount,
-                priceAtOrder: selectedPackage.price,
-                isRefill: false,
-                timestamp: serverTimestamp(),
-                status: 'Pending',
-                targetStation: selectedPackage.targetStation
-            } as Omit<OrderItem, 'id' | 'orderId'>);
-
-            // 3. Update the table
-            batch.update(tableRef, {
-              status: 'Occupied',
-              activeOrderId: newOrderRef.id,
-              resetCounter: (table.resetCounter || 0) + 1,
-            });
-        
-            await batch.commit();
-        
-            handleClose();
-            openSuccessModal();
-
-        } catch (error) {
-            console.error("Error creating new order: ", error);
-            alert("Failed to create new order. Please try again.");
-        }
+        onCreateOrder(table, {
+            customerName,
+            guestCount,
+            selectedPackage,
+            selectedFlavors,
+            rice,
+            cheese,
+        });
     }
 
 
