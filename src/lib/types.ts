@@ -135,7 +135,7 @@ export type Order = {
   notes?: string;
   initialItems: { name: string; quantity: number }[];
   packageName: string;
-  selectedFlavor: string;
+  selectedFlavors: string[];
 };
 
 // Represents only PAID items for an order

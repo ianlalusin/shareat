@@ -12,11 +12,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PlusCircle, Minus, Plus } from 'lucide-react';
+import { PlusCircle, Minus, Plus, ChevronDown } from 'lucide-react';
 import { Table as TableType, MenuItem, Order, OrderItem, GListItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, doc, writeBatch, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu';
 import { useSuccessModal } from '@/store/use-success-modal';
 
 interface NewOrderModalProps {
@@ -33,7 +39,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
     const [rice, setRice] = useState(2);
     const [cheese, setCheese] = useState(2);
-    const [selectedFlavor, setSelectedFlavor] = useState('');
+    const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
     const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
     
     const firestore = useFirestore();
@@ -65,7 +71,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             setSelectedPackage(null);
             setRice(2);
             setCheese(2);
-            setSelectedFlavor('');
+            setSelectedFlavors([]);
         }
     }, [isOpen]);
 
@@ -83,10 +89,30 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         const pkg = unlimitedPackages.find(p => p.id === menuItemId);
         setSelectedPackage(pkg || null);
     }
+
+    const handleFlavorSelect = (flavor: string) => {
+        setSelectedFlavors(prev => {
+            const isSelected = prev.includes(flavor);
+            if (isSelected) {
+                return prev.filter(f => f !== flavor);
+            } else {
+                if (prev.length < 3) {
+                    return [...prev, flavor];
+                }
+                return prev; // Do not add more than 3
+            }
+        });
+    };
+    
+    const getSelectedFlavorText = () => {
+        if (selectedFlavors.length === 0) return 'Select up to 3 flavors';
+        if (selectedFlavors.length > 2) return `${selectedFlavors.length} flavors selected`;
+        return selectedFlavors.join(', ');
+    };
     
     const handleStartOrder = async () => {
-        if (!firestore || !table || !selectedPackage || !customerName || !selectedFlavor) {
-          alert("Please ensure Customer Name, a Package, and a Flavor are selected.");
+        if (!firestore || !table || !selectedPackage || !customerName || selectedFlavors.length === 0) {
+          alert("Please ensure Customer Name, a Package, and at least one Flavor are selected.");
           return;
         }
 
@@ -112,7 +138,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 notes: '',
                 initialItems: initialItems,
                 packageName: selectedPackage.menuName,
-                selectedFlavor: selectedFlavor,
+                selectedFlavors: selectedFlavors,
             } as Omit<Order, 'id'>);
 
             // 2. Add the selected package as the first order item
@@ -189,14 +215,27 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 <div className="grid grid-cols-3 gap-4">
                      <div className="space-y-2 col-span-1">
                          <Label htmlFor="flavor">Flavor</Label>
-                         <Select value={selectedFlavor} onValueChange={setSelectedFlavor}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Flavor" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {flavorOptions.map(opt => <SelectItem key={opt.id} value={opt.item}>{opt.item}</SelectItem>)}
-                            </SelectContent>
-                         </Select>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="w-full justify-between h-10">
+                                    <span>{getSelectedFlavorText()}</span>
+                                    <ChevronDown className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                {flavorOptions.map(opt => (
+                                    <DropdownMenuCheckboxItem
+                                        key={opt.id}
+                                        checked={selectedFlavors.includes(opt.item)}
+                                        onSelect={(e) => e.preventDefault()}
+                                        onClick={() => handleFlavorSelect(opt.item)}
+                                        disabled={!selectedFlavors.includes(opt.item) && selectedFlavors.length >= 3}
+                                    >
+                                        {opt.item}
+                                    </DropdownMenuCheckboxItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                      </div>
                      <div className="space-y-2 col-span-1">
                          <Label htmlFor="rice" className="text-center block">Rice</Label>
@@ -221,7 +260,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 <Button type="button" variant="outline" onClick={handleClose}>
                     Cancel
                 </Button>
-                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName || !selectedFlavor}>
+                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName || selectedFlavors.length === 0}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Start Order
                 </Button>
             </DialogFooter>

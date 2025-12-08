@@ -154,8 +154,12 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Order Details</DialogTitle>
-          <div className="text-sm text-muted-foreground pt-1">
-            <span className="font-semibold">Table:</span> {order.tableLabel} | <span className="font-semibold">Package:</span> {order.packageName} | <span className="font-semibold">Guests:</span> {order.guestCount} | <span className="font-semibold">Customer:</span> {order.customerName}
+          <div className="text-sm text-muted-foreground pt-1 flex flex-wrap gap-x-4 gap-y-1">
+            <span><span className="font-semibold">Table:</span> {order.tableLabel}</span>
+            <span><span className="font-semibold">Package:</span> {order.packageName}</span>
+            <span><span className="font-semibold">Guests:</span> {order.guestCount}</span>
+            <span><span className="font-semibold">Customer:</span> {order.customerName}</span>
+            <div className="w-full"><span className="font-semibold">Flavors:</span> {(order.selectedFlavors || []).join(', ')}</div>
           </div>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto p-1">
