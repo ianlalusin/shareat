@@ -10,8 +10,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ["Poppins", "sans-serif"],
-        headline: ["'Baloo 2'", "cursive"],
+        body: ["var(--font-body)", "sans-serif"],
+        headline: ["var(--font-headline)", "cursive"],
         code: ["monospace"],
       },
       colors: {

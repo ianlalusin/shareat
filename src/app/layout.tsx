@@ -1,7 +1,23 @@
 import type { Metadata } from "next";
+import { Baloo_2, Poppins } from 'next/font/google';
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase/client-provider";
+import { cn } from "@/lib/utils";
+
+const fontBody = Poppins({
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['400', '500', '600'],
+  variable: '--font-body',
+});
+
+const fontHeadline = Baloo_2({
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['400', '700'],
+  variable: '--font-headline',
+});
 
 export const metadata: Metadata = {
   title: "SharEat Hub",
@@ -15,12 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;700&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased">
+      <body className={cn("font-body antialiased", fontBody.variable, fontHeadline.variable)}>
         <FirebaseClientProvider>
           {children}
           <Toaster />
