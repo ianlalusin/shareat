@@ -54,23 +54,31 @@ export function PinLock({ children }: { children: React.ReactNode }) {
       inputRefs.current[index - 1]?.focus();
     }
   };
-
-  const handleSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
-    e?.preventDefault();
-    if (pin === CORRECT_PIN) {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
-      } catch (e) {
-        // localStorage not available
-      }
-      setIsAuthenticated(true);
-      setError('');
+  
+  const validatePin = (currentPin: string) => {
+    if (currentPin === CORRECT_PIN) {
+        try {
+            localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
+        } catch (e) {
+            // localStorage not available
+        }
+        setIsAuthenticated(true);
+        setError('');
     } else {
-      setError('Invalid PIN. Please try again.');
-      setPin('');
-      inputRefs.current[0]?.focus();
+        setError('Invalid PIN. Please try again.');
+        setPin('');
+        inputRefs.current[0]?.focus();
     }
-  };
+  }
+
+  useEffect(() => {
+    if (pin.length === 4) {
+      validatePin(pin);
+    }
+     if (pin.length > 0 && error) {
+      setError('');
+    }
+  }, [pin]);
 
   if (isLoading) {
     return null; // or a loading spinner
@@ -88,27 +96,22 @@ export function PinLock({ children }: { children: React.ReactNode }) {
                 <CardDescription>Enter your PIN to continue</CardDescription>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit}>
-                    <div className="flex justify-center gap-2 mb-4">
-                        {Array.from({ length: 4 }).map((_, index) => (
-                        <Input
-                            key={index}
-                            ref={(el) => (inputRefs.current[index] = el)}
-                            type="password"
-                            maxLength={1}
-                            value={pin[index] || ''}
-                            onChange={(e) => handlePinChange(index, e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(index, e)}
-                            className="h-14 w-12 text-center text-2xl font-bold"
-                            inputMode="numeric"
-                        />
-                        ))}
-                    </div>
-                    {error && <p className="text-sm text-center text-destructive mb-4">{error}</p>}
-                    <Button type="submit" className="w-full">
-                        Unlock
-                    </Button>
-                </form>
+                <div className="flex justify-center gap-2 mb-4">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                    <Input
+                        key={index}
+                        ref={(el) => (inputRefs.current[index] = el)}
+                        type="password"
+                        maxLength={1}
+                        value={pin[index] || ''}
+                        onChange={(e) => handlePinChange(index, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(index, e)}
+                        className="h-14 w-12 text-center text-2xl font-bold"
+                        inputMode="numeric"
+                    />
+                    ))}
+                </div>
+                {error && <p className="text-sm text-center text-destructive mb-4">{error}</p>}
             </CardContent>
         </Card>
       </div>
