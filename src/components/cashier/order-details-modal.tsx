@@ -99,7 +99,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
 
   const handleCloseCart = () => {
     setIsAddToCartModalOpen(false);
-  }
+  };
 
   const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
     if (!firestore) return;
