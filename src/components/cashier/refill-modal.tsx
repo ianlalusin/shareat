@@ -65,7 +65,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
         if (firestore && order.storeId) {
             const flavorsQuery = query(
                 collection(firestore, 'lists'), 
-                where('category', '==', 'meat flavors'), 
+                where('category', '==', 'meat flavor'), 
                 where('is_active', '==', true),
                 where('storeIds', 'array-contains', order.storeId)
             );
@@ -285,68 +285,69 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                         </div>
                     </TabsContent>
                     
-                    <TabsContent value="add-ons" className="flex-1 grid grid-cols-2 gap-6 overflow-hidden p-4">
-                         <div className="flex flex-col gap-4">
-                            <div className="relative">
-                                <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <ScrollArea className="flex-1 rounded-md border">
-                                <div className="p-4 space-y-2">
-                                    {availableMenuForAddons.map(item => (
-                                        <div key={item.id} className="flex items-center justify-between p-2 rounded-lg border">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-12 w-12 flex-shrink-0 bg-muted rounded-md overflow-hidden relative">
-                                                    {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
-                                                </div>
-                                                <div>
-                                                    <p className="font-semibold">{item.menuName}</p>
-                                                    <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
-                                                </div>
-                                            </div>
-                                            <Button size="sm" onClick={() => handleAddToCart(item)}>
-                                                <Plus className="h-4 w-4 mr-2" /> Add
-                                            </Button>
-                                        </div>
-                                    ))}
+                    <TabsContent value="add-ons" className="flex-1 overflow-hidden p-4">
+                        <div className="grid grid-cols-2 gap-6 h-full">
+                            <div className="flex flex-col gap-4 h-full">
+                                <div className="relative">
+                                    <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 </div>
-                            </ScrollArea>
-                        </div>
-                        <div className="flex flex-col border rounded-lg">
-                            <div className="p-4 border-b">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
-                            </div>
-                            <ScrollArea className="flex-1">
-                                {cart.length === 0 ? (
-                                    <div className="text-center text-muted-foreground p-8">Cart is empty.</div>
-                                ) : (
-                                    <div className="p-4 space-y-3">
-                                        {cart.map(item => (
-                                            <div key={item.id} className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="font-medium">{item.menuName}</p>
-                                                    <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                <ScrollArea className="flex-1 rounded-md border">
+                                    <div className="p-4 space-y-2">
+                                        {availableMenuForAddons.map(item => (
+                                            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg border">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-12 w-12 flex-shrink-0 bg-muted rounded-md overflow-hidden relative">
+                                                        {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold">{item.menuName}</p>
+                                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                    <span className="w-6 text-center font-bold">{item.quantity}</span>
-                                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateCartQuantity(item.id, 0)}><Trash2 className="h-4 w-4" /></Button>
-                                                </div>
+                                                <Button size="sm" onClick={() => handleAddToCart(item)}>
+                                                    <Plus className="h-4 w-4 mr-2" /> Add
+                                                </Button>
                                             </div>
                                         ))}
                                     </div>
-                                )}
-                            </ScrollArea>
-                            {cart.length > 0 && (
-                                <div className="p-4 border-t">
-                                    <Separator className="my-3" />
-                                    <div className="flex justify-between items-center font-semibold text-lg">
-                                        <span>Subtotal</span>
-                                        <span>{formatCurrency(cartSubtotal)}</span>
-                                    </div>
+                                </ScrollArea>
+                            </div>
+                            <div className="flex flex-col border rounded-lg h-full">
+                                <div className="p-4 border-b">
+                                    <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
                                 </div>
-                            )}
+                                <ScrollArea className="flex-1">
+                                    {cart.length === 0 ? (
+                                        <div className="text-center text-muted-foreground p-8">Cart is empty.</div>
+                                    ) : (
+                                        <div className="p-4 space-y-3">
+                                            {cart.map(item => (
+                                                <div key={item.id} className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="font-medium">{item.menuName}</p>
+                                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
+                                                        <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateCartQuantity(item.id, 0)}><Trash2 className="h-4 w-4" /></Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </ScrollArea>
+                                {cart.length > 0 && (
+                                    <div className="p-4 border-t">
+                                        <div className="flex justify-between items-center font-semibold text-lg">
+                                            <span>Subtotal</span>
+                                            <span>{formatCurrency(cartSubtotal)}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </TabsContent>
                 </Tabs>
