@@ -93,9 +93,6 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
 
   const handleCloseCart = (success: boolean) => {
     setIsAddToCartModalOpen(false);
-    if(success) {
-      onClose(); // Close the main details modal as well to refresh the view
-    }
   }
 
   return (
