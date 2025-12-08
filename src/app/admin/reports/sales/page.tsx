@@ -43,19 +43,6 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
-interface SalesReportItem {
-  menuItemId: string;
-  menuName: string;
-  category: string;
-  quantitySold: number;
-  totalSales: number;
-}
-
-interface ChartDataItem {
-  date: string;
-  total: number;
-}
-
 function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose }: { order: Order | null, store: Store | null, items: OrderItem[], transactions: OrderTransaction[], isOpen: boolean, onClose: () => void }) {
     if (!order) return null;
 
