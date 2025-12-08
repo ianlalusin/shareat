@@ -82,6 +82,10 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
     }
   };
 
+  const removeItem = (itemId: string) => {
+    setCart(prevCart => prevCart.filter(item => item.id !== itemId));
+  };
+
   const handleClearCart = () => {
     setCart([]);
   }
@@ -184,6 +188,9 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, item.quantity + 1)}>
                                         <Plus className="h-4 w-4" />
                                     </Button>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeItem(item.id)}>
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
                                 </div>
                             </div>
                         ))}
@@ -218,4 +225,3 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
     </Dialog>
   );
 }
-
