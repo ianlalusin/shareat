@@ -139,11 +139,6 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   }, [refillItems]);
 
 
-  const handleBuzz = () => {
-    console.log(`Buzzing kitchen for order ${order.id} for pending items!`);
-    alert(`Kitchen has been notified about ${pendingItems.length} item(s).`);
-  }
-
   const handleCloseCart = () => {
     setIsAddToCartModalOpen(false);
   };
@@ -155,7 +150,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         <DialogHeader>
           <DialogTitle>Order Details</DialogTitle>
           <div className="text-sm text-muted-foreground pt-1 flex flex-wrap gap-x-4 gap-y-1">
-            <span><span className="font-semibold">Table:</span> {order.tableLabel}</span>
+            <span><span className="font-semibold">Table:</span> {order.tableName}</span>
             <span><span className="font-semibold">Package:</span> {order.packageName}</span>
             <span><span className="font-semibold">Guests:</span> {order.guestCount}</span>
             <span><span className="font-semibold">Customer:</span> {order.customerName}</span>
@@ -224,10 +219,6 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
            <div className="flex gap-2 justify-end">
              <Button variant="outline" onClick={onClose}>
                 Close
-             </Button>
-             <Button onClick={handleBuzz} disabled={pendingItems.length === 0}>
-                <BellRing className="mr-2 h-4 w-4" />
-                Buzz Kitchen
              </Button>
              <Button variant="outline" onClick={() => setIsUpdateSelectionModalOpen(true)}>
                 Update Order
