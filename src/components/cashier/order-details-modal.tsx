@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
   Dialog,
@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus, Minus, Trash2 } from 'lucide-react';
+import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { AddToCartModal } from './add-to-cart-modal';
@@ -64,12 +64,13 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
 
     const menuQuery = query(
         collection(firestore, 'menu'),
-        where('storeId', '==', order.storeId),
-        where('isAvailable', '==', true)
+        // where('storeId', '==', order.storeId), // This was causing issues, simplified for now
+        // where('isAvailable', '==', true)
     );
     const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
         const menuData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as MenuItem));
-        setMenu(menuData);
+        const filteredMenu = menuData.filter(m => m.storeId === order.storeId && m.isAvailable);
+        setMenu(filteredMenu);
     });
 
 
@@ -99,34 +100,6 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
 
   const handleCloseCart = () => {
     setIsAddToCartModalOpen(false);
-  };
-
-  const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
-    if (!firestore) return;
-    if (newQuantity <= 0) {
-      await handleDeleteItem(itemId, 'orderItems');
-      return;
-    }
-    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', itemId);
-    try {
-      await updateDoc(itemRef, { quantity: newQuantity });
-      openSuccessModal();
-    } catch (error) {
-      console.error("Error updating quantity:", error);
-    }
-  };
-
-  const handleDeleteItem = async (itemId: string, itemType: 'orderItems' | 'refills') => {
-    if (!firestore) return;
-    if (window.confirm("Are you sure you want to remove this item?")) {
-      const itemRef = doc(firestore, 'orders', order.id, itemType, itemId);
-      try {
-        await deleteDoc(itemRef);
-        openSuccessModal();
-      } catch (error) {
-        console.error("Error deleting item:", error);
-      }
-    }
   };
 
   return (
@@ -163,19 +136,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                   <div key={item.id} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
                     <div className="flex items-center gap-2">
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
-                        <span className="font-medium">{item.menuName}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}>
-                          <Minus className="h-4 w-4" />
-                      </Button>
-                      <span className="w-6 text-center font-bold">{item.quantity}</span>
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}>
-                          <Plus className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteItem(item.id, 'orderItems')}>
-                          <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <span className="font-medium">{item.quantity}x {item.menuName}</span>
                     </div>
                   </div>
                 ))}
@@ -199,9 +160,6 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                                 {calculateLapseTime(item.timestamp, item.servedTimestamp)}
                             </span>
                         )}
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteItem(item.id, 'refills')}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
                     </div>
                   </div>
                 )) : <p className="text-sm text-muted-foreground text-center py-4">No refills requested yet.</p>}
