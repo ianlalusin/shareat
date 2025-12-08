@@ -1,11 +1,11 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, GListItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { OrderTimer } from '@/components/cashier/order-timer';
 import { RefillModal } from '@/components/cashier/refill-modal';
+import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -29,6 +30,7 @@ export default function RefillPage() {
     const [tables, setTables] = useState<TableType[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menu, setMenu] = useState<MenuItem[]>([]);
+    const [refills, setRefills] = useState<Record<string, RefillItem[]>>({});
     
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
@@ -49,6 +51,15 @@ export default function RefillPage() {
             const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
                 const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
                 setOrders(ordersData);
+                
+                // For each active order, listen to its refills
+                ordersData.forEach(order => {
+                    const refillsQuery = query(collection(firestore, 'orders', order.id, 'refills'));
+                    onSnapshot(refillsQuery, (refillSnapshot) => {
+                        const refillData = refillSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data()}) as RefillItem);
+                        setRefills(prev => ({ ...prev, [order.id]: refillData }));
+                    });
+                });
             });
             
             const menuQuery = query(
@@ -103,10 +114,16 @@ export default function RefillPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {tables.map(table => {
                 const order = orders.find(o => o.id === table.activeOrderId);
+                const orderRefills = refills[order?.id || ''] || [];
+                const lastRefill = orderRefills.length > 0 
+                    ? orderRefills.reduce((latest, current) => 
+                        (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
+                    ) : null;
+                
                 return (
                     <Card 
                         key={table.id} 
-                        className="bg-muted/30 cursor-pointer hover:shadow-lg transition-shadow"
+                        className="bg-muted/30 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
                         onClick={() => handleTableClick(table)}
                     >
                         <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
@@ -114,15 +131,23 @@ export default function RefillPage() {
                                 <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
                                 <p className="text-xs text-muted-foreground font-medium">{order?.packageName}</p>
                             </div>
-                            <Badge className={cn("text-white", getStatusColor(table.status))}>
+                           <Badge className={cn("text-white", getStatusColor(table.status))}>
                                 {table.status}
-                            </Badge>
+                           </Badge>
                         </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                            <div className="text-sm">
-                                <p><span className="font-semibold">Customer:</span> {order?.customerName || 'N/A'}</p>
+                        <CardContent className="p-4 pt-0 flex-grow">
+                            <div className="text-sm space-y-1">
                                 <p><span className="font-semibold">Guests:</span> {order?.guestCount || 'N/A'}</p>
                                 <OrderTimer startTime={order?.orderTimestamp} />
+                                {lastRefill ? (
+                                    <div className="pt-2">
+                                        <p className="font-semibold text-xs text-muted-foreground">Last Refill:</p>
+                                        <p>{lastRefill.quantity}x {lastRefill.menuName}</p>
+                                        <LastRefillTimer refillTime={lastRefill.timestamp} />
+                                    </div>
+                                ) : (
+                                    <p className="pt-2 text-sm text-muted-foreground">No refills yet.</p>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
