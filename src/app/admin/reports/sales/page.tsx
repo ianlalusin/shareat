@@ -516,3 +516,11 @@ export default function SalesReportPage() {
     </>
   );
 }
+
+interface SalesReportItem {
+  menuItemId: string;
+  menuName: string;
+  category: string;
+  quantitySold: number;
+  totalSales: number;
+}
