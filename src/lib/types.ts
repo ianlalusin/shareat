@@ -137,6 +137,10 @@ export type Order = {
   initialItems: { name: string; quantity: number }[];
   packageName: string;
   selectedFlavors: string[];
+  receiptDetails?: {
+    receiptNumber: string;
+    cashierName: string;
+  };
 };
 
 // Represents only PAID items for an order
@@ -180,4 +184,16 @@ export type OrderTransaction = {
   timestamp: Timestamp; 
 };
 
+export type ReceiptSettings = {
+    id: string; // Same as storeId
+    logoUrl?: string;
+    receiptNumberPrefix: string;
+    nextReceiptNumber: number;
+    showStoreAddress: boolean;
+    showContactInfo: boolean;
+    showTinNumber: boolean;
+    footerNotes?: string;
+    printerType: 'thermal' | 'standard';
+    paperWidth: '58mm' | '80mm';
+};
     

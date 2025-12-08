@@ -17,9 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
-import { Order, Store, OrderTransaction } from '@/lib/types';
+import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
 import { useFirestore } from '@/firebase';
-import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where } from 'firebase/firestore';
+import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import { useSuccessModal } from '@/store/use-success-modal';
 
 interface Payment {
@@ -107,41 +107,64 @@ export function PaymentModal({
     setIsProcessing(true);
 
     try {
-      const batch = writeBatch(firestore);
+      // ** Future logic will go here **
+      // This transaction will ensure we safely get and update the receipt number.
+      await runTransaction(firestore, async (transaction) => {
+        // 1. Get receipt settings for the store
+        // const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
+        // const settingsSnap = await transaction.get(settingsRef);
+        // if (!settingsSnap.exists()) {
+        //   throw new Error("Receipt settings for this store not found!");
+        // }
+        // const settings = settingsSnap.data() as ReceiptSettings;
+        // const nextNumber = settings.nextReceiptNumber;
 
-      // 1. Add payment transactions to Firestore
-      const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
-      payments.forEach(payment => {
-        const paymentData: Omit<OrderTransaction, 'id'> = {
-          orderId: order.id,
-          type: 'Payment',
-          amount: parseCurrency(payment.amount),
-          method: payment.method,
-          timestamp: serverTimestamp(),
-        };
-        batch.set(doc(transactionsRef), paymentData);
+        // 2. Format receipt number
+        // const receiptNumber = `${settings.receiptNumberPrefix}${String(nextNumber).padStart(6, '0')}`;
+        
+        // 3. Prepare receipt details
+        // const receiptDetails = {
+        //   receiptNumber: receiptNumber,
+        //   cashierName: 'Current User Name' // Placeholder
+        // };
+
+        // --- Start of existing batch logic ---
+        const batch = writeBatch(firestore);
+
+        const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
+        payments.forEach(payment => {
+          const paymentData: Omit<OrderTransaction, 'id'> = {
+            orderId: order.id,
+            type: 'Payment',
+            amount: parseCurrency(payment.amount),
+            method: payment.method,
+            timestamp: serverTimestamp(),
+          };
+          batch.set(doc(transactionsRef), paymentData);
+        });
+        
+        const orderRef = doc(firestore, 'orders', order.id);
+        batch.update(orderRef, {
+            status: 'Completed',
+            completedTimestamp: serverTimestamp(),
+            totalAmount: totalAmount,
+            // receiptDetails: receiptDetails, // Save the new receipt details
+        });
+
+        const tablesRef = collection(firestore, 'tables');
+        const q = query(tablesRef, where('storeId', '==', order.storeId), where('activeOrderId', '==', order.id));
+        const tableSnapshot = await getDocs(q);
+        if (!tableSnapshot.empty) {
+            const tableDoc = tableSnapshot.docs[0];
+            batch.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
+        }
+        
+        // 4. Update the receipt number counter in settings
+        // transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
+
+        await batch.commit();
       });
-      
-      // 2. Update order status to 'Completed'
-      const orderRef = doc(firestore, 'orders', order.id);
-      batch.update(orderRef, {
-          status: 'Completed',
-          completedTimestamp: serverTimestamp(),
-          totalAmount: totalAmount, // Final total including discounts/charges
-      });
 
-      // 3. Update table status to 'Available'
-      const tablesRef = collection(firestore, 'tables');
-      const q = query(tablesRef, where('storeId', '==', order.storeId), where('activeOrderId', '==', order.id));
-      const tableSnapshot = await getDocs(q);
-      if (!tableSnapshot.empty) {
-          const tableDoc = tableSnapshot.docs[0];
-          batch.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
-      }
-
-      await batch.commit();
-
-      // Placeholder for hardware interactions & success UI
       console.log('--- FINALIZATION ACTIONS (STUBBED) ---');
       console.log('Open cash drawer if connected...');
       console.log('Print receipt if printer is available...');
@@ -238,4 +261,3 @@ export function PaymentModal({
     </Dialog>
   );
 }
-
