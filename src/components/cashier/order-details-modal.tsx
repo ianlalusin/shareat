@@ -96,7 +96,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
     alert(`Kitchen has been notified about ${pendingItems.length} item(s).`);
   }
 
-  const handleCloseCart = (success: boolean) => {
+  const handleCloseCart = () => {
     setIsAddToCartModalOpen(false);
   }
 

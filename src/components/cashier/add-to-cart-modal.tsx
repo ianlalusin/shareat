@@ -23,7 +23,7 @@ import { useSuccessModal } from '@/store/use-success-modal';
 
 interface AddToCartModalProps {
   isOpen: boolean;
-  onClose: (success: boolean) => void;
+  onClose: () => void;
   order: Order;
   menu: MenuItem[];
 }
@@ -114,7 +114,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
 
         await batch.commit();
         openSuccessModal();
-        onClose(true);
+        onClose();
 
     } catch (error) {
         console.error("Error adding items to order:", error);
@@ -123,7 +123,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={() => onClose(false)}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Add Items to Order</DialogTitle>
@@ -213,7 +213,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                 <Trash2 className="mr-2 h-4 w-4" /> Clear
             </Button>
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => onClose(false)}>
+              <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
               <Button type="button" onClick={handleAddToOrder} disabled={cart.length === 0}>
