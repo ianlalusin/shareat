@@ -51,7 +51,9 @@ function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose
         setCalculatedSubtotal(subtotal);
     }, [items]);
     
-    if (!order) return null;
+    if (!order) {
+        return null;
+    }
 
     const adjustments = transactions.filter(t => t.type === 'Discount' || t.type === 'Charge');
     const payments = transactions.filter(t => t.type === 'Payment');
@@ -222,16 +224,20 @@ export default function SalesReportPage() {
       const transData = transSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderTransaction);
       setTransactions(transData);
 
-      const orderItemsQuery = query(
-          collectionGroup(firestore, 'orderItems'),
-          where('orderId', 'in', orderIds)
-      );
-      const itemsSnapshot = await getDocs(orderItemsQuery);
-      const items = itemsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderItem);
-      setOrderItems(items);
+      const orderItemsSnapshot = await getDocs(collectionGroup(firestore, 'orderItems'));
+      const allItems = orderItemsSnapshot.docs.map(doc => {
+          const orderRef = doc.ref.parent.parent;
+          const orderId = orderRef ? orderRef.id : null;
+          return {
+              id: doc.id,
+              orderId,
+              ...doc.data(),
+          } as OrderItem;
+      }).filter(item => item.orderId && orderIds.includes(item.orderId));
+      setOrderItems(allItems);
 
       const aggregatedData = new Map<string, SalesReportItem>();
-      for (const item of items) {
+      for (const item of allItems) {
           const existing = aggregatedData.get(item.menuItemId);
           const saleAmount = item.quantity * item.priceAtOrder;
           if (existing) {
