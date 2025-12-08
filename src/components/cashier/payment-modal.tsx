@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -20,7 +19,6 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
-import { useSuccessModal } from '@/store/use-success-modal';
 
 interface Payment {
   id: number;
@@ -47,9 +45,9 @@ export function PaymentModal({
 }: PaymentModalProps) {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const firestore = useFirestore();
   const auth = useAuth();
-  const { openSuccessModal } = useSuccessModal();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
   const balance = totalAmount - totalPaid;
@@ -70,6 +68,8 @@ export function PaymentModal({
           method: defaultMethod,
         },
       ]);
+      setErrorMessage(null);
+      setIsProcessing(false);
     }
   }, [isOpen, totalAmount, store.mopAccepted]);
   
@@ -93,9 +93,10 @@ export function PaymentModal({
   const addPaymentLine = () => {
     if (availableMops.length === 0) return;
     const newId = (payments[payments.length - 1]?.id || 0) + 1;
+    const remainingBalance = balance > 0 ? formatCurrency(balance).replace('₱', '') : '0.00';
     setPayments([
       ...payments,
-      { id: newId, amount: formatCurrency(balance).replace('₱', ''), method: availableMops[0] },
+      { id: newId, amount: remainingBalance, method: availableMops[0] },
     ]);
   };
   
@@ -106,16 +107,27 @@ export function PaymentModal({
   const handleFinalize = async () => {
     if (!firestore || balance > 0.01) return;
     setIsProcessing(true);
+    setErrorMessage(null);
     const user = auth?.currentUser;
 
     try {
-        // Find the table associated with the order *before* starting the transaction
         const tablesRef = collection(firestore, 'tables');
         const q = query(tablesRef, where('storeId', '==', order.storeId), where('activeOrderId', '==', order.id));
         const tableSnapshot = await getDocs(q);
         const tableDoc = tableSnapshot.empty ? null : tableSnapshot.docs[0];
 
         await runTransaction(firestore, async (transaction) => {
+            const orderRef = doc(firestore, 'orders', order.id);
+            const orderSnap = await transaction.get(orderRef);
+
+            if (!orderSnap.exists()) {
+              throw new Error("Order not found");
+            }
+            const orderData = orderSnap.data() as Order;
+            if (orderData.status === "Completed") {
+              throw new Error("This order has already been completed.");
+            }
+
             const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
             const settingsSnap = await transaction.get(settingsRef);
 
@@ -129,59 +141,69 @@ export function PaymentModal({
             const receiptDetails = {
                 receiptNumber: receiptNumber,
                 cashierName: user?.displayName || user?.email || 'System',
+                cashierUid: user?.uid || null,
+                printedAt: serverTimestamp(),
+                totalAmount: totalAmount,
+                totalPaid: totalPaid,
+                change: change,
             };
 
-            // Transactions can only operate on documents, not queries. 
-            // We can only update the table if we found it before the transaction.
             if (tableDoc) {
                 transaction.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
             }
 
-            // Create Payment Transaction records
             const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
+            const paymentSummary: { method: string; amount: number }[] = [];
+
             payments.forEach(payment => {
+                const amount = parseCurrency(payment.amount);
+                paymentSummary.push({ method: payment.method, amount });
+
                 const newPaymentRef = doc(transactionsRef);
                 const paymentData: Omit<OrderTransaction, 'id'> = {
                     orderId: order.id,
+                    storeId: order.storeId,
                     type: 'Payment',
-                    amount: parseCurrency(payment.amount),
+                    amount: amount,
                     method: payment.method,
                     timestamp: serverTimestamp(),
+                    cashierUid: user?.uid || null,
                 };
                 transaction.set(newPaymentRef, paymentData);
             });
             
-            // Update Order to Completed
-            const orderRef = doc(firestore, 'orders', order.id);
             transaction.update(orderRef, {
                 status: 'Completed',
                 completedTimestamp: serverTimestamp(),
                 totalAmount: totalAmount,
+                totalPaid: totalPaid,
+                change: change,
+                paymentSummary: paymentSummary,
                 receiptDetails: receiptDetails,
             });
 
-            // Update the receipt number counter in settings
             transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
         });
-
-      console.log('--- FINALIZATION ACTIONS (STUBBED) ---');
-      console.log('Open cash drawer if connected...');
-      console.log('Print receipt if printer is available...');
-      console.log('------------------------------------');
       
       onFinalizeSuccess();
 
     } catch (error) {
       console.error("Failed to finalize bill: ", error);
-      alert("An error occurred during finalization. Please check the console.");
+      setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred during finalization.");
     } finally {
       setIsProcessing(false);
     }
   }
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open && !isProcessing) {
+      onClose();
+    }
+  };
+
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Payment</DialogTitle>
@@ -210,7 +232,6 @@ export function PaymentModal({
                                 <SelectValue placeholder="Payment Method" />
                             </SelectTrigger>
                             <SelectContent>
-                                {/* Allow current method to be selected */}
                                 <SelectItem value={payment.method}>{payment.method}</SelectItem>
                                 {availableMops.map(mop => (
                                     <SelectItem key={mop} value={mop}>{mop}</SelectItem>
@@ -226,7 +247,7 @@ export function PaymentModal({
                 ))}
             </div>
 
-            {balance > 0.009 && ( // Use small tolerance for float comparison
+            {balance > 0.009 && (
                 <div className='flex justify-between items-center'>
                     <span className='text-sm text-destructive font-medium'>Balance Remaining: {formatCurrency(balance)}</span>
                     {availableMops.length > 0 && (
@@ -242,6 +263,13 @@ export function PaymentModal({
                     <span className='font-semibold text-green-700 dark:text-green-300'>Change Due</span>
                     <span className='font-bold text-lg text-green-700 dark:text-green-300'>{formatCurrency(change)}</span>
                 </div>
+            )}
+            
+            {errorMessage && (
+              <Alert variant="destructive" className="mt-4">
+                <AlertTitle>Payment Error</AlertTitle>
+                <AlertDescription>{errorMessage}</AlertDescription>
+              </Alert>
             )}
         </div>
         <DialogFooter className="flex-row justify-end gap-2">

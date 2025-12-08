@@ -141,7 +141,15 @@ export type Order = {
   receiptDetails?: {
     receiptNumber: string;
     cashierName: string;
+    cashierUid?: string | null;
+    printedAt?: Timestamp;
+    totalAmount?: number;
+    totalPaid?: number;
+    change?: number;
   };
+  totalPaid?: number;
+  change?: number;
+  paymentSummary?: { method: string; amount: number }[];
 };
 
 // Represents only PAID items for an order
@@ -178,11 +186,13 @@ export type RefillItem = {
 export type OrderTransaction = {
   id: string;
   orderId: string;
+  storeId: string;
   type: 'Payment' | 'Discount' | 'Charge';
   amount: number;
   method?: string; // e.g., 'Cash', 'Card', or from G.List for MOP
   notes?: string;
   timestamp: Timestamp; 
+  cashierUid?: string | null;
 };
 
 export type ReceiptSettings = {
