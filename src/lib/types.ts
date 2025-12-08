@@ -15,6 +15,7 @@ export type Store = {
   mopAccepted: string[];
   openingDate?: string;
   tableLocations: string[];
+  tinNumber?: string;
 };
 
 export type GListItem = {

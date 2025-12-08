@@ -48,6 +48,7 @@ const initialStoreState: Omit<Store, 'id'> = {
   logo: '',
   openingDate: '',
   tableLocations: [],
+  tinNumber: '',
 };
 
 export default function NewStorePage() {
@@ -231,6 +232,10 @@ export default function NewStorePage() {
                     <div className="md:col-span-2 space-y-2">
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tinNumber">TIN No.</Label>
+                      <Input id="tinNumber" name="tinNumber" value={formData.tinNumber || ''} onChange={handleInputChange} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>

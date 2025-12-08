@@ -282,6 +282,10 @@ export default function EditStorePage() {
                       <Label htmlFor="address">Address</Label>
                       <Input id="address" name="address" value={formData.address} onChange={handleInputChange} required />
                     </div>
+                     <div className="space-y-2">
+                      <Label htmlFor="tinNumber">TIN No.</Label>
+                      <Input id="tinNumber" name="tinNumber" value={formData.tinNumber || ''} onChange={handleInputChange} />
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="openingDate">Opening Date</Label>
                       <Input id="openingDate" name="openingDate" value={formData.openingDate || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />

@@ -153,6 +153,10 @@ export default function StoreDetailPage() {
                 <p>{store.address}</p>
             </div>
             <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">TIN No.</p>
+                <p>{store.tinNumber || 'N/A'}</p>
+            </div>
+            <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Opening Date</p>
                 <p>{store.openingDate || 'N/A'}</p>
             </div>
@@ -208,4 +212,3 @@ export default function StoreDetailPage() {
     </main>
   );
 }
-
