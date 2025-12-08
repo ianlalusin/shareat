@@ -232,14 +232,14 @@ export default function MenuPage() {
         setFormData(prev => ({
             ...prev,
             cost: selectedInventoryItem.costPerUnit,
-            price: product?.defaultPrice || prev.price,
+            price: prev.price === 0 ? (product?.defaultPrice || 0) : prev.price,
             barcode: selectedInventoryItem.sku,
             unit: selectedInventoryItem.unit
         }));
-        setDisplayValues({
+        setDisplayValues(prev => ({
             cost: formatCurrency(selectedInventoryItem.costPerUnit),
-            price: formatCurrency(product?.defaultPrice || formData.price),
-        });
+            price: formatCurrency(prev.price === 0 ? (product?.defaultPrice || 0) : prev.price),
+        }));
       } else {
          setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
       }
@@ -483,7 +483,7 @@ export default function MenuPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="price">Price</Label>
-                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required disabled={formData.trackInventory && selectedInventoryItem?.itemType === 'saleable'}/>
+                    <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="unit">Unit</Label>
