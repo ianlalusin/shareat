@@ -9,9 +9,7 @@ import {
   query,
   where,
   onSnapshot,
-  doc,
-  getDoc,
-  collectionGroup,
+  Unsubscribe,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { OrderItem, RefillItem, Order } from '@/lib/types';
@@ -43,73 +41,57 @@ export default function KitchenPage() {
 
     const ordersUnsubscribe = onSnapshot(activeOrdersQuery, (ordersSnapshot) => {
       const activeOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
-      const activeOrderIds = activeOrders.map(o => o.id);
+      
+      // An object to hold all items from all active orders
+      let allItems: Record<string, KitchenItem> = {};
+      
+      // An array to hold all unsubscribe functions for item/refill listeners
+      let itemListeners: Unsubscribe[] = [];
 
-      if (activeOrderIds.length === 0) {
+      if (activeOrders.length === 0) {
         setItems([]);
         return;
       }
       
-      const allItems: KitchenItem[] = [];
-
       // Create a map of orderId to order data for quick lookup
       const ordersMap = new Map(activeOrders.map(o => [o.id, o]));
-
-      // Helper function to process snapshots for items/refills
-      const processSnapshot = (snapshot: any, itemType: 'orderItem' | 'refillItem') => {
-        snapshot.docChanges().forEach((change: any) => {
-          const docData = change.doc.data();
-          const orderId = change.doc.ref.parent.parent.id;
-
-          // Only process items that belong to one of the active orders
-          if (activeOrderIds.includes(orderId)) {
-            const newItem: KitchenItem = {
-              ...docData,
-              id: change.doc.id,
-              orderId: orderId,
-              order: ordersMap.get(orderId)
-            };
-
-            const existingIndex = allItems.findIndex(i => i.id === newItem.id);
-
-            if (change.type === 'added' || change.type === 'modified') {
-              if (existingIndex > -1) {
-                allItems[existingIndex] = newItem;
-              } else {
-                allItems.push(newItem);
-              }
-            } else if (change.type === 'removed') {
-              if (existingIndex > -1) {
-                allItems.splice(existingIndex, 1);
-              }
-            }
-          }
-        });
-
-         // Filter only for pending items and update the state
-        setItems([...allItems].filter(item => item.status === 'Pending'));
-      };
-
-      // 2. Listen to subcollections (orderItems and refills)
-      const orderItemsQuery = query(
-        collectionGroup(firestore, 'orderItems'),
-        where('storeId', '==', selectedStoreId)
-      );
-      const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => processSnapshot(snapshot, 'orderItem'));
-
-      const refillsQuery = query(
-        collectionGroup(firestore, 'refills'),
-        where('storeId', '==', selectedStoreId)
-      );
-      const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => processSnapshot(snapshot, 'refillItem'));
       
-      // Return cleanup function
+      // 2. For each active order, listen to its subcollections
+      activeOrders.forEach(order => {
+        const orderId = order.id;
+
+        // Listen to orderItems
+        const orderItemsQuery = query(collection(firestore, 'orders', orderId, 'orderItems'), where('status', '==', 'Pending'));
+        const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => {
+            snapshot.docs.forEach(doc => {
+                 const itemData = { ...doc.data(), id: doc.id, orderId, order: ordersMap.get(orderId) } as KitchenItem;
+                 allItems[itemData.id] = itemData;
+            });
+            // Update state with the new aggregated list
+            setItems(Object.values(allItems));
+        });
+        itemListeners.push(orderItemsUnsubscribe);
+
+        // Listen to refills
+        const refillsQuery = query(collection(firestore, 'orders', orderId, 'refills'), where('status', '==', 'Pending'));
+        const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => {
+            snapshot.docs.forEach(doc => {
+                const itemData = { ...doc.data(), id: doc.id, orderId, order: ordersMap.get(orderId) } as KitchenItem;
+                allItems[itemData.id] = itemData;
+            });
+             // Update state with the new aggregated list
+            setItems(Object.values(allItems));
+        });
+        itemListeners.push(refillsUnsubscribe);
+      });
+      
+      // Cleanup function for when active orders change
       return () => {
-        orderItemsUnsubscribe();
-        refillsUnsubscribe();
+        itemListeners.forEach(unsub => unsub());
       };
     });
 
+    // Main cleanup function
     return () => {
       ordersUnsubscribe();
       setItems([]);
