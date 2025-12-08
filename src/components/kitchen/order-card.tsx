@@ -1,89 +1,104 @@
 
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import React, { useMemo } from 'react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Order, OrderItem, RefillItem } from '@/lib/types';
 import { OrderTimer } from '../cashier/order-timer';
-import { useFirestore, useAuth } from '@/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { useSuccessModal } from '@/store/use-success-modal';
-import { useToast } from '@/hooks/use-toast';
-import { Badge } from '../ui/badge';
+import { Badge } from '@/components/ui/badge';
 
-type KitchenItem = (OrderItem | RefillItem) & {
-    orderId: string;
-};
 
-interface KitchenOrderCardProps {
-    order: Order | undefined;
-    items: KitchenItem[];
+type KitchenItem = (OrderItem | RefillItem) & { orderId: string };
+
+interface Props {
+  order?: Order;
+  items: KitchenItem[];
+  onServeItem?: (item: KitchenItem) => void;
 }
 
-export function KitchenOrderCard({ order, items }: KitchenOrderCardProps) {
-    const firestore = useFirestore();
-    const auth = useAuth();
-    const { openSuccessModal } = useSuccessModal();
-    const { toast } = useToast();
+function KitchenOrderCardBase({ order, items, onServeItem }: Props) {
+  const tableLabel = order?.tableName || `Order ${order?.id?.slice(-4) || ''}`;
 
-    const handleServeItem = async (item: KitchenItem) => {
-        if (!firestore) return;
-        
-        // Determine if it's a refill or a regular order item by checking for a unique property
-        const isRefill = !('priceAtOrder' in item);
-        const collectionName = isRefill ? 'refills' : 'orderItems';
-        const user = auth?.currentUser;
+  const displayItems = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; quantity: number; items: KitchenItem[] }
+    >();
+    items.forEach((i) => {
+      const key = i.menuName;
+      const existing = map.get(key);
+      if (existing) {
+        existing.quantity += i.quantity;
+        existing.items.push(i);
+      } else {
+        map.set(key, { name: i.menuName, quantity: i.quantity, items: [i] });
+      }
+    });
+    return Array.from(map.values());
+  }, [items]);
+  
+  const handleServeGroup = (groupItems: KitchenItem[]) => {
+      if(onServeItem){
+        groupItems.forEach(item => onServeItem(item));
+      }
+  }
 
-        const itemRef = doc(firestore, 'orders', item.orderId, collectionName, item.id);
-
-        try {
-            await updateDoc(itemRef, {
-                status: 'Served',
-                servedAt: serverTimestamp(),
-                servedBy: user?.displayName || user?.email || 'Kitchen',
-            });
-            openSuccessModal();
-        } catch (error) {
-            toast({
-                variant: "destructive",
-                title: "Update Failed",
-                description: "Could not update the item status.",
-            });
-        }
-    };
-    
-    if (!order) return null;
 
   return (
     <Card className="flex flex-col bg-background">
-      <CardHeader>
-        <div className="flex justify-between items-start">
-            <div>
-                <CardTitle className="text-xl font-bold">{order.tableName}</CardTitle>
-                <CardDescription className="font-medium">{order.customerName}</CardDescription>
-            </div>
-            <OrderTimer startTime={order.orderTimestamp} />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div>
+          <p className="text-lg font-bold">{tableLabel}</p>
+          {order?.customerName && (
+            <p className="text-xs text-muted-foreground">
+              {order.customerName}
+            </p>
+          )}
         </div>
-        {order.kitchenNote && (
-            <div className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900/40 border border-yellow-300 dark:border-yellow-700 rounded-md text-sm">
-                <strong>Order Note:</strong> {order.kitchenNote}
-            </div>
-        )}
+        <div className="text-right">
+          <p className="text-xs font-semibold">Time:</p>
+          <OrderTimer startTime={order?.orderTimestamp} />
+        </div>
       </CardHeader>
-      <CardContent className="flex-grow space-y-2">
-        {items.map(item => (
-            <div key={item.id} className="p-3 rounded-md bg-amber-100 dark:bg-amber-900/30">
-                <div className="flex items-center justify-between">
-                    <div className="font-semibold">
-                        <span className="text-lg">{item.quantity}x</span> {item.menuName}
-                    </div>
-                    <Button size="sm" onClick={() => handleServeItem(item)}>Serve</Button>
+      <CardContent className="space-y-2 pb-4">
+        {order?.kitchenNote && (
+          <div className="mt-2 rounded-md border border-dashed border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-2 text-xs">
+            <Badge variant="outline" className="mr-2 border-yellow-400">
+              Note
+            </Badge>
+            {order.kitchenNote}
+          </div>
+        )}
+        {displayItems.map(({ name, quantity, items: groupItems }) => {
+            const kitchenNote = groupItems[0]?.kitchenNote;
+            const priority = groupItems[0]?.priority;
+
+            return (
+              <div
+                key={name}
+                className="rounded-md bg-amber-50 dark:bg-amber-900/30 px-4 py-3"
+              >
+                 <div className="flex items-center justify-between">
+                    <p className="font-semibold">
+                      {quantity}x {name}
+                    </p>
+                    <Button
+                      size="sm"
+                      className="bg-destructive hover:bg-destructive/90"
+                      onClick={() => handleServeGroup(groupItems)}
+                    >
+                      Serve
+                    </Button>
                 </div>
-                 {item.priority === 'rush' && <Badge variant="destructive" className="mt-1">RUSH</Badge>}
-                {item.kitchenNote && <p className="text-xs italic text-red-600 dark:text-red-400 mt-1 pl-1">Note: {item.kitchenNote}</p>}
-            </div>
-        ))}
+                 {priority === 'rush' && <Badge variant="destructive" className="mt-1">RUSH</Badge>}
+                {kitchenNote && <p className="text-xs italic text-red-600 dark:text-red-400 mt-1 pl-1">Note: {kitchenNote}</p>}
+              </div>
+            )
+        })}
       </CardContent>
     </Card>
   );
 }
+
+export const KitchenOrderCard = React.memo(KitchenOrderCardBase);
