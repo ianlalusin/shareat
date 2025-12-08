@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PlusCircle, Minus, Plus, ChevronDown } from 'lucide-react';
+import { PlusCircle, Minus, Plus, ChevronDown, Loader2 } from 'lucide-react';
 import { Table as TableType, MenuItem, Order, OrderItem, GListItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -23,6 +23,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface NewOrderModalProps {
     isOpen: boolean;
@@ -37,7 +38,7 @@ interface NewOrderModalProps {
       selectedFlavors: string[];
       rice: number;
       cheese: number;
-    }) => void;
+    }) => Promise<void>;
 }
 
 export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateOrder }: NewOrderModalProps) {
@@ -48,26 +49,29 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
     const [cheese, setCheese] = useState(2);
     const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
     const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     
     const firestore = useFirestore();
 
     const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
     
     useEffect(() => {
-        if(firestore && storeId) {
-            const flavorsQuery = query(
-                collection(firestore, 'lists'),
-                where('category', '==', 'meat flavor'),
-                where('is_active', '==', true),
-                where('storeIds', 'array-contains', storeId)
-            );
-            const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
-                const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem);
-                setFlavorOptions(flavors);
-            });
-            return () => unsubscribe();
-        }
-    }, [firestore, storeId]);
+        if(!isOpen || !firestore || !storeId) return;
+
+        const flavorsQuery = query(
+            collection(firestore, 'lists'),
+            where('category', '==', 'meat flavor'),
+            where('is_active', '==', true),
+            where('storeIds', 'array-contains', storeId)
+        );
+        const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
+            const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem);
+            setFlavorOptions(flavors);
+        });
+        return () => unsubscribe();
+        
+    }, [isOpen, firestore, storeId]);
 
     useEffect(() => {
         // Reset state when modal opens
@@ -78,6 +82,8 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
             setRice(2);
             setCheese(2);
             setSelectedFlavors([]);
+            setError(null);
+            setIsSubmitting(false);
         }
     }, [isOpen]);
 
@@ -87,8 +93,10 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
     }, [guestCount]);
 
 
-    const handleClose = () => {
-        onClose();
+    const handleOpenChange = (open: boolean) => {
+        if (!open) {
+            onClose();
+        }
     };
 
     const handlePackageChange = (menuItemId: string) => {
@@ -116,24 +124,36 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
         return selectedFlavors.join(', ');
     };
     
-    const handleStartOrder = () => {
+    const handleStartOrder = async () => {
         if (!selectedPackage || selectedFlavors.length === 0) {
-            alert("Please ensure a Package and at least one Flavor are selected.");
+            setError("Please ensure a Package and at least one Flavor are selected.");
             return;
         }
-        onCreateOrder(table, {
-            customerName,
-            guestCount,
-            selectedPackage,
-            selectedFlavors,
-            rice,
-            cheese,
-        });
+
+        setIsSubmitting(true);
+        setError(null);
+
+        try {
+            await onCreateOrder(table, {
+                customerName,
+                guestCount,
+                selectedPackage,
+                selectedFlavors,
+                rice,
+                cheese,
+            });
+            onClose();
+        } catch (e) {
+            console.error("Failed to start order:", e);
+            setError("Failed to start the order. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     }
 
 
     return (
-        <Dialog open={isOpen} onOpenChange={handleClose}>
+        <Dialog open={isOpen} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>New Order for {table?.tableName}</DialogTitle>
@@ -214,13 +234,24 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
                      </div>
                 </div>
 
+                {error && (
+                    <Alert variant="destructive">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
+
             </div>
             <DialogFooter className="flex-row justify-end gap-2">
-                <Button type="button" variant="outline" onClick={handleClose}>
+                <Button type="button" variant="outline" onClick={onClose}>
                     Cancel
                 </Button>
-                <Button onClick={handleStartOrder} disabled={!selectedPackage || selectedFlavors.length === 0}>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Start Order
+                <Button onClick={handleStartOrder} disabled={isSubmitting || !selectedPackage || selectedFlavors.length === 0}>
+                    {isSubmitting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                    )}
+                    {isSubmitting ? 'Starting...' : 'Start Order'}
                 </Button>
             </DialogFooter>
         </DialogContent>
