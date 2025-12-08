@@ -1,9 +1,10 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
-import { Order, OrderItem, RefillItem } from '@/lib/types';
+import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -14,9 +15,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { AlertTriangle, BellRing, CheckCircle, Hourglass } from 'lucide-react';
+import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
+import { AddToCartModal } from './add-to-cart-modal';
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
@@ -37,7 +39,9 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const firestore = useFirestore();
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isUpdateSelectionModalOpen, setIsUpdateSelectionModalOpen] = useState(false);
+  const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
 
 
   useEffect(() => {
@@ -55,11 +59,23 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         setRefillItems(items);
     });
 
+    const menuQuery = query(
+        collection(firestore, 'menu'),
+        where('storeId', '==', order.storeId),
+        where('isAvailable', '==', true)
+    );
+    const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
+        const menuData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as MenuItem));
+        setMenu(menuData);
+    });
+
+
     return () => {
       orderItemsUnsubscribe();
       refillItemsUnsubscribe();
+      menuUnsubscribe();
     };
-  }, [firestore, order.id]);
+  }, [firestore, order.id, order.storeId]);
 
   const allItems = [...orderItems, ...refillItems].sort((a, b) => {
     if (a.timestamp && b.timestamp) {
@@ -75,6 +91,13 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
     alert(`Kitchen has been notified about ${pendingItems.length} pending item(s).`);
   }
 
+  const handleCloseCart = (success: boolean) => {
+    setIsAddToCartModalOpen(false);
+    if(success) {
+      onClose(); // Close the main details modal as well to refresh the view
+    }
+  }
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -88,7 +111,13 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         <div className="max-h-[60vh] overflow-y-auto p-1">
           <div className="grid gap-4">
             <div>
-              <h3 className="text-md font-semibold mb-2">Initial Order & Add-ons</h3>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-md font-semibold">Initial Order & Add-ons</h3>
+                <Button variant="outline" size="sm" onClick={() => setIsAddToCartModalOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Item
+                </Button>
+              </div>
               <div className="space-y-2">
                 {orderItems.map(item => (
                   <div key={item.id} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
@@ -147,6 +176,15 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {isAddToCartModalOpen && (
+      <AddToCartModal
+        isOpen={isAddToCartModalOpen}
+        onClose={handleCloseCart}
+        order={order}
+        menu={menu}
+      />
+    )}
 
     <Dialog open={isUpdateSelectionModalOpen} onOpenChange={setIsUpdateSelectionModalOpen}>
         <DialogContent>
