@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -69,6 +68,12 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
 
     const firestore = useFirestore();
     const { openSuccessModal } = useSuccessModal();
+    
+    const packageDetails = useMemo(() => {
+        return menu.find(m => m.menuName === order.packageName && m.category === 'Unlimited');
+    }, [order, menu]);
+    
+    const meatTypesForPackage = useMemo(() => packageDetails?.specialTags || [], [packageDetails]);
 
     useEffect(() => {
         if (firestore && order.storeId) {
@@ -102,12 +107,6 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
             setSearchTerm('');
         }
     }, [isOpen, meatTypesForPackage]);
-
-    const packageDetails = useMemo(() => {
-        return menu.find(m => m.menuName === order.packageName);
-    }, [order, menu]);
-    
-    const meatTypesForPackage = useMemo(() => packageDetails?.specialTags || [], [packageDetails]);
 
     const availableMenuForAddons = useMemo(() => 
         menu.filter(item => 
@@ -212,7 +211,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                     menuItemId: refill.meatType.toLowerCase(),
                     menuName: `${refill.meatType} - ${refill.flavor}`,
                     quantity: refill.quantity,
-                    targetStation: 'Hot',
+                    targetStation: 'Cold',
                     timestamp: serverTimestamp(),
                     status: 'Pending',
                 };
@@ -427,3 +426,5 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
         </Dialog>
     );
 }
+
+    
