@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 export default function StoreDetailPage() {
@@ -25,6 +26,7 @@ export default function StoreDetailPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!firestore || !storeId) return;
@@ -45,12 +47,20 @@ export default function StoreDetailPage() {
 
   const handleDelete = async () => {
     if (!firestore || !storeId) return;
+    if (!window.confirm('Are you sure you want to delete this store? This action cannot be undone.')) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
-      openSuccessModal();
+      toast({
+        title: "Success!",
+        description: "The store has been permanently deleted.",
+      });
       router.push('/admin/store');
     } catch (error) {
-      // Error is intentionally not logged
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete the store. Please try again.",
+      });
     }
   };
 

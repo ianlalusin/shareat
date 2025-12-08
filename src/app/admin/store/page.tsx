@@ -32,6 +32,7 @@ import {
 import Link from 'next/link';
 import { Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 export default function StorePage() {
@@ -39,6 +40,7 @@ export default function StorePage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore) {
@@ -53,11 +55,19 @@ export default function StorePage() {
 
   const handleDelete = async (storeId: string) => {
     if (!firestore) return;
+    if (!window.confirm('Are you sure you want to delete this store?')) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
-      openSuccessModal();
+      toast({
+        title: "Success!",
+        description: "The store has been deleted.",
+      });
     } catch (error) {
-      console.error("Error deleting document: ", error);
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete the store. Please try again.",
+      });
     }
   };
   
@@ -136,4 +146,3 @@ export default function StorePage() {
       </main>
   );
 }
-

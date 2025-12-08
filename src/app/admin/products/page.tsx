@@ -57,6 +57,7 @@ import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'> = {
   productName: '',
@@ -82,6 +83,7 @@ export default function ProductsPage() {
   const auth = useAuth();
   const storage = useStorage();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
 
   useEffect(() => {
@@ -155,13 +157,18 @@ export default function ProductsPage() {
 
     const user = auth?.currentUser;
 
-    let imageUrl = editingItem?.imageUrl || ''; // Keep existing image if not changed
+    let imageUrl = formData.imageUrl || '';
     if (imageFile) {
         try {
             const imageRef = ref(storage, `Shareat Hub/products/${Date.now()}_${imageFile.name}`);
             const snapshot = await uploadBytes(imageRef, imageFile);
             imageUrl = await getDownloadURL(snapshot.ref);
         } catch (error) {
+           toast({
+            variant: "destructive",
+            title: "Image upload failed.",
+            description: "Could not upload the product image. Please try again.",
+          });
         }
     }
 
@@ -189,6 +196,11 @@ export default function ProductsPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "There was a problem saving the product.",
+      });
     }
   };
   
@@ -208,11 +220,19 @@ export default function ProductsPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
+    if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
       await deleteDoc(doc(firestore, 'products', itemId));
-      openSuccessModal();
+      toast({
+        title: "Success!",
+        description: "The product has been deleted.",
+      });
     } catch (error) {
-      // Error is intentionally not logged
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete the product. Please try again.",
+      });
     }
   };
 

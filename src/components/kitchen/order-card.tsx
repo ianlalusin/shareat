@@ -8,6 +8,7 @@ import { OrderTimer } from '../cashier/order-timer';
 import { useFirestore } from '@/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 type KitchenItem = (OrderItem | RefillItem) & {
     orderId: string;
@@ -21,6 +22,7 @@ interface KitchenOrderCardProps {
 export function KitchenOrderCard({ order, items }: KitchenOrderCardProps) {
     const firestore = useFirestore();
     const { openSuccessModal } = useSuccessModal();
+    const { toast } = useToast();
 
     const handleServeItem = async (item: KitchenItem) => {
         if (!firestore) return;
@@ -38,8 +40,11 @@ export function KitchenOrderCard({ order, items }: KitchenOrderCardProps) {
             });
             openSuccessModal();
         } catch (error) {
-            console.error("Error serving item:", error);
-            alert("Failed to update item status.");
+            toast({
+                variant: "destructive",
+                title: "Update Failed",
+                description: "Could not update the item status.",
+            });
         }
     };
     

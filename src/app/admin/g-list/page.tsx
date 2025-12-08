@@ -51,6 +51,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -67,6 +68,7 @@ export default function GListPage() {
   const [formData, setFormData] = useState<Omit<GListItem, 'id'>>(initialItemState);
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore) {
@@ -115,10 +117,10 @@ export default function GListPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || formData.storeIds.length === 0) {
-        if (formData.storeIds.length === 0) {
-            alert('Please select at least one store.');
-        }
+    if (!firestore) return;
+
+    if (formData.storeIds.length === 0) {
+        alert('Please select at least one store.');
         return;
     }
 
@@ -134,6 +136,11 @@ export default function GListPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "There was a problem with your request.",
+      });
     }
   };
   
@@ -150,11 +157,19 @@ export default function GListPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
+    if (!window.confirm('Are you sure you want to delete this item?')) return;
     try {
       await deleteDoc(doc(firestore, 'lists', itemId));
-      openSuccessModal();
+      toast({
+        title: "Success!",
+        description: "The item has been deleted.",
+      });
     } catch (error) {
-      // Error is intentionally not logged to prevent screen freeze
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete the item. Please try again.",
+      });
     }
   };
 

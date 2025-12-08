@@ -11,7 +11,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useFirestore, useStorage } from '@/firebase';
+import { useFirestore, useStorage, useAuth } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,9 +27,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Staff, Store } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
-import { parse, isValid, format } from 'date-fns';
+import { parse, isValid } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
@@ -46,7 +47,7 @@ const initialStaffState: Omit<Staff, 'id'> = {
   employmentStatus: 'Active',
   notes: '',
   picture: '',
-  encoder: '', // This should be set to the logged-in user
+  encoder: '',
 };
 
 export default function NewStaffPage() {
@@ -56,8 +57,10 @@ export default function NewStaffPage() {
   const [dateErrors, setDateErrors] = useState<{ birthday?: string; dateHired?: string }>({});
   const firestore = useFirestore();
   const storage = useStorage();
+  const auth = useAuth();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore) {
@@ -68,6 +71,12 @@ export default function NewStaffPage() {
       return () => storesUnsubscribe();
     }
   }, [firestore]);
+  
+  useEffect(() => {
+    if (auth?.currentUser) {
+      setFormData(prev => ({...prev, encoder: auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown'}));
+    }
+  }, [auth]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -119,7 +128,16 @@ export default function NewStaffPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !storage || Object.values(dateErrors).some(e => e)) return;
+    if (!firestore || !storage || Object.values(dateErrors).some(e => e)) {
+      if (Object.values(dateErrors).some(e => e)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid Date",
+          description: "Please correct the date format (MM/DD/YYYY).",
+        });
+      }
+      return;
+    }
 
     let pictureUrl = '';
     if (pictureFile) {
@@ -128,13 +146,19 @@ export default function NewStaffPage() {
         const snapshot = await uploadBytes(pictureRef, pictureFile);
         pictureUrl = await getDownloadURL(snapshot.ref);
       } catch (error) {
-        console.error("Image upload failed:", error);
+         toast({
+          variant: "destructive",
+          title: "Image upload failed",
+          description: "Could not upload staff photo. Please try again.",
+        });
       }
     }
     
     const dataToSave = {
       ...formData,
       picture: pictureUrl,
+      birthday: formData.birthday ? parse(formData.birthday, 'MMMM dd, yyyy', new Date()) : null,
+      dateHired: formData.dateHired ? parse(formData.dateHired, 'MMMM dd, yyyy', new Date()) : null,
     };
 
     try {
@@ -142,7 +166,11 @@ export default function NewStaffPage() {
       openSuccessModal();
       router.push('/admin/staff');
     } catch (error) {
-      console.error('Error adding document: ', error);
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "There was a problem saving the new staff member.",
+      });
     }
   };
 
@@ -198,12 +226,12 @@ export default function NewStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
+                <Input id="birthday" name="birthday" value={formData.birthday as string} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired as string} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">
@@ -234,7 +262,7 @@ export default function NewStaffPage() {
               </div>
                <div className="space-y-2">
                 <Label htmlFor="encoder">Encoder</Label>
-                <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} />
+                <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} disabled />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-6">

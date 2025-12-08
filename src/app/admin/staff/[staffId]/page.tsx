@@ -27,6 +27,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 export default function StaffDetailPage() {
   const params = useParams();
@@ -41,6 +42,7 @@ export default function StaffDetailPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -63,10 +65,17 @@ export default function StaffDetailPage() {
     if (window.confirm('Are you sure you want to delete this staff member?')) {
         try {
             await deleteDoc(doc(firestore, 'staff', staffId));
-            openSuccessModal();
+            toast({
+              title: "Success!",
+              description: "The staff member has been deleted.",
+            });
             router.push('/admin/staff');
         } catch (error) {
-            // Error is intentionally not logged
+            toast({
+              variant: "destructive",
+              title: "Uh oh! Something went wrong.",
+              description: "Could not delete staff member. Please try again.",
+            });
         }
     }
   };
@@ -90,8 +99,11 @@ export default function StaffDetailPage() {
       openSuccessModal();
 
     } catch (error) {
-      console.error('Error uploading new photo: ', error);
-      alert('Failed to upload photo. Please try again.');
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "Failed to upload new photo. Please try again.",
+      });
     } finally {
       setIsUploading(false);
     }
