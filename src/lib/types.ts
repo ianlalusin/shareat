@@ -139,6 +139,7 @@ export type Order = {
   packageName: string;
   selectedFlavors: string[];
   kitchenNote?: string;
+  priority?: 'normal' | 'rush';
   receiptDetails?: {
     receiptNumber: string;
     cashierName: string;
@@ -166,7 +167,7 @@ export type OrderItem = {
   servedTimestamp?: Timestamp;
   status: 'Pending' | 'Served' | 'Cancelled';
   isRefill: boolean;
-  sourceTag?: 'initial' | 'refill' | 'addon';
+  sourceTag?: 'initial' | 'refill' | 'cashier' | 'addon';
   kitchenNote?: string;
   priority?: 'normal' | 'rush';
   servedAt?: Timestamp;
