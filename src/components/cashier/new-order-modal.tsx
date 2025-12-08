@@ -45,7 +45,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         if(firestore && storeId) {
             const flavorsQuery = query(
                 collection(firestore, 'lists'),
-                where('category', '==', 'meat flavors'),
+                where('category', '==', 'meat flavor'),
                 where('is_active', '==', true),
                 where('storeIds', 'array-contains', storeId)
             );
