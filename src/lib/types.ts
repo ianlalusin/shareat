@@ -152,6 +152,7 @@ export type OrderItem = {
   servedTimestamp?: Timestamp;
   status: 'Pending' | 'Served' | 'Cancelled';
   isRefill: boolean;
+  sourceTag?: 'cashier' | 'refill';
 };
 
 // Represents FREE refill items, kept separate for operational analysis

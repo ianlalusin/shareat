@@ -33,6 +33,7 @@ import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown } from 'lucide-r
 import { formatCurrency } from '@/lib/utils';
 import Image from 'next/image';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { Badge } from '../ui/badge';
 
 interface RefillModalProps {
   isOpen: boolean;
@@ -233,7 +234,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                     isRefill: false,
                     timestamp: serverTimestamp(),
                     status: 'Pending',
-                    targetStation: cartItem.targetStation
+                    targetStation: cartItem.targetStation,
+                    sourceTag: 'refill',
                 };
                 batch.set(newItemRef, orderItemData);
             });
@@ -274,8 +276,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                         <TabsTrigger value="add-ons">Add-ons</TabsTrigger>
                     </TabsList>
                     
-                    <TabsContent value="refill" className="flex-1 overflow-hidden p-4">
-                        <div className="grid grid-cols-2 gap-6 h-full">
+                    <TabsContent value="refill" className="flex-1 overflow-hidden p-1">
+                        <div className="grid grid-cols-2 gap-6 h-full pt-2">
                             <div className="flex flex-col gap-4">
                                 <h3 className="font-semibold">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
@@ -347,8 +349,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                         </div>
                     </TabsContent>
                     
-                    <TabsContent value="add-ons" className="flex-1 overflow-hidden p-4">
-                        <div className="grid grid-cols-2 gap-6 h-full">
+                    <TabsContent value="add-ons" className="flex-1 overflow-hidden p-1">
+                        <div className="grid grid-cols-2 gap-6 h-full pt-2">
                             <div className="flex flex-col gap-4 h-full">
                                 <div className="relative">
                                     <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -391,6 +393,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                                                         <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
                                                     </div>
                                                     <div className="flex items-center gap-2">
+                                                        <Badge variant="outline">refill</Badge>
                                                         <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
                                                         <span className="w-6 text-center font-bold">{item.quantity}</span>
                                                         <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>

@@ -20,6 +20,7 @@ import Image from 'next/image';
 import { useFirestore } from '@/firebase';
 import { writeBatch, collection, doc, serverTimestamp } from 'firebase/firestore';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { Badge } from '../ui/badge';
 
 interface AddToCartModalProps {
   isOpen: boolean;
@@ -108,7 +109,8 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                 isRefill: false,
                 timestamp: serverTimestamp(),
                 status: 'Pending',
-                targetStation: cartItem.targetStation
+                targetStation: cartItem.targetStation,
+                sourceTag: 'cashier',
             };
             batch.set(newItemRef, orderItemData);
         });
@@ -182,6 +184,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                                     <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <Badge variant="outline">cashier</Badge>
                                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
                                         <Minus className="h-4 w-4" />
                                     </Button>
