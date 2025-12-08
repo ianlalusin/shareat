@@ -79,6 +79,9 @@ export default function SalesReportPage() {
         setActiveOrders(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order));
       });
 
+      // Initial report generation
+      handleGenerateReport();
+
       return () => activeUnsubscribe();
     }
   }, [firestore, selectedStoreId]);
@@ -164,11 +167,6 @@ export default function SalesReportPage() {
       setLoading(false);
     }
   };
-  
-  useEffect(() => {
-    // Auto-generate report when date range changes
-    handleGenerateReport();
-  }, [dateRange, firestore, selectedStoreId]);
 
   const totalRevenue = transactions.filter(t => t.type === 'Payment').reduce((sum, item) => sum + item.amount, 0);
   const totalReceipts = completedOrders.length;
@@ -216,7 +214,13 @@ export default function SalesReportPage() {
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Sales Report
         </h1>
-        <DateRangePicker onUpdate={setDateRange} />
+        <div className="flex items-center gap-2">
+            <DateRangePicker onUpdate={setDateRange} />
+            <Button onClick={handleGenerateReport} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Generate Report
+            </Button>
+        </div>
       </div>
 
        {error && (
@@ -256,7 +260,7 @@ export default function SalesReportPage() {
                 </CardContent>
             </Card>
           </SheetTrigger>
-          <SheetContent className="sm:max-w-lg">
+          <SheetContent className="sm:max-w-md">
              <SheetHeader>
                 <SheetTitle>Receipts</SheetTitle>
                 <SheetDescription>
