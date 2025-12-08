@@ -151,39 +151,59 @@ export default function ReceiptSettingsPage() {
                         <CardDescription>Customize the look and numbering of your receipts for {store?.storeName || 'the selected store'}.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                             <div className="space-y-2">
-                                <Label htmlFor="receiptNumberPrefix">Receipt No. Prefix</Label>
-                                <Input id="receiptNumberPrefix" name="receiptNumberPrefix" value={settings.receiptNumberPrefix} onChange={handleInputChange} placeholder="e.g., LIPA-"/>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="receiptNumberPrefix">Receipt No. Prefix</Label>
+                                        <Input id="receiptNumberPrefix" name="receiptNumberPrefix" value={settings.receiptNumberPrefix} onChange={handleInputChange} placeholder="e.g., LIPA-"/>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="nextReceiptNumber">Next Receipt Number</Label>
+                                        <Input id="nextReceiptNumber" name="nextReceiptNumber" type="number" value={settings.nextReceiptNumber} onChange={handleInputChange} min="1"/>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <Label>Content Options</Label>
+                                    <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+                                        <div className="flex items-center space-x-2">
+                                            <Switch id="showStoreAddress" checked={settings.showStoreAddress} onCheckedChange={(c) => handleSwitchChange('showStoreAddress', c)} />
+                                            <Label htmlFor="showStoreAddress">Show Store Address</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Switch id="showContactInfo" checked={settings.showContactInfo} onCheckedChange={(c) => handleSwitchChange('showContactInfo', c)} />
+                                            <Label htmlFor="showContactInfo">Show Contact Info</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Switch id="showTinNumber" checked={settings.showTinNumber} onCheckedChange={(c) => handleSwitchChange('showTinNumber', c)} />
+                                            <Label htmlFor="showTinNumber">Show TIN</Label>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="nextReceiptNumber">Next Receipt Number</Label>
-                                <Input id="nextReceiptNumber" name="nextReceiptNumber" type="number" value={settings.nextReceiptNumber} onChange={handleInputChange} min="1"/>
+                                <Label>Store Logo</Label>
+                                <div className='flex items-center gap-4 p-4 border rounded-lg bg-muted/50'>
+                                   <div className="h-24 w-24 flex-shrink-0 items-center justify-center rounded-md bg-muted overflow-hidden relative border">
+                                        {store?.logo ? (
+                                            <Image src={store.logo} alt="Store Logo" layout="fill" objectFit="cover" />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center">
+                                                <Receipt className="h-10 w-10 text-muted-foreground" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center space-x-2">
+                                            <Switch id="showLogo" checked={settings.showLogo} onCheckedChange={(c) => handleSwitchChange('showLogo', c)} />
+                                            <Label htmlFor="showLogo">Show on receipt</Label>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">This logo is managed from the main store settings.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <Label>Display Options</Label>
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-                                <div className="flex items-center space-x-2">
-                                    <Switch id="showLogo" checked={settings.showLogo} onCheckedChange={(c) => handleSwitchChange('showLogo', c)} />
-                                    <Label htmlFor="showLogo">Show Store Logo</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Switch id="showStoreAddress" checked={settings.showStoreAddress} onCheckedChange={(c) => handleSwitchChange('showStoreAddress', c)} />
-                                    <Label htmlFor="showStoreAddress">Show Store Address</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Switch id="showContactInfo" checked={settings.showContactInfo} onCheckedChange={(c) => handleSwitchChange('showContactInfo', c)} />
-                                    <Label htmlFor="showContactInfo">Show Contact Info</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Switch id="showTinNumber" checked={settings.showTinNumber} onCheckedChange={(c) => handleSwitchChange('showTinNumber', c)} />
-                                    <Label htmlFor="showTinNumber">Show TIN</Label>
-                                </div>
-                            </div>
-                        </div>
-                        
                         <div className="space-y-2">
                             <Label htmlFor="footerNotes">Footer Notes</Label>
                             <Textarea id="footerNotes" name="footerNotes" value={settings.footerNotes} onChange={handleInputChange} placeholder="e.g., Thank you! Please come again." />
@@ -193,10 +213,10 @@ export default function ReceiptSettingsPage() {
                 
                  <Card className="mt-6">
                     <CardHeader>
-                        <CardTitle>Hardware & Branding</CardTitle>
-                        <CardDescription>Configure printer settings and view the store logo for your receipts.</CardDescription>
+                        <CardTitle>Hardware Settings</CardTitle>
+                        <CardDescription>Configure printer settings for your receipts.</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-6">
+                    <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                              <div className="space-y-2">
                                 <Label htmlFor="printerType">Printer Type</Label>
@@ -218,19 +238,6 @@ export default function ReceiptSettingsPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                        </div>
-                        <div className="space-y-2">
-                           <Label>Store Logo</Label>
-                           <div className="h-24 w-24 flex-shrink-0 items-center justify-center rounded-md bg-muted overflow-hidden relative border">
-                                {store?.logo ? (
-                                    <Image src={store.logo} alt="Store Logo" layout="fill" objectFit="cover" />
-                                ) : (
-                                    <div className="flex h-full w-full items-center justify-center">
-                                        <Receipt className="h-10 w-10 text-muted-foreground" />
-                                    </div>
-                                )}
-                            </div>
-                            <p className="text-xs text-muted-foreground">This logo is managed from the main store settings.</p>
                         </div>
                     </CardContent>
                  </Card>
