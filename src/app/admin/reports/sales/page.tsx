@@ -44,14 +44,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
 function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose }: { order: Order | null, store: Store | null, items: OrderItem[], transactions: OrderTransaction[], isOpen: boolean, onClose: () => void }) {
-    if (!order) return null;
-
     const [calculatedSubtotal, setCalculatedSubtotal] = useState(0);
 
     useEffect(() => {
         const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0);
         setCalculatedSubtotal(subtotal);
     }, [items]);
+    
+    if (!order) return null;
 
     const adjustments = transactions.filter(t => t.type === 'Discount' || t.type === 'Charge');
     const payments = transactions.filter(t => t.type === 'Payment');
@@ -503,14 +503,16 @@ export default function SalesReportPage() {
         </Card>
        </div>
     </main>
-    <ReceiptViewerModal
-        isOpen={!!selectedOrderForView}
-        onClose={() => setSelectedOrderForView(null)}
-        order={selectedOrderForView}
-        store={selectedOrderStore}
-        items={orderItems.filter(item => item.orderId === selectedOrderForView?.id)}
-        transactions={transactions.filter(trans => trans.orderId === selectedOrderForView?.id)}
-    />
+    {selectedOrderForView && (
+      <ReceiptViewerModal
+          isOpen={!!selectedOrderForView}
+          onClose={() => setSelectedOrderForView(null)}
+          order={selectedOrderForView}
+          store={selectedOrderStore}
+          items={orderItems.filter(item => item.orderId === selectedOrderForView?.id)}
+          transactions={transactions.filter(trans => trans.orderId === selectedOrderForView?.id)}
+      />
+    )}
     </>
   );
 }
