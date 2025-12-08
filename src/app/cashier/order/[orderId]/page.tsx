@@ -241,7 +241,6 @@ export default function OrderDetailPage() {
             await updateDoc(orderRef, dataToUpdate);
             openSuccessModal();
         } catch (error) {
-            console.error(`Error updating ${field}:`, error);
         }
     }
   };
@@ -281,7 +280,6 @@ export default function OrderDetailPage() {
         setShowDiscountForm(false);
         openSuccessModal();
     } catch (error) {
-        console.error('Error applying discount:', error);
         alert('Failed to apply discount.');
     }
   };
@@ -316,7 +314,6 @@ export default function OrderDetailPage() {
         setShowChargeForm(false);
         openSuccessModal();
     } catch (error) {
-        console.error('Error applying charge:', error);
         alert('Failed to apply charge.');
     }
   };
@@ -552,4 +549,3 @@ export default function OrderDetailPage() {
     </>
   );
 }
-

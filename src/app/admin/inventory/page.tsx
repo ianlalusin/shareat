@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -73,7 +72,6 @@ const initialItemState: FormData = {
     reorderPoint: 0,
     criticalPoint: 0,
     costPerUnit: 0,
-    sellingPrice: 0,
     isPerishable: false,
     expiryDate: '',
     trackInventory: true,
@@ -86,7 +84,7 @@ export default function InventoryPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [formData, setFormData] = useState<any>(initialItemState);
-  const [displayValues, setDisplayValues] = useState<{ costPerUnit: string, sellingPrice: string }>({ costPerUnit: '', sellingPrice: '' });
+  const [displayValues, setDisplayValues] = useState<{ costPerUnit: string }>({ costPerUnit: ''});
   const [dateError, setDateError] = useState<string | undefined>();
   
   const firestore = useFirestore();
@@ -132,11 +130,9 @@ export default function InventoryPage() {
             sku: selectedProduct.barcode,
             unit: selectedProduct.unit,
             costPerUnit: selectedProduct.defaultCost || 0,
-            sellingPrice: selectedProduct.defaultPrice || 0,
         }));
         setDisplayValues({
             costPerUnit: formatCurrency(selectedProduct.defaultCost || 0),
-            sellingPrice: formatCurrency(selectedProduct.defaultPrice || 0),
         });
     }
   }, [selectedProduct, editingItem]);
@@ -146,7 +142,7 @@ export default function InventoryPage() {
     if (!open) {
       setEditingItem(null);
       setFormData(initialItemState);
-      setDisplayValues({ costPerUnit: '', sellingPrice: '' });
+      setDisplayValues({ costPerUnit: '' });
       setDateError(undefined);
     }
   }
@@ -265,7 +261,6 @@ export default function InventoryPage() {
     });
     setDisplayValues({
         costPerUnit: formatCurrency(item.costPerUnit),
-        sellingPrice: formatCurrency(item.sellingPrice || 0),
     });
 
     setEditingItem(item);
@@ -278,7 +273,6 @@ export default function InventoryPage() {
         await deleteDoc(doc(firestore, 'inventory', itemId));
         openSuccessModal();
     } catch (error) {
-        // Error is intentionally not logged
     }
   };
   
@@ -286,7 +280,7 @@ export default function InventoryPage() {
     setEditingItem(null);
     const newFormState = category ? {...initialItemState, category} : initialItemState;
     setFormData(newFormState);
-    setDisplayValues({ costPerUnit: '', sellingPrice: '' });
+    setDisplayValues({ costPerUnit: '' });
     setDateError(undefined);
     setIsModalOpen(true);
   };
@@ -430,12 +424,6 @@ export default function InventoryPage() {
                         <Input id="costPerUnit" name="costPerUnit" type="text" inputMode='decimal' value={displayValues.costPerUnit} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required/>
                     </div>
                      {/* Row 4 */}
-                    {formData.itemType === 'saleable' && (
-                        <div className="space-y-2">
-                            <Label htmlFor="sellingPrice">Selling Price</Label>
-                            <Input id="sellingPrice" name="sellingPrice" type="text" inputMode='decimal' value={displayValues.sellingPrice} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} />
-                        </div>
-                    )}
                     <div className="flex items-center gap-4 col-span-1">
                         <div className="flex items-center space-x-2 pt-6">
                             <Switch id="isPerishable" name="isPerishable" checked={formData.isPerishable} onCheckedChange={(c) => handleSwitchChange('isPerishable', c)} />

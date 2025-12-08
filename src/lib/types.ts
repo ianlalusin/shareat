@@ -76,7 +76,6 @@ export interface InventoryItem {
   criticalPoint: number;       // when <= this → critical stock
 
   costPerUnit: number;         // base cost per unit for this store
-  sellingPrice?: number | null;// for saleable items (beer, soda); null for pure raw mats
 
   isPerishable: boolean;       // if true, watch expiry
   expiryDate?: Timestamp | null;

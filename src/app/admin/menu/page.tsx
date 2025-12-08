@@ -212,14 +212,14 @@ export default function MenuPage() {
             barcode: selectedInventoryItem.sku,
             unit: selectedInventoryItem.unit,
             cost: selectedInventoryItem.costPerUnit,
-            price: selectedInventoryItem.sellingPrice || 0,
+            price: product?.defaultPrice || 0,
             specialTags: product?.specialTags || [],
             imageUrl: product?.imageUrl || '',
             productId: selectedInventoryItem.productId,
         }));
         setDisplayValues({
             cost: formatCurrency(selectedInventoryItem.costPerUnit || 0),
-            price: formatCurrency(selectedInventoryItem.sellingPrice || 0),
+            price: formatCurrency(product?.defaultPrice || 0),
         });
     }
   }, [selectedInventoryItem, products, editingItem]);
@@ -228,22 +228,23 @@ export default function MenuPage() {
     setFormError(null); // Clear previous errors
     if (formData.trackInventory) {
       if (selectedInventoryItem) {
+          const product = products.find(p => p.id === selectedInventoryItem.productId);
         setFormData(prev => ({
             ...prev,
             cost: selectedInventoryItem.costPerUnit,
-            price: selectedInventoryItem.sellingPrice || prev.price,
+            price: product?.defaultPrice || prev.price,
             barcode: selectedInventoryItem.sku,
             unit: selectedInventoryItem.unit
         }));
         setDisplayValues({
             cost: formatCurrency(selectedInventoryItem.costPerUnit),
-            price: formatCurrency(selectedInventoryItem.sellingPrice || formData.price),
+            price: formatCurrency(product?.defaultPrice || formData.price),
         });
       } else {
          setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
       }
     }
-  }, [formData.trackInventory, selectedInventoryItem]);
+  }, [formData.trackInventory, selectedInventoryItem, products, formData.price]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -342,7 +343,6 @@ export default function MenuPage() {
       await deleteDoc(doc(firestore, 'menu', itemId));
       openSuccessModal();
     } catch (error) {
-        // Error is intentionally not logged to prevent screen freeze
     }
   };
 
@@ -611,7 +611,7 @@ export default function MenuPage() {
                         {formData.trackInventory && !formError && (
                             <Alert>
                                 <AlertDescription>
-                                    Cost, Price, Barcode, and Unit are now locked to the linked inventory item. Low stock alerts will be triggered when the quantity in stock reaches the alert level.
+                                    Cost, Barcode, and Unit are now locked to the linked inventory item. Low stock alerts will be triggered when the quantity in stock reaches the alert level.
                                 </AlertDescription>
                             </Alert>
                         )}
