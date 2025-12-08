@@ -116,9 +116,11 @@ export default function RefillPage() {
                 const order = orders.find(o => o.id === table.activeOrderId);
                 const orderRefills = refills[order?.id || ''] || [];
                 const lastRefill = orderRefills.length > 0 
-                    ? orderRefills.reduce((latest, current) => 
-                        (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
-                    ) : null;
+                    ? orderRefills.reduce((latest, current) => {
+                        if (!latest?.timestamp) return current;
+                        if (!current?.timestamp) return latest;
+                        return (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
+                    }) : null;
                 
                 return (
                     <Card 
