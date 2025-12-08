@@ -26,12 +26,19 @@ const PRESETS = [
 
 export function DateRangePicker({
   className,
-}: React.HTMLAttributes<HTMLDivElement>) {
+  onUpdate,
+}: React.HTMLAttributes<HTMLDivElement> & { onUpdate?: (range: DateRange | undefined) => void }) {
   const [date, setDate] = React.useState<DateRange | undefined>({
     from: subDays(new Date(), 6),
     to: new Date(),
   })
   const [isOpen, setIsOpen] = React.useState(false)
+  
+  React.useEffect(() => {
+    if(onUpdate) {
+        onUpdate(date);
+    }
+  }, [date, onUpdate]);
 
   const handlePresetClick = (preset: typeof PRESETS[0]) => {
     setDate(preset.getValue())
@@ -48,9 +55,9 @@ export function DateRangePicker({
   }
   
   const handleApply = () => {
-    // Here you would typically call a function passed via props
-    // to update the parent component's state, e.g., onUpdate(date)
-    console.log("Applied date range:", date);
+    if(onUpdate) {
+        onUpdate(date);
+    }
     setIsOpen(false);
   }
 

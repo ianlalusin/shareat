@@ -35,7 +35,7 @@ const menuItems = [
   { href: "/admin/products", label: "Products", icon: Boxes },
   { href: "/admin/inventory", label: "Inventory", icon: Warehouse },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
-  { href: "#reports", label: "Reports", icon: AreaChart },
+  { href: "/admin/reports/sales", label: "Sales Report", icon: AreaChart },
   { href: "/admin/g-list", label: "G.List", icon: ListChecks },
   { href: "#maintenance", label: "Maintenance", icon: Wrench },
 ];
