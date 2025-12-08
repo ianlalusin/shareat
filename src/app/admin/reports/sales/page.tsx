@@ -204,9 +204,7 @@ export default function SalesReportPage() {
       const completedOrdersData = completedOrdersSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order);
       setCompletedOrders(completedOrdersData);
 
-      const orderIds = completedOrdersData.map(o => o.id);
-
-      if (orderIds.length === 0) {
+      if (completedOrdersData.length === 0) {
         setTransactions([]);
         setReportData([]);
         setOrderItems([]);
@@ -214,6 +212,8 @@ export default function SalesReportPage() {
         return;
       }
       
+      const orderIds = completedOrdersData.map(o => o.id);
+
       const transactionsQuery = query(
         collectionGroup(firestore, 'transactions'),
         where('orderId', 'in', orderIds)
@@ -503,7 +503,6 @@ export default function SalesReportPage() {
         </Card>
        </div>
     </main>
-    
     <ReceiptViewerModal
         isOpen={!!selectedOrderForView}
         onClose={() => setSelectedOrderForView(null)}
