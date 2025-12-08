@@ -130,7 +130,6 @@ function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose
     );
 }
 
-
 export default function SalesReportPage() {
   const [reportData, setReportData] = useState<SalesReportItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
