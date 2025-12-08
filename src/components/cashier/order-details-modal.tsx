@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, where } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
   Dialog,
@@ -259,5 +259,3 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
     </>
   );
 }
-
-    
