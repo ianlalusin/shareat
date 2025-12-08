@@ -133,7 +133,7 @@ export type Order = {
   completedTimestamp?: Timestamp; // Firestore ServerTimestamp
   totalAmount: number;
   notes?: string;
-  initialFlavors: string[];
+  initialItems: { name: string; quantity: number }[];
   packageName: string;
 };
 
