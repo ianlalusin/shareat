@@ -54,15 +54,20 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
     const { openSuccessModal } = useSuccessModal();
 
     useEffect(() => {
-        if (firestore) {
-            const flavorsQuery = query(collection(firestore, 'lists'), where('category', '==', 'meat flavors'), where('is_active', '==', true));
+        if (firestore && order.storeId) {
+            const flavorsQuery = query(
+                collection(firestore, 'lists'), 
+                where('category', '==', 'meat flavors'), 
+                where('is_active', '==', true),
+                where('storeIds', 'array-contains', order.storeId)
+            );
             const flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
                 setFlavorOptions(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem));
             });
 
             return () => flavorsUnsubscribe();
         }
-    }, [firestore]);
+    }, [firestore, order.storeId]);
 
     useEffect(() => {
         if (!isOpen) {
