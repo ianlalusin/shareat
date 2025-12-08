@@ -9,15 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PlusCircle, Minus, Plus } from 'lucide-react';
-import { Table as TableType, MenuItem, Order, OrderItem } from '@/lib/types';
+import { Table as TableType, MenuItem, Order, OrderItem, GListItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
-import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSuccessModal } from '@/store/use-success-modal';
 
@@ -35,11 +34,28 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
     const [rice, setRice] = useState(2);
     const [cheese, setCheese] = useState(2);
+    const [selectedFlavor, setSelectedFlavor] = useState('');
+    const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
     
     const firestore = useFirestore();
     const { openSuccessModal } = useSuccessModal();
 
     const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
+    
+    useEffect(() => {
+        if(firestore) {
+            const flavorsQuery = query(
+                collection(firestore, 'lists'),
+                where('category', '==', 'meat flavors'),
+                where('is_active', '==', true)
+            );
+            const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
+                const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem);
+                setFlavorOptions(flavors);
+            });
+            return () => unsubscribe();
+        }
+    }, [firestore]);
 
     useEffect(() => {
         // Reset state when modal opens
@@ -49,6 +65,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             setSelectedPackage(null);
             setRice(2);
             setCheese(2);
+            setSelectedFlavor('');
         }
     }, [isOpen]);
 
@@ -68,8 +85,8 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     }
     
     const handleStartOrder = async () => {
-        if (!firestore || !table || !selectedPackage || !customerName) {
-          alert("Please ensure Customer Name and a Package are selected.");
+        if (!firestore || !table || !selectedPackage || !customerName || !selectedFlavor) {
+          alert("Please ensure Customer Name, a Package, and a Flavor are selected.");
           return;
         }
 
@@ -95,6 +112,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 notes: '',
                 initialItems: initialItems,
                 packageName: selectedPackage.menuName,
+                selectedFlavor: selectedFlavor,
             } as Omit<Order, 'id'>);
 
             // 2. Add the selected package as the first order item
@@ -141,13 +159,13 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                     <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
                 </div>
                 
-                 <div className="grid grid-cols-4 gap-4">
-                    <div className="space-y-2 col-span-1">
+                 <div className="grid grid-cols-5 gap-4">
+                    <div className="space-y-2 col-span-2">
                          <Label htmlFor="guestCount">Guests</Label>
                         <div className="flex items-center gap-1">
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
-                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-full text-center h-8" />
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                            <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={() => setGuestCount(c => Math.max(1, c - 1))}><Minus className="h-4 w-4"/></Button>
+                            <Input id="guestCount" type="number" value={guestCount} onChange={e => setGuestCount(Number(e.target.value))} min="1" required className="w-full text-center h-10" />
+                            <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={() => setGuestCount(c => c + 1)}><Plus className="h-4 w-4"/></Button>
                         </div>
                     </div>
                      <div className="space-y-2 col-span-3">
@@ -166,24 +184,43 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                         </Select>
                     </div>
                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="rice">Rice</Label>
-                        <Input id="rice" type="number" value={rice} onChange={e => setRice(Number(e.target.value))} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="cheese">Cheese</Label>
-                        <Input id="cheese" type="number" value={cheese} onChange={e => setCheese(Number(e.target.value))} />
-                    </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                     <div className="space-y-2 col-span-1">
+                         <Label htmlFor="flavor">Flavor</Label>
+                         <Select value={selectedFlavor} onValueChange={setSelectedFlavor}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Flavor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {flavorOptions.map(opt => <SelectItem key={opt.id} value={opt.item}>{opt.item}</SelectItem>)}
+                            </SelectContent>
+                         </Select>
+                     </div>
+                     <div className="space-y-2 col-span-1">
+                         <Label htmlFor="rice" className="text-center block">Rice</Label>
+                         <div className="flex items-center gap-1">
+                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => Math.max(0, r - 1))}><Minus className="h-4 w-4"/></Button>
+                             <Input id="rice" type="number" value={rice} onChange={e => setRice(Number(e.target.value))} className="w-full text-center h-10" />
+                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => r + 1)}><Plus className="h-4 w-4"/></Button>
+                         </div>
+                     </div>
+                      <div className="space-y-2 col-span-1">
+                         <Label htmlFor="cheese" className="text-center block">Cheese</Label>
+                         <div className="flex items-center gap-1">
+                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setCheese(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
+                             <Input id="cheese" type="number" value={cheese} onChange={e => setCheese(Number(e.target.value))} className="w-full text-center h-10" />
+                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setCheese(c => c + 1)}><Plus className="h-4 w-4"/></Button>
+                         </div>
+                     </div>
                 </div>
-               
+
             </div>
             <DialogFooter className="flex-row justify-end gap-2">
                 <Button type="button" variant="outline" onClick={handleClose}>
                     Cancel
                 </Button>
-                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName}>
+                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName || !selectedFlavor}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Start Order
                 </Button>
             </DialogFooter>
