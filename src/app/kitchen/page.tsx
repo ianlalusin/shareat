@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -15,6 +14,7 @@ import {
   updateDoc,
   serverTimestamp,
   orderBy,
+  writeBatch,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { OrderItem, RefillItem, Order } from '@/lib/types';
@@ -137,11 +137,15 @@ export default function KitchenPage() {
       groups[item.orderId].items.push(item);
     });
 
-    return Object.values(groups).sort(
-      (a, b) =>
+    return Object.values(groups).sort((a, b) => {
+      const pa = a.order?.priority === 'rush' ? 1 : 0;
+      const pb = b.order?.priority === 'rush' ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return (
         (a.order?.orderTimestamp?.toMillis?.() || 0) -
         (b.order?.orderTimestamp?.toMillis?.() || 0)
-    );
+      );
+    });
   }, [kitchenItems]);
 
   const hotGroups = useMemo(
@@ -189,6 +193,38 @@ export default function KitchenPage() {
     }
   };
 
+  const handleServeAll = async (groupItems: KitchenItem[]) => {
+    if (!firestore || groupItems.length === 0) return;
+    try {
+      const batch = writeBatch(firestore);
+      const user = auth?.currentUser;
+
+      groupItems.forEach((item) => {
+        const itemRef = doc(
+          firestore,
+          'orders',
+          item.orderId,
+          item.sourceCollection,
+          item.id
+        );
+        batch.update(itemRef, {
+          status: 'Served',
+          servedAt: serverTimestamp(),
+          servedBy: user?.displayName || user?.email || 'Kitchen',
+        });
+      });
+
+      await batch.commit();
+      openSuccessModal();
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to mark all items as served.',
+      });
+    }
+  };
+
   if (!selectedStoreId) {
     return (
       <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
@@ -216,6 +252,7 @@ export default function KitchenPage() {
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
+              onServeAll={handleServeAll}
             />
           ))}
           {hotGroups.length === 0 && (
@@ -233,6 +270,7 @@ export default function KitchenPage() {
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
+              onServeAll={handleServeAll}
             />
           ))}
           {coldGroups.length === 0 && (

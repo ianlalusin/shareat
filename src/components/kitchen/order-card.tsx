@@ -1,4 +1,3 @@
-
 'use client';
 
 import React from 'react';
@@ -7,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Order, OrderItem, RefillItem } from '@/lib/types';
 import { OrderTimer } from '@/components/cashier/order-timer';
+import { CheckSquare } from 'lucide-react';
 
 type KitchenItem = (OrderItem | RefillItem) & {
   orderId: string;
@@ -17,11 +17,22 @@ interface KitchenOrderCardProps {
   order?: Order;
   items: KitchenItem[];
   onServeItem?: (item: KitchenItem) => void;
+  onServeAll?: (items: KitchenItem[]) => void;
 }
 
-function KitchenOrderCardBase({ order, items, onServeItem }: KitchenOrderCardProps) {
+function KitchenOrderCardBase({
+  order,
+  items,
+  onServeItem,
+  onServeAll,
+}: KitchenOrderCardProps) {
   const tableLabel =
     order?.tableName || `Order ${order?.id?.slice(-4) || ''}`;
+
+  const handleServeAllClick = () => {
+    if (!onServeAll || items.length === 0) return;
+    onServeAll(items);
+  };
 
   return (
     <Card className="flex flex-col bg-background">
@@ -41,9 +52,24 @@ function KitchenOrderCardBase({ order, items, onServeItem }: KitchenOrderCardPro
             </p>
           )}
         </div>
-        <div className="text-right">
-          <p className="text-xs font-semibold">Time</p>
-          <OrderTimer startTime={order?.orderTimestamp} />
+
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-right">
+            <p className="text-xs font-semibold">Time</p>
+            <OrderTimer startTime={order?.orderTimestamp} />
+          </div>
+
+          {onServeAll && items.length > 0 && (
+            <Button
+              size="xs"
+              variant="outline"
+              className="h-7 px-2 text-[11px]"
+              onClick={handleServeAllClick}
+            >
+              <CheckSquare className="h-3 w-3 mr-1" />
+              Serve All
+            </Button>
+          )}
         </div>
       </CardHeader>
 
