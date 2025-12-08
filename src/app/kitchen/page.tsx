@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuth } from '@/firebase';
 import {
   collection,
   collectionGroup,
@@ -20,8 +20,6 @@ import { OrderItem, RefillItem, Order } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/firebase';
-
 
 const KitchenOrderCard = dynamic(
   () => import('@/components/kitchen/order-card').then(m => m.KitchenOrderCard),
@@ -31,6 +29,7 @@ const KitchenOrderCard = dynamic(
 type KitchenItem = (OrderItem | RefillItem) & {
     orderId: string;
     order?: Order;
+    sourceCollection: 'orderItems' | 'refills';
 };
 
 export default function KitchenPage() {
@@ -105,6 +104,7 @@ export default function KitchenPage() {
       all.push({
         ...item,
         order: ordersMap.get(item.orderId),
+        sourceCollection: 'orderItems',
       });
     });
 
@@ -112,6 +112,7 @@ export default function KitchenPage() {
       all.push({
         ...item,
         order: ordersMap.get(item.orderId),
+        sourceCollection: 'refills',
       });
     });
 
@@ -165,11 +166,9 @@ export default function KitchenPage() {
   const handleServeItem = async (item: KitchenItem) => {
     if (!firestore) return;
     
-    const isRefill = !('priceAtOrder' in item);
-    const collectionName = isRefill ? 'refills' : 'orderItems';
     const user = auth?.currentUser;
 
-    const itemRef = doc(firestore, 'orders', item.orderId, collectionName, item.id);
+    const itemRef = doc(firestore, 'orders', item.orderId, item.sourceCollection, item.id);
 
     try {
         await updateDoc(itemRef, {
@@ -243,4 +242,3 @@ export default function KitchenPage() {
     </Tabs>
   );
 }
-
