@@ -274,74 +274,76 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                         <TabsTrigger value="add-ons">Add-ons</TabsTrigger>
                     </TabsList>
                     
-                    <TabsContent value="refill" className="flex-1 grid grid-cols-2 gap-6 overflow-hidden p-4">
-                        <div className="flex flex-col gap-4">
-                            <h3 className="font-semibold">Select Meat & Flavor</h3>
-                            <ScrollArea className="flex-1 rounded-md border">
-                                <div className="p-4 space-y-4">
-                                {meatTypesForPackage.map(meatType => (
-                                    <div key={meatType} className="p-3 border rounded-lg">
-                                        <p className="capitalize font-semibold text-lg mb-2">{meatType}</p>
-                                        <div className="flex items-center gap-2">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="outline" className="w-full justify-between">
-                                                        <span>{getSelectedFlavorText(meatType)}</span>
-                                                        <ChevronDown className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                                    {flavorOptions.map(f => (
-                                                        <DropdownMenuCheckboxItem
-                                                            key={f.id}
-                                                            checked={refillSelections[meatType]?.flavors.includes(f.item)}
-                                                            onSelect={(e) => e.preventDefault()}
-                                                            onClick={() => handleFlavorSelect(meatType, f.item)}
-                                                            disabled={
-                                                                !refillSelections[meatType]?.flavors.includes(f.item) &&
-                                                                (refillSelections[meatType]?.flavors.length ?? 0) >= 3
-                                                            }
-                                                        >
-                                                            {f.item}
-                                                        </DropdownMenuCheckboxItem>
-                                                    ))}
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                            <Button onClick={() => handleAddToRefillCart(meatType)} disabled={!refillSelections[meatType]?.flavors.length}>
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                                {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4">This package has no specified meat types for refill.</p>}
-                                </div>
-                            </ScrollArea>
-                        </div>
-                        <div className="flex flex-col border rounded-lg">
-                             <div className="p-4 border-b">
-                                <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
-                            </div>
-                             <ScrollArea className="flex-1">
-                                {refillCart.length === 0 ? (
-                                    <div className="text-center text-muted-foreground p-8">Refill cart is empty.</div>
-                                ) : (
-                                    <div className="p-4 space-y-3">
-                                        {refillCart.map(item => (
-                                            <div key={`${item.meatType}-${item.flavor}`} className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="font-medium capitalize">{item.meatType} - {item.flavor}</p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                    <span className="w-6 text-center font-bold">{item.quantity}</span>
-                                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, 0)}><Trash2 className="h-4 w-4" /></Button>
-                                                </div>
+                    <TabsContent value="refill" className="flex-1 overflow-hidden p-4">
+                        <div className="grid grid-cols-2 gap-6 h-full">
+                            <div className="flex flex-col gap-4">
+                                <h3 className="font-semibold">Select Meat & Flavor</h3>
+                                <ScrollArea className="flex-1 rounded-md border">
+                                    <div className="p-4 space-y-4">
+                                    {meatTypesForPackage.map(meatType => (
+                                        <div key={meatType} className="p-3 border rounded-lg">
+                                            <p className="capitalize font-semibold text-lg mb-2">{meatType}</p>
+                                            <div className="flex items-center gap-2">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="outline" className="w-full justify-between">
+                                                            <span>{getSelectedFlavorText(meatType)}</span>
+                                                            <ChevronDown className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                                        {flavorOptions.map(f => (
+                                                            <DropdownMenuCheckboxItem
+                                                                key={f.id}
+                                                                checked={refillSelections[meatType]?.flavors.includes(f.item)}
+                                                                onSelect={(e) => e.preventDefault()}
+                                                                onClick={() => handleFlavorSelect(meatType, f.item)}
+                                                                disabled={
+                                                                    !refillSelections[meatType]?.flavors.includes(f.item) &&
+                                                                    (refillSelections[meatType]?.flavors.length ?? 0) >= 3
+                                                                }
+                                                            >
+                                                                {f.item}
+                                                            </DropdownMenuCheckboxItem>
+                                                        ))}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                                <Button onClick={() => handleAddToRefillCart(meatType)} disabled={!refillSelections[meatType]?.flavors.length}>
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
                                             </div>
-                                        ))}
+                                        </div>
+                                    ))}
+                                    {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4">This package has no specified meat types for refill.</p>}
                                     </div>
-                                )}
-                            </ScrollArea>
+                                </ScrollArea>
+                            </div>
+                            <div className="flex flex-col border rounded-lg">
+                                <div className="p-4 border-b">
+                                    <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
+                                </div>
+                                <ScrollArea className="flex-1">
+                                    {refillCart.length === 0 ? (
+                                        <div className="text-center text-muted-foreground p-8">Refill cart is empty.</div>
+                                    ) : (
+                                        <div className="p-4 space-y-3">
+                                            {refillCart.map(item => (
+                                                <div key={`${item.meatType}-${item.flavor}`} className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="font-medium capitalize">{item.meatType} - {item.flavor}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
+                                                        <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
+                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, 0)}><Trash2 className="h-4 w-4" /></Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </ScrollArea>
+                            </div>
                         </div>
                     </TabsContent>
                     
