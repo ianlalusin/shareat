@@ -103,7 +103,7 @@ export type MenuItem = {
   imageUrl?: string;
   publicDescription?: string;
   targetStation?: 'Hot' | 'Cold';
-  taxRate: string;
+  taxRate?: string;
   trackInventory: boolean;
   inventoryItemId?: string | null;
   alertLevel: number;
@@ -125,19 +125,20 @@ export type Table = {
 export type Order = {
   id: string;
   storeId: string;
-  tableLabel: string; // The label from the Table document (e.g., "1", "2A")
+  tableId?: string;
+  tableName?: string;
   status: 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
   customerName: string;
   address?: string;
   tin?: string;
-  orderTimestamp: Timestamp; // Firestore ServerTimestamp, marks the start of the 2-hour limit
-  completedTimestamp?: Timestamp; // Firestore ServerTimestamp
+  orderTimestamp: Timestamp;
+  completedTimestamp?: Timestamp;
   totalAmount: number;
   notes?: string;
-  initialItems: { name: string; quantity: number }[];
   packageName: string;
   selectedFlavors: string[];
+  kitchenNote?: string;
   receiptDetails?: {
     receiptNumber: string;
     cashierName: string;
@@ -152,7 +153,6 @@ export type Order = {
   paymentSummary?: { method: string; amount: number }[];
 };
 
-// Represents only PAID items for an order
 export type OrderItem = {
   id: string;
   orderId: string;
@@ -162,25 +162,32 @@ export type OrderItem = {
   quantity: number;
   priceAtOrder: number;
   targetStation?: 'Hot' | 'Cold';
-  timestamp: Timestamp; // Firestore ServerTimestamp
+  timestamp: Timestamp;
   servedTimestamp?: Timestamp;
   status: 'Pending' | 'Served' | 'Cancelled';
   isRefill: boolean;
-  sourceTag?: 'cashier' | 'refill';
+  sourceTag?: 'initial' | 'refill' | 'addon';
+  kitchenNote?: string;
+  priority?: 'normal' | 'rush';
+  servedAt?: Timestamp;
+  servedBy?: string;
 };
 
-// Represents FREE refill items, kept separate for operational analysis
 export type RefillItem = {
   id: string;
   orderId: string;
   storeId: string;
-  menuItemId: string; // This could be a generic ID for "Pork", "Beef", etc.
-  menuName: string; // e.g., "Pork - Gochujang", "Beef - Bulgogi"
+  menuItemId: string;
+  menuName: string;
   quantity: number;
   targetStation?: 'Hot' | 'Cold';
-  timestamp: Timestamp; // Firestore ServerTimestamp
+  timestamp: Timestamp;
   servedTimestamp?: Timestamp;
   status: 'Pending' | 'Served' | 'Cancelled';
+  kitchenNote?: string;
+  priority?: 'normal' | 'rush';
+  servedAt?: Timestamp;
+  servedBy?: string;
 };
 
 export type OrderTransaction = {
@@ -189,7 +196,7 @@ export type OrderTransaction = {
   storeId: string;
   type: 'Payment' | 'Discount' | 'Charge';
   amount: number;
-  method?: string; // e.g., 'Cash', 'Card', or from G.List for MOP
+  method?: string;
   notes?: string;
   timestamp: Timestamp; 
   cashierUid?: string | null;

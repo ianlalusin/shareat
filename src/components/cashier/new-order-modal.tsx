@@ -24,6 +24,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Textarea } from '../ui/textarea';
 
 interface NewOrderModalProps {
     isOpen: boolean;
@@ -36,8 +37,7 @@ interface NewOrderModalProps {
       guestCount: number;
       selectedPackage: MenuItem;
       selectedFlavors: string[];
-      rice: number;
-      cheese: number;
+      kitchenNote?: string;
     }) => Promise<void>;
 }
 
@@ -45,10 +45,9 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
     const [customerName, setCustomerName] = useState('');
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
-    const [rice, setRice] = useState(2);
-    const [cheese, setCheese] = useState(2);
     const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
     const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
+    const [kitchenNote, setKitchenNote] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
@@ -79,19 +78,12 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
             setCustomerName('');
             setGuestCount(2);
             setSelectedPackage(null);
-            setRice(2);
-            setCheese(2);
             setSelectedFlavors([]);
+            setKitchenNote('');
             setError(null);
             setIsSubmitting(false);
         }
     }, [isOpen]);
-
-    useEffect(() => {
-        setRice(guestCount);
-        setCheese(guestCount);
-    }, [guestCount]);
-
 
     const handleOpenChange = (open: boolean) => {
         if (!open) {
@@ -139,13 +131,12 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
                 guestCount,
                 selectedPackage,
                 selectedFlavors,
-                rice,
-                cheese,
+                kitchenNote,
             });
             onClose();
         } catch (e) {
             console.error("Failed to start order:", e);
-            setError("Failed to start the order. Please try again.");
+            setError(e instanceof Error ? e.message : "Failed to start the order. Please try again.");
         } finally {
             setIsSubmitting(false);
         }
@@ -158,7 +149,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
             <DialogHeader>
                 <DialogTitle>New Order for {table?.tableName}</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
+            <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto px-1">
                 <div className="space-y-2">
                     <Label htmlFor="customerName">Customer Name</Label>
                     <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} />
@@ -215,23 +206,9 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
                     </DropdownMenu>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                         <Label htmlFor="rice" className="text-center block">Rice</Label>
-                         <div className="flex items-center gap-1">
-                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => Math.max(0, r - 1))}><Minus className="h-4 w-4"/></Button>
-                             <Input id="rice" type="number" value={rice} onChange={e => setRice(Number(e.target.value))} className="w-full text-center h-10" />
-                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setRice(r => r + 1)}><Plus className="h-4 w-4"/></Button>
-                         </div>
-                     </div>
-                      <div className="space-y-2">
-                         <Label htmlFor="cheese" className="text-center block">Cheese</Label>
-                         <div className="flex items-center gap-1">
-                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setCheese(c => Math.max(0, c - 1))}><Minus className="h-4 w-4"/></Button>
-                             <Input id="cheese" type="number" value={cheese} onChange={e => setCheese(Number(e.target.value))} className="w-full text-center h-10" />
-                             <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setCheese(c => c + 1)}><Plus className="h-4 w-4"/></Button>
-                         </div>
-                     </div>
+                <div className="space-y-2">
+                    <Label htmlFor="kitchenNote">Kitchen Note (Optional)</Label>
+                    <Textarea id="kitchenNote" value={kitchenNote} onChange={e => setKitchenNote(e.target.value)} placeholder="e.g., Allergic to peanuts"/>
                 </div>
 
                 {error && (
@@ -242,7 +219,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
 
             </div>
             <DialogFooter className="flex-row justify-end gap-2">
-                <Button type="button" variant="outline" onClick={onClose}>
+                <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
                     Cancel
                 </Button>
                 <Button onClick={handleStartOrder} disabled={isSubmitting || !selectedPackage || selectedFlavors.length === 0}>

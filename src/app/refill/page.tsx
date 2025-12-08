@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, RefillItem, OrderItem } from '@/lib/types';
@@ -38,6 +38,7 @@ export default function RefillPage() {
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     
     const firestore = useFirestore();
+    const auth = useAuth();
     const { selectedStoreId } = useStoreSelector();
     const { openSuccessModal } = useSuccessModal();
     
@@ -100,8 +101,8 @@ export default function RefillPage() {
 
     const handlePlaceOrder = async (
         order: Order,
-        refillCart: { meatType: string; flavor: string; quantity: number; }[],
-        cart: { id: string; menuName: string; price: number; quantity: number; targetStation?: 'Hot' | 'Cold' }[]
+        refillCart: { meatType: string; flavor: string; quantity: number; note?: string }[],
+        cart: { id: string; menuName: string; price: number; quantity: number; targetStation?: 'Hot' | 'Cold'; note?: string }[]
     ) => {
         if (!firestore) return;
 
@@ -120,6 +121,7 @@ export default function RefillPage() {
                     targetStation: 'Cold',
                     timestamp: serverTimestamp(),
                     status: 'Pending',
+                    kitchenNote: refill.note || '',
                 };
                 batch.set(newRefillRef, refillData);
             });
@@ -141,6 +143,7 @@ export default function RefillPage() {
                     status: 'Pending',
                     targetStation: cartItem.targetStation,
                     sourceTag: 'refill',
+                    kitchenNote: cartItem.note || '',
                 };
                 batch.set(newItemRef, orderItemData);
             });

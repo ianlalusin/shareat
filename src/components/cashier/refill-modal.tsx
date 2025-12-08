@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Table as TableType, Order, MenuItem, GListItem, RefillItem, OrderItem } from '@/lib/types';
 import {
@@ -18,31 +18,31 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
-  DropdownMenuItem
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown, MessageSquarePlus } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Image from 'next/image';
 import { Badge } from '../ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Textarea } from '../ui/textarea';
 
 interface RefillCartItem {
     meatType: string;
     flavor: string;
     quantity: number;
+    note?: string;
 }
-
 
 interface CartItem extends MenuItem {
     quantity: number;
+    note?: string;
 }
 
 interface RefillModalProps {
@@ -66,6 +66,9 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     
     const [cart, setCart] = useState<CartItem[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
+    
+    const [noteInput, setNoteInput] = useState('');
+    const [editingNoteItem, setEditingNoteItem] = useState<{ type: 'refill' | 'addon'; key: string } | null>(null);
 
     const firestore = useFirestore();
     
@@ -93,18 +96,18 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
 
     useEffect(() => {
         if (isOpen) {
-            // Initialize selections for each meat type
             const initialSelections: Record<string, RefillSelection> = {};
             meatTypesForPackage.forEach(meatType => {
                 initialSelections[meatType] = { meatType, flavors: [] };
             });
             setRefillSelections(initialSelections);
         } else {
-             // Reset state when modal is closed
             setRefillSelections({});
             setRefillCart([]);
             setCart([]);
             setSearchTerm('');
+            setEditingNoteItem(null);
+            setNoteInput('');
         }
     }, [isOpen, meatTypesForPackage]);
 
@@ -129,7 +132,6 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
           if (currentFlavors.length < 3) {
             newFlavors = [...currentFlavors, flavor];
           } else {
-            // Prevent selecting more than 3
             return prev;
           }
         }
@@ -157,7 +159,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                         quantity: updatedCart[existingIndex].quantity + 1
                     };
                 } else {
-                    updatedCart.push({ meatType, flavor, quantity: 1 });
+                    updatedCart.push({ meatType, flavor, quantity: 1, note: '' });
                 }
             });
             return updatedCart;
@@ -183,7 +185,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
             if (existing) {
                 return prev.map(ci => ci.id === item.id ? { ...ci, quantity: ci.quantity + 1 } : ci);
             }
-            return [...prev, { ...item, quantity: 1 }];
+            return [...prev, { ...item, quantity: 1, note: '' }];
         });
     };
 
@@ -207,6 +209,28 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
       if (selection.flavors.length > 2) return `${selection.flavors.length} flavors selected`;
       return selection.flavors.join(', ');
     }
+    
+    const handleSaveNote = () => {
+        if (!editingNoteItem) return;
+        
+        if (editingNoteItem.type === 'refill') {
+            const [meatType, flavor] = editingNoteItem.key.split('|');
+            setRefillCart(prev => prev.map(item => 
+                item.meatType === meatType && item.flavor === flavor ? {...item, note: noteInput} : item
+            ));
+        } else { // addon
+            setCart(prev => prev.map(item => 
+                item.id === editingNoteItem.key ? {...item, note: noteInput} : item
+            ));
+        }
+        setEditingNoteItem(null);
+        setNoteInput('');
+    }
+
+    const openNotePopover = (type: 'refill' | 'addon', key: string, currentNote?: string) => {
+        setEditingNoteItem({ type, key });
+        setNoteInput(currentNote || '');
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -218,6 +242,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </DialogDescription>
                 </DialogHeader>
                 
+                <Popover onOpenChange={(open) => !open && setEditingNoteItem(null)}>
                 <Tabs defaultValue="refill" className="flex-1 flex flex-col overflow-hidden">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="refill">Refill</TabsTrigger>
@@ -278,16 +303,24 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     ) : (
                                         <div className="p-4 space-y-3">
                                             {refillCart.map(item => (
-                                                <div key={`${item.meatType}-${item.flavor}`} className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="font-medium capitalize">{item.meatType} - {item.flavor}</p>
+                                                <div key={`${item.meatType}-${item.flavor}`}>
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="font-medium capitalize">{item.meatType} - {item.flavor}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <PopoverTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNotePopover('refill', `${item.meatType}|${item.flavor}`, item.note)}>
+                                                                    <MessageSquarePlus className="h-4 w-4" />
+                                                                </Button>
+                                                            </PopoverTrigger>
+                                                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
+                                                            <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, 0)}><Trash2 className="h-4 w-4" /></Button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                        <span className="w-6 text-center font-bold">{item.quantity}</span>
-                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, 0)}><Trash2 className="h-4 w-4" /></Button>
-                                                    </div>
+                                                    {item.note && <p className="text-xs text-red-500 italic pl-1">Note: {item.note}</p>}
                                                 </div>
                                             ))}
                                         </div>
@@ -335,18 +368,25 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     ) : (
                                         <div className="p-4 space-y-3">
                                             {cart.map(item => (
-                                                <div key={item.id} className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="font-medium">{item.menuName}</p>
-                                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                <div key={item.id}>
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="font-medium">{item.menuName}</p>
+                                                            <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <PopoverTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNotePopover('addon', item.id, item.note)}>
+                                                                    <MessageSquarePlus className="h-4 w-4" />
+                                                                </Button>
+                                                            </PopoverTrigger>
+                                                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
+                                                            <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateCartQuantity(item.id, 0)}><Trash2 className="h-4 w-4" /></Button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Badge variant="outline">refill</Badge>
-                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                        <span className="w-6 text-center font-bold">{item.quantity}</span>
-                                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateCartQuantity(item.id, 0)}><Trash2 className="h-4 w-4" /></Button>
-                                                    </div>
+                                                    {item.note && <p className="text-xs text-red-500 italic pl-1">Note: {item.note}</p>}
                                                 </div>
                                             ))}
                                         </div>
@@ -364,7 +404,28 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                         </div>
                     </TabsContent>
                 </Tabs>
-                
+
+                <PopoverContent className="w-80">
+                    <div className="grid gap-4">
+                        <div className="space-y-2">
+                            <h4 className="font-medium leading-none">Add Kitchen Note</h4>
+                            <p className="text-sm text-muted-foreground">
+                                Add a special instruction for this item.
+                            </p>
+                        </div>
+                        <div className="grid gap-2">
+                            <Textarea
+                                value={noteInput}
+                                onChange={(e) => setNoteInput(e.target.value)}
+                                placeholder="e.g., extra crispy"
+                            />
+                            <Button onClick={handleSaveNote}>Save Note</Button>
+                        </div>
+                    </div>
+                </PopoverContent>
+
+                </Popover>
+
                 <DialogFooter className="mt-4 flex-row justify-end">
                     <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                     <Button 
@@ -379,5 +440,3 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </Dialog>
     );
 }
-
-    

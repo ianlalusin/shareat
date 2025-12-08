@@ -103,14 +103,13 @@ export default function CashierPage() {
         customerName: string; 
         guestCount: number; 
         selectedPackage: MenuItem; 
-        selectedFlavors: string[]; 
-        rice: number; 
-        cheese: number;
+        selectedFlavors: string[];
+        kitchenNote?: string;
       }
     ) => {
       if (!firestore || !selectedStoreId) return;
       
-      const { customerName, guestCount, selectedPackage, selectedFlavors, rice, cheese } = orderData;
+      const { customerName, guestCount, selectedPackage, selectedFlavors, kitchenNote } = orderData;
       
       const newOrderRef = doc(collection(firestore, 'orders'));
       const tableRef = doc(firestore, 'tables', table.id);
@@ -118,22 +117,19 @@ export default function CashierPage() {
       try {
         const batch = writeBatch(firestore);
 
-        const initialItems = [];
-        if (rice > 0) initialItems.push({ name: 'Rice', quantity: rice });
-        if (cheese > 0) initialItems.push({ name: 'Cheese', quantity: cheese });
-
         batch.set(newOrderRef, {
           storeId: selectedStoreId,
-          tableLabel: table.tableName,
+          tableId: table.id,
+          tableName: table.tableName,
           status: 'Active',
           guestCount,
           customerName,
           orderTimestamp: serverTimestamp(),
-          totalAmount: selectedPackage.price * guestCount,
+          totalAmount: 0,
           notes: '',
-          initialItems,
           packageName: selectedPackage.menuName,
           selectedFlavors,
+          kitchenNote: kitchenNote || '',
         });
 
         const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
@@ -148,7 +144,7 @@ export default function CashierPage() {
           timestamp: serverTimestamp(),
           status: 'Pending',
           targetStation: selectedPackage.targetStation,
-          sourceTag: 'cashier',
+          sourceTag: 'initial',
         } as Omit<OrderItem, 'id'>);
 
         batch.update(tableRef, {
@@ -162,7 +158,8 @@ export default function CashierPage() {
         openSuccessModal();
       } catch (error) {
         console.error("Error creating new order: ", error);
-        alert("Failed to create new order. Please try again.");
+        // Re-throw the error so the modal can catch it and display a message
+        throw new Error("Failed to create new order. Please try again.");
       }
     };
     
