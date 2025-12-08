@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -19,9 +20,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+  DropdownMenuItem
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, ShoppingCart, Trash2, Search } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Image from 'next/image';
 import { useSuccessModal } from '@/store/use-success-modal';
@@ -36,7 +45,7 @@ interface RefillModalProps {
 
 interface RefillSelection {
     meatType: string;
-    flavor: string;
+    flavors: string[];
 }
 
 interface RefillCartItem {
@@ -78,14 +87,21 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
     }, [firestore, order.storeId]);
 
     useEffect(() => {
-        if (!isOpen) {
-            // Reset state when modal is closed
+        if (isOpen) {
+            // Initialize selections for each meat type
+            const initialSelections: Record<string, RefillSelection> = {};
+            meatTypesForPackage.forEach(meatType => {
+                initialSelections[meatType] = { meatType, flavors: [] };
+            });
+            setRefillSelections(initialSelections);
+        } else {
+             // Reset state when modal is closed
             setRefillSelections({});
             setRefillCart([]);
             setCart([]);
             setSearchTerm('');
         }
-    }, [isOpen]);
+    }, [isOpen, meatTypesForPackage]);
 
     const packageDetails = useMemo(() => {
         return menu.find(m => m.menuName === order.packageName);
@@ -103,29 +119,49 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
     );
 
     const handleFlavorSelect = (meatType: string, flavor: string) => {
-        setRefillSelections(prev => ({
-            ...prev,
-            [meatType]: { meatType, flavor }
-        }));
+      setRefillSelections(prev => {
+        const currentFlavors = prev[meatType]?.flavors || [];
+        const isSelected = currentFlavors.includes(flavor);
+        let newFlavors: string[];
+
+        if (isSelected) {
+          newFlavors = currentFlavors.filter(f => f !== flavor);
+        } else {
+          if (currentFlavors.length < 3) {
+            newFlavors = [...currentFlavors, flavor];
+          } else {
+            // Prevent selecting more than 3
+            return prev;
+          }
+        }
+        return {
+          ...prev,
+          [meatType]: { ...prev[meatType], flavors: newFlavors },
+        };
+      });
     };
 
     const handleAddToRefillCart = (meatType: string) => {
         const selection = refillSelections[meatType];
-        if (!selection || !selection.flavor) {
-            alert('Please select a flavor first.');
+        if (!selection || selection.flavors.length === 0) {
+            alert('Please select at least one flavor.');
             return;
         }
 
         setRefillCart(prev => {
-            const existing = prev.find(item => item.meatType === meatType && item.flavor === selection.flavor);
-            if (existing) {
-                return prev.map(item =>
-                    item.meatType === meatType && item.flavor === selection.flavor
-                        ? { ...item, quantity: item.quantity + 1 }
-                        : item
-                );
-            }
-            return [...prev, { ...selection, quantity: 1 }];
+            let updatedCart = [...prev];
+            selection.flavors.forEach(flavor => {
+                const existingIndex = updatedCart.findIndex(item => item.meatType === meatType && item.flavor === flavor);
+                if (existingIndex > -1) {
+                    updatedCart[existingIndex] = {
+                        ...updatedCart[existingIndex],
+                        quantity: updatedCart[existingIndex].quantity + 1
+                    };
+                } else {
+                    updatedCart.push({ meatType, flavor, quantity: 1 });
+                }
+            });
+            return updatedCart;
         });
     };
 
@@ -216,6 +252,13 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
     
     const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + (item.price * item.quantity), 0), [cart]);
 
+    const getSelectedFlavorText = (meatType: string) => {
+      const selection = refillSelections[meatType];
+      if (!selection || selection.flavors.length === 0) return 'Select up to 3 flavors';
+      if (selection.flavors.length > 2) return `${selection.flavors.length} flavors selected`;
+      return selection.flavors.join(', ');
+    }
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
@@ -241,13 +284,31 @@ export function RefillModal({ isOpen, onClose, table, order, menu }: RefillModal
                                     <div key={meatType} className="p-3 border rounded-lg">
                                         <p className="capitalize font-semibold text-lg mb-2">{meatType}</p>
                                         <div className="flex items-center gap-2">
-                                            <Select onValueChange={(flavor) => handleFlavorSelect(meatType, flavor)}>
-                                                <SelectTrigger><SelectValue placeholder="Select Flavor" /></SelectTrigger>
-                                                <SelectContent>
-                                                    {flavorOptions.map(f => <SelectItem key={f.id} value={f.item}>{f.item}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                            <Button onClick={() => handleAddToRefillCart(meatType)} disabled={!refillSelections[meatType]?.flavor}>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="outline" className="w-full justify-between">
+                                                        <span>{getSelectedFlavorText(meatType)}</span>
+                                                        <ChevronDown className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                                    {flavorOptions.map(f => (
+                                                        <DropdownMenuCheckboxItem
+                                                            key={f.id}
+                                                            checked={refillSelections[meatType]?.flavors.includes(f.item)}
+                                                            onSelect={(e) => e.preventDefault()}
+                                                            onClick={() => handleFlavorSelect(meatType, f.item)}
+                                                            disabled={
+                                                                !refillSelections[meatType]?.flavors.includes(f.item) &&
+                                                                (refillSelections[meatType]?.flavors.length ?? 0) >= 3
+                                                            }
+                                                        >
+                                                            {f.item}
+                                                        </DropdownMenuCheckboxItem>
+                                                    ))}
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                            <Button onClick={() => handleAddToRefillCart(meatType)} disabled={!refillSelections[meatType]?.flavors.length}>
                                                 <Plus className="h-4 w-4" />
                                             </Button>
                                         </div>
