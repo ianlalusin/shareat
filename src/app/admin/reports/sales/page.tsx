@@ -59,10 +59,16 @@ interface ChartDataItem {
 function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose }: { order: Order | null, store: Store | null, items: OrderItem[], transactions: OrderTransaction[], isOpen: boolean, onClose: () => void }) {
     if (!order) return null;
 
-    const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0);
+    const [calculatedSubtotal, setCalculatedSubtotal] = useState(0);
+
+    useEffect(() => {
+        const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0);
+        setCalculatedSubtotal(subtotal);
+    }, [items]);
+
     const adjustments = transactions.filter(t => t.type === 'Discount' || t.type === 'Charge');
     const payments = transactions.filter(t => t.type === 'Payment');
-    const total = subtotal + adjustments.reduce((acc, t) => t.type === 'Charge' ? acc + t.amount : acc - t.amount, 0);
+    const total = calculatedSubtotal + adjustments.reduce((acc, t) => t.type === 'Charge' ? acc + t.amount : acc - t.amount, 0);
     const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
     const change = totalPaid - total;
 
@@ -108,7 +114,7 @@ function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose
                         </table>
                         <Separator className="my-2 border-dashed border-black"/>
                         <div className="space-y-1">
-                            <div className="flex justify-between"><p>Subtotal:</p><p>{formatCurrency(subtotal)}</p></div>
+                            <div className="flex justify-between"><p>Subtotal:</p><p>{formatCurrency(calculatedSubtotal)}</p></div>
                              {adjustments.map(adj => (
                                 <div key={adj.id} className="flex justify-between">
                                     <p>{adj.type} ({adj.notes}):</p>
