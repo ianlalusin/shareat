@@ -45,7 +45,7 @@ export default function KitchenPage() {
         where('status', '==', 'Pending')
     );
 
-    const processSnapshot = (snapshot: any, itemType: 'orderItems' | 'refills') => {
+    const processSnapshot = (snapshot: any) => {
         snapshot.docChanges().forEach(async (change: any) => {
             const data = change.doc.data() as OrderItem | RefillItem;
             const orderId = change.doc.ref.parent.parent.id;
@@ -73,8 +73,8 @@ export default function KitchenPage() {
         });
     }
 
-    const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => processSnapshot(snapshot, 'orderItems'));
-    const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => processSnapshot(snapshot, 'refills'));
+    const orderItemsUnsubscribe = onSnapshot(orderItemsQuery, (snapshot) => processSnapshot(snapshot));
+    const refillsUnsubscribe = onSnapshot(refillsQuery, (snapshot) => processSnapshot(snapshot));
 
     return () => {
       orderItemsUnsubscribe();

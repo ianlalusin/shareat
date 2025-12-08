@@ -25,8 +25,8 @@ export function KitchenOrderCard({ order, items }: KitchenOrderCardProps) {
     const handleServeItem = async (item: KitchenItem) => {
         if (!firestore) return;
         
-        // Determine if it's a refill or a regular order item
-        const isRefill = 'isRefill' in item ? !item.isRefill : true;
+        // Determine if it's a refill or a regular order item by checking for a unique property
+        const isRefill = 'priceAtOrder' in item ? false : true;
         const collectionName = isRefill ? 'refills' : 'orderItems';
 
         const itemRef = doc(firestore, 'orders', item.orderId, collectionName, item.id);

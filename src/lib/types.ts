@@ -159,8 +159,8 @@ export type RefillItem = {
   id: string;
   orderId: string;
   storeId: string;
-  menuItemId: string;
-  menuName: string;
+  menuItemId: string; // This could be a generic ID for "Pork", "Beef", etc.
+  menuName: string; // e.g., "Pork - Gochujang", "Beef - Bulgogi"
   quantity: number;
   targetStation?: 'Hot' | 'Cold';
   timestamp: Timestamp; // Firestore ServerTimestamp
