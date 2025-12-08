@@ -18,26 +18,22 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { OrderItem, RefillItem, Order } from '@/lib/types';
+import { Order, OrderItem, RefillItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { KitchenItem } from '@/components/kitchen/order-card';
+
 
 const KitchenOrderCard = dynamic(
   () => import('@/components/kitchen/order-card').then(m => m.KitchenOrderCard),
   { ssr: false }
 );
 
-type KitchenItem = (OrderItem | RefillItem) & {
-    orderId: string;
-    order?: Order;
-    sourceCollection: 'orderItems' | 'refills';
-};
-
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
-  const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
+  const [orderItems, setOrderItems] = useState<KitchenItem[]>([]);
+  const [refillItems, setRefillItems] = useState<KitchenItem[]>([]);
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
   const auth = useAuth();
@@ -71,8 +67,14 @@ export default function KitchenPage() {
       orderBy('timestamp')
     );
     const unsubOrderItems = onSnapshot(pendingOrderItemsQuery, (snapshot) => {
-      const data = snapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data(), orderId: doc.ref.parent.parent!.id } as OrderItem)
+      const data: KitchenItem[] = snapshot.docs.map(
+        (docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as OrderItem),
+            orderId: (docSnap.data() as any).orderId,
+            sourceCollection: 'orderItems',
+            ref: docSnap.ref,
+        })
       );
       setOrderItems(data);
     });
@@ -84,8 +86,14 @@ export default function KitchenPage() {
       orderBy('timestamp')
     );
     const unsubRefills = onSnapshot(pendingRefillsQuery, (snapshot) => {
-      const data = snapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data(), orderId: doc.ref.parent.parent!.id } as RefillItem)
+      const data: KitchenItem[] = snapshot.docs.map(
+        (docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as RefillItem),
+            orderId: (docSnap.data() as any).orderId,
+            sourceCollection: 'refills',
+            ref: docSnap.ref,
+        })
       );
       setRefillItems(data);
     });
@@ -108,7 +116,6 @@ export default function KitchenPage() {
       all.push({
         ...item,
         order: ordersMap.get(item.orderId),
-        sourceCollection: 'orderItems',
       });
     });
 
@@ -116,7 +123,6 @@ export default function KitchenPage() {
       all.push({
         ...item,
         order: ordersMap.get(item.orderId),
-        sourceCollection: 'refills',
       });
     });
 
@@ -176,44 +182,21 @@ export default function KitchenPage() {
   const handleServeItem = async (item: KitchenItem) => {
     if (!firestore) return;
     
-    const user = auth?.currentUser;
-
-    const itemRef = doc(firestore, 'orders', item.orderId, item.sourceCollection, item.id);
-
-    try {
-        await updateDoc(itemRef, {
-            status: 'Served',
-            servedAt: serverTimestamp(),
-            servedBy: user?.displayName || user?.email || 'Kitchen',
-        });
-        openSuccessModal();
-    } catch (error) {
-        toast({
-            variant: "destructive",
-            title: "Update Failed",
-            description: "Could not update the item status.",
-        });
-    }
+    await updateDoc(item.ref, {
+        status: 'Served',
+        servedTimestamp: serverTimestamp(),
+    });
   };
 
   const handleServeAll = async (groupItems: KitchenItem[]) => {
     if (!firestore || groupItems.length === 0) return;
     try {
       const batch = writeBatch(firestore);
-      const user = auth?.currentUser;
-
+      
       groupItems.forEach((item) => {
-        const itemRef = doc(
-          firestore,
-          'orders',
-          item.orderId,
-          item.sourceCollection,
-          item.id
-        );
-        batch.update(itemRef, {
+        batch.update(item.ref, {
           status: 'Served',
-          servedAt: serverTimestamp(),
-          servedBy: user?.displayName || user?.email || 'Kitchen',
+          servedTimestamp: serverTimestamp(),
         });
       });
 
@@ -255,7 +238,7 @@ export default function KitchenPage() {
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
-              onServeAll={handleServeAll}
+              onServeAll={() => handleServeAll(group.items)}
             />
           ))}
           {hotGroups.length === 0 && (
@@ -273,7 +256,7 @@ export default function KitchenPage() {
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
-              onServeAll={handleServeAll}
+              onServeAll={() => handleServeAll(group.items)}
             />
           ))}
           {coldGroups.length === 0 && (
