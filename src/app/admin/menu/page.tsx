@@ -67,6 +67,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -109,6 +110,7 @@ export default function MenuPage() {
   const storage = useStorage();
   const { selectedStoreId } = useStoreSelector();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -300,7 +302,11 @@ export default function MenuPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (formError) {
-        alert(formError);
+        toast({
+            variant: 'destructive',
+            title: 'Form Error',
+            description: formError,
+        });
         return;
     }
     if (!firestore || !storage || !selectedStoreId) return;
@@ -320,6 +326,11 @@ export default function MenuPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "There was a problem saving the menu item.",
+      });
     }
   };
   
@@ -343,6 +354,11 @@ export default function MenuPage() {
       await deleteDoc(doc(firestore, 'menu', itemId));
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete the menu item.",
+      });
     }
   };
 
@@ -353,12 +369,21 @@ export default function MenuPage() {
       await updateDoc(itemRef, { isAvailable: newStatus });
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not update availability.",
+      });
     }
   };
 
   const openAddModal = (category?: string) => {
     if (!selectedStoreId) {
-      alert("Please select a store first.");
+      toast({
+        variant: "destructive",
+        title: "No Store Selected",
+        description: "Please select a store first.",
+      });
       return;
     }
     setEditingItem(null);

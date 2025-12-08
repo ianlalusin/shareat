@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { TableCard } from '@/components/cashier/table-card';
 import { Flame } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 const NewOrderModal = dynamic(() => import('@/components/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
@@ -30,6 +31,7 @@ export default function CashierPage() {
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
     const { openSuccessModal } = useSuccessModal();
+    const { toast } = useToast();
     
     useEffect(() => {
         if (firestore && selectedStoreId) {
@@ -163,8 +165,11 @@ export default function CashierPage() {
         const nextPriority = order.priority === 'rush' ? 'normal' : 'rush';
         await updateDoc(orderRef, { priority: nextPriority });
       } catch (err) {
-        console.error('Error updating priority:', err);
-        alert('Failed to update order priority.');
+        toast({
+            variant: 'destructive',
+            title: 'Update Failed',
+            description: 'Failed to update order priority.',
+        });
       }
     };
     

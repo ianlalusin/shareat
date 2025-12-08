@@ -57,6 +57,7 @@ import {
 import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
@@ -90,6 +91,7 @@ export default function InventoryPage() {
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -208,7 +210,11 @@ export default function InventoryPage() {
     if (!firestore || !selectedStoreId) return;
 
     if (formData.isPerishable && dateError) {
-        alert('Please fix the date format.');
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Date',
+            description: 'Please fix the date format before saving.',
+        });
         return;
     }
 
@@ -241,6 +247,11 @@ export default function InventoryPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "There was a problem saving the item.",
+      });
     }
   };
   
@@ -279,6 +290,11 @@ export default function InventoryPage() {
         await deleteDoc(doc(firestore, 'inventory', itemId));
         openSuccessModal();
     } catch (error) {
+        toast({
+            variant: "destructive",
+            title: "Uh oh! Something went wrong.",
+            description: "Could not delete the item.",
+        });
     }
   };
   

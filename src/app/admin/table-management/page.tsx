@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 const initialTableState: Omit<Table, 'id' | 'storeId'> = {
   tableName: '',
@@ -60,6 +61,7 @@ export default function TableManagementPage() {
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -107,7 +109,11 @@ export default function TableManagementPage() {
   
   const handleOpenModal = (table: Table | null) => {
     if (!selectedStoreId) {
-      alert('Please select a store first.');
+      toast({
+        variant: 'destructive',
+        title: 'No Store Selected',
+        description: 'Please select a store first.',
+      });
       return;
     }
     if (table) {
@@ -131,7 +137,11 @@ export default function TableManagementPage() {
     if (!firestore || !selectedStoreId) return;
     
     if (currentStore && currentStore.tableLocations.length > 0 && !formData.location) {
-      alert('Please select a table location.');
+      toast({
+        variant: 'destructive',
+        title: 'Location Required',
+        description: 'Please select a table location.',
+      });
       return;
     }
 
@@ -162,6 +172,11 @@ export default function TableManagementPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       toast({
+        variant: 'destructive',
+        title: 'Save Failed',
+        description: 'There was a problem saving the table.',
+      });
     }
   };
   
@@ -171,7 +186,11 @@ export default function TableManagementPage() {
       await deleteDoc(doc(firestore, 'tables', tableId));
       openSuccessModal();
     } catch (error) {
-      // Error is intentionally not logged
+      toast({
+        variant: 'destructive',
+        title: 'Delete Failed',
+        description: 'Could not delete the table.',
+      });
     }
   };
 
@@ -187,6 +206,11 @@ export default function TableManagementPage() {
         await batch.commit();
         openSuccessModal();
       } catch (error) {
+        toast({
+            variant: 'destructive',
+            title: 'Reset Failed',
+            description: 'Could not reset all counters.',
+        });
       }
     }
   };

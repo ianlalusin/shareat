@@ -120,7 +120,11 @@ export default function GListPage() {
     if (!firestore) return;
 
     if (formData.storeIds.length === 0) {
-        alert('Please select at least one store.');
+        toast({
+            variant: 'destructive',
+            title: 'No Store Selected',
+            description: 'Please select at least one store.',
+        });
         return;
     }
 
@@ -211,7 +215,11 @@ export default function GListPage() {
   
   const handleDownload = async () => {
     if (items.length === 0) {
-      alert("No data to download.");
+      toast({
+        variant: 'destructive',
+        title: 'No Data',
+        description: 'There is no data to download.',
+      });
       return;
     }
     

@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PaymentModal } from '@/components/cashier/payment-modal';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 // Reducer for complex state management of TIN input
@@ -112,6 +113,7 @@ export default function OrderDetailPage() {
 
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!firestore || !orderId) return;
@@ -241,13 +243,22 @@ export default function OrderDetailPage() {
             await updateDoc(orderRef, dataToUpdate);
             openSuccessModal();
         } catch (error) {
+            toast({
+                variant: 'destructive',
+                title: 'Update Failed',
+                description: 'Could not update customer details.',
+            });
         }
     }
   };
   
   const handleApplyDiscount = async () => {
     if (!firestore || !order || !discountValue || !selectedDiscount) {
-        alert('Please enter a value and select a discount type.');
+        toast({
+            variant: 'destructive',
+            title: 'Missing Information',
+            description: 'Please enter a value and select a discount type.',
+        });
         return;
     }
 
@@ -260,7 +271,11 @@ export default function OrderDetailPage() {
     }
 
     if (amount <= 0) {
-        alert('Discount amount must be positive.');
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Amount',
+            description: 'Discount amount must be positive.',
+        });
         return;
     }
 
@@ -280,23 +295,39 @@ export default function OrderDetailPage() {
         setShowDiscountForm(false);
         openSuccessModal();
     } catch (error) {
-        alert('Failed to apply discount.');
+        toast({
+            variant: 'destructive',
+            title: 'Apply Failed',
+            description: 'Failed to apply discount.',
+        });
     }
   };
 
   const handleApplyCharge = async () => {
     if (!firestore || !order || !chargeValue) {
-        alert('Please enter a charge amount.');
+        toast({
+            variant: 'destructive',
+            title: 'Missing Amount',
+            description: 'Please enter a charge amount.',
+        });
         return;
     }
     const chargeName = chargeTypes.length > 0 ? selectedCharge : customChargeType;
     if (!chargeName) {
-        alert('Please select or enter a charge type.');
+        toast({
+            variant: 'destructive',
+            title: 'Missing Type',
+            description: 'Please select or enter a charge type.',
+        });
         return;
     }
     const amount = parseFloat(chargeValue);
     if (amount <= 0) {
-        alert('Charge amount must be positive.');
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Amount',
+            description: 'Charge amount must be positive.',
+        });
         return;
     }
     const newTransaction: Omit<OrderTransaction, 'id'> = {
@@ -314,7 +345,11 @@ export default function OrderDetailPage() {
         setShowChargeForm(false);
         openSuccessModal();
     } catch (error) {
-        alert('Failed to apply charge.');
+        toast({
+            variant: 'destructive',
+            title: 'Apply Failed',
+            description: 'Failed to apply charge.',
+        });
     }
   };
   

@@ -33,6 +33,7 @@ import { TagsInput } from '@/components/ui/tags-input';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { Store as StoreIcon } from 'lucide-react';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 const initialStoreState: Omit<Store, 'id'> = {
@@ -61,6 +62,7 @@ export default function NewStorePage() {
   const storage = useStorage();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore) {
@@ -167,7 +169,11 @@ export default function NewStorePage() {
         const snapshot = await uploadBytes(logoRef, logoFile);
         logoUrl = await getDownloadURL(snapshot.ref);
       } catch (error) {
-        console.error("Logo upload failed:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Upload Failed',
+            description: 'Could not upload the store logo. Please try again.',
+        });
       }
     }
     
@@ -181,7 +187,11 @@ export default function NewStorePage() {
       openSuccessModal();
       router.push('/admin/store');
     } catch (error) {
-      console.error('Error saving document: ', error);
+      toast({
+        variant: 'destructive',
+        title: 'Save Failed',
+        description: 'There was a problem saving the new store.',
+      });
     }
   };
 
@@ -321,4 +331,3 @@ export default function NewStorePage() {
     </main>
   );
 }
-
