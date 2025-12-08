@@ -40,6 +40,9 @@ import {
   onSnapshot,
   deleteDoc,
   serverTimestamp,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
@@ -188,7 +191,20 @@ export default function ProductsPage() {
         const itemRef = doc(firestore, 'products', editingItem.id);
         await updateDoc(itemRef, dataToSave);
       } else {
-        await addDoc(collection(firestore, 'products'), {
+        const productsRef = collection(firestore, 'products');
+        const q = query(productsRef, where('barcode', '==', finalFormData.barcode));
+        const existing = await getDocs(q);
+
+        if (!existing.empty) {
+          toast({
+            variant: 'destructive',
+            title: 'Duplicate barcode',
+            description: 'A product with this barcode already exists.',
+          });
+          return;
+        }
+
+        await addDoc(productsRef, {
           ...dataToSave,
           createdAt: serverTimestamp(),
         });
