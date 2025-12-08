@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
   Dialog,
@@ -15,10 +15,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-react';
+import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus, Minus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { AddToCartModal } from './add-to-cart-modal';
+import { useSuccessModal } from '@/store/use-success-modal';
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isUpdateSelectionModalOpen, setIsUpdateSelectionModalOpen] = useState(false);
   const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
+  const { openSuccessModal } = useSuccessModal();
 
 
   useEffect(() => {
@@ -85,20 +87,51 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   });
 
   const pendingItems = allItems.filter(item => item.status === 'Pending');
+  
+  const unlimitedPackageItem = orderItems.find(item => item.menuName === order.packageName);
+  const alaCarteItems = orderItems.filter(item => item.id !== unlimitedPackageItem?.id);
 
   const handleBuzz = () => {
     console.log(`Buzzing kitchen for order ${order.id} for pending items!`);
-    alert(`Kitchen has been notified about ${pendingItems.length} pending item(s).`);
+    alert(`Kitchen has been notified about ${pendingItems.length} item(s).`);
   }
 
   const handleCloseCart = (success: boolean) => {
     setIsAddToCartModalOpen(false);
   }
 
+  const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
+    if (!firestore) return;
+    if (newQuantity <= 0) {
+      handleDeleteItem(itemId);
+      return;
+    }
+    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', itemId);
+    try {
+      await updateDoc(itemRef, { quantity: newQuantity });
+      openSuccessModal();
+    } catch (error) {
+      console.error("Error updating quantity:", error);
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!firestore) return;
+    if (window.confirm("Are you sure you want to remove this item?")) {
+      const itemRef = doc(firestore, 'orders', order.id, 'orderItems', itemId);
+      try {
+        await deleteDoc(itemRef);
+        openSuccessModal();
+      } catch (error) {
+        console.error("Error deleting item:", error);
+      }
+    }
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Order Details</DialogTitle>
           <div className="text-sm text-muted-foreground pt-1">
@@ -116,17 +149,33 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                 </Button>
               </div>
               <div className="space-y-2">
-                {orderItems.map(item => (
+                {unlimitedPackageItem && (
+                   <div className={cn("flex items-center justify-between p-2 rounded-lg", unlimitedPackageItem.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
+                      <div className="flex items-center gap-2">
+                          {unlimitedPackageItem.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
+                          <span className="font-medium">{unlimitedPackageItem.quantity}x {unlimitedPackageItem.menuName}</span>
+                      </div>
+                      <Badge variant="secondary">Package</Badge>
+                  </div>
+                )}
+                {alaCarteItems.map(item => (
                   <div key={item.id} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
                     <div className="flex items-center gap-2">
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
-                        <span className="font-medium">{item.quantity}x {item.menuName}</span>
+                        <span className="font-medium">{item.menuName}</span>
                     </div>
-                    {item.status === 'Served' && item.servedTimestamp && (
-                        <span className="text-xs text-muted-foreground">
-                            {calculateLapseTime(item.timestamp, item.servedTimestamp)}
-                        </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}>
+                          <Minus className="h-4 w-4" />
+                      </Button>
+                      <span className="w-6 text-center font-bold">{item.quantity}</span>
+                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}>
+                          <Plus className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteItem(item.id)}>
+                          <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
