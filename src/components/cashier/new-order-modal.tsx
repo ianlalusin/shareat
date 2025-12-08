@@ -106,13 +106,13 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     
     const getSelectedFlavorText = () => {
         if (selectedFlavors.length === 0) return 'Select up to 3 flavors';
-        if (selectedFlavors.length > 2) return `${selectedFlavors.length} flavors selected`;
+        if (selectedFlavors.length > 2) return `${'selectedFlavors.length'} flavors selected`;
         return selectedFlavors.join(', ');
     };
     
     const handleStartOrder = async () => {
-        if (!firestore || !table || !selectedPackage || !customerName || selectedFlavors.length === 0) {
-          alert("Please ensure Customer Name, a Package, and at least one Flavor are selected.");
+        if (!firestore || !table || !selectedPackage || selectedFlavors.length === 0) {
+          alert("Please ensure a Package and at least one Flavor are selected.");
           return;
         }
 
@@ -183,7 +183,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             <div className="grid gap-6 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="customerName">Customer Name</Label>
-                    <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
+                    <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} />
                 </div>
                 
                  <div className="grid grid-cols-5 gap-4">
@@ -260,7 +260,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 <Button type="button" variant="outline" onClick={handleClose}>
                     Cancel
                 </Button>
-                <Button onClick={handleStartOrder} disabled={!selectedPackage || !customerName || selectedFlavors.length === 0}>
+                <Button onClick={handleStartOrder} disabled={!selectedPackage || selectedFlavors.length === 0}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Start Order
                 </Button>
             </DialogFooter>
