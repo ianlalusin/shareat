@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -14,15 +14,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ReceiptSettings } from '@/lib/types';
+import { ReceiptSettings, Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
-import { ImageUpload } from '@/components/ui/image-upload';
+import Image from 'next/image';
 import { Receipt } from 'lucide-react';
-import { useStorage } from '@/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const initialSettingsState: Omit<ReceiptSettings, 'id'> = {
-    logoUrl: '',
+    showLogo: true,
     receiptNumberPrefix: '',
     nextReceiptNumber: 1,
     showStoreAddress: true,
@@ -35,34 +33,46 @@ const initialSettingsState: Omit<ReceiptSettings, 'id'> = {
 
 export default function ReceiptSettingsPage() {
     const [settings, setSettings] = useState<Omit<ReceiptSettings, 'id'>>(initialSettingsState);
+    const [store, setStore] = useState<Store | null>(null);
     const [loading, setLoading] = useState(true);
-    const [logoFile, setLogoFile] = useState<File | null>(null);
 
     const { selectedStoreId } = useStoreSelector();
     const firestore = useFirestore();
-    const storage = useStorage();
     const { openSuccessModal } = useSuccessModal();
 
     useEffect(() => {
         if (!firestore || !selectedStoreId) {
             setLoading(false);
+            setStore(null);
+            setSettings(initialSettingsState);
             return;
         }
 
-        const fetchSettings = async () => {
-            setLoading(true);
-            const settingsRef = doc(firestore, 'receiptSettings', selectedStoreId);
-            const docSnap = await getDoc(settingsRef);
+        setLoading(true);
 
+        const settingsRef = doc(firestore, 'receiptSettings', selectedStoreId);
+        const settingsUnsubscribe = onSnapshot(settingsRef, (docSnap) => {
             if (docSnap.exists()) {
                 setSettings({ ...initialSettingsState, ...docSnap.data() });
             } else {
                 setSettings(initialSettingsState);
             }
-            setLoading(false);
-        };
+        });
 
-        fetchSettings();
+        const storeRef = doc(firestore, 'stores', selectedStoreId);
+        const storeUnsubscribe = onSnapshot(storeRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setStore({ id: docSnap.id, ...docSnap.data() } as Store);
+            } else {
+                setStore(null);
+            }
+            setLoading(false);
+        });
+
+        return () => {
+            settingsUnsubscribe();
+            storeUnsubscribe();
+        };
     }, [firestore, selectedStoreId]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -82,32 +92,14 @@ export default function ReceiptSettingsPage() {
     const handleSelectChange = (name: keyof ReceiptSettings, value: string) => {
         setSettings(prev => ({...prev, [name]: value as any}));
     }
-    
-    const handleFileChange = (file: File | null) => {
-        setLogoFile(file);
-        if(file){
-            setSettings(prev => ({...prev, logoUrl: URL.createObjectURL(file)}))
-        }
-    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!firestore || !storage || !selectedStoreId) return;
-        
-        let logoUrl = settings.logoUrl || '';
-        if (logoFile) {
-            try {
-                const logoRef = ref(storage, `Shareat Hub/receipt_logos/${Date.now()}_${logoFile.name}`);
-                const snapshot = await uploadBytes(logoRef, logoFile);
-                logoUrl = await getDownloadURL(snapshot.ref);
-            } catch (error) {
-                console.error("Error uploading image:", error);
-            }
-        }
+        if (!firestore || !selectedStoreId) return;
 
         try {
             const settingsRef = doc(firestore, 'receiptSettings', selectedStoreId);
-            await setDoc(settingsRef, {...settings, logoUrl }, { merge: true });
+            await setDoc(settingsRef, settings, { merge: true });
             openSuccessModal();
         } catch (error) {
             console.error("Error saving settings:", error);
@@ -156,7 +148,7 @@ export default function ReceiptSettingsPage() {
                 <Card>
                     <CardHeader>
                         <CardTitle>General Configuration</CardTitle>
-                        <CardDescription>Customize the look and numbering of your receipts for the selected store.</CardDescription>
+                        <CardDescription>Customize the look and numbering of your receipts for {store?.storeName || 'the selected store'}.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -172,7 +164,11 @@ export default function ReceiptSettingsPage() {
 
                         <div className="space-y-4">
                             <Label>Display Options</Label>
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+                                <div className="flex items-center space-x-2">
+                                    <Switch id="showLogo" checked={settings.showLogo} onCheckedChange={(c) => handleSwitchChange('showLogo', c)} />
+                                    <Label htmlFor="showLogo">Show Store Logo</Label>
+                                </div>
                                 <div className="flex items-center space-x-2">
                                     <Switch id="showStoreAddress" checked={settings.showStoreAddress} onCheckedChange={(c) => handleSwitchChange('showStoreAddress', c)} />
                                     <Label htmlFor="showStoreAddress">Show Store Address</Label>
@@ -198,7 +194,7 @@ export default function ReceiptSettingsPage() {
                  <Card className="mt-6">
                     <CardHeader>
                         <CardTitle>Hardware & Branding</CardTitle>
-                        <CardDescription>Configure printer settings and upload a logo for your receipts.</CardDescription>
+                        <CardDescription>Configure printer settings and view the store logo for your receipts.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -224,12 +220,17 @@ export default function ReceiptSettingsPage() {
                             </div>
                         </div>
                         <div className="space-y-2">
-                           <Label>Receipt Logo</Label>
-                           <ImageUpload 
-                                imageUrl={settings.logoUrl}
-                                onFileChange={handleFileChange}
-                                icon={<Receipt className="h-10 w-10 text-muted-foreground" />}
-                           />
+                           <Label>Store Logo</Label>
+                           <div className="h-24 w-24 flex-shrink-0 items-center justify-center rounded-md bg-muted overflow-hidden relative border">
+                                {store?.logo ? (
+                                    <Image src={store.logo} alt="Store Logo" layout="fill" objectFit="cover" />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center">
+                                        <Receipt className="h-10 w-10 text-muted-foreground" />
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">This logo is managed from the main store settings.</p>
                         </div>
                     </CardContent>
                  </Card>

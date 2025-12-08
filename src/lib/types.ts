@@ -187,7 +187,7 @@ export type OrderTransaction = {
 
 export type ReceiptSettings = {
     id: string; // Same as storeId
-    logoUrl?: string;
+    showLogo: boolean;
     receiptNumberPrefix: string;
     nextReceiptNumber: number;
     showStoreAddress: boolean;
