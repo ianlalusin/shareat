@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
   Dialog,
@@ -14,13 +14,14 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { AddToCartModal } from './add-to-cart-modal';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { Badge } from '@/components/ui/badge';
+
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
@@ -64,13 +65,12 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
 
     const menuQuery = query(
         collection(firestore, 'menu'),
-        // where('storeId', '==', order.storeId), // This was causing issues, simplified for now
-        // where('isAvailable', '==', true)
+        where('storeId', '==', order.storeId),
+        where('isAvailable', '==', true)
     );
     const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
         const menuData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as MenuItem));
-        const filteredMenu = menuData.filter(m => m.storeId === order.storeId && m.isAvailable);
-        setMenu(filteredMenu);
+        setMenu(menuData);
     });
 
 
@@ -91,7 +91,53 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const pendingItems = allItems.filter(item => item.status === 'Pending');
   
   const unlimitedPackageItem = orderItems.find(item => item.menuName === order.packageName);
-  const alaCarteItems = orderItems.filter(item => item.id !== unlimitedPackageItem?.id);
+  
+  const groupedAlaCarteItems = useMemo(() => {
+    const alaCarteItems = orderItems.filter(item => item.id !== unlimitedPackageItem?.id);
+    const itemMap = new Map<string, { menuItemId: string; menuName: string; quantity: number; status: OrderItem['status'] }>();
+
+    for (const item of alaCarteItems) {
+      const existing = itemMap.get(item.menuItemId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        // If any of the grouped items is pending, the whole group is pending
+        if (item.status === 'Pending') {
+          existing.status = 'Pending';
+        }
+      } else {
+        itemMap.set(item.menuItemId, {
+          menuItemId: item.menuItemId,
+          menuName: item.menuName,
+          quantity: item.quantity,
+          status: item.status,
+        });
+      }
+    }
+    return Array.from(itemMap.values());
+  }, [orderItems, unlimitedPackageItem]);
+
+  const groupedRefillItems = useMemo(() => {
+    const itemMap = new Map<string, { menuItemId: string; menuName: string; quantity: number; status: RefillItem['status']; servedTimestamp?: Timestamp; timestamp: Timestamp }>();
+
+    for (const item of refillItems) {
+      const key = `${item.menuItemId}-${item.status}`;
+      const existing = itemMap.get(key);
+      if (existing) {
+        existing.quantity += item.quantity;
+      } else {
+        itemMap.set(key, {
+          menuItemId: item.menuItemId,
+          menuName: item.menuName,
+          quantity: item.quantity,
+          status: item.status,
+          servedTimestamp: item.servedTimestamp,
+          timestamp: item.timestamp,
+        });
+      }
+    }
+    return Array.from(itemMap.values());
+  }, [refillItems]);
+
 
   const handleBuzz = () => {
     console.log(`Buzzing kitchen for order ${order.id} for pending items!`);
@@ -132,8 +178,8 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                       <Badge variant="secondary">Package</Badge>
                   </div>
                 )}
-                {alaCarteItems.map(item => (
-                  <div key={item.id} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
+                {groupedAlaCarteItems.map(item => (
+                  <div key={item.menuItemId} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
                     <div className="flex items-center gap-2">
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
                         <span className="font-medium">{item.quantity}x {item.menuName}</span>
@@ -148,8 +194,8 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
             <div>
               <h3 className="text-md font-semibold mb-2">Refill History</h3>
               <div className="space-y-2">
-                {refillItems.length > 0 ? refillItems.map(item => (
-                  <div key={item.id} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
+                {groupedRefillItems.length > 0 ? groupedRefillItems.map(item => (
+                  <div key={`${item.menuItemId}-${item.status}`} className={cn("flex items-center justify-between p-2 rounded-lg", item.status === 'Pending' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30')}>
                      <div className="flex items-center gap-2">
                         {item.status === 'Pending' ? <Hourglass className="h-4 w-4 text-red-500" /> : <CheckCircle className="h-4 w-4 text-green-500" />}
                         <span className="font-medium">{item.quantity}x Refill - {item.menuName}</span>
@@ -213,3 +259,5 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
     </>
   );
 }
+
+    
