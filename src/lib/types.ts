@@ -142,6 +142,7 @@ export type Order = {
 export type OrderItem = {
   id: string;
   orderId: string;
+  storeId: string;
   menuItemId: string;
   menuName: string;
   quantity: number;
@@ -157,6 +158,7 @@ export type OrderItem = {
 export type RefillItem = {
   id: string;
   orderId: string;
+  storeId: string;
   menuItemId: string;
   menuName: string;
   quantity: number;

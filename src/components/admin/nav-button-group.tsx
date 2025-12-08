@@ -8,7 +8,7 @@ import { DropdownMenuItem } from '../ui/dropdown-menu';
 
 const navLinks = [
   { href: '/cashier', label: 'Cashier' },
-  { href: '/kitchen', label: 'Kitchen', disabled: true },
+  { href: '/kitchen', label: 'Kitchen' },
   { href: '/refill', label: 'Refill', disabled: true },
   { href: '/admin', label: 'Admin' },
 ];

@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -118,6 +117,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             // 2. Add the selected package as the first order item
             const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
             batch.set(orderItemRef, {
+                storeId: storeId,
                 menuItemId: selectedPackage.id,
                 menuName: selectedPackage.menuName,
                 quantity: guestCount,
