@@ -18,7 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuth } from '@/firebase';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import { useSuccessModal } from '@/store/use-success-modal';
 
@@ -48,6 +48,7 @@ export function PaymentModal({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const firestore = useFirestore();
+  const auth = useAuth();
   const { openSuccessModal } = useSuccessModal();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
@@ -103,34 +104,34 @@ export function PaymentModal({
   }
   
   const handleFinalize = async () => {
-    if (!firestore || balance > 0) return;
+    if (!firestore || balance > 0.01) return;
     setIsProcessing(true);
+    const user = auth?.currentUser;
 
     try {
-      // ** Future logic will go here **
-      // This transaction will ensure we safely get and update the receipt number.
       await runTransaction(firestore, async (transaction) => {
-        // 1. Get receipt settings for the store
-        // const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
-        // const settingsSnap = await transaction.get(settingsRef);
-        // if (!settingsSnap.exists()) {
-        //   throw new Error("Receipt settings for this store not found!");
-        // }
-        // const settings = settingsSnap.data() as ReceiptSettings;
-        // const nextNumber = settings.nextReceiptNumber;
+        // 1. Get receipt settings for the store to get the next number
+        const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
+        const settingsSnap = await transaction.get(settingsRef);
+        if (!settingsSnap.exists()) {
+          throw new Error("Receipt settings for this store not found!");
+        }
+        const settings = settingsSnap.data() as ReceiptSettings;
+        const nextNumber = settings.nextReceiptNumber || 1;
 
         // 2. Format receipt number
-        // const receiptNumber = `${settings.receiptNumberPrefix}${String(nextNumber).padStart(6, '0')}`;
+        const receiptNumber = `${settings.receiptNumberPrefix || ''}${String(nextNumber).padStart(6, '0')}`;
         
-        // 3. Prepare receipt details
-        // const receiptDetails = {
-        //   receiptNumber: receiptNumber,
-        //   cashierName: 'Current User Name' // Placeholder
-        // };
+        // 3. Prepare receipt details object to be saved on the order
+        const receiptDetails = {
+          receiptNumber: receiptNumber,
+          cashierName: user?.displayName || user?.email || 'System',
+        };
 
-        // --- Start of existing batch logic ---
-        const batch = writeBatch(firestore);
+        // --- Start Batch ---
+        const batch = writeBatch(transaction); // Use the transaction's batch
 
+        // Create Payment Transaction records
         const transactionsRef = collection(firestore, 'orders', order.id, 'transactions');
         payments.forEach(payment => {
           const paymentData: Omit<OrderTransaction, 'id'> = {
@@ -143,14 +144,16 @@ export function PaymentModal({
           batch.set(doc(transactionsRef), paymentData);
         });
         
+        // Update Order to Completed
         const orderRef = doc(firestore, 'orders', order.id);
         batch.update(orderRef, {
             status: 'Completed',
             completedTimestamp: serverTimestamp(),
             totalAmount: totalAmount,
-            // receiptDetails: receiptDetails, // Save the new receipt details
+            receiptDetails: receiptDetails,
         });
 
+        // Update Table to Available
         const tablesRef = collection(firestore, 'tables');
         const q = query(tablesRef, where('storeId', '==', order.storeId), where('activeOrderId', '==', order.id));
         const tableSnapshot = await getDocs(q);
@@ -160,8 +163,9 @@ export function PaymentModal({
         }
         
         // 4. Update the receipt number counter in settings
-        // transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
-
+        transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
+        
+        // Commit the batch as part of the transaction
         await batch.commit();
       });
 
