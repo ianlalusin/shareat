@@ -42,11 +42,12 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
     
     useEffect(() => {
-        if(firestore) {
+        if(firestore && storeId) {
             const flavorsQuery = query(
                 collection(firestore, 'lists'),
                 where('category', '==', 'meat flavors'),
-                where('is_active', '==', true)
+                where('is_active', '==', true),
+                where('storeIds', 'array-contains', storeId)
             );
             const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
                 const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem);
@@ -54,7 +55,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             });
             return () => unsubscribe();
         }
-    }, [firestore]);
+    }, [firestore, storeId]);
 
     useEffect(() => {
         // Reset state when modal opens
