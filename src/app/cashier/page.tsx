@@ -4,13 +4,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, addDoc, updateDoc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, OrderItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { TableCard } from '@/components/cashier/table-card';
+import { Flame } from 'lucide-react';
 
 const NewOrderModal = dynamic(() => import('@/components/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
@@ -154,6 +155,18 @@ export default function CashierPage() {
         throw new Error("Failed to create new order. Please try again.");
       }
     };
+
+    const handleTogglePriority = async (order: Order) => {
+      if (!firestore || !order?.id) return;
+      try {
+        const orderRef = doc(firestore, 'orders', order.id);
+        const nextPriority = order.priority === 'rush' ? 'normal' : 'rush';
+        await updateDoc(orderRef, { priority: nextPriority });
+      } catch (err) {
+        console.error('Error updating priority:', err);
+        alert('Failed to update order priority.');
+      }
+    };
     
     if (!selectedStoreId) {
         return (
@@ -198,6 +211,7 @@ export default function CashierPage() {
                     table={table}
                     order={order}
                     onViewOrderClick={() => handleViewOrderClick(order)}
+                    onTogglePriority={() => handleTogglePriority(order)}
                   />
                 ) : null
               ))}

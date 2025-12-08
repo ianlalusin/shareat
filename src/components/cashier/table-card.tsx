@@ -9,11 +9,13 @@ import { OrderTimer } from './order-timer';
 import { Table as TableType, Order } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { Flame } from 'lucide-react';
 
 interface TableCardProps {
   table: TableType;
   order: Order | undefined;
   onViewOrderClick: (order: Order) => void;
+  onTogglePriority: (order: Order) => void;
 }
 
 const getStatusColor = (status: TableType['status']) => {
@@ -26,7 +28,7 @@ const getStatusColor = (status: TableType['status']) => {
   }
 };
 
-const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick }) => {
+const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick, onTogglePriority }) => {
   const router = useRouter();
 
   if (!order) {
@@ -37,12 +39,40 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
     <Card className="bg-muted/30">
       <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-          <p className="text-xs text-muted-foreground font-medium">{order.packageName}</p>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-xl font-bold">
+              {table.tableName}
+            </CardTitle>
+            {order?.priority === 'rush' && (
+              <Badge variant="destructive" className="text-[10px]">
+                RUSH
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground font-medium">
+            {order.packageName}
+          </p>
         </div>
-        <Badge className={cn("text-white", getStatusColor(table.status))}>
-          {table.status}
-        </Badge>
+
+        <div className="flex flex-col items-end gap-2">
+          <Badge className={cn("text-white", getStatusColor(table.status))}>
+            {table.status}
+          </Badge>
+          {order && (
+            <Button
+              size="sm"
+              variant={order.priority === 'rush' ? 'destructive' : 'outline'}
+              className="h-7 px-2 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePriority(order);
+              }}
+            >
+              <Flame className="h-3 w-3 mr-1" />
+              {order.priority === 'rush' ? 'Rush' : 'Make Rush'}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="text-sm">
