@@ -33,6 +33,8 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
     const [customerName, setCustomerName] = useState('');
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
+    const [rice, setRice] = useState('');
+    const [cheese, setCheese] = useState('');
     
     const firestore = useFirestore();
     const { openSuccessModal } = useSuccessModal();
@@ -45,6 +47,8 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
             setCustomerName('');
             setGuestCount(2);
             setSelectedPackage(null);
+            setRice('');
+            setCheese('');
         }
     }, [isOpen]);
 
@@ -69,6 +73,10 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         try {
             const batch = writeBatch(firestore);
 
+            const initialFlavors = [];
+            if (rice) initialFlavors.push(`Rice: ${rice}`);
+            if (cheese) initialFlavors.push(`Cheese: ${cheese}`);
+
             // 1. Create the new order
             batch.set(newOrderRef, {
                 storeId: storeId,
@@ -79,7 +87,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                 orderTimestamp: serverTimestamp(),
                 totalAmount: selectedPackage.price * guestCount, // Initial total
                 notes: '',
-                initialFlavors: [],
+                initialFlavors: initialFlavors,
                 packageName: selectedPackage.menuName,
             } as Omit<Order, 'id'>);
 
@@ -141,6 +149,16 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
                         </SelectContent>
                     </Select>
                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="rice">Rice</Label>
+                        <Input id="rice" value={rice} onChange={e => setRice(e.target.value)} placeholder="e.g., Plain" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="cheese">Cheese</Label>
+                        <Input id="cheese" value={cheese} onChange={e => setCheese(e.target.value)} placeholder="e.g., Cheddar" />
+                    </div>
+                </div>
                 <div className="space-y-2">
                     <Label htmlFor="guestCount">No. of Guests</Label>
                     <div className="flex items-center gap-2">
@@ -162,4 +180,3 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId }: NewOrde
         </Dialog>
     )
 }
-
