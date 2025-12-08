@@ -224,16 +224,12 @@ export default function SalesReportPage() {
       const transData = transSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderTransaction);
       setTransactions(transData);
 
-      const orderItemsSnapshot = await getDocs(collectionGroup(firestore, 'orderItems'));
-      const allItems = orderItemsSnapshot.docs.map(doc => {
-          const orderRef = doc.ref.parent.parent;
-          const orderId = orderRef ? orderRef.id : null;
-          return {
-              id: doc.id,
-              orderId,
-              ...doc.data(),
-          } as OrderItem;
-      }).filter(item => item.orderId && orderIds.includes(item.orderId));
+      const orderItemsQuery = query(
+        collectionGroup(firestore, 'orderItems'),
+        where('orderId', 'in', orderIds)
+      );
+      const orderItemsSnapshot = await getDocs(orderItemsQuery);
+      const allItems = orderItemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OrderItem));
       setOrderItems(allItems);
 
       const aggregatedData = new Map<string, SalesReportItem>();
@@ -530,3 +526,5 @@ interface SalesReportItem {
   quantitySold: number;
   totalSales: number;
 }
+
+    

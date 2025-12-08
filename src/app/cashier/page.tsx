@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, addDoc } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, GListItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, GListItem, OrderItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -149,7 +149,7 @@ export default function CashierPage() {
           status: 'Pending',
           targetStation: selectedPackage.targetStation,
           sourceTag: 'cashier',
-        });
+        } as Omit<OrderItem, 'id'>);
 
         batch.update(tableRef, {
           status: 'Occupied',
@@ -254,3 +254,5 @@ export default function CashierPage() {
     </>
   );
 }
+
+    
