@@ -23,6 +23,7 @@ import {
   ListChecks,
   LayoutGrid,
   Warehouse,
+  Receipt,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -41,7 +42,7 @@ const menuItems = [
 ];
 
 const bottomMenuItems = [
-  { href: "#settings", label: "Settings", icon: Settings },
+  { href: "/admin/settings/receipt", label: "Settings", icon: Settings },
   { href: "#account", label: "Account", icon: CircleUser },
 ];
 
