@@ -125,17 +125,19 @@ export default function KitchenPage() {
 
   const groupedByOrder = useMemo(() => {
     const groups: {
-      [orderId: string]: { order: Order | undefined; items: KitchenItem[] };
+      [orderId: string]: { orderId: string; order?: Order; items: KitchenItem[] };
     } = {};
 
     kitchenItems.forEach((item) => {
-      if (!groups[item.orderId]) {
-        groups[item.orderId] = {
+      const orderId = item.orderId;
+      if (!groups[orderId]) {
+        groups[orderId] = {
+          orderId,
           order: item.order,
           items: [],
         };
       }
-      groups[item.orderId].items.push(item);
+      groups[orderId].items.push(item);
     });
 
     return Object.values(groups).sort((a, b) => {
@@ -249,7 +251,7 @@ export default function KitchenPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {hotGroups.map((group) => (
             <KitchenOrderCard
-              key={group.order?.id}
+              key={group.orderId}
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
@@ -267,7 +269,7 @@ export default function KitchenPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {coldGroups.map((group) => (
             <KitchenOrderCard
-              key={group.order?.id}
+              key={group.orderId}
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
