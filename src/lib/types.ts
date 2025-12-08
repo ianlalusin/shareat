@@ -27,6 +27,7 @@ export type GListItem = {
 
 export type Staff = {
   id:string;
+  uid?: string;
   assignedStore: string;
   fullName: string;
   address: string;

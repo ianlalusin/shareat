@@ -241,7 +241,7 @@ export default function EditStaffPage() {
                 </Select>
               </div>
                <div className="space-y-2">
-                <Label htmlFor="position">Position</Label>
+                <Label htmlFor="position">Position (Role)</Label>
                 <Input id="position" name="position" value={formData.position} onChange={handleInputChange} required />
               </div>
               <div className="space-y-2">
@@ -284,6 +284,10 @@ export default function EditStaffPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="uid">Auth UID</Label>
+                <Input id="uid" name="uid" value={formData.uid || ''} disabled readOnly />
+              </div>
                <div className="md:col-span-3 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea id="notes" name="notes" value={formData.notes || ''} onChange={handleInputChange} />
@@ -305,4 +309,3 @@ export default function EditStaffPage() {
     </main>
   );
 }
-

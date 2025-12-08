@@ -33,6 +33,7 @@ import { useSuccessModal } from '@/store/use-success-modal';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
+  uid: '',
   assignedStore: '',
   fullName: '',
   address: '',
@@ -180,7 +181,7 @@ export default function NewStaffPage() {
                 </Select>
               </div>
                <div className="space-y-2">
-                <Label htmlFor="position">Position</Label>
+                <Label htmlFor="position">Position (Role)</Label>
                 <Input id="position" name="position" value={formData.position} onChange={handleInputChange} required />
               </div>
               <div className="space-y-2">
@@ -248,4 +249,3 @@ export default function NewStaffPage() {
     </main>
   );
 }
-

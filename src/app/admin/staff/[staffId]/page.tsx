@@ -190,7 +190,7 @@ export default function StaffDetailPage() {
         <CardContent className="grid md:grid-cols-3 gap-x-6 gap-y-8">
           <InfoItem label="Full Name" value={staff.fullName} />
           <InfoItem label="Assigned Store" value={staff.assignedStore} />
-          <InfoItem label="Position" value={staff.position} />
+          <InfoItem label="Position (Role)" value={staff.position} />
           <InfoItem label="Email" value={staff.email} />
           <InfoItem label="Contact No." value={staff.contactNo} />
           <InfoItem label="Address" value={staff.address} />
@@ -203,6 +203,7 @@ export default function StaffDetailPage() {
                 {staff.employmentStatus}
             </Badge>
           </div>
+          <InfoItem label="Auth UID" value={staff.uid} />
           <InfoItem label="Notes" value={staff.notes} className="md:col-span-3" />
         </CardContent>
       </Card>
