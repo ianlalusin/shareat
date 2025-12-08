@@ -14,6 +14,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus, Minus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
