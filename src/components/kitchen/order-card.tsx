@@ -62,6 +62,7 @@ export function KitchenOrderCard({
             className="mt-1"
             onClick={onServeAll}
           >
+            <CheckSquare className="h-4 w-4 mr-2" />
             Serve all
           </Button>
         </div>
