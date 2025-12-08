@@ -29,17 +29,19 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
-import { Order, OrderItem, OrderTransaction } from '@/lib/types';
+import { Order, OrderItem, OrderTransaction, Store } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, TrendingUp, ChevronRight, Hash, Wallet, Coins } from 'lucide-react';
+import { Loader2, TrendingUp, ChevronRight, Hash, Wallet, Coins, Printer, Undo, Pencil } from 'lucide-react';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 interface SalesReportItem {
   menuItemId: string;
@@ -54,15 +56,99 @@ interface ChartDataItem {
   total: number;
 }
 
+function ReceiptViewerModal({ order, store, items, transactions, isOpen, onClose }: { order: Order | null, store: Store | null, items: OrderItem[], transactions: OrderTransaction[], isOpen: boolean, onClose: () => void }) {
+    if (!order) return null;
+
+    const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0);
+    const adjustments = transactions.filter(t => t.type === 'Discount' || t.type === 'Charge');
+    const payments = transactions.filter(t => t.type === 'Payment');
+    const total = subtotal + adjustments.reduce((acc, t) => t.type === 'Charge' ? acc + t.amount : acc - t.amount, 0);
+    const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
+    const change = totalPaid - total;
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Receipt Details</DialogTitle>
+                </DialogHeader>
+                <div className="bg-white text-black p-4 rounded-lg shadow-inner max-h-[60vh] overflow-y-auto">
+                    <div className="font-mono text-xs w-full mx-auto">
+                        <div className="text-center space-y-1 mb-2">
+                            {store?.logo && <div className="flex justify-center mb-2"><img src={store.logo} alt="Store Logo" className="h-16 w-auto object-contain"/></div>}
+                            <h2 className="text-sm font-bold">{store?.storeName}</h2>
+                            <p>{store?.address}</p>
+                            <p>{store?.contactNo}</p>
+                            {store?.tinNumber && <p>TIN: {store.tinNumber}</p>}
+                        </div>
+                        <Separator className="my-2 border-dashed border-black"/>
+                        <div className="space-y-1">
+                            <p>Receipt No: {order.receiptDetails?.receiptNumber}</p>
+                            <p>Date: {order.completedTimestamp ? format(order.completedTimestamp.toDate(), 'MM/dd/yyyy hh:mm a') : 'N/A'}</p>
+                            <p>Cashier: {order.receiptDetails?.cashierName}</p>
+                        </div>
+                        <Separator className="my-2 border-dashed border-black"/>
+                        <table className="w-full">
+                            <thead>
+                                <tr>
+                                    <th className="text-left font-normal">QTY</th>
+                                    <th className="text-left font-normal">ITEM</th>
+                                    <th className="text-right font-normal">TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item) => (
+                                    <tr key={item.id}>
+                                        <td>{item.quantity}</td>
+                                        <td>{item.menuName}</td>
+                                        <td className="text-right">{formatCurrency(item.quantity * item.priceAtOrder)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <Separator className="my-2 border-dashed border-black"/>
+                        <div className="space-y-1">
+                            <div className="flex justify-between"><p>Subtotal:</p><p>{formatCurrency(subtotal)}</p></div>
+                             {adjustments.map(adj => (
+                                <div key={adj.id} className="flex justify-between">
+                                    <p>{adj.type} ({adj.notes}):</p>
+                                    <p>{adj.type === 'Discount' ? '-' : ''}{formatCurrency(adj.amount)}</p>
+                                </div>
+                            ))}
+                            <div className="flex justify-between font-bold text-sm"><p>TOTAL:</p><p>{formatCurrency(total)}</p></div>
+                        </div>
+                        <Separator className="my-2 border-dashed border-black"/>
+                        <div className="space-y-1">
+                           {payments.map(p => (
+                               <div key={p.id} className="flex justify-between"><p>{p.method}:</p><p>{formatCurrency(p.amount)}</p></div>
+                           ))}
+                           <div className="flex justify-between"><p>Total Paid:</p><p>{formatCurrency(totalPaid)}</p></div>
+                           {change > 0 && <div className="flex justify-between"><p>Change:</p><p>{formatCurrency(change)}</p></div>}
+                        </div>
+                    </div>
+                </div>
+                <DialogFooter className="flex-row justify-end gap-2 mt-4">
+                    <Button variant="outline"><Printer className="mr-2 h-4 w-4" />Reprint</Button>
+                    <Button variant="outline"><Undo className="mr-2 h-4 w-4" />Return</Button>
+                    <Button variant="destructive"><Pencil className="mr-2 h-4 w-4" />Edit</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 
 export default function SalesReportPage() {
   const [reportData, setReportData] = useState<SalesReportItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date())});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedOrderForView, setSelectedOrderForView] = useState<Order | null>(null);
 
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
@@ -97,6 +183,7 @@ export default function SalesReportPage() {
     setReportData([]);
     setTransactions([]);
     setCompletedOrders([]);
+    setOrderItems([]);
 
     try {
       const startDate = Timestamp.fromDate(startOfDay(dateRange.from));
@@ -118,26 +205,26 @@ export default function SalesReportPage() {
       if (orderIds.length === 0) {
         setTransactions([]);
         setReportData([]);
+        setOrderItems([]);
         setLoading(false);
         return;
       }
       
-      // Fetch transactions for completed orders
       const transactionsQuery = query(
         collectionGroup(firestore, 'transactions'),
         where('orderId', 'in', orderIds)
       );
       const transSnapshot = await getDocs(transactionsQuery);
-      const transData = transSnapshot.docs.map(doc => doc.data() as OrderTransaction);
+      const transData = transSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderTransaction);
       setTransactions(transData);
 
-      // Fetch order items for completed orders
       const orderItemsQuery = query(
           collectionGroup(firestore, 'orderItems'),
           where('orderId', 'in', orderIds)
       );
       const itemsSnapshot = await getDocs(orderItemsQuery);
-      const items = itemsSnapshot.docs.map(doc => doc.data() as OrderItem);
+      const items = itemsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderItem);
+      setOrderItems(items);
 
       const aggregatedData = new Map<string, SalesReportItem>();
       for (const item of items) {
@@ -207,8 +294,13 @@ export default function SalesReportPage() {
     return Object.entries(salesByDate).map(([date, total]) => ({ date, total })).reverse();
   }, [transactions, dateRange]);
 
+  const selectedStore = useMemo(() => {
+    // This is a bit of a placeholder. In a real app you'd fetch this properly.
+    return { id: selectedStoreId, storeName: 'Selected Store' } as Store;
+  }, [selectedStoreId]);
 
   return (
+    <>
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
@@ -278,7 +370,7 @@ export default function SalesReportPage() {
                 </TableHeader>
                 <TableBody>
                   {completedOrders.map(order => (
-                    <TableRow key={order.id}>
+                    <TableRow key={order.id} onClick={() => setSelectedOrderForView(order)} className="cursor-pointer">
                       <TableCell className="text-xs">
                           {order.completedTimestamp ? format(order.completedTimestamp.toDate(), 'MM/dd/yy hh:mm a') : 'N/A'}
                       </TableCell>
@@ -406,5 +498,15 @@ export default function SalesReportPage() {
         </Card>
        </div>
     </main>
+    
+    <ReceiptViewerModal
+        isOpen={!!selectedOrderForView}
+        onClose={() => setSelectedOrderForView(null)}
+        order={selectedOrderForView}
+        store={selectedStore}
+        items={orderItems.filter(item => item.orderId === selectedOrderForView?.id)}
+        transactions={transactions.filter(trans => trans.orderId === selectedOrderForView?.id)}
+    />
+    </>
   );
 }
