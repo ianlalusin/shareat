@@ -21,6 +21,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
@@ -30,6 +38,8 @@ import { Loader2, TrendingUp, ChevronRight, Hash, Wallet, Coins } from 'lucide-r
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
+import { useStoreSelector } from '@/store/use-store-selector';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface SalesReportItem {
   menuItemId: string;
@@ -48,57 +58,83 @@ interface ChartDataItem {
 export default function SalesReportPage() {
   const [reportData, setReportData] = useState<SalesReportItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date())});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const firestore = useFirestore();
+  const { selectedStoreId } = useStoreSelector();
 
   useEffect(() => {
-    if (firestore) {
+    if (firestore && selectedStoreId) {
       // Listener for active orders - not tied to date range
-      const activeOrdersQuery = query(collection(firestore, 'orders'), where('status', '==', 'Active'));
+      const activeOrdersQuery = query(
+        collection(firestore, 'orders'), 
+        where('storeId', '==', selectedStoreId),
+        where('status', '==', 'Active')
+      );
       const activeUnsubscribe = onSnapshot(activeOrdersQuery, (snapshot) => {
-        setActiveOrders(snapshot.docs.map(doc => doc.data() as Order));
+        setActiveOrders(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order));
       });
 
       return () => activeUnsubscribe();
     }
-  }, [firestore]);
+  }, [firestore, selectedStoreId]);
 
 
   const handleGenerateReport = async () => {
-    if (!firestore || !dateRange || !dateRange.from || !dateRange.to) {
-      setError('Please select a valid date range.');
+    if (!firestore || !dateRange || !dateRange.from || !dateRange.to || !selectedStoreId) {
+      setError('Please select a store and a valid date range.');
       return;
     }
     setLoading(true);
     setError(null);
     setReportData([]);
     setTransactions([]);
+    setCompletedOrders([]);
 
     try {
       const startDate = Timestamp.fromDate(startOfDay(dateRange.from));
       const endDate = Timestamp.fromDate(endOfDay(dateRange.to));
 
-      // Fetch completed order items
-      const orderItemsQuery = query(
-        collectionGroup(firestore, 'orderItems'),
-        where('timestamp', '>=', startDate),
-        where('timestamp', '<=', endDate),
+      const completedOrdersQuery = query(
+        collection(firestore, 'orders'),
+        where('storeId', '==', selectedStoreId),
+        where('status', '==', 'Completed'),
+        where('completedTimestamp', '>=', startDate),
+        where('completedTimestamp', '<=', endDate)
       );
-      const itemsSnapshot = await getDocs(orderItemsQuery);
-      const items = itemsSnapshot.docs.map(doc => doc.data() as OrderItem);
+      const completedOrdersSnapshot = await getDocs(completedOrdersQuery);
+      const completedOrdersData = completedOrdersSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order);
+      setCompletedOrders(completedOrdersData);
+
+      const orderIds = completedOrdersData.map(o => o.id);
+
+      if (orderIds.length === 0) {
+        setTransactions([]);
+        setReportData([]);
+        setLoading(false);
+        return;
+      }
       
+      // Fetch transactions for completed orders
       const transactionsQuery = query(
-          collectionGroup(firestore, 'transactions'),
-          where('timestamp', '>=', startDate),
-          where('timestamp', '<=', endDate),
+        collectionGroup(firestore, 'transactions'),
+        where('orderId', 'in', orderIds)
       );
       const transSnapshot = await getDocs(transactionsQuery);
       const transData = transSnapshot.docs.map(doc => doc.data() as OrderTransaction);
       setTransactions(transData);
+
+      // Fetch order items for completed orders
+      const orderItemsQuery = query(
+          collectionGroup(firestore, 'orderItems'),
+          where('orderId', 'in', orderIds)
+      );
+      const itemsSnapshot = await getDocs(orderItemsQuery);
+      const items = itemsSnapshot.docs.map(doc => doc.data() as OrderItem);
 
       const aggregatedData = new Map<string, SalesReportItem>();
       for (const item of items) {
@@ -132,10 +168,10 @@ export default function SalesReportPage() {
   useEffect(() => {
     // Auto-generate report when date range changes
     handleGenerateReport();
-  }, [dateRange, firestore]);
+  }, [dateRange, firestore, selectedStoreId]);
 
   const totalRevenue = transactions.filter(t => t.type === 'Payment').reduce((sum, item) => sum + item.amount, 0);
-  const totalReceipts = new Set(transactions.map(t => t.orderId)).size;
+  const totalReceipts = completedOrders.length;
   const parkedSalesAmount = activeOrders.reduce((sum, order) => sum + order.totalAmount, 0);
 
   const salesByMop = useMemo(() => {
@@ -150,7 +186,7 @@ export default function SalesReportPage() {
   const salesChartData = useMemo(() => {
     const salesByDate: Record<string, number> = {};
     const range = dateRange?.to && dateRange.from ? 
-      Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24))
       : 7;
 
     const defaultEndDate = dateRange?.to || new Date();
@@ -189,6 +225,14 @@ export default function SalesReportPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
         )}
+        
+        {!selectedStoreId && (
+            <Alert>
+                <AlertTitle>No Store Selected</AlertTitle>
+                <AlertDescription>Please select a store to view its sales report.</AlertDescription>
+            </Alert>
+        )}
+
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -200,15 +244,49 @@ export default function SalesReportPage() {
                 <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
             </CardContent>
         </Card>
-         <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Receipts</CardTitle>
-                <Hash className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-                <div className="text-2xl font-bold">{totalReceipts}</div>
-            </CardContent>
-        </Card>
+        <Sheet>
+          <SheetTrigger asChild>
+             <Card className="cursor-pointer hover:bg-muted/50">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Receipts</CardTitle>
+                    <Hash className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{totalReceipts}</div>
+                </CardContent>
+            </Card>
+          </SheetTrigger>
+          <SheetContent className="sm:max-w-lg">
+             <SheetHeader>
+                <SheetTitle>Receipts</SheetTitle>
+                <SheetDescription>
+                    Showing {completedOrders.length} receipts for the selected period.
+                </SheetDescription>
+            </SheetHeader>
+            <ScrollArea className="h-[calc(100vh-8rem)] mt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Receipt #</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {completedOrders.map(order => (
+                    <TableRow key={order.id}>
+                      <TableCell className="text-xs">
+                          {order.completedTimestamp ? format(order.completedTimestamp.toDate(), 'MM/dd/yy hh:mm a') : 'N/A'}
+                      </TableCell>
+                      <TableCell>{order.receiptDetails?.receiptNumber || 'N/A'}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(order.totalAmount)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Active Orders</CardTitle>
