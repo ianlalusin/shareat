@@ -129,7 +129,8 @@ export default function RefillPage() {
             const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
             cart.forEach(cartItem => {
                 const newItemRef = doc(orderItemsRef);
-                const orderItemData: Omit<OrderItem, 'id' | 'orderId'> = {
+                const orderItemData: Omit<OrderItem, 'id'> = {
+                    orderId: order.id,
                     storeId: order.storeId,
                     menuItemId: cartItem.id,
                     menuName: cartItem.menuName,

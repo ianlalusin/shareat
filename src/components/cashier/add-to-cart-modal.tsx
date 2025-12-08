@@ -100,7 +100,8 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
 
         cart.forEach(cartItem => {
             const newItemRef = doc(orderItemsRef);
-            const orderItemData: Omit<OrderItem, 'id' | 'orderId'> = {
+            const orderItemData: Omit<OrderItem, 'id'> = {
+                orderId: order.id,
                 storeId: order.storeId,
                 menuItemId: cartItem.id,
                 menuName: cartItem.menuName,

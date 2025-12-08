@@ -138,6 +138,7 @@ export default function CashierPage() {
 
         const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
         batch.set(orderItemRef, {
+          orderId: newOrderRef.id,
           storeId: selectedStoreId,
           menuItemId: selectedPackage.id,
           menuName: selectedPackage.menuName,
