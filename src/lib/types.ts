@@ -258,6 +258,8 @@ export type OrderUpdateLog = {
 
 export type PendingOrderUpdate = {
     id: string;
+    orderId: string;
+    storeId: string;
     initiatedByUid: string;
     initiatedByName: string;
     initiatedAt: Timestamp;
