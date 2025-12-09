@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -20,6 +21,7 @@ import Image from 'next/image';
 import { Receipt } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 const initialSettingsState: Omit<ReceiptSettings, 'id'> = {
     showLogo: true,
@@ -122,6 +124,7 @@ export default function ReceiptSettingsPage() {
     const { selectedStoreId } = useStoreSelector();
     const firestore = useFirestore();
     const { openSuccessModal } = useSuccessModal();
+    const { toast } = useToast();
 
     useEffect(() => {
         if (!firestore || !selectedStoreId) {
@@ -186,7 +189,11 @@ export default function ReceiptSettingsPage() {
             openSuccessModal();
         } catch (error) {
             console.error("Error saving settings:", error);
-            alert("Failed to save settings.");
+            toast({
+                variant: 'destructive',
+                title: 'Save Failed',
+                description: 'Failed to save settings.'
+            });
         }
     };
 
@@ -194,7 +201,7 @@ export default function ReceiptSettingsPage() {
         return (
             <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
                 <h1 className="text-lg font-semibold md:text-2xl font-headline">Receipt Settings</h1>
-                <Alert>
+                <Alert variant="info">
                     <AlertTitle>No Store Selected</AlertTitle>
                     <AlertDescription>Please select a store to configure its receipt settings.</AlertDescription>
                 </Alert>

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -24,14 +25,15 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '../ui/scroll-area';
+import { Separator } from '../ui/separator';
 import { Minus, Plus, ShoppingCart, Trash2, Search, ChevronDown, MessageSquarePlus } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Image from 'next/image';
 import { Badge } from '../ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Textarea } from '../ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 
 interface RefillCartItem {
     meatType: string;
@@ -71,6 +73,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     const [editingNoteItem, setEditingNoteItem] = useState<{ type: 'refill' | 'addon'; key: string } | null>(null);
 
     const firestore = useFirestore();
+    const { toast } = useToast();
     
     const packageDetails = useMemo(() => {
         return menu.find(m => m.menuName === order.packageName && m.category === 'Unlimited');
@@ -145,7 +148,11 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     const handleAddToRefillCart = (meatType: string) => {
         const selection = refillSelections[meatType];
         if (!selection || selection.flavors.length === 0) {
-            alert('Please select at least one flavor.');
+            toast({
+                variant: 'destructive',
+                title: 'No Flavor Selected',
+                description: 'Please select at least one flavor to add to the cart.',
+            });
             return;
         }
 

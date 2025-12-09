@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -256,7 +257,7 @@ export default function SalesReportPage() {
         )}
         
         {!selectedStoreId && (
-            <Alert>
+            <Alert variant="info">
                 <AlertTitle>No Store Selected</AlertTitle>
                 <AlertDescription>Please select a store to view its sales report.</AlertDescription>
             </Alert>

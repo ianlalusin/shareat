@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -15,6 +16,7 @@ import { OrderTimer } from '@/components/cashier/order-timer';
 import { RefillModal } from '@/components/cashier/refill-modal';
 import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useToast } from '@/hooks/use-toast';
 
 
 const getStatusColor = (status: TableType['status']) => {
@@ -41,6 +43,7 @@ export default function RefillPage() {
     const auth = useAuth();
     const { selectedStoreId } = useStoreSelector();
     const { openSuccessModal } = useSuccessModal();
+    const { toast } = useToast();
     
     useEffect(() => {
         if (firestore && selectedStoreId) {
@@ -155,14 +158,18 @@ export default function RefillPage() {
             setIsRefillModalOpen(false);
         } catch (error) {
             console.error("Error placing order:", error);
-            alert("Failed to place order.");
+            toast({
+                variant: 'destructive',
+                title: 'Order Failed',
+                description: 'Failed to place order. Please try again.',
+            });
         }
     };
     
     if (!selectedStoreId) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-4">
-                 <Alert className="max-w-md">
+                 <Alert variant="info" className="max-w-md">
                     <AlertTitle>No Store Selected</AlertTitle>
                     <AlertDescription>Please select a store from the header to manage refills and add-ons.</AlertDescription>
                 </Alert>

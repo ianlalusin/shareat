@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -295,7 +296,7 @@ export default function TableManagementPage() {
       </div>
       
       {!selectedStoreId ? (
-        <Alert>
+        <Alert variant="info">
           <AlertTitle>No Store Selected</AlertTitle>
           <AlertDescription>Please select a store from the dropdown above to manage its tables.</AlertDescription>
         </Alert>

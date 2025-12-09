@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -476,7 +477,7 @@ export default function InventoryPage() {
       </div>
 
        {!selectedStoreId ? (
-          <Alert>
+          <Alert variant="info">
             <AlertTitle>No Store Selected</AlertTitle>
             <AlertDescription>Please select a store from the dropdown above to manage its inventory.</AlertDescription>
           </Alert>

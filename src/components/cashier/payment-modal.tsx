@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -19,6 +20,7 @@ import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface Payment {
   id: number;
@@ -48,6 +50,7 @@ export function PaymentModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const firestore = useFirestore();
   const auth = useAuth();
+  const { toast } = useToast();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
   const balance = totalAmount - totalPaid;
@@ -190,6 +193,11 @@ export function PaymentModal({
     } catch (error) {
       console.error("Failed to finalize bill: ", error);
       setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred during finalization.");
+      toast({
+          variant: "destructive",
+          title: "Finalization Failed",
+          description: error instanceof Error ? error.message : "Could not finalize the bill.",
+      });
     } finally {
       setIsProcessing(false);
     }

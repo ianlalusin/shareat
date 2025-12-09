@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore, useAuth } from '@/firebase';
 import {
@@ -21,12 +20,7 @@ import { Order, OrderItem, RefillItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
-import { KitchenItem } from '@/components/kitchen/order-card';
-
-const KitchenOrderCard = dynamic(
-  () => import('@/components/kitchen/order-card').then(m => m.KitchenOrderCard),
-  { ssr: false }
-);
+import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
 
 export default function KitchenPage() {
   const [ordersById, setOrdersById] = useState<Record<string, Order>>({});
@@ -208,7 +202,7 @@ export default function KitchenPage() {
   if (!selectedStoreId) {
     return (
       <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
-        <Alert className="max-w-md bg-background">
+        <Alert variant="info" className="max-w-md bg-background">
           <AlertTitle>No Store Selected</AlertTitle>
           <AlertDescription>
             Please select a store from the header to view kitchen orders.

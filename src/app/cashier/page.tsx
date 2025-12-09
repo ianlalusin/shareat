@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -176,7 +177,7 @@ export default function CashierPage() {
     if (!selectedStoreId) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                 <Alert className="max-w-md">
+                 <Alert variant="info" className="max-w-md">
                     <AlertTitle>No Store Selected</AlertTitle>
                     <AlertDescription>Please select a store from the header to begin.</AlertDescription>
                 </Alert>
