@@ -1,4 +1,5 @@
 
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type Store = {
@@ -247,6 +248,7 @@ export type ReceiptSettings = {
     showStoreAddress: boolean;
     showContactInfo: boolean;
     showTinNumber: boolean;
+    showCustomerDetails: boolean;
     footerNotes?: string;
     printerType: 'thermal' | 'standard';
     paperWidth: '58mm' | '80mm';

@@ -22,6 +22,7 @@ import { Receipt } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { Separator } from '@/components/ui/separator';
 
 const initialSettingsState: Omit<ReceiptSettings, 'id'> = {
     showLogo: true,
@@ -30,6 +31,7 @@ const initialSettingsState: Omit<ReceiptSettings, 'id'> = {
     showStoreAddress: true,
     showContactInfo: true,
     showTinNumber: false,
+    showCustomerDetails: true,
     footerNotes: '',
     printerType: 'thermal',
     paperWidth: '58mm',
@@ -43,6 +45,11 @@ const mockReceiptData = {
     ],
     cashierName: 'Jane Doe',
     date: new Date(),
+    customer: {
+        name: 'Juan Dela Cruz',
+        tin: '123-456-789-000',
+        address: '123 Rizal Ave, Manila, Metro Manila'
+    }
 };
 
 function ReceiptPreview({ settings, store }: { settings: Omit<ReceiptSettings, 'id'>, store: Store | null }) {
@@ -67,6 +74,17 @@ function ReceiptPreview({ settings, store }: { settings: Omit<ReceiptSettings, '
                 </div>
 
                 <div className="border-t border-dashed border-black my-2"></div>
+
+                {settings.showCustomerDetails && (
+                     <>
+                        <div className="space-y-1">
+                           {mockReceiptData.customer.name && <p>Customer: {mockReceiptData.customer.name}</p>}
+                           {mockReceiptData.customer.address && <p>Address: {mockReceiptData.customer.address}</p>}
+                           {mockReceiptData.customer.tin && <p>TIN: {mockReceiptData.customer.tin}</p>}
+                        </div>
+                        <div className="border-t border-dashed border-black my-2"></div>
+                     </>
+                )}
                 
                 <div className="space-y-1">
                     <p>Receipt No: {receiptNumber}</p>
@@ -290,7 +308,11 @@ export default function ReceiptSettingsPage() {
                                     </div>
                                     <div className="flex items-center space-x-2">
                                         <Switch id="showTinNumber" checked={settings.showTinNumber} onCheckedChange={(c) => handleSwitchChange('showTinNumber', c)} />
-                                        <Label htmlFor="showTinNumber">Show TIN</Label>
+                                        <Label htmlFor="showTinNumber">Show Store TIN</Label>
+                                    </div>
+                                     <div className="flex items-center space-x-2">
+                                        <Switch id="showCustomerDetails" checked={settings.showCustomerDetails} onCheckedChange={(c) => handleSwitchChange('showCustomerDetails', c)} />
+                                        <Label htmlFor="showCustomerDetails">Show Customer Details</Label>
                                     </div>
                                 </div>
                             </div>
