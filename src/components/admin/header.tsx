@@ -29,7 +29,8 @@ export function AdminHeader() {
         >
           <Logo className="h-8 w-8 text-primary-foreground" />
           <h1 className="text-lg font-semibold font-headline text-primary-foreground whitespace-nowrap">
-            SharEat Hub
+            <span className="text-primary-foreground">Shar</span>
+            <span className="text-primary-foreground/80">Eat Hub</span>
           </h1>
         </div>
       </div>

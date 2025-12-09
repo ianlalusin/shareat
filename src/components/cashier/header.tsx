@@ -1,3 +1,4 @@
+
 'use client';
 
 import { StoreSelector } from '@/components/admin/store-selector';
@@ -46,7 +47,8 @@ export function CashierHeader() {
         <Link href="/admin" className="flex items-center gap-2">
           <Logo className="h-8 w-8 text-primary-foreground" />
           <h1 className="hidden md:block text-lg font-semibold font-headline text-primary-foreground whitespace-nowrap">
-            SharEat Hub
+            <span className="text-primary-foreground">Shar</span>
+            <span className="text-primary-foreground/80">Eat Hub</span>
           </h1>
         </Link>
       </div>

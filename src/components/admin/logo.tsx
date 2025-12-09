@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 export function Logo({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 200 100"
+      viewBox="0 0 100 100"
       xmlns="http://www.w3.org/2000/svg"
       className={cn("h-6 w-6", className)}
       aria-labelledby="logoTitle"
@@ -14,25 +14,13 @@ export function Logo({ className }: { className?: string }) {
         {/* SE logo */}
         <text
           x="50%"
-          y="45"
-          dominantBaseline="middle"
+          y="50%"
+          dominantBaseline="central"
           textAnchor="middle"
-          fontSize="48"
+          fontSize="60"
         >
           <tspan fill="black">S</tspan>
           <tspan fill="hsl(var(--primary))">E</tspan>
-        </text>
-
-        {/* SharEat Hub text */}
-        <text
-          x="50%"
-          y="80"
-          dominantBaseline="middle"
-          textAnchor="middle"
-          fontSize="20"
-        >
-          <tspan fill="black">Shar</tspan>
-          <tspan fill="hsl(var(--primary))">Eat Hub</tspan>
         </text>
       </g>
     </svg>
