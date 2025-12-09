@@ -144,7 +144,7 @@ const initialReceiptSettingsState: Omit<ReceiptSettings, 'id'> = {
 
 function ManagerGuard({ children }: { children: React.ReactNode }) {
     const { appUser, loading, devMode } = useAuthContext();
-    const isManager = devMode || appUser?.role === 'manager' || appUser?.role === 'admin' || appUser?.role === 'owner';
+    const canAccess = devMode || appUser?.role === 'manager' || appUser?.role === 'admin' || appUser?.role === 'owner';
 
     if (loading) {
         return (
@@ -157,7 +157,7 @@ function ManagerGuard({ children }: { children: React.ReactNode }) {
         );
     }
     
-    if (!isManager) {
+    if (!canAccess) {
         return (
             <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
                  <h1 className="text-lg font-semibold md:text-2xl font-headline">Store Settings</h1>
