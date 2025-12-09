@@ -17,7 +17,7 @@ interface TopItemsCardProps {
 }
 
 export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
-    const CardInnerContent = () => (
+    const InnerContent = () => (
       <>
         <CardHeader>
             <CardTitle className="flex items-center justify-between text-sm font-medium">
@@ -46,7 +46,7 @@ export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
         return (
             <Link href={linkTo} className="block hover:shadow-lg transition-shadow">
                 <Card>
-                    <CardInnerContent />
+                    <InnerContent />
                 </Card>
             </Link>
         )
@@ -54,7 +54,7 @@ export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
 
     return (
         <Card>
-           <CardInnerContent />
+           <InnerContent />
         </Card>
     );
 }
