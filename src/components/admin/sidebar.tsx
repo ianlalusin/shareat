@@ -44,7 +44,7 @@ const menuItems = [
 ];
 
 const bottomMenuItems = [
-  { href: "/admin/settings/receipt", label: "Settings", icon: Settings },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
   { href: "/admin/settings/account", label: "Account", icon: CircleUser },
 ];
 
