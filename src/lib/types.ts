@@ -28,7 +28,6 @@ export type GListItem = {
 
 export type Staff = {
   id:string;
-  uid?: string;
   assignedStore: string;
   fullName: string;
   address: string;
@@ -38,11 +37,41 @@ export type Staff = {
   dateHired: string | Timestamp;
   position: string;
   rate: number;
-  employmentStatus: 'Active' | 'Inactive' | 'Resigned' | 'AWOL';
+  employmentStatus: 'Active' | 'Inactive' | 'Resigned' | 'AWOL' | 'Probation';
   notes: string;
   picture?: string;
   encoder: string;
+
+  // New helper fields
+  authUid?: string | null;
+  duplicateOf?: string | null;
+  lastLoginAt?: Timestamp;
 };
+
+export type User = {
+    id: string; // authUid
+    staffId?: string | null;
+    email: string;
+    displayName: string;
+    role: "cashier" | "kitchen" | "manager" | "admin" | "owner" | "staff";
+    status: "active" | "disabled" | "pending";
+    createdAt: Timestamp;
+    lastLoginAt: Timestamp;
+}
+
+export type PendingAccount = {
+    id: string;
+    uid: string;
+    email: string;
+    fullName: string;
+    phone?: string;
+    birthday?: string;
+    status: "pending" | "approved" | "rejected";
+    createdAt: Timestamp;
+    expiresAt: Timestamp;
+    notes?: string;
+}
+
 
 export type Product = {
   id: string;

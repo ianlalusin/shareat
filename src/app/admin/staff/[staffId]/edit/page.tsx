@@ -60,7 +60,7 @@ export default function EditStaffPage() {
         if (docSnap.exists()) {
             const staffData = docSnap.data() as Omit<Staff, 'id'>;
             
-            const formattedData = {
+             const formattedData = {
               ...staffData,
               birthday: staffData.birthday ? formatAndValidateDate(staffData.birthday).formatted : '',
               dateHired: staffData.dateHired ? formatAndValidateDate(staffData.dateHired).formatted : ''
@@ -106,7 +106,7 @@ export default function EditStaffPage() {
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    const formattedValue = revertToInputFormat(value);
+    const formattedValue = revertToInputFormat(value as string);
     setFormData(prev => (prev ? { ...prev, [name]: formattedValue } : null));
   }
 
@@ -120,8 +120,8 @@ export default function EditStaffPage() {
           const rate = parseFloat(value);
           return { ...prev, [name]: isNaN(rate) ? 0 : rate };
       }
-      if (name === 'uid') {
-        return { ...prev, uid: value };
+      if (name === 'authUid') {
+        return { ...prev, authUid: value };
       }
       return { ...prev, [name]: value };
     });
@@ -163,8 +163,8 @@ export default function EditStaffPage() {
     }
     
     // Convert formatted date strings back to valid Date objects for Firestore
-    const birthdayDate = formData.birthday ? parse(formData.birthday, 'MMMM dd, yyyy', new Date()) : null;
-    const dateHiredDate = formData.dateHired ? parse(formData.dateHired, 'MMMM dd, yyyy', new Date()) : null;
+    const birthdayDate = formData.birthday ? parse(formData.birthday as string, 'MMMM dd, yyyy', new Date()) : null;
+    const dateHiredDate = formData.dateHired ? parse(formData.dateHired as string, 'MMMM dd, yyyy', new Date()) : null;
 
     const dataToSave = {
       ...formData,
@@ -264,12 +264,12 @@ export default function EditStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="birthday">Birthday</Label>
-                <Input id="birthday" name="birthday" value={formData.birthday || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
+                <Input id="birthday" name="birthday" value={formData.birthday as string} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.birthday && <p className="text-sm text-destructive">{dateErrors.birthday}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dateHired">Date Hired</Label>
-                <Input id="dateHired" name="dateHired" value={formData.dateHired || ''} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
+                <Input id="dateHired" name="dateHired" value={formData.dateHired as string} onChange={handleDateChange} onBlur={handleDateBlur} onFocus={handleDateFocus} placeholder="MM/DD/YYYY" maxLength={10} />
                 {dateErrors.dateHired && <p className="text-sm text-destructive">{dateErrors.dateHired}</p>}
               </div>
               <div className="space-y-2">
@@ -298,13 +298,13 @@ export default function EditStaffPage() {
 
               <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="uid">Auth UID</Label>
+                  <Label htmlFor="authUid">Auth UID</Label>
                   <Input 
-                    id="uid" 
-                    name="uid" 
-                    value={formData.uid || ''} 
+                    id="authUid" 
+                    name="authUid" 
+                    value={formData.authUid || ''} 
                     onChange={handleInputChange}
-                    disabled={!user && !devMode} 
+                    disabled={!devMode && !user} 
                   />
                 </div>
                 <div className="space-y-2">

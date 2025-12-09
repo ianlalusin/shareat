@@ -11,7 +11,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useFirestore, useStorage, useAuth } from '@/firebase';
+import { useFirestore, useStorage } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,10 +31,10 @@ import { parse, isValid } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthContext } from '@/context/auth-context';
 
 
 const initialStaffState: Omit<Staff, 'id'> = {
-  uid: '',
   assignedStore: '',
   fullName: '',
   address: '',
@@ -48,6 +48,7 @@ const initialStaffState: Omit<Staff, 'id'> = {
   notes: '',
   picture: '',
   encoder: '',
+  authUid: '',
 };
 
 export default function NewStaffPage() {
@@ -57,7 +58,7 @@ export default function NewStaffPage() {
   const [dateErrors, setDateErrors] = useState<{ birthday?: string; dateHired?: string }>({});
   const firestore = useFirestore();
   const storage = useStorage();
-  const auth = useAuth();
+  const { user, devMode } = useAuthContext();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
@@ -73,10 +74,12 @@ export default function NewStaffPage() {
   }, [firestore]);
   
   useEffect(() => {
-    if (auth?.currentUser) {
-      setFormData(prev => ({...prev, encoder: auth.currentUser?.displayName || auth.currentUser?.email || 'Unknown'}));
+    if (user) {
+      setFormData(prev => ({...prev, encoder: user?.displayName || user?.email || 'Unknown'}));
+    } else if (devMode) {
+      setFormData(prev => ({...prev, encoder: 'Dev User'}));
     }
-  }, [auth]);
+  }, [user, devMode]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -100,7 +103,7 @@ export default function NewStaffPage() {
   const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (!value) return;
-    const formattedValue = revertToInputFormat(value);
+    const formattedValue = revertToInputFormat(value as string);
     setFormData(prev => ({ ...prev, [name]: formattedValue }));
   }
 
@@ -111,8 +114,8 @@ export default function NewStaffPage() {
             const rate = parseFloat(value);
             return { ...prev, [name]: isNaN(rate) ? '' : rate };
         }
-        if (name === 'uid') {
-          return { ...prev, uid: value };
+        if (name === 'authUid') {
+          return { ...prev, authUid: value };
         }
         return { ...prev, [name]: value };
     });
@@ -125,7 +128,7 @@ export default function NewStaffPage() {
   const handleFileChange = (file: File | null) => {
     setPictureFile(file);
      if(file){
-        setFormData(prev => ({ ...prev, picture: URL.createObjectURL(file) }));
+        setFormData(prev => ({...prev, picture: URL.createObjectURL(file)}))
     }
   };
 
@@ -160,8 +163,8 @@ export default function NewStaffPage() {
     const dataToSave = {
       ...formData,
       picture: pictureUrl,
-      birthday: formData.birthday ? parse(formData.birthday, 'MMMM dd, yyyy', new Date()) : null,
-      dateHired: formData.dateHired ? parse(formData.dateHired, 'MMMM dd, yyyy', new Date()) : null,
+      birthday: formData.birthday ? parse(formData.birthday as string, 'MMMM dd, yyyy', new Date()) : null,
+      dateHired: formData.dateHired ? parse(formData.dateHired as string, 'MMMM dd, yyyy', new Date()) : null,
     };
 
     try {
@@ -265,13 +268,14 @@ export default function NewStaffPage() {
               </div>
               <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                    <Label htmlFor="uid">Auth UID</Label>
+                    <Label htmlFor="authUid">Auth UID</Label>
                     <Input 
-                      id="uid" 
-                      name="uid" 
-                      value={formData.uid || ''} 
+                      id="authUid" 
+                      name="authUid" 
+                      value={formData.authUid || ''} 
                       onChange={handleInputChange}
                       placeholder="Enter Firebase Auth UID manually"
+                      disabled={!devMode && !user}
                     />
                 </div>
                 <div className="space-y-2">
@@ -292,4 +296,5 @@ export default function NewStaffPage() {
     </main>
   );
 }
+
 

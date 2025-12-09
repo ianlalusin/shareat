@@ -1,7 +1,6 @@
 
 import { CashierHeader } from "@/components/cashier/header";
-import { AuthProvider } from "@/context/auth-context";
-import { SuccessConfirm } from "@/components/ui/success-confirm";
+import { FirstLoginGuard } from "@/components/auth/first-login-guard";
 
 export default function CashierLayout({
   children,
@@ -9,12 +8,11 @@ export default function CashierLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthProvider>
+    <FirstLoginGuard>
       <div className="flex min-h-svh w-full flex-col bg-background">
         <CashierHeader />
         {children}
-        <SuccessConfirm />
       </div>
-    </AuthProvider>
+    </FirstLoginGuard>
   );
 }
