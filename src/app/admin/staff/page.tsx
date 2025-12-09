@@ -39,7 +39,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User, Lock } from 'lucide-react';
 import { Staff } from '@/lib/types';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
@@ -49,10 +48,13 @@ function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: 
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Access Control for {staff.fullName}</DialogTitle>
-          <DialogDescription>
-            Role: <Badge variant="secondary">{staff.position}</Badge>
-          </DialogDescription>
+            <div className="flex items-start justify-between gap-2">
+                <DialogTitle>Access Control for {staff.fullName}</DialogTitle>
+                <Badge variant="secondary">{staff.position}</Badge>
+            </div>
+            <DialogDescription>
+                Controls what this staff member can see and do in the system.
+            </DialogDescription>
         </DialogHeader>
         <div className="py-4">
             <p className="text-sm text-muted-foreground">
@@ -70,7 +72,6 @@ export default function StaffPage() {
   const [selectedStaffForAccess, setSelectedStaffForAccess] = useState<Staff | null>(null);
   const firestore = useFirestore();
   const router = useRouter();
-  const { openSuccessModal } = useSuccessModal();
 
   useEffect(() => {
     if (firestore) {
@@ -89,7 +90,6 @@ export default function StaffPage() {
     if (!firestore) return;
     try {
       await deleteDoc(doc(firestore, 'staff', staffId));
-      openSuccessModal();
     } catch (error) {
       console.error('Error deleting document: ', error);
     }
