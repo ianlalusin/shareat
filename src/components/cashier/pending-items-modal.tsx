@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
-import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Order, OrderItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -31,6 +31,7 @@ export function PendingItemsModal({
   pendingItems: initialPendingItems,
 }: PendingItemsModalProps) {
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [localPendingItems, setLocalPendingItems] = useState(initialPendingItems);
   const firestore = useFirestore();
   const router = useRouter();
@@ -65,6 +66,44 @@ export function PendingItemsModal({
       setProcessingItemId(null);
     }
   };
+  
+  const handleIncludeAll = async () => {
+    if (!firestore || !order || localPendingItems.length === 0) return;
+    setIsBatchProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      localPendingItems.forEach(item => {
+        const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+        batch.update(itemRef, { status: 'Served', servedTimestamp: serverTimestamp() });
+      });
+      await batch.commit();
+      toast({ title: "All Items Added", description: "All pending items added to the bill."});
+      setLocalPendingItems([]);
+    } catch (error) {
+      toast({ variant: 'destructive', title: "Error", description: "Could not include all items." });
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!firestore || !order || localPendingItems.length === 0) return;
+    setIsBatchProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      localPendingItems.forEach(item => {
+        const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+        batch.delete(itemRef);
+      });
+      await batch.commit();
+      toast({ title: "All Items Cleared", description: "All pending items have been removed." });
+      setLocalPendingItems([]);
+    } catch (error) {
+      toast({ variant: 'destructive', title: "Error", description: "Could not clear all items." });
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
 
   const handleDone = () => {
     onClose();
@@ -72,7 +111,7 @@ export function PendingItemsModal({
   };
   
   const handleDialogClose = () => {
-    if (processingItemId) return; // Prevent closing while an action is in progress
+    if (processingItemId || isBatchProcessing) return; // Prevent closing while an action is in progress
     onClose();
   }
 
@@ -95,7 +134,7 @@ export function PendingItemsModal({
                   size="sm"
                   variant="outline"
                   onClick={() => handleIncludeSingleItem(item)}
-                  disabled={!!processingItemId}
+                  disabled={!!processingItemId || isBatchProcessing}
                 >
                   {processingItemId === item.id ? <Loader2 className="h-4 w-4 animate-spin"/> : "Add to Bill"}
                 </Button>
@@ -103,7 +142,7 @@ export function PendingItemsModal({
                   size="sm"
                   variant="destructive"
                   onClick={() => handleClearSingleItem(item)}
-                  disabled={!!processingItemId}
+                  disabled={!!processingItemId || isBatchProcessing}
                 >
                    {processingItemId === item.id ? <Loader2 className="h-4 w-4 animate-spin"/> : "Clear"}
                 </Button>
@@ -115,12 +154,30 @@ export function PendingItemsModal({
         </div>
 
         <AlertDialogFooter>
-          <Button onClick={handleDone}>
-            Done
-          </Button>
+          <div className='flex flex-wrap gap-2 justify-end items-center w-full'>
+            <Button
+                variant="outline"
+                onClick={handleIncludeAll}
+                disabled={isBatchProcessing || localPendingItems.length === 0}
+            >
+                {isBatchProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                Add All to Bill
+            </Button>
+            <Button
+                variant="destructive"
+                onClick={handleClearAll}
+                disabled={isBatchProcessing || localPendingItems.length === 0}
+            >
+                {isBatchProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                Clear All Pending
+            </Button>
+            <div className="flex-grow sm:flex-grow-0" />
+            <Button onClick={handleDone}>
+                Done
+            </Button>
+          </div>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 }
-
