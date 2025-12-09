@@ -164,7 +164,7 @@ export type Order = {
   storeId: string;
   tableId?: string;
   tableName?: string;
-  status: 'Active' | 'Completed' | 'Cancelled';
+  status: 'Pending Confirmation' | 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
   customerName: string;
   address?: string;

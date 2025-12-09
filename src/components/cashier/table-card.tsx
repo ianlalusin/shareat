@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React from 'react';
@@ -77,9 +78,14 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
   if (!order) {
     return null;
   }
+  
+  const isPending = order.status === 'Pending Confirmation';
 
   return (
-    <Card className={cn(tableCardVariants({ size: cardSize, density: cardDensity }))}>
+    <Card className={cn(
+      tableCardVariants({ size: cardSize, density: cardDensity }),
+      isPending && "border-yellow-500 bg-yellow-100 dark:bg-yellow-900/40"
+    )}>
       <CardHeader className="p-0 flex-row items-start justify-between space-y-0">
         <div>
           <div className="flex items-center gap-2">
@@ -99,9 +105,9 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
 
         <div className="flex flex-col items-end gap-2">
           <Badge className={cn("text-white", getStatusColor(table.status))}>
-            {table.status}
+            {isPending ? 'Pending' : table.status}
           </Badge>
-          {order && (
+          {order && !isPending && (
             <Button
               size="sm"
               variant={order.priority === 'rush' ? 'destructive' : 'outline'}
@@ -120,13 +126,13 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
       <CardContent className="p-0 pt-2">
         <div className={cn("space-y-0.5", cardSize === 'compact' ? 'text-xs' : 'text-sm')}>
           <p><span className="font-semibold">Customer:</span> {order.customerName || 'N/A'}</p>
-          <p><span className="font-semibold">Guests:</span> {order.guestCount || 'N/A'}</p>
+          <p><span className="font-semibold">Guests:</span> {isPending ? 'N/A' : (order.guestCount || 'N/A')}</p>
           <OrderTimer startTime={order.orderTimestamp} />
         </div>
       </CardContent>
       <CardFooter className="p-0 pt-2 grid grid-cols-2 gap-2">
         <Button variant="outline" onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>Bill</Button>
-        <Button onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>View Order</Button>
+        <Button onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>View Order</Button>
       </CardFooter>
     </Card>
   );

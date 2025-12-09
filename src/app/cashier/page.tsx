@@ -46,9 +46,9 @@ export default function CashierPage() {
                 setTables(tablesData.sort((a,b) => a.tableName.localeCompare(b.tableName, undefined, { numeric: true })));
             });
 
-            const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', '==', 'Active'));
+            const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', 'in', ['Active', 'Pending Confirmation']));
             const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
-                const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+                const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Order);
                 setOrders([...ordersData]);
             });
             
@@ -126,7 +126,7 @@ export default function CashierPage() {
                 storeId: selectedStoreId!,
                 tableId: table.id,
                 tableName: table.tableName,
-                status: 'Active',
+                status: 'Pending Confirmation',
                 guestCount: orderData.guestCount,
                 customerName: orderData.customerName,
                 orderTimestamp: serverTimestamp() as any,
@@ -138,24 +138,6 @@ export default function CashierPage() {
             };
             transaction.set(newOrderRef, order);
             
-            // Create initial order item (the package itself)
-            const orderItemRef = doc(collection(newOrderRef, 'orderItems'));
-            const initialOrderItem: Omit<OrderItem, 'id'> = {
-                orderId: newOrderRef.id,
-                storeId: selectedStoreId!,
-                menuItemId: orderData.selectedPackage.id,
-                menuName: orderData.selectedPackage.menuName,
-                quantity: orderData.guestCount,
-                priceAtOrder: orderData.selectedPackage.price,
-                isRefill: false,
-                status: 'Pending',
-                targetStation: orderData.selectedPackage.targetStation,
-                timestamp: serverTimestamp() as any,
-                sourceTag: 'initial',
-            };
-            transaction.set(orderItemRef, initialOrderItem);
-            
-            // Update table status
             transaction.update(tableRef, {
                 status: 'Occupied',
                 activeOrderId: newOrderRef.id,
@@ -163,8 +145,8 @@ export default function CashierPage() {
         });
         
         toast({
-            title: "Order Started!",
-            description: `Order for Table ${table.tableName} has been sent to the kitchen.`,
+            title: "Order Sent for Confirmation",
+            description: `Order for Table ${table.tableName} is now waiting for server confirmation.`,
         });
     };
 
@@ -185,6 +167,15 @@ export default function CashierPage() {
 
     const handleBillClick = async (order: Order) => {
         if (!firestore) return;
+
+        if (order.status === 'Pending Confirmation') {
+            toast({
+                variant: 'destructive',
+                title: 'Cannot Bill Order',
+                description: 'This order is still pending server confirmation.',
+            });
+            return;
+        }
         
         const orderItemsRef = collection(firestore, "orders", order.id, "orderItems");
         const q = query(orderItemsRef, where("status", "==", "Pending"));
