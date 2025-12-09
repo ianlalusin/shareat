@@ -14,8 +14,6 @@ import {
   where,
   addDoc,
   serverTimestamp,
-  getDoc,
-  writeBatch,
 } from 'firebase/firestore';
 import { Order, OrderItem, GListItem, OrderTransaction, Store } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatCurrency, parseCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import {
   Table,
@@ -270,9 +268,18 @@ export default function OrderDetailPage() {
 
     const value = parseFloat(discountValue);
     let amount = 0;
+
     if (discountType === '₱') {
         amount = value;
-    } else {
+    } else { // It's '%'
+        if (value <= 0 || value > 100) {
+            toast({
+                variant: 'destructive',
+                title: 'Invalid Percentage',
+                description: 'Discount percentage must be between 1 and 100.',
+            });
+            return;
+        }
         amount = (subtotal * value) / 100;
     }
 
