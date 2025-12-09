@@ -7,7 +7,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -28,7 +27,7 @@ import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
-import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference, writeBatch } from 'firebase/firestore';
+import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 interface Payment {
@@ -58,10 +57,6 @@ export function PaymentModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  const [pendingAddOnItems, setPendingAddOnItems] = useState<OrderItem[]>([]);
-  const [pendingRefillItems, setPendingRefillItems] = useState<OrderItem[]>([]);
-  const [showPendingItemsAlert, setShowPendingItemsAlert] = useState(false);
-  
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
@@ -87,9 +82,6 @@ export function PaymentModal({
       ]);
       setErrorMessage(null);
       setIsProcessing(false);
-      setShowPendingItemsAlert(false);
-      setPendingAddOnItems([]);
-      setPendingRefillItems([]);
     }
   }, [isOpen, totalAmount, store.mopAccepted]);
   
@@ -124,93 +116,6 @@ export function PaymentModal({
     setPayments(payments.filter(p => p.id !== id));
   }
   
-  const checkForPendingItems = async () => {
-    if (!firestore) return;
-  
-    setIsProcessing(true);
-    setErrorMessage(null);
-  
-    try {
-      const orderItemsRef = collection(firestore, "orders", order.id, "orderItems");
-      const q = query(orderItemsRef, where("status", "==", "Pending"));
-      const snapshot = await getDocs(q);
-  
-      const pendingItems = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as OrderItem),
-      }));
-
-      const addOns = pendingItems.filter(item => item.sourceTag !== 'refill' && item.sourceTag !== 'initial');
-      const refills = pendingItems.filter(item => item.sourceTag === 'refill');
-      
-      if (addOns.length === 0) {
-        if (refills.length > 0) {
-          toast({
-            title: "Pending refills",
-            description: "There are pending refills. They will not be included in this bill.",
-          });
-        }
-        await finalizeBill();
-        return;
-      }
-      
-      setPendingAddOnItems(addOns);
-      setPendingRefillItems(refills);
-      setShowPendingItemsAlert(true);
-  
-    } catch (error) {
-      console.error("checkForPendingItems failed:", error);
-      const message =
-        error instanceof Error ? error.message : "Could not check for pending items.";
-  
-      setErrorMessage(message);
-  
-      toast({
-        variant: "destructive",
-        title: "Check Failed",
-        description: message,
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleIncludeAddOnsAndFinalize = async () => {
-    if (!firestore) return;
-    setIsProcessing(true);
-
-    try {
-        const batch = writeBatch(firestore);
-
-        pendingAddOnItems.forEach(item => {
-            const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
-            batch.update(itemRef, { status: 'Served', servedTimestamp: serverTimestamp() });
-        });
-
-        await batch.commit();
-        
-        // Items are now served, refetching totals implicitly through listeners before finalizing
-        setShowPendingItemsAlert(false);
-        // A short delay might be needed if state updates from listeners are not immediate
-        setTimeout(() => {
-          finalizeBill();
-        }, 500);
-
-    } catch (error) {
-        toast({
-            variant: "destructive",
-            title: "Failed to include add-ons",
-            description: "Please try again.",
-        });
-        setIsProcessing(false);
-    }
-  };
-
-  const handleFinalizeWithoutAddOns = async () => {
-    setShowPendingItemsAlert(false);
-    await finalizeBill();
-  };
-
   const finalizeBill = async () => {
     if (!firestore || balance > 0.01) return;
     setIsProcessing(true);
@@ -390,7 +295,7 @@ export function PaymentModal({
           </Button>
           <Button
             type="button"
-            onClick={checkForPendingItems}
+            onClick={finalizeBill}
             disabled={balance > 0.01 || isProcessing}
           >
             {isProcessing ? <Loader2 className="animate-spin" /> : 'Charge'}
@@ -398,43 +303,6 @@ export function PaymentModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-    <AlertDialog open={showPendingItemsAlert} onOpenChange={setShowPendingItemsAlert}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Pending Add-on Items</AlertDialogTitle>
-          <div className="text-sm text-muted-foreground space-y-2">
-            <p>
-              The following add-ons are still pending in the kitchen and were not marked as served:
-            </p>
-            <ul className="list-disc list-inside mt-2 text-foreground">
-              {pendingAddOnItems.map(item => (
-                <li key={item.id}>{item.quantity}x {item.menuName}</li>
-              ))}
-            </ul>
-            {pendingRefillItems.length > 0 && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                There are also pending refills. These are never billed and will be ignored for this payment.
-              </p>
-            )}
-            <p className="mt-3">
-              Do you want to include these add-ons in the bill (mark as served), or finalize the bill without them?
-            </p>
-          </div>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => setShowPendingItemsAlert(false)}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction onClick={handleFinalizeWithoutAddOns}>
-            Proceed without add-ons
-          </AlertDialogAction>
-          <AlertDialogAction onClick={handleIncludeAddOnsAndFinalize}>
-            Include add-ons in bill
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 }

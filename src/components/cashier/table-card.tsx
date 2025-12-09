@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { OrderTimer } from './order-timer';
 import { Table as TableType, Order } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { useRouter } from 'next/navigation';
 import { Flame } from 'lucide-react';
 
 interface TableCardProps {
@@ -16,6 +15,7 @@ interface TableCardProps {
   order: Order | undefined;
   onViewOrderClick: (order: Order) => void;
   onTogglePriority: (order: Order) => void;
+  onBillClick: (order: Order) => void;
 }
 
 const getStatusColor = (status: TableType['status']) => {
@@ -28,8 +28,7 @@ const getStatusColor = (status: TableType['status']) => {
   }
 };
 
-const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick, onTogglePriority }) => {
-  const router = useRouter();
+const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick, onTogglePriority, onBillClick }) => {
 
   if (!order) {
     return null;
@@ -82,7 +81,7 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
         </div>
       </CardContent>
       <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
-        <Button variant="outline" onClick={() => router.push(`/cashier/order/${order.id}`)}>Bill</Button>
+        <Button variant="outline" onClick={() => onBillClick(order)}>Bill</Button>
         <Button onClick={() => onViewOrderClick(order)}>View Order</Button>
       </CardFooter>
     </Card>
