@@ -124,6 +124,9 @@ export default function SalesReportPage() {
       );
       const completedOrdersSnapshot = await getDocs(completedOrdersQuery);
       const completedOrdersData = completedOrdersSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order);
+      
+      completedOrdersData.sort((a, b) => (b.completedTimestamp?.toMillis() || 0) - (a.completedTimestamp?.toMillis() || 0));
+
       setCompletedOrders(completedOrdersData);
 
       if (completedOrdersData.length === 0) {
@@ -417,5 +420,7 @@ interface SalesReportItem {
   quantitySold: number;
   totalSales: number;
 }
+
+    
 
     
