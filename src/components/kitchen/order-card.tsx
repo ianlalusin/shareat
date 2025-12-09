@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -7,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { OrderTimer } from '@/components/cashier/order-timer';
 import type { Order, OrderItem, RefillItem } from '@/lib/types';
 import { CheckSquare } from 'lucide-react';
-import { DocumentReference } from 'firebase/firestore';
+import { DocumentReference, Timestamp } from 'firebase/firestore';
 
 export type KitchenItem = (OrderItem | RefillItem) & {
   id: string;
@@ -23,6 +24,15 @@ interface KitchenOrderCardProps {
   onServeItem: (item: KitchenItem) => void | Promise<void>;
   onServeAll: () => void | Promise<void>;
 }
+
+const calculateLapseTime = (start: Timestamp | undefined, end: Timestamp | undefined) => {
+  if (!start || !end) return '';
+  if (typeof start.toMillis !== 'function' || typeof end.toMillis !== 'function') return '';
+  const diff = end.toMillis() - start.toMillis();
+  const minutes = Math.floor(diff / 60000);
+  const seconds = Math.floor((diff % 60000) / 1000);
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+};
 
 export function KitchenOrderCard({
   order,
@@ -86,19 +96,24 @@ export function KitchenOrderCard({
               )}
 
               {item.sourceCollection === 'refills' && (
-                <Badge variant="outline" className="mt-1 text-[10px]">
+                <Badge variant="outline" className="mt-1 text-[10px] w-fit">
                   Refill
                 </Badge>
               )}
             </div>
 
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => onServeItem(item)}
-            >
-              Serve
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => onServeItem(item)}
+              >
+                Serve
+              </Button>
+              <div className="text-xs font-mono text-muted-foreground">
+                <OrderTimer startTime={item.timestamp} />
+              </div>
+            </div>
           </div>
         ))}
       </CardContent>
