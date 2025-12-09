@@ -25,9 +25,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
-import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem } from '@/lib/types';
+import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem, RefillItem } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
-import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction } from 'firebase/firestore';
+import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 interface Payment {
@@ -196,6 +196,9 @@ export function PaymentModal({
 
             transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
         });
+        
+        // After successful transaction, clean up kitchen data
+        await clearKitchenDataForOrder(order.id);
       
       onFinalizeSuccess();
 
@@ -211,6 +214,38 @@ export function PaymentModal({
       setIsProcessing(false);
     }
   }
+
+  const clearKitchenDataForOrder = async (orderId: string) => {
+    if (!firestore) return;
+    try {
+      const batch = writeBatch(firestore);
+
+      // Get all order items to delete
+      const orderItemsRef = collection(firestore, 'orders', orderId, 'orderItems');
+      const orderItemsSnapshot = await getDocs(orderItemsRef);
+      orderItemsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+      // Get all refills to delete
+      const refillsRef = collection(firestore, 'orders', orderId, 'refills');
+      const refillsSnapshot = await getDocs(refillsRef);
+      refillsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+      await batch.commit();
+      toast({
+        title: 'Kitchen Data Cleared',
+        description: `Items for order ${orderId.slice(0, 6)}... have been cleared from the kitchen view.`,
+      });
+    } catch (error) {
+      console.error("Failed to clear kitchen data: ", error);
+      // This is a background task, so we don't need to show a blocking error,
+      // but we can log it and maybe show a non-destructive toast.
+      toast({
+        variant: 'destructive',
+        title: 'Cleanup Failed',
+        description: 'Could not clear all items from the kitchen view.',
+      });
+    }
+  };
 
   const handleOpenChange = (open: boolean) => {
     if (!open && !isProcessing) {
