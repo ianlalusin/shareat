@@ -46,7 +46,7 @@ export default function CashierPage() {
                 setTables(tablesData.sort((a,b) => a.tableName.localeCompare(b.tableName, undefined, { numeric: true })));
             });
 
-            const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', 'in', ['Active', 'Pending Confirmation']));
+            const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', 'in', ['Active']));
             const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
                 const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Order);
                 setOrders([...ordersData]);
@@ -126,7 +126,7 @@ export default function CashierPage() {
                 storeId: selectedStoreId!,
                 tableId: table.id,
                 tableName: table.tableName,
-                status: 'Pending Confirmation',
+                status: 'Active', // Set to Active immediately
                 guestCount: orderData.guestCount,
                 customerName: orderData.customerName,
                 orderTimestamp: serverTimestamp() as any,
@@ -135,9 +135,27 @@ export default function CashierPage() {
                 selectedFlavors: orderData.selectedFlavors,
                 kitchenNote: orderData.kitchenNote,
                 priority: 'normal',
+                isServerConfirmed: false, // Add confirmation flag
             };
             transaction.set(newOrderRef, order);
             
+            // Create initial order item for the kitchen right away
+            const initialItemRef = doc(collection(newOrderRef, 'orderItems'));
+            const initialItem: Omit<OrderItem, 'id'> = {
+                orderId: newOrderRef.id,
+                storeId: selectedStoreId!,
+                menuItemId: orderData.selectedPackage.id,
+                menuName: orderData.selectedPackage.menuName,
+                quantity: orderData.guestCount,
+                priceAtOrder: orderData.selectedPackage.price,
+                isRefill: false,
+                status: 'Pending',
+                targetStation: orderData.selectedPackage.targetStation,
+                timestamp: serverTimestamp() as any,
+                sourceTag: 'initial',
+            };
+            transaction.set(initialItemRef, initialItem);
+
             transaction.update(tableRef, {
                 status: 'Occupied',
                 activeOrderId: newOrderRef.id,
@@ -145,8 +163,8 @@ export default function CashierPage() {
         });
         
         toast({
-            title: "Order Sent for Confirmation",
-            description: `Order for Table ${table.tableName} is now waiting for server confirmation.`,
+            title: "Order Sent to Kitchen",
+            description: `Order for Table ${table.tableName} is now active.`,
         });
     };
 
@@ -167,15 +185,6 @@ export default function CashierPage() {
 
     const handleBillClick = async (order: Order) => {
         if (!firestore) return;
-
-        if (order.status === 'Pending Confirmation') {
-            toast({
-                variant: 'destructive',
-                title: 'Cannot Bill Order',
-                description: 'This order is still pending server confirmation.',
-            });
-            return;
-        }
         
         const orderItemsRef = collection(firestore, "orders", order.id, "orderItems");
         const q = query(orderItemsRef, where("status", "==", "Pending"));
@@ -229,8 +238,9 @@ export default function CashierPage() {
       <div className="w-2/3 p-4 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4 font-headline">Occupied Tables ({occupiedTables.length})</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {occupiedTables.map(({ table, order }) => (
-                order ? (
+              {occupiedTables.map(({ table, order }) => {
+                if (!order) return null; // Add this guard
+                return (
                   <TableCard 
                     key={table.id}
                     table={table}
@@ -239,8 +249,8 @@ export default function CashierPage() {
                     onTogglePriority={() => handleTogglePriority(order)}
                     onBillClick={() => handleBillClick(order)}
                   />
-                ) : null
-              ))}
+                )
+              })}
           </div>
       </div>
       </div>

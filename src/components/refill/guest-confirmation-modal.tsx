@@ -31,20 +31,20 @@ export function GuestConfirmationModal({
   order,
   onConfirm,
 }: GuestConfirmationModalProps) {
-  const [guestCount, setGuestCount] = useState(order.guestCount || 1);
+  const [serverGuestCount, setServerGuestCount] = useState(order.guestCount || 1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleSubmit = async () => {
-    if (guestCount <= 0) {
+    if (serverGuestCount <= 0) {
       setError('Guest count must be at least 1.');
       return;
     }
     setError(null);
     setIsSubmitting(true);
     try {
-      await onConfirm(order, guestCount);
+      await onConfirm(order, serverGuestCount);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -59,7 +59,7 @@ export function GuestConfirmationModal({
         <DialogHeader>
           <DialogTitle>Confirm Guests for Table {order.tableName}</DialogTitle>
           <DialogDescription>
-            Verify the number of guests at the table to activate the order.
+            Verify the number of guests at the table. The higher count between cashier and server will be used.
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 space-y-4">
@@ -67,13 +67,13 @@ export function GuestConfirmationModal({
             <p className="text-sm font-medium text-muted-foreground">Package</p>
             <p className="font-semibold">{order.packageName}</p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">Flavors</p>
-            <p className="font-semibold">{(order.selectedFlavors || []).join(', ')}</p>
+           <div>
+            <p className="text-sm font-medium text-muted-foreground">Cashier's Count</p>
+            <p className="font-semibold">{order.guestCount}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="guest-count-confirm" className="text-base">
-              Number of Guests
+              Server's Count
             </Label>
             <div className="flex items-center gap-2">
               <Button
@@ -81,7 +81,7 @@ export function GuestConfirmationModal({
                 variant="outline"
                 size="icon"
                 className="h-12 w-12"
-                onClick={() => setGuestCount((c) => Math.max(1, c - 1))}
+                onClick={() => setServerGuestCount((c) => Math.max(1, c - 1))}
                 disabled={isSubmitting}
               >
                 <Minus className="h-5 w-5" />
@@ -89,8 +89,8 @@ export function GuestConfirmationModal({
               <Input
                 id="guest-count-confirm"
                 type="number"
-                value={guestCount}
-                onChange={(e) => setGuestCount(Number(e.target.value))}
+                value={serverGuestCount}
+                onChange={(e) => setServerGuestCount(Number(e.target.value))}
                 className="h-12 text-center text-2xl font-bold"
                 min="1"
                 required
@@ -101,7 +101,7 @@ export function GuestConfirmationModal({
                 variant="outline"
                 size="icon"
                 className="h-12 w-12"
-                onClick={() => setGuestCount((c) => c + 1)}
+                onClick={() => setServerGuestCount((c) => c + 1)}
                 disabled={isSubmitting}
               >
                 <Plus className="h-5 w-5" />
@@ -121,7 +121,7 @@ export function GuestConfirmationModal({
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Confirm Order
+            Confirm Count
           </Button>
         </DialogFooter>
       </DialogContent>

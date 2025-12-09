@@ -164,7 +164,7 @@ export type Order = {
   storeId: string;
   tableId?: string;
   tableName?: string;
-  status: 'Pending Confirmation' | 'Active' | 'Completed' | 'Cancelled';
+  status: 'Active' | 'Completed' | 'Cancelled';
   guestCount: number;
   customerName: string;
   address?: string;
@@ -177,6 +177,7 @@ export type Order = {
   selectedFlavors: string[];
   kitchenNote?: string;
   priority?: 'normal' | 'rush';
+  isServerConfirmed: boolean;
   receiptDetails?: {
     receiptNumber: string;
     cashierName: string;
