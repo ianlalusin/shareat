@@ -1,18 +1,14 @@
 
 "use client";
 
-import { ReactNode, useEffect, useState, useMemo } from "react";
+import { ReactNode, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, useFirestore } from "@/firebase";
+import { useFirestore } from "@/firebase";
 import {
-  doc,
-  getDoc,
   collection,
   query,
   where,
   getDocs,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { ExistingStaffVerification } from "./onboarding/existing-staff-verification";
 import { DuplicateStaffResolution } from "./onboarding/duplicate-staff-resolution";
@@ -20,152 +16,131 @@ import { AccountApplicationScreen } from "./onboarding/account-application";
 import { PendingApprovalScreen } from "./onboarding/pending-approval";
 import type { Staff } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
+import { Skeleton } from "../ui/skeleton";
 
-type OnboardingState =
-  | { status: "loading" }
-  | { status: "ready" } // fully onboarded
-  | { status: "existingStaff"; staff: Staff & { id: string} } // exactly one match
-  | { status: "duplicateStaff"; staffList: (Staff & { id: string})[] } // multiple matches
-  | { status: "applicant"; pendingId?: string } // no staff, application needed
-  | { status: "pendingApproval" }; // already applied, waiting for admin
+type OnboardingStatus =
+  | "loading"
+  | "ready" // Fully onboarded
+  | "existingStaff" // Found one matching staff record
+  | "duplicateStaff" // Found multiple matching staff records
+  | "applicant" // No staff record, application needed
+  | "pendingApproval"; // Applied, waiting for admin
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
-  const { user, loading: authLoading, devMode } = useAuthContext();
+  const { user, loading, isOnboarded, devMode } = useAuthContext();
   const firestore = useFirestore();
   const router = useRouter();
 
-  const [state, setState] = useState<OnboardingState>({ status: "loading" });
-
   useEffect(() => {
-    if (authLoading || !firestore) return;
-
-    if (devMode) {
-      setState({ status: "ready" });
-      return;
-    }
-
-    if (!user) {
+    if (!loading && !user && !devMode) {
       router.push("/login");
-      return;
+    }
+  }, [loading, user, devMode, router]);
+  
+  if (loading) {
+    return (
+        <div className="flex h-svh w-full items-center justify-center">
+            <div className="w-full max-w-md space-y-4 p-4">
+                <p className="text-center text-muted-foreground">Checking your account...</p>
+                <Skeleton className="h-16 w-16 mx-auto rounded-full" />
+                <Skeleton className="h-8 w-48 mx-auto" />
+                <Skeleton className="h-40 w-full" />
+            </div>
+        </div>
+    );
+  }
+
+  if (isOnboarded) {
+    return <>{children}</>;
+  }
+
+  // If not onboarded and not loading, determine which onboarding screen to show.
+  // This part now requires a separate component or a more complex state within the guard
+  // to avoid re-running the checks constantly. For now, we will redirect to a generic
+  // onboarding start page if one existed, or directly to the application. A full implementation
+  // requires a more sophisticated state machine now that the primary check is in the context.
+  // For this fix, we assume if you're not onboarded, you need to apply.
+  if (user && firestore) {
+     // A simplified check for the purpose of showing the correct initial screen
+     // This could be further optimized into its own state machine if onboarding becomes more complex
+    return <OnboardingFlowManager />;
+  }
+
+  // Fallback for when user is null but somehow we got here
+  return null;
+}
+
+
+function OnboardingFlowManager() {
+    const { user, devMode } = useAuthContext();
+    const firestore = useFirestore();
+    const [status, setStatus] = React.useState<OnboardingStatus>("loading");
+    const [staffData, setStaffData] = React.useState<any>(null);
+
+    useEffect(() => {
+        if (devMode) {
+            setStatus("ready");
+            return;
+        }
+        if (!user || !firestore) return;
+
+        const checkStatus = async () => {
+            // Has this user already applied and is pending?
+            const pendingQ = query(collection(firestore, "pendingAccounts"), where("uid", "==", user.uid), where("status", "==", "pending"));
+            const pendingSnap = await getDocs(pendingQ);
+            if (!pendingSnap.empty) {
+                setStatus("pendingApproval");
+                return;
+            }
+
+            // Does this user's email match an existing staff record?
+            if(user.email){
+                const staffQ = query(collection(firestore, "staff"), where("email", "==", user.email), where("employmentStatus", "==", "Active"));
+                const staffSnap = await getDocs(staffQ);
+                const staffList = staffSnap.docs.map(d => ({ id: d.id, ...(d.data() as Staff) }));
+
+                if (staffList.length === 1) {
+                    setStaffData(staffList[0]);
+                    setStatus("existingStaff");
+                } else if (staffList.length > 1) {
+                    setStaffData(staffList);
+                    setStatus("duplicateStaff");
+                } else {
+                    setStatus("applicant");
+                }
+            } else {
+                 setStatus("applicant");
+            }
+        };
+
+        checkStatus();
+
+    }, [user, firestore, devMode]);
+    
+    if (status === "loading") {
+        return (
+             <div className="flex h-svh w-full items-center justify-center">
+                <p className="text-center text-muted-foreground">Determining next step...</p>
+             </div>
+        );
+    }
+    
+    if (status === "existingStaff" && user && firestore) {
+        return <ExistingStaffVerification staff={staffData} firebaseUser={user} firestore={firestore} onComplete={() => window.location.reload()} />;
     }
 
-    let cancelled = false;
+    if (status === "duplicateStaff" && user && firestore) {
+        return <DuplicateStaffResolution staffList={staffData} firebaseUser={user} firestore={firestore} onComplete={() => window.location.reload()} />;
+    }
 
-    const run = async () => {
-      try {
-        const userRef = doc(firestore, "users", user.uid);
-        const userSnap = await getDoc(userRef);
+    if (status === "applicant" && user && firestore) {
+        return <AccountApplicationScreen firebaseUser={user} firestore={firestore} onSubmitted={() => setStatus("pendingApproval")} />;
+    }
 
-        if (userSnap.exists()) {
-          if (cancelled) return;
-          
-          await updateDoc(userRef, { lastLoginAt: serverTimestamp() });
+    if (status === "pendingApproval") {
+        return <PendingApprovalScreen />;
+    }
 
-          setState({ status: "ready" });
-          return;
-        }
-
-        if (user.email) {
-          const pendingQ = query(
-            collection(firestore, "pendingAccounts"),
-            where("uid", "==", user.uid),
-            where("status", "==", "pending")
-          );
-          const pendingSnap = await getDocs(pendingQ);
-
-          if (!pendingSnap.empty) {
-            if (cancelled) return;
-            setState({ status: "pendingApproval" });
-            return;
-          }
-        }
-
-        if (!user.email) {
-          if (cancelled) return;
-          setState({ status: "applicant" });
-          return;
-        }
-
-        const staffQ = query(
-          collection(firestore, "staff"),
-          where("email", "==", user.email),
-          where("employmentStatus", "==", "Active")
-        );
-
-        const staffSnap = await getDocs(staffQ);
-        const staffList = staffSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Staff),
-        }));
-
-        if (cancelled) return;
-
-        if (staffList.length === 1) {
-          setState({ status: "existingStaff", staff: staffList[0] });
-        } else if (staffList.length > 1) {
-          setState({ status: "duplicateStaff", staffList });
-        } else {
-          setState({ status: "applicant" });
-        }
-      } catch (err) {
-        console.error("FirstLoginGuard error", err);
-        setState({ status: "ready" });
-      }
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, firestore, user, router, devMode]);
-
-  // ----- Render scenarios -----
-
-  if (state.status === "loading" || authLoading) {
-    return (
-      <div className="flex min-h-svh items-center justify-center bg-muted/40 text-sm text-muted-foreground">
-        Checking your account…
-      </div>
-    );
-  }
-
-  if (state.status === "existingStaff" && user && firestore) {
-    return (
-      <ExistingStaffVerification
-        staff={state.staff}
-        firebaseUser={user}
-        firestore={firestore}
-        onComplete={() => setState({ status: "ready" })}
-      />
-    );
-  }
-
-  if (state.status === "duplicateStaff" && user && firestore) {
-    return (
-      <DuplicateStaffResolution
-        staffList={state.staffList}
-        firebaseUser={user}
-        firestore={firestore}
-        onComplete={() => setState({ status: "ready" })}
-      />
-    );
-  }
-
-  if (state.status === "applicant" && user && firestore) {
-    return (
-      <AccountApplicationScreen
-        firebaseUser={user}
-        firestore={firestore}
-        onSubmitted={() => setState({ status: "pendingApproval" })}
-      />
-    );
-  }
-
-  if (state.status === "pendingApproval") {
-    return <PendingApprovalScreen />;
-  }
-
-  // Fully onboarded or in dev mode
-  return <>{children}</>;
+    // Should not be reached
+    return null;
 }
