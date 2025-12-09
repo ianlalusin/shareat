@@ -239,9 +239,9 @@ export default function KitchenPage() {
       </TabsContent>
       <TabsContent value="cold" className="flex-1 mt-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {coldGroups.map((group) => (
+          {coldGroups.map((group, index) => (
             <KitchenOrderCard
-              key={group.orderId}
+              key={group.order?.id ?? group.orderId ?? `cold-${index}`}
               order={group.order}
               items={group.items}
               onServeItem={handleServeItem}
