@@ -230,11 +230,11 @@ export default function SalesReportPage() {
   return (
     <>
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Sales Report
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
             <DateRangePicker value={dateRange} onUpdate={setDateRange} />
             <Button onClick={handleGenerateReport} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -420,7 +420,3 @@ interface SalesReportItem {
   quantitySold: number;
   totalSales: number;
 }
-
-    
-
-    
