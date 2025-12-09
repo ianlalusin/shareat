@@ -16,7 +16,7 @@ import {
 import { useFirestore } from '@/firebase';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
-import { Order, OrderItem, MenuItem, RefillItem, InventoryItem } from '@/lib/types';
+import { Order, OrderItem, MenuItem, RefillItem, InventoryItem, OrderUpdateLog } from '@/lib/types';
 import { StatCard } from '@/components/admin/dashboard/stat-card';
 import { TopCategory, TopItemsByCategoryCard } from '@/components/admin/dashboard/top-categories-card';
 import { TopItemsByCategoryModal } from '@/components/admin/dashboard/top-items-by-category-modal';
@@ -24,8 +24,9 @@ import { TopItemsCard, TopItem } from '@/components/admin/dashboard/top-items-ca
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { DashboardSkeleton } from '@/components/admin/dashboard/dashboard-skeleton';
-import { TrendingUp, Hash, Timer, PackageX } from 'lucide-react';
+import { TrendingUp, Hash, Timer, PackageX, History } from 'lucide-react';
 import { startOfDay, endOfDay } from 'date-fns';
+import { OrderUpdateLogModal } from '@/components/admin/reports/order-update-log-modal';
 
 export default function AdminPage() {
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date()) });
@@ -37,8 +38,10 @@ export default function AdminPage() {
   const [avgServingTime, setAvgServingTime] = React.useState(0);
   const [topCategories, setTopCategories] = React.useState<TopCategory[]>([]);
   const [lowStockItems, setLowStockItems] = React.useState<TopItem[]>([]);
+  const [updateLogCount, setUpdateLogCount] = React.useState(0);
   
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = React.useState(false);
+  const [isUpdateLogModalOpen, setIsUpdateLogModalOpen] = React.useState(false);
   const [selectedCategory, setSelectedCategory] = React.useState<TopCategory | null>(null);
 
   const firestore = useFirestore();
@@ -52,6 +55,7 @@ export default function AdminPage() {
         setAvgServingTime(0);
         setTopCategories([]);
         setLowStockItems([]);
+        setUpdateLogCount(0);
         setLoading(false);
       }
       return;
@@ -75,10 +79,18 @@ export default function AdminPage() {
         );
         
         const menuQuery = query(collection(firestore, 'menu'), where('storeId', '==', selectedStoreId));
+        
+        const auditLogsQuery = query(
+          collectionGroup(firestore, 'orderAudits'),
+          where('storeId', '==', selectedStoreId),
+          where('timestamp', '>=', startDate),
+          where('timestamp', '<=', endDate)
+        );
 
-        const [ordersSnapshot, menuSnapshot] = await Promise.all([
+        const [ordersSnapshot, menuSnapshot, auditLogsSnapshot] = await Promise.all([
           getDocs(ordersQuery),
           getDocs(menuQuery),
+          getDocs(auditLogsQuery),
         ]);
         
         const menuItems = menuSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MenuItem));
@@ -87,6 +99,7 @@ export default function AdminPage() {
         const completedOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
         
         setTotalReceipts(completedOrders.length);
+        setUpdateLogCount(auditLogsSnapshot.size);
 
         if (completedOrders.length > 0) {
             const orderIds = completedOrders.map(o => o.id);
@@ -167,6 +180,7 @@ export default function AdminPage() {
         setTotalReceipts(0);
         setAvgServingTime(0);
         setTopCategories([]);
+        setUpdateLogCount(0);
       }
       
       // === Inventory Data (Not date-ranged) ===
@@ -204,12 +218,13 @@ export default function AdminPage() {
       setAvgServingTime(0);
       setTopCategories([]);
       setLowStockItems([]);
+      setUpdateLogCount(0);
     }
   }, [selectedStoreId, fetchData]);
   
   const handleCategoryClick = (category: TopCategory) => {
     setSelectedCategory(category);
-    setIsModalOpen(true);
+    setIsCategoryModalOpen(true);
   };
   
   const formatServingTime = (seconds: number) => {
@@ -247,7 +262,7 @@ export default function AdminPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <StatCard
             title="Total Sales"
             value={totalSales}
@@ -269,6 +284,13 @@ export default function AdminPage() {
             icon={<Timer className="h-4 w-4 text-muted-foreground" />}
             linkTo="/admin/reports/kitchen"
           />
+           <div onClick={() => setIsUpdateLogModalOpen(true)} className="cursor-pointer">
+              <StatCard
+                title="Order Updates"
+                value={updateLogCount}
+                icon={<History className="h-4 w-4 text-muted-foreground" />}
+              />
+           </div>
           <TopItemsCard
             title="Low Stocks Inventory"
             items={lowStockItems}
@@ -286,11 +308,19 @@ export default function AdminPage() {
     
     {selectedCategory && (
         <TopItemsByCategoryModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
+            isOpen={isCategoryModalOpen}
+            onClose={() => setIsCategoryModalOpen(false)}
             category={selectedCategory}
         />
     )}
+     {isUpdateLogModalOpen && selectedStoreId && dateRange && dateRange.from && dateRange.to && (
+        <OrderUpdateLogModal
+            isOpen={isUpdateLogModalOpen}
+            onClose={() => setIsUpdateLogModalOpen(false)}
+            storeId={selectedStoreId}
+            dateRange={dateRange as { from: Date; to: Date; }}
+        />
+     )}
     </>
   );
 }

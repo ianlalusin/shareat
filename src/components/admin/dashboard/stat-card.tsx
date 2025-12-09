@@ -3,7 +3,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
-import Link from 'next/link';
 
 interface StatCardProps {
     title: string;
@@ -42,11 +41,11 @@ export function StatCard({ title, value, icon, format = 'number', customFormatte
 
     if (linkTo) {
         return (
-            <Link href={linkTo} className="block hover:shadow-lg transition-shadow">
+            <a href={linkTo} className="block hover:shadow-lg transition-shadow">
                 <Card>
                     <CardInnerContent />
                 </Card>
-            </Link>
+            </a>
         )
     }
 
