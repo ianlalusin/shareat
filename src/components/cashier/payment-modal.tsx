@@ -29,7 +29,7 @@ import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
-import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
+import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 interface Payment {
@@ -297,7 +297,7 @@ export function PaymentModal({
                 ))}
             </div>
 
-            {balance > 0.009 && (
+            {balance > 0.01 && (
                 <div className='flex justify-between items-center'>
                     <span className='text-sm text-destructive font-medium'>Balance Remaining: {formatCurrency(balance)}</span>
                     {availableMops.length > 0 && (
@@ -339,17 +339,23 @@ export function PaymentModal({
 
     <AlertDialog open={showPendingItemsAlert} onOpenChange={setShowPendingItemsAlert}>
         <AlertDialogContent>
-            <AlertDialogHeader>
-            <AlertDialogTitle>Pending Kitchen Items</AlertDialogTitle>
-            <AlertDialogDescription>
-                The following items have not been served yet and will NOT be included in this bill.
-                 <ul className="list-disc list-inside mt-2 text-foreground">
+             <AlertDialogHeader>
+                <AlertDialogTitle>Pending Kitchen Items</AlertDialogTitle>
+                <div className="text-sm text-muted-foreground">
+                    <p>
+                    The following items have not been served yet and will NOT be included in this bill.
+                    </p>
+                    <ul className="list-disc list-inside mt-2 text-foreground">
                     {pendingItems.map(item => (
-                        <li key={item.id}>{item.quantity}x {item.menuName}</li>
+                        <li key={item.id}>
+                        {item.quantity}x {item.menuName}
+                        </li>
                     ))}
-                </ul>
-                Do you want to proceed with finalizing the payment for served items only?
-            </AlertDialogDescription>
+                    </ul>
+                    <p className="mt-2">
+                    Do you want to proceed with finalizing the payment for served items only?
+                    </p>
+                </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowPendingItemsAlert(false)}>Cancel</AlertDialogCancel>
