@@ -3,12 +3,15 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { useAuth, useFirestore } from '@/firebase';
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import type { User as AppUser, Staff } from '@/lib/types';
 
 interface AuthContextType {
-  user: User | null;
+  user: FirebaseAuthUser | null;
+  appUser: AppUser | null;
+  staff: Staff | null;
   loading: boolean;
   isOnboarded: boolean;
   devMode: boolean;
@@ -20,7 +23,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const DEV_MODE_KEY = 'shareat-hub-dev-mode';
 
 export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseAuthUser | null>(null);
+  const [appUser, setAppUser] = useState<AppUser | null>(null);
+  const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [devMode, setDevModeState] = useState(false);
@@ -47,19 +52,33 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (currentUser) {
-        // User is logged in, check if they have a corresponding 'users' document
         const userDocRef = doc(firestore, 'users', currentUser.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
+          const appUserData = userDocSnap.data() as AppUser;
+          setAppUser(appUserData);
           setIsOnboarded(true);
+          
+          if(appUserData.staffId) {
+            const staffDocRef = doc(firestore, 'staff', appUserData.staffId);
+            const staffDocSnap = await getDoc(staffDocRef);
+            if (staffDocSnap.exists()) {
+              setStaff({ id: staffDocSnap.id, ...staffDocSnap.data() } as Staff);
+            }
+          }
+          
           // Update last login time in the background
           await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
         } else {
           setIsOnboarded(false);
+          setAppUser(null);
+          setStaff(null);
         }
       } else {
         // User is logged out
         setIsOnboarded(false);
+        setAppUser(null);
+        setStaff(null);
       }
       setLoading(false);
     });
@@ -80,7 +99,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isOnboarded, devMode, setDevMode }}>
+    <AuthContext.Provider value={{ user, appUser, staff, loading, isOnboarded, devMode, setDevMode }}>
       {children}
     </AuthContext.Provider>
   );
