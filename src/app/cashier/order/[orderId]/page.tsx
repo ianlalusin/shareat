@@ -39,7 +39,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PaymentModal } from '@/components/cashier/payment-modal';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -112,7 +111,6 @@ export default function OrderDetailPage() {
 
 
   const firestore = useFirestore();
-  const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -241,7 +239,10 @@ export default function OrderDetailPage() {
     if (Object.keys(dataToUpdate).length > 0) {
         try {
             await updateDoc(orderRef, dataToUpdate);
-            openSuccessModal();
+            toast({
+              title: "Success!",
+              description: "Customer details updated.",
+            });
         } catch (error) {
             toast({
                 variant: 'destructive',
@@ -293,7 +294,10 @@ export default function OrderDetailPage() {
         setDiscountValue('');
         setSelectedDiscount('');
         setShowDiscountForm(false);
-        openSuccessModal();
+        toast({
+          title: "Success!",
+          description: "Discount has been applied.",
+        });
     } catch (error) {
         toast({
             variant: 'destructive',
@@ -343,7 +347,10 @@ export default function OrderDetailPage() {
         setSelectedCharge('');
         setCustomChargeType('');
         setShowChargeForm(false);
-        openSuccessModal();
+        toast({
+          title: "Success!",
+          description: "Charge has been applied.",
+        });
     } catch (error) {
         toast({
             variant: 'destructive',
@@ -355,7 +362,10 @@ export default function OrderDetailPage() {
   
   const handleFinalizeSuccess = () => {
     setIsPaymentModalOpen(false);
-    openSuccessModal();
+    toast({
+      title: "Bill Finalized!",
+      description: "The order has been completed.",
+    });
     router.push('/cashier');
   };
 

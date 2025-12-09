@@ -19,8 +19,8 @@ import { Separator } from '../ui/separator';
 import Image from 'next/image';
 import { useFirestore } from '@/firebase';
 import { writeBatch, collection, doc, serverTimestamp } from 'firebase/firestore';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { Badge } from '../ui/badge';
+import { useToast } from '@/hooks/use-toast';
 
 interface AddToCartModalProps {
   isOpen: boolean;
@@ -37,7 +37,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const firestore = useFirestore();
-  const { openSuccessModal } = useSuccessModal();
+  const { toast } = useToast();
 
   const availableMenu = useMemo(() => 
     menu.filter(item => item.category !== 'Unlimited' && item.isAvailable),
@@ -117,12 +117,19 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
         });
 
         await batch.commit();
-        openSuccessModal();
+        toast({
+            title: 'Items Added',
+            description: `${cart.length} item(s) have been added to the order.`
+        });
         onClose();
 
     } catch (error) {
         console.error("Error adding items to order:", error);
-        alert("Failed to add items. Please try again.");
+        toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Failed to add items. Please try again.',
+        });
     }
   }
 

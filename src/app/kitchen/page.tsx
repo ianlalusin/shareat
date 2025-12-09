@@ -19,7 +19,6 @@ import {
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Order, OrderItem, RefillItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
 
@@ -29,7 +28,6 @@ export default function KitchenPage() {
   const [refillItems, setRefillItems] = useState<KitchenItem[]>([]);
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
-  const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -190,7 +188,9 @@ export default function KitchenPage() {
       });
 
       await batch.commit();
-      openSuccessModal();
+      toast({
+        title: "All items served!",
+      });
     } catch (err) {
       toast({
         variant: 'destructive',

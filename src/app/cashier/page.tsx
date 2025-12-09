@@ -10,7 +10,6 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, OrderItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { TableCard } from '@/components/cashier/table-card';
 import { Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -31,7 +30,6 @@ export default function CashierPage() {
     
     const firestore = useFirestore();
     const { selectedStoreId } = useStoreSelector();
-    const { openSuccessModal } = useSuccessModal();
     const { toast } = useToast();
     
     useEffect(() => {
@@ -152,7 +150,10 @@ export default function CashierPage() {
     
         await batch.commit();
         setIsNewOrderModalOpen(false);
-        openSuccessModal();
+        toast({
+            title: "Order Created",
+            description: `New order started for table ${table.tableName}.`
+        });
       } catch (error) {
         console.error("Error creating new order: ", error);
         throw new Error("Failed to create new order. Please try again.");

@@ -14,7 +14,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { OrderTimer } from '@/components/cashier/order-timer';
 import { RefillModal } from '@/components/cashier/refill-modal';
 import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
-import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -41,7 +40,6 @@ export default function RefillPage() {
     const firestore = useFirestore();
     const auth = useAuth();
     const { selectedStoreId } = useStoreSelector();
-    const { openSuccessModal } = useSuccessModal();
     const { toast } = useToast();
     
     useEffect(() => {
@@ -153,7 +151,10 @@ export default function RefillPage() {
 
         try {
             await batch.commit();
-            openSuccessModal();
+            toast({
+                title: 'Order Sent!',
+                description: 'Refills and add-ons have been sent to the kitchen.',
+            });
             setIsRefillModalOpen(false);
         } catch (error) {
             console.error("Error placing order:", error);
