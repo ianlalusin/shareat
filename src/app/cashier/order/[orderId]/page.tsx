@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useReducer, useMemo } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuthContext } from '@/firebase';
 import {
   doc,
   onSnapshot,
@@ -14,13 +14,15 @@ import {
   where,
   addDoc,
   serverTimestamp,
+  runTransaction,
+  deleteDoc,
 } from 'firebase/firestore';
-import { Order, OrderItem, GListItem, OrderTransaction, Store } from '@/lib/types';
+import { Order, OrderItem, GListItem, OrderTransaction, Store, PendingOrderUpdate, OrderUpdateLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Check, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -38,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PaymentModal } from '@/components/cashier/payment-modal';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 // Reducer for complex state management of TIN input
@@ -84,6 +87,9 @@ export default function OrderDetailPage() {
   const [store, setStore] = useState<Store | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingOrderUpdate | null>(null);
+  const [isProcessingUpdate, setIsProcessingUpdate] = useState(false);
+  
   const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState('');
   const [address, setAddress] = useState('');
@@ -109,6 +115,7 @@ export default function OrderDetailPage() {
 
 
   const firestore = useFirestore();
+  const { user } = useAuthContext();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -140,11 +147,21 @@ export default function OrderDetailPage() {
         const transData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OrderTransaction));
         setTransactions(transData);
     });
+
+    const pendingUpdateQuery = query(collection(firestore, 'orders', orderId, 'pendingUpdates'));
+    const pendingUpdateUnsubscribe = onSnapshot(pendingUpdateQuery, (snapshot) => {
+      if (snapshot.empty) {
+        setPendingUpdate(null);
+      } else {
+        setPendingUpdate({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as PendingOrderUpdate);
+      }
+    });
     
     return () => {
       orderUnsubscribe();
       itemsUnsubscribe();
       transactionsUnsubscribe();
+      pendingUpdateUnsubscribe();
     };
   }, [firestore, orderId]);
   
@@ -383,6 +400,66 @@ export default function OrderDetailPage() {
     router.push('/cashier');
   };
 
+  const handleUpdateRequest = async (action: 'accept' | 'reject') => {
+    if (!firestore || !order || !pendingUpdate || !user) return;
+    
+    setIsProcessingUpdate(true);
+    const reason = action === 'accept' 
+      ? window.prompt(`Reason for accepting this ${pendingUpdate.type} change:`) 
+      : `Rejected by ${user.displayName}`;
+      
+    if (action === 'accept' && !reason) {
+        toast({ variant: 'destructive', title: 'Reason Required', description: 'You must provide a reason to accept an update.' });
+        setIsProcessingUpdate(false);
+        return;
+    }
+
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        const orderRef = doc(firestore, 'orders', order.id);
+        const pendingUpdateRef = doc(firestore, 'orders', order.id, 'pendingUpdates', pendingUpdate.id);
+        const auditLogRef = doc(collection(firestore, 'orders', order.id, 'orderAudits'));
+
+        if (action === 'accept') {
+          const updatesToApply: Partial<Order> = {};
+          pendingUpdate.changes.forEach(change => {
+            (updatesToApply as any)[change.field] = change.newValue;
+          });
+
+          // Recalculate total if guest count or package changed
+          const unlimitedPackage = orderItems.find(item => item.menuName === (updatesToApply.packageName || order.packageName));
+          if (unlimitedPackage && (updatesToApply.guestCount || updatesToApply.packageName)) {
+            updatesToApply.totalAmount = (updatesToApply.guestCount || order.guestCount) * unlimitedPackage.priceAtOrder;
+          }
+
+          transaction.update(orderRef, updatesToApply);
+
+          const auditLog: Omit<OrderUpdateLog, 'id'> = {
+            orderId: order.id,
+            storeId: order.storeId,
+            timestamp: serverTimestamp() as any,
+            updatedByUid: user.uid,
+            updatedByName: user.displayName || user.email!,
+            reason: `Accepted: ${reason}. (Initiated by: ${pendingUpdate.initiatedByName})`,
+            changes: pendingUpdate.changes,
+          };
+          transaction.set(auditLogRef, auditLog);
+        }
+
+        // Always delete the pending update
+        transaction.delete(pendingUpdateRef);
+      });
+
+      toast({ title: `Update ${action === 'accept' ? 'Accepted' : 'Rejected'}`, description: `The requested change has been ${action}ed.` });
+
+    } catch (error) {
+      console.error("Error processing update request:", error);
+      toast({ variant: 'destructive', title: 'Action Failed', description: 'Could not process the update request.' });
+    } finally {
+      setIsProcessingUpdate(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -423,6 +500,46 @@ export default function OrderDetailPage() {
       
        <div className="grid md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
+            {pendingUpdate && (
+              <Alert variant="warning">
+                <AlertTitle className="flex justify-between items-center">
+                  <span>Pending Order Update</span>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      size="icon" 
+                      className="h-7 w-7 bg-green-500 hover:bg-green-600 text-white"
+                      onClick={() => handleUpdateRequest('accept')}
+                      disabled={isProcessingUpdate}
+                    >
+                      {isProcessingUpdate ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4"/>}
+                    </Button>
+                    <Button 
+                      size="icon" 
+                      variant="destructive" 
+                      className="h-7 w-7"
+                      onClick={() => handleUpdateRequest('reject')}
+                      disabled={isProcessingUpdate}
+                    >
+                       {isProcessingUpdate ? <Loader2 className="h-4 w-4 animate-spin"/> : <X className="h-4 w-4"/>}
+                    </Button>
+                  </div>
+                </AlertTitle>
+                <AlertDescription className="mt-2 text-sm">
+                  <p>
+                    <strong>{pendingUpdate.initiatedByName}</strong> requested to update:
+                  </p>
+                  <ul className="list-disc pl-5 mt-1">
+                    {pendingUpdate.changes.map((change, idx) => (
+                      <li key={idx}>
+                        <span className="capitalize">{change.field.replace(/([A-Z])/g, ' $1')}</span> from{' '}
+                        <strong>{change.oldValue}</strong> to <strong>{change.newValue}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs mt-2">Reason: {pendingUpdate.reason}</p>
+                </AlertDescription>
+              </Alert>
+            )}
             <Card>
                 <CardHeader>
                     <CardTitle>Billing Summary</CardTitle>

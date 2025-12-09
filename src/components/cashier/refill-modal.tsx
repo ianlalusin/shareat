@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -34,6 +33,7 @@ import { Badge } from '../ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Textarea } from '../ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { UpdateOrderModal } from './update-order-modal';
 
 interface RefillCartItem {
     meatType: string;
@@ -71,6 +71,9 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     
     const [noteInput, setNoteInput] = useState('');
     const [editingNoteItem, setEditingNoteItem] = useState<{ type: 'refill' | 'addon'; key: string } | null>(null);
+
+    const [isUpdateOrderModalOpen, setIsUpdateOrderModalOpen] = useState(false);
+    const [updateType, setUpdateType] = useState<'guestCount' | 'package' | null>(null);
 
     const firestore = useFirestore();
     const { toast } = useToast();
@@ -238,8 +241,14 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         setEditingNoteItem({ type, key });
         setNoteInput(currentNote || '');
     };
+    
+    const handleOpenUpdateModal = (type: 'guestCount' | 'package') => {
+        setUpdateType(type);
+        setIsUpdateOrderModalOpen(true);
+    };
 
     return (
+        <>
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
                 <DialogHeader>
@@ -433,17 +442,33 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
 
                 </Popover>
 
-                <DialogFooter className="mt-4 flex-row justify-end">
-                    <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button 
-                        size="lg" 
-                        onClick={handlePlaceOrderClick} 
-                        disabled={refillCart.length === 0 && cart.length === 0}
-                    >
-                        Place Order
-                    </Button>
+                <DialogFooter className="mt-4 flex-row justify-between">
+                    <div className='flex gap-2'>
+                        <Button type="button" variant="secondary" onClick={() => handleOpenUpdateModal('guestCount')}>Update Guest Count</Button>
+                        <Button type="button" variant="secondary" onClick={() => handleOpenUpdateModal('package')}>Update Package</Button>
+                    </div>
+                    <div className='flex gap-2'>
+                        <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+                        <Button 
+                            size="lg" 
+                            onClick={handlePlaceOrderClick} 
+                            disabled={refillCart.length === 0 && cart.length === 0}
+                        >
+                            Place Order
+                        </Button>
+                    </div>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+        {isUpdateOrderModalOpen && updateType && (
+            <UpdateOrderModal
+                isOpen={isUpdateOrderModalOpen}
+                onClose={() => setIsUpdateOrderModalOpen(false)}
+                order={order}
+                menu={menu}
+                updateType={updateType}
+            />
+        )}
+        </>
     );
 }

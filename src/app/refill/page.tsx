@@ -18,6 +18,7 @@ import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
 import { useToast } from '@/hooks/use-toast';
 import { GuestConfirmationModal } from '@/components/refill/guest-confirmation-modal';
 import { useAuthContext } from '@/context/auth-context';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const getStatusColor = (status: TableType['status']) => {
     switch (status) {
@@ -270,86 +271,89 @@ export default function RefillPage() {
 
   return (
     <>
-      <main className="flex-1 p-4 space-y-8">
-        <div>
-          <h2 className="text-lg font-semibold mb-4 font-headline">Waiting for Confirmation ({pendingConfirmationOrders.length})</h2>
-           {pendingConfirmationOrders.length === 0 ? (
-             <p className="text-sm text-muted-foreground">No new orders waiting for confirmation.</p>
-           ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {pendingConfirmationOrders.map(({ table, order }) => {
-                  if (!order) return null;
-                  return (
-                    <Card 
-                        key={table.id} 
-                        className="bg-yellow-100 dark:bg-yellow-900/40 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-                        onClick={() => handleTableClick(table)}
-                    >
-                        <CardHeader className="p-4">
-                            <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                            <p className="text-sm text-muted-foreground font-medium">{order.packageName}</p>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 flex-grow">
-                            <p className="text-sm font-semibold">Customer: {order.customerName || 'N/A'}</p>
-                        </CardContent>
-                        <CardFooter className="p-2 border-t">
-                            <Button className="w-full" variant="secondary">Confirm Guests</Button>
-                        </CardFooter>
-                    </Card>
-                  )
+      <main className="flex-1 p-4">
+        <Tabs defaultValue="active" className="flex flex-col flex-1">
+            <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="waiting">Waiting for Confirmation ({pendingConfirmationOrders.length})</TabsTrigger>
+                <TabsTrigger value="active">Active Tables ({activeOrders.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="waiting" className="flex-1 mt-6">
+                {pendingConfirmationOrders.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center pt-8">No new orders waiting for confirmation.</p>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {pendingConfirmationOrders.map(({ table, order }) => {
+                    if (!order) return null;
+                    return (
+                        <Card 
+                            key={table.id} 
+                            className="bg-yellow-100 dark:bg-yellow-900/40 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
+                            onClick={() => handleTableClick(table)}
+                        >
+                            <CardHeader className="p-4">
+                                <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
+                                <p className="text-sm text-muted-foreground font-medium">{order.packageName}</p>
+                            </CardHeader>
+                            <CardContent className="p-4 pt-0 flex-grow">
+                                <p className="text-sm font-semibold">Customer: {order.customerName || 'N/A'}</p>
+                            </CardContent>
+                            <CardFooter className="p-2 border-t">
+                                <Button className="w-full" variant="secondary">Confirm Guests</Button>
+                            </CardFooter>
+                        </Card>
+                    )
+                    })}
+                </div>
+            )}
+            </TabsContent>
+            <TabsContent value="active" className="flex-1 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {activeOrders.map(({table, order}) => {
+                    if (!order) return null;
+                    const orderRefills = refills[order.id] || [];
+                    const lastRefill = orderRefills.length > 0 
+                        ? orderRefills.reduce((latest, current) => {
+                            if (!latest?.timestamp) return current;
+                            if (!current?.timestamp) return latest;
+                            return (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
+                        }) : null;
+                    
+                    return (
+                        <Card 
+                            key={table.id} 
+                            className="bg-muted/30 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
+                            onClick={() => handleTableClick(table)}
+                        >
+                            <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
+                                <div>
+                                    <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
+                                    <p className="text-xs text-muted-foreground font-medium">{order.packageName}</p>
+                                </div>
+                                <Badge className={cn("text-white", getStatusColor(table.status))}>
+                                    {table.status}
+                                </Badge>
+                            </CardHeader>
+                            <CardContent className="p-4 pt-0 flex-grow">
+                                <div className="text-sm space-y-1">
+                                    <p><span className="font-semibold">Guests:</span> {order.guestCount}</p>
+                                    <OrderTimer startTime={order.orderTimestamp} />
+                                    {lastRefill ? (
+                                        <div className="pt-2">
+                                            <p className="font-semibold text-xs text-muted-foreground">Last Refill:</p>
+                                            <p>{lastRefill.quantity}x {lastRefill.menuName}</p>
+                                            <LastRefillTimer refillTime={lastRefill.timestamp} />
+                                        </div>
+                                    ) : (
+                                        <p className="pt-2 text-sm text-muted-foreground">No refills yet.</p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
                 })}
-             </div>
-           )}
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold mb-4 font-headline">Active Tables ({activeOrders.length})</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {activeOrders.map(({table, order}) => {
-                  if (!order) return null;
-                  const orderRefills = refills[order.id] || [];
-                  const lastRefill = orderRefills.length > 0 
-                      ? orderRefills.reduce((latest, current) => {
-                          if (!latest?.timestamp) return current;
-                          if (!current?.timestamp) return latest;
-                          return (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
-                      }) : null;
-                  
-                  return (
-                      <Card 
-                          key={table.id} 
-                          className="bg-muted/30 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-                          onClick={() => handleTableClick(table)}
-                      >
-                          <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
-                              <div>
-                                  <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                                  <p className="text-xs text-muted-foreground font-medium">{order.packageName}</p>
-                              </div>
-                             <Badge className={cn("text-white", getStatusColor(table.status))}>
-                                  {table.status}
-                             </Badge>
-                          </CardHeader>
-                          <CardContent className="p-4 pt-0 flex-grow">
-                              <div className="text-sm space-y-1">
-                                  <p><span className="font-semibold">Guests:</span> {order.guestCount}</p>
-                                  <OrderTimer startTime={order.orderTimestamp} />
-                                  {lastRefill ? (
-                                      <div className="pt-2">
-                                          <p className="font-semibold text-xs text-muted-foreground">Last Refill:</p>
-                                          <p>{lastRefill.quantity}x {lastRefill.menuName}</p>
-                                          <LastRefillTimer refillTime={lastRefill.timestamp} />
-                                      </div>
-                                  ) : (
-                                      <p className="pt-2 text-sm text-muted-foreground">No refills yet.</p>
-                                  )}
-                              </div>
-                          </CardContent>
-                      </Card>
-                  )
-              })}
-          </div>
-        </div>
+                </div>
+            </TabsContent>
+        </Tabs>
       </main>
 
       {selectedOrder && selectedTable && (

@@ -15,10 +15,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Order, MenuItem, OrderUpdateLog } from '@/lib/types';
+import { Order, MenuItem, PendingOrderUpdate } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
-import { doc, writeBatch, serverTimestamp, collection, runTransaction, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, serverTimestamp, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
@@ -64,85 +64,61 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
     }
 
     setIsSubmitting(true);
-
+    
     try {
-        await runTransaction(firestore, async (transaction) => {
-            const orderRef = doc(firestore, 'orders', order.id);
-            const orderDoc = await transaction.get(orderRef);
-            if(!orderDoc.exists()) throw new Error("Order not found.");
+      const pendingUpdateRef = collection(firestore, 'orders', order.id, 'pendingUpdates');
+      // Check if there's already a pending update
+      const q = query(pendingUpdateRef);
+      const existingUpdates = await getDocs(q);
+      if (!existingUpdates.empty) {
+        toast({ variant: 'destructive', title: 'Existing Request', description: 'There is already a pending update request for this order. Please wait for the cashier to review it.' });
+        setIsSubmitting(false);
+        onClose();
+        return;
+      }
+      
+      const changes: PendingOrderUpdate['changes'] = [];
+      const newPackage = menu.find(m => m.id === selectedPackageId);
 
-            const currentOrder = orderDoc.data() as Order;
-            const newPackage = menu.find(m => m.id === selectedPackageId);
-            if (!newPackage) throw new Error("Selected package not found.");
+      if (updateType === 'guestCount' && guestCount !== order.guestCount) {
+        changes.push({ field: 'guestCount', oldValue: order.guestCount, newValue: guestCount });
+      }
 
-            const updates: Partial<Order> = {};
-            const auditChanges: OrderUpdateLog['changes'] = [];
+      if (updateType === 'package' && newPackage && newPackage.menuName !== order.packageName) {
+        changes.push({ field: 'packageName', oldValue: order.packageName, newValue: newPackage.menuName });
+      }
 
-            if (updateType === 'guestCount' && guestCount !== currentOrder.guestCount) {
-                updates.guestCount = guestCount;
-                auditChanges.push({ field: 'guestCount', oldValue: currentOrder.guestCount, newValue: guestCount });
-            }
+      if (changes.length === 0) {
+        toast({ title: 'No changes detected.' });
+        setIsSubmitting(false);
+        onClose();
+        return;
+      }
+      
+      const newUpdate: Omit<PendingOrderUpdate, 'id'> = {
+        initiatedByUid: user.uid,
+        initiatedByName: user.displayName || user.email!,
+        initiatedAt: serverTimestamp() as any,
+        status: 'pending',
+        type: updateType,
+        changes: changes,
+        reason: reason,
+      };
 
-            if (updateType === 'package' && newPackage.menuName !== currentOrder.packageName) {
-                updates.packageName = newPackage.menuName;
-                auditChanges.push({ field: 'packageName', oldValue: currentOrder.packageName, newValue: newPackage.menuName });
-            }
-
-            if (auditChanges.length === 0) {
-                toast({ title: 'No changes detected.' });
-                setIsSubmitting(false);
-                onClose();
-                return;
-            }
-            
-            const newTotalAmount = (updates.guestCount || currentOrder.guestCount) * (newPackage.price);
-            if (newTotalAmount !== currentOrder.totalAmount) {
-                updates.totalAmount = newTotalAmount;
-                auditChanges.push({ field: 'totalAmount', oldValue: currentOrder.totalAmount, newValue: newTotalAmount });
-            }
-            
-            // If guest count changed, find and update the initial package order item
-            if (updates.guestCount) {
-              const itemsQuery = query(
-                collection(firestore, 'orders', order.id, 'orderItems'),
-                where('sourceTag', '==', 'initial'),
-                limit(1)
-              );
-              const itemsSnap = await getDocs(itemsQuery);
-              if (!itemsSnap.empty) {
-                const initialItemDoc = itemsSnap.docs[0];
-                transaction.update(initialItemDoc.ref, { quantity: updates.guestCount });
-              }
-            }
-
-            // Create audit log
-            const auditLogRef = doc(collection(firestore, 'orders', order.id, 'orderAudits'));
-            const auditLog: Omit<OrderUpdateLog, 'id'> = {
-                orderId: order.id,
-                storeId: order.storeId,
-                timestamp: serverTimestamp() as any,
-                updatedByUid: user.uid,
-                updatedByName: user.displayName || user.email!,
-                reason: reason,
-                changes: auditChanges,
-            };
-
-            transaction.set(auditLogRef, auditLog);
-            transaction.update(orderRef, updates);
-        });
-
-      toast({ title: 'Success', description: 'Order has been updated.' });
+      await addDoc(pendingUpdateRef, newUpdate);
+      
+      toast({ title: 'Request Submitted', description: 'Your update request has been sent to the cashier for approval.' });
       onClose();
 
     } catch (error) {
-      console.error('Error updating order:', error);
+       console.error('Error creating pending update:', error);
       toast({
         variant: 'destructive',
-        title: 'Update failed',
+        title: 'Request failed',
         description: error instanceof Error ? error.message : 'An unknown error occurred.',
       });
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
   };
 
@@ -150,9 +126,9 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Update Order</DialogTitle>
+          <DialogTitle>Request Order Update</DialogTitle>
           <DialogDescription>
-            Update guest count or package for this order. All changes are logged.
+            Request a change to the guest count or package. This will require cashier approval.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -166,7 +142,7 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
               value={guestCount}
               onChange={(e) => setGuestCount(Number(e.target.value))}
               className="col-span-3"
-              disabled={updateType === 'package'}
+              disabled={updateType === 'package' || isSubmitting}
               min="1"
             />
           </div>
@@ -177,7 +153,7 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
             <Select
               value={selectedPackageId}
               onValueChange={setSelectedPackageId}
-              disabled={updateType === 'guestCount'}
+              disabled={updateType === 'guestCount' || isSubmitting}
             >
               <SelectTrigger className="col-span-3">
                 <SelectValue placeholder="Select a package" />
@@ -202,6 +178,7 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
               className="col-span-3"
               placeholder="Explain why this change is necessary..."
               required
+              disabled={isSubmitting}
             />
           </div>
         </div>
@@ -209,7 +186,7 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
           <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Submit Update
+            Submit Request
           </Button>
         </DialogFooter>
       </DialogContent>

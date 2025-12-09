@@ -256,6 +256,21 @@ export type OrderUpdateLog = {
     }[];
 };
 
+export type PendingOrderUpdate = {
+    id: string;
+    initiatedByUid: string;
+    initiatedByName: string;
+    initiatedAt: Timestamp;
+    status: 'pending' | 'approved' | 'rejected';
+    type: 'guestCount' | 'package';
+    reason: string;
+    changes: {
+        field: 'guestCount' | 'packageName';
+        oldValue: string | number;
+        newValue: string | number;
+    }[];
+};
+
 export type ReceiptSettings = {
     id: string; // Same as storeId
     showLogo: boolean;
