@@ -5,17 +5,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
-import { doc, writeBatch, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Order, OrderItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -31,82 +28,99 @@ export function PendingItemsModal({
   isOpen,
   onClose,
   order,
-  pendingItems,
+  pendingItems: initialPendingItems,
 }: PendingItemsModalProps) {
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [localPendingItems, setLocalPendingItems] = useState(initialPendingItems);
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
 
-  const handleIncludeAddOns = async () => {
+  const handleIncludeSingleItem = async (itemToInclude: OrderItem) => {
     if (!firestore || !order) return;
-    setIsProcessing(true);
+    setProcessingItemId(itemToInclude.id);
     try {
-      const batch = writeBatch(firestore);
-      pendingItems.forEach(item => {
-        const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
-        batch.update(itemRef, { status: 'Served', servedTimestamp: serverTimestamp() });
-      });
-      await batch.commit();
-      toast({ title: "Items Added", description: "Pending items were marked as served." });
-      router.push(`/cashier/order/${order.id}`);
+      const itemRef = doc(firestore, 'orders', order.id, 'orderItems', itemToInclude.id);
+      await updateDoc(itemRef, { status: 'Served', servedTimestamp: serverTimestamp() });
+      toast({ title: "Item Added", description: `1x ${itemToInclude.menuName} added to the bill.` });
+      setLocalPendingItems(prev => prev.filter(item => item.id !== itemToInclude.id));
     } catch (error) {
-      toast({ variant: 'destructive', title: "Error", description: "Could not include items." });
+      toast({ variant: 'destructive', title: "Error", description: "Could not include item." });
     } finally {
-      setIsProcessing(false);
-      onClose();
+      setProcessingItemId(null);
     }
   };
 
-  const handleClearPendingItems = async () => {
+  const handleClearSingleItem = async (itemToClear: OrderItem) => {
     if (!firestore || !order) return;
-    setIsProcessing(true);
+    setProcessingItemId(itemToClear.id);
     try {
-      const batch = writeBatch(firestore);
-      pendingItems.forEach(item => {
-        const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
-        batch.delete(itemRef);
-      });
-      await batch.commit();
-      toast({ title: "Items Cleared", description: "Pending items have been removed." });
-      router.push(`/cashier/order/${order.id}`);
+      const itemRef = doc(firestore, 'orders', order.id, 'orderItems', itemToClear.id);
+      await deleteDoc(itemRef);
+      toast({ title: "Item Cleared", description: `1x ${itemToClear.menuName} has been removed.` });
+      setLocalPendingItems(prev => prev.filter(item => item.id !== itemToClear.id));
     } catch (error) {
-      toast({ variant: 'destructive', title: "Error", description: "Could not clear pending items." });
+      toast({ variant: 'destructive', title: "Error", description: "Could not clear item." });
     } finally {
-      setIsProcessing(false);
-      onClose();
+      setProcessingItemId(null);
     }
   };
+
+  const handleDone = () => {
+    onClose();
+    router.push(`/cashier/order/${order.id}`);
+  };
+  
+  const handleDialogClose = () => {
+    if (processingItemId) return; // Prevent closing while an action is in progress
+    onClose();
+  }
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
+    <AlertDialog open={isOpen} onOpenChange={handleDialogClose}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Pending Kitchen Items</AlertDialogTitle>
-          <AlertDialogDescription>
-            <div className="text-sm text-muted-foreground space-y-2 py-2">
-              <p>This order has the following unserved items:</p>
-              <ul className="list-disc list-inside text-foreground font-medium">
-                {pendingItems.map(item => (
-                  <li key={item.id}>{item.quantity}x {item.menuName}</li>
-                ))}
-              </ul>
-              <p className="pt-2">Would you like to mark them as "Served" and add them to the bill, or clear them from the order?</p>
-            </div>
-          </AlertDialogDescription>
+           <div className="text-sm text-muted-foreground pt-2">
+            This order has unserved items. Choose to add them to the bill (mark as served) or clear them.
+          </div>
         </AlertDialogHeader>
+        
+        <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+          {localPendingItems.length > 0 ? localPendingItems.map(item => (
+            <div key={item.id} className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
+              <span className="font-medium text-sm">{item.quantity}x {item.menuName}</span>
+              <div className="flex gap-2">
+                 <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleIncludeSingleItem(item)}
+                  disabled={!!processingItemId}
+                >
+                  {processingItemId === item.id ? <Loader2 className="h-4 w-4 animate-spin"/> : "Add to Bill"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => handleClearSingleItem(item)}
+                  disabled={!!processingItemId}
+                >
+                   {processingItemId === item.id ? <Loader2 className="h-4 w-4 animate-spin"/> : "Clear"}
+                </Button>
+              </div>
+            </div>
+          )) : (
+            <p className="text-sm text-muted-foreground text-center py-8">All pending items have been handled.</p>
+          )}
+        </div>
+
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose} disabled={isProcessing}>Cancel</AlertDialogCancel>
-          <Button variant="destructive" onClick={handleClearPendingItems} disabled={isProcessing}>
-            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Clear Items
-          </Button>
-          <Button onClick={handleIncludeAddOns} disabled={isProcessing}>
-            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Add to Bill
+          <Button onClick={handleDone}>
+            Done
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 }
+
