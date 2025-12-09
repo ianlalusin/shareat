@@ -4,8 +4,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { useFirestore, useAuth } from '@/firebase';
+import { collection, onSnapshot, query, where, doc, updateDoc, getDocs, writeBatch, serverTimestamp, addDoc, runTransaction } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, OrderItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -99,17 +99,72 @@ export default function CashierPage() {
     }
 
     const handleCreateOrder = async (
-      table: TableType, 
-      orderData: { 
-        customerName: string; 
-        guestCount: number; 
-        selectedPackage: MenuItem; 
-        selectedFlavors: string[];
-      }
+        table: TableType,
+        orderData: {
+          customerName: string;
+          guestCount: number;
+          selectedPackage: MenuItem;
+          selectedFlavors: string[];
+          kitchenNote?: string;
+        }
     ) => {
-      // This function is passed to NewOrderModal, but its implementation is not needed for the current task.
-      // It's kept here to avoid breaking NewOrderModal.
-      // The actual logic for creating an order is in the original `cashier/page.tsx`.
+        if (!firestore) {
+            throw new Error("Firestore is not initialized.");
+        }
+        
+        await runTransaction(firestore, async (transaction) => {
+            const tableRef = doc(firestore, 'tables', table.id);
+            const tableDoc = await transaction.get(tableRef);
+
+            if (!tableDoc.exists() || tableDoc.data().status !== 'Available') {
+                throw new Error(`Table ${table.tableName} is no longer available.`);
+            }
+
+            const newOrderRef = doc(collection(firestore, 'orders'));
+            const order: Omit<Order, 'id'> = {
+                storeId: selectedStoreId!,
+                tableId: table.id,
+                tableName: table.tableName,
+                status: 'Active',
+                guestCount: orderData.guestCount,
+                customerName: orderData.customerName,
+                orderTimestamp: serverTimestamp() as any,
+                totalAmount: orderData.selectedPackage.price * orderData.guestCount,
+                packageName: orderData.selectedPackage.menuName,
+                selectedFlavors: orderData.selectedFlavors,
+                kitchenNote: orderData.kitchenNote,
+                priority: 'normal',
+            };
+            transaction.set(newOrderRef, order);
+            
+            // Create initial order item (the package itself)
+            const orderItemRef = doc(collection(newOrderRef, 'orderItems'));
+            const initialOrderItem: Omit<OrderItem, 'id'> = {
+                orderId: newOrderRef.id,
+                storeId: selectedStoreId!,
+                menuItemId: orderData.selectedPackage.id,
+                menuName: orderData.selectedPackage.menuName,
+                quantity: orderData.guestCount,
+                priceAtOrder: orderData.selectedPackage.price,
+                isRefill: false,
+                status: 'Pending',
+                targetStation: orderData.selectedPackage.targetStation,
+                timestamp: serverTimestamp() as any,
+                sourceTag: 'initial',
+            };
+            transaction.set(orderItemRef, initialOrderItem);
+            
+            // Update table status
+            transaction.update(tableRef, {
+                status: 'Occupied',
+                activeOrderId: newOrderRef.id,
+            });
+        });
+        
+        toast({
+            title: "Order Started!",
+            description: `Order for Table ${table.tableName} has been sent to the kitchen.`,
+        });
     };
 
     const handleTogglePriority = async (order: Order) => {
