@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,10 +31,18 @@ export function GuestConfirmationModal({
   order,
   onConfirm,
 }: GuestConfirmationModalProps) {
-  const [serverGuestCount, setServerGuestCount] = useState(order.guestCount || 1);
+  const [serverGuestCount, setServerGuestCount] = useState(2);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (isOpen) {
+      setServerGuestCount(2);
+      setError(null);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
 
   const handleSubmit = async () => {
     if (serverGuestCount <= 0) {
@@ -57,7 +65,7 @@ export function GuestConfirmationModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirm Guests for Table {order.tableName}</DialogTitle>
+          <DialogTitle>Confirm Guests for {order.tableName}</DialogTitle>
           <DialogDescription>
             Verify the number of guests at the table. The higher count between cashier and server will be used.
           </DialogDescription>
@@ -66,10 +74,6 @@ export function GuestConfirmationModal({
           <div>
             <p className="text-sm font-medium text-muted-foreground">Package</p>
             <p className="font-semibold">{order.packageName}</p>
-          </div>
-           <div>
-            <p className="text-sm font-medium text-muted-foreground">Cashier's Count</p>
-            <p className="font-semibold">{order.guestCount}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="guest-count-confirm" className="text-base">
