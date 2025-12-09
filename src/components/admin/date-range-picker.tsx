@@ -63,16 +63,21 @@ export function DateRangePicker({
 }: React.HTMLAttributes<HTMLDivElement> & { value?: DateRange; onUpdate?: (range: DateRange | undefined) => void }) {
   const [date, setDate] = React.useState<DateRange | undefined>(value)
   const [preset, setPreset] = React.useState<string | undefined>(undefined);
+  const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
 
   React.useEffect(() => {
     setDate(value);
   }, [value]);
 
-  const handleDateChange = (newDate: DateRange | undefined) => {
+  const handleDateSelect = (newDate: DateRange | undefined) => {
     setDate(newDate);
-    setPreset(undefined);
-    if(onUpdate) {
+    setPreset(undefined); // Clear preset when custom date is chosen
+    if (onUpdate) {
       onUpdate(newDate);
+    }
+    // Close the popover after a date range is selected
+    if (newDate?.from && newDate?.to) {
+        setIsPopoverOpen(false);
     }
   }
 
@@ -88,13 +93,13 @@ export function DateRangePicker({
   return (
     <div className={cn("grid gap-2", className)}>
       <div className="flex items-center gap-2">
-        <Popover>
+        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
           <PopoverTrigger asChild>
             <Button
               id="date"
               variant={"outline"}
               className={cn(
-                "w-[300px] justify-start text-left font-normal",
+                "w-[240px] justify-start text-left font-normal",
                 !date && "text-muted-foreground"
               )}
             >
@@ -119,14 +124,14 @@ export function DateRangePicker({
               mode="range"
               defaultMonth={date?.from}
               selected={date}
-              onSelect={handleDateChange}
+              onSelect={handleDateSelect}
               numberOfMonths={2}
             />
           </PopoverContent>
         </Popover>
 
         <Select value={preset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="Presets" />
           </SelectTrigger>
           <SelectContent>
@@ -141,5 +146,3 @@ export function DateRangePicker({
     </div>
   )
 }
-
-    
