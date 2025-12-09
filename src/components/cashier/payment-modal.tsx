@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -127,7 +126,8 @@ export function PaymentModal({
     try {
         const orderItemsQuery = query(
             collection(firestore, 'orders', order.id, 'orderItems'),
-            where('status', '==', 'Pending')
+            where('status', '==', 'Pending'),
+            where('sourceTag', '!=', 'initial') // Exclude the main package
         );
         const querySnapshot = await getDocs(orderItemsQuery);
         const pending = querySnapshot.docs.map(doc => doc.data() as OrderItem);
@@ -366,3 +366,5 @@ export function PaymentModal({
     </>
   );
 }
+
+    
