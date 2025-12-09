@@ -4,6 +4,16 @@
 
 import { useState, useEffect } from 'react';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -17,7 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
-import { Order, Store, OrderTransaction, ReceiptSettings } from '@/lib/types';
+import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, writeBatch, serverTimestamp, doc, getDocs, query, where, runTransaction, DocumentReference } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -48,6 +58,8 @@ export function PaymentModal({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingItems, setPendingItems] = useState<OrderItem[]>([]);
+  const [showPendingItemsAlert, setShowPendingItemsAlert] = useState(false);
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
@@ -73,6 +85,8 @@ export function PaymentModal({
       ]);
       setErrorMessage(null);
       setIsProcessing(false);
+      setShowPendingItemsAlert(false);
+      setPendingItems([]);
     }
   }, [isOpen, totalAmount, store.mopAccepted]);
   
@@ -107,7 +121,35 @@ export function PaymentModal({
     setPayments(payments.filter(p => p.id !== id));
   }
   
-  const handleFinalize = async () => {
+  const checkForPendingItems = async () => {
+    if (!firestore) return;
+    setIsProcessing(true);
+    try {
+        const orderItemsQuery = query(
+            collection(firestore, 'orders', order.id, 'orderItems'),
+            where('status', '==', 'Pending')
+        );
+        const querySnapshot = await getDocs(orderItemsQuery);
+        const pending = querySnapshot.docs.map(doc => doc.data() as OrderItem);
+        
+        if (pending.length > 0) {
+            setPendingItems(pending);
+            setShowPendingItemsAlert(true);
+        } else {
+            await finalizeBill();
+        }
+    } catch (error) {
+        toast({
+            variant: "destructive",
+            title: "Check Failed",
+            description: "Could not check for pending items. Please try again.",
+        });
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
+  const finalizeBill = async () => {
     if (!firestore || balance > 0.01) return;
     setIsProcessing(true);
     setErrorMessage(null);
@@ -209,8 +251,8 @@ export function PaymentModal({
     }
   };
 
-
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -286,7 +328,7 @@ export function PaymentModal({
           </Button>
           <Button
             type="button"
-            onClick={handleFinalize}
+            onClick={checkForPendingItems}
             disabled={balance > 0.01 || isProcessing}
           >
             {isProcessing ? <Loader2 className="animate-spin" /> : 'Charge'}
@@ -294,5 +336,27 @@ export function PaymentModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={showPendingItemsAlert} onOpenChange={setShowPendingItemsAlert}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Pending Kitchen Items</AlertDialogTitle>
+            <AlertDialogDescription>
+                The following items have not been served yet and will NOT be included in this bill.
+                 <ul className="list-disc list-inside mt-2 text-foreground">
+                    {pendingItems.map(item => (
+                        <li key={item.id}>{item.quantity}x {item.menuName}</li>
+                    ))}
+                </ul>
+                Do you want to proceed with finalizing the payment for served items only?
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowPendingItemsAlert(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={finalizeBill}>Yes, Proceed</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

@@ -190,7 +190,12 @@ export default function OrderDetailPage() {
     }
   }, [firestore, order?.storeId]);
   
-  const subtotal = useMemo(() => orderItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), [orderItems]);
+  const servedItems = useMemo(() => orderItems.filter(item => item.status === 'Served'), [orderItems]);
+
+  const subtotal = useMemo(() => 
+      servedItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), 
+      [servedItems]
+  );
 
   const grandTotal = useMemo(() => {
     return transactions.reduce((acc, trans) => {
@@ -282,6 +287,7 @@ export default function OrderDetailPage() {
 
     const newTransaction: Omit<OrderTransaction, 'id'> = {
         orderId: order.id,
+        storeId: order.storeId,
         type: 'Discount',
         amount: amount,
         notes: selectedDiscount,
@@ -336,6 +342,7 @@ export default function OrderDetailPage() {
     }
     const newTransaction: Omit<OrderTransaction, 'id'> = {
         orderId: order.id,
+        storeId: order.storeId,
         type: 'Charge',
         amount: amount,
         notes: chargeName,
@@ -412,6 +419,7 @@ export default function OrderDetailPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Billing Summary</CardTitle>
+                    <CardDescription>Only items marked as "Served" are included in the bill.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -424,7 +432,7 @@ export default function OrderDetailPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {orderItems.map(item => (
+                            {servedItems.map(item => (
                                 <TableRow key={item.id}>
                                     <TableCell className="font-medium">{item.menuName}</TableCell>
                                     <TableCell className="text-center">{item.quantity}</TableCell>
@@ -432,6 +440,11 @@ export default function OrderDetailPage() {
                                     <TableCell className="text-right">{formatCurrency(item.quantity * item.priceAtOrder)}</TableCell>
                                 </TableRow>
                             ))}
+                             {servedItems.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>
+                                </TableRow>
+                            )}
                         </TableBody>
                     </Table>
                 </CardContent>
@@ -574,7 +587,7 @@ export default function OrderDetailPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)}>Finalize Bill</Button>
+                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)} disabled={servedItems.length === 0}>Finalize Bill</Button>
               </CardFooter>
             </Card>
           </div>
