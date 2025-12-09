@@ -1,14 +1,24 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { parse, isValid, format } from 'date-fns';
+import { parse, isValid, format, isDate } from 'date-fns';
+import { Timestamp } from "firebase/firestore";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatAndValidateDate(dateString: string): { formatted: string; error?: string } {
-    if (!dateString) {
+export function formatAndValidateDate(dateValue: string | Date | Timestamp): { formatted: string; error?: string } {
+    if (!dateValue) {
         return { formatted: '' };
+    }
+
+    let dateString: string;
+    if (dateValue instanceof Timestamp) {
+        dateString = dateValue.toDate().toLocaleDateString('en-US');
+    } else if (isDate(dateValue)) {
+        dateString = (dateValue as Date).toLocaleDateString('en-US');
+    } else {
+        dateString = dateValue;
     }
 
     const parsedDate = parse(dateString, 'M/d/yyyy', new Date());
