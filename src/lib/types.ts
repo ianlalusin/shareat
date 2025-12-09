@@ -41,8 +41,6 @@ export type Staff = {
   notes: string;
   picture?: string;
   encoder: string;
-
-  // New helper fields
   authUid?: string | null;
   duplicateOf?: string | null;
   lastLoginAt?: Timestamp;
@@ -61,16 +59,24 @@ export type User = {
 
 export type PendingAccount = {
     id: string;
-    uid: string;
+    uid: string; // The user's auth UID
+    type: 'new_account' | 'profile_update';
     email: string;
     fullName: string;
     phone?: string;
     birthday?: string;
     address?: string;
+    picture?: string;
     status: "pending" | "approved" | "rejected";
     createdAt: Timestamp;
     expiresAt: Timestamp;
     notes?: string;
+    // For updates
+    staffId?: string; // The staff record this update targets
+    updates?: Partial<Pick<Staff, 'fullName' | 'contactNo' | 'address' | 'birthday' | 'picture'>>;
+    rejectionReason?: string;
+    approvedBy?: string;
+    rejectedBy?: string;
 }
 
 
@@ -245,4 +251,3 @@ export type ReceiptSettings = {
     printerType: 'thermal' | 'standard';
     paperWidth: '58mm' | '80mm';
 };
-    
