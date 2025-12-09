@@ -30,6 +30,7 @@ export function AccountApplicationScreen({
 }: Props) {
   const [fullName, setFullName] = useState(firebaseUser.displayName ?? "");
   const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
   const [birthday, setBirthday] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -56,6 +57,7 @@ export function AccountApplicationScreen({
         email: firebaseUser.email,
         fullName,
         phone,
+        address,
         birthday: birthday || null,
         notes,
         status: "pending",
@@ -124,6 +126,15 @@ export function AccountApplicationScreen({
                 <Input value={firebaseUser.email ?? ""} disabled />
             </div>
 
+            <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                    id="address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                />
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                 <Label htmlFor="phone">Phone number</Label>
@@ -156,7 +167,7 @@ export function AccountApplicationScreen({
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Applying as cashier at Lipa branch"
+                placeholder="e.g., Applying as cashier at Lipa branch"
                 />
             </div>
 

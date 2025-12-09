@@ -171,6 +171,7 @@ export default function EditStaffPage() {
       picture: pictureUrl,
       birthday: isValid(birthdayDate) ? birthdayDate : null,
       dateHired: isValid(dateHiredDate) ? dateHiredDate : null,
+      encoder: user?.displayName || (devMode ? 'Dev User' : 'Unknown'),
     };
 
     try {
@@ -309,7 +310,7 @@ export default function EditStaffPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="encoder">Encoder</Label>
-                  <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} disabled />
+                  <Input id="encoder" name="encoder" value={formData.encoder} readOnly disabled />
                 </div>
               </div>
 

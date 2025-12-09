@@ -53,7 +53,7 @@ export type User = {
     staffId?: string | null;
     email: string;
     displayName: string;
-    role: "cashier" | "kitchen" | "manager" | "admin" | "owner" | "staff";
+    role: "cashier" | "kitchen" | "refill" | "manager" | "admin" | "owner" | "staff";
     status: "active" | "disabled" | "pending";
     createdAt: Timestamp;
     lastLoginAt: Timestamp;
@@ -66,6 +66,7 @@ export type PendingAccount = {
     fullName: string;
     phone?: string;
     birthday?: string;
+    address?: string;
     status: "pending" | "approved" | "rejected";
     createdAt: Timestamp;
     expiresAt: Timestamp;

@@ -74,11 +74,8 @@ export default function NewStaffPage() {
   }, [firestore]);
   
   useEffect(() => {
-    if (user) {
-      setFormData(prev => ({...prev, encoder: user?.displayName || user?.email || 'Unknown'}));
-    } else if (devMode) {
-      setFormData(prev => ({...prev, encoder: 'Dev User'}));
-    }
+    const editorName = user?.displayName || (devMode ? 'Dev User' : 'Unknown');
+    setFormData(prev => ({...prev, encoder: editorName}));
   }, [user, devMode]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,7 +277,7 @@ export default function NewStaffPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="encoder">Encoder</Label>
-                  <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} disabled />
+                  <Input id="encoder" name="encoder" value={formData.encoder} readOnly disabled />
                 </div>
               </div>
             </div>
@@ -296,5 +293,4 @@ export default function NewStaffPage() {
     </main>
   );
 }
-
 

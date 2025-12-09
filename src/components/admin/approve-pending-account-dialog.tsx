@@ -25,10 +25,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Store } from "@/lib/types";
+import { Store, User } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { useAuthContext } from "@/context/auth-context";
 
 type PendingAccount = {
   id: string;
@@ -37,6 +38,7 @@ type PendingAccount = {
   fullName: string;
   phone?: string;
   birthday?: string;
+  address?: string;
   notes?: string;
   status: "pending" | "approved" | "rejected";
 };
@@ -81,13 +83,16 @@ export function ApprovePendingAccountDialog({
   const [role, setRole] = useState<string>("cashier");
   const [stores, setStores] = useState<Store[]>([]);
   const { toast } = useToast();
+  const { user, devMode } = useAuthContext();
 
   // For create mode
   const [fullName, setFullName] = useState(pending.fullName);
   const [phone, setPhone] = useState(pending.phone ?? "");
   const [birthday, setBirthday] = useState(pending.birthday ?? "");
+  const [address, setAddress] = useState(pending.address ?? "");
   const [position, setPosition] = useState("Cashier");
   const [assignedStore, setAssignedStore] = useState("");
+  const [employmentStatus, setEmploymentStatus] = useState("Active");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -95,6 +100,7 @@ export function ApprovePendingAccountDialog({
     setFullName(pending.fullName);
     setPhone(pending.phone ?? "");
     setBirthday(pending.birthday ?? "");
+    setAddress(pending.address ?? "");
     setSaving(false);
     setSelectedStaffId("");
     setRole("cashier");
@@ -124,6 +130,8 @@ export function ApprovePendingAccountDialog({
     }
 
     setSaving(true);
+    const editorName = user?.displayName || (devMode ? 'Dev User' : 'System');
+
     try {
       let staffIdToUse: string;
       let staffName: string = pending.fullName;
@@ -144,6 +152,7 @@ export function ApprovePendingAccountDialog({
         await updateDoc(staffRef, {
           authUid: pending.uid,
           lastLoginAt: serverTimestamp(),
+          encoder: editorName,
         });
       } else {
         // create new staff record
@@ -154,13 +163,14 @@ export function ApprovePendingAccountDialog({
           fullName,
           email: pending.email,
           contactNo: phone,
+          address,
           birthday,
           position,
           assignedStore,
-          employmentStatus: "Active",
+          employmentStatus,
           dateHired: serverTimestamp(),
           authUid: pending.uid,
-          encoder: 'System (Approval)'
+          encoder: 'System (Self-registered)',
         });
         staffName = fullName;
       }
@@ -175,7 +185,7 @@ export function ApprovePendingAccountDialog({
         status: "active",
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
-      });
+      } as Omit<User, 'id'>);
 
       // Mark pending as approved
       const pendingRef = doc(firestore, "pendingAccounts", pending.id);
@@ -360,7 +370,14 @@ export function ApprovePendingAccountDialog({
                   />
                 </div>
               </div>
-
+              <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Input
+                      id="address"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                  />
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="birthday">Birthday</Label>
@@ -383,18 +400,33 @@ export function ApprovePendingAccountDialog({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="storeId">Assigned store</Label>
-                <Select value={assignedStore} onValueChange={setAssignedStore} required={mode === 'create'}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Select a store" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {stores.map(store => (
-                            <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="storeId">Assigned store</Label>
+                    <Select value={assignedStore} onValueChange={setAssignedStore} required={mode === 'create'}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select a store" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {stores.map(store => (
+                                <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="employmentStatus">Employment Status</Label>
+                    <Select value={employmentStatus} onValueChange={setEmploymentStatus} required={mode === 'create'}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Probation">Probation</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                        </SelectContent>
+                    </Select>
+                  </div>
               </div>
             </Card>
           )}
