@@ -9,6 +9,8 @@ import { OrderTimer } from './order-timer';
 import { Table as TableType, Order } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Flame } from 'lucide-react';
+import { useSettings } from '@/context/settings-context';
+import { cva } from 'class-variance-authority';
 
 interface TableCardProps {
   table: TableType;
@@ -17,6 +19,45 @@ interface TableCardProps {
   onTogglePriority: (order: Order) => void;
   onBillClick: (order: Order) => void;
 }
+
+const tableCardVariants = cva("bg-muted/30", {
+  variants: {
+    size: {
+      normal: "",
+      compact: "",
+    },
+    density: {
+      comfortable: "",
+      compact: "",
+    }
+  },
+  compoundVariants: [
+    {
+      size: "normal",
+      density: "comfortable",
+      className: "p-4",
+    },
+    {
+      size: "normal",
+      density: "compact",
+      className: "p-3",
+    },
+    {
+      size: "compact",
+      density: "comfortable",
+      className: "p-2",
+    },
+    {
+      size: "compact",
+      density: "compact",
+      className: "p-2",
+    }
+  ],
+  defaultVariants: {
+    size: "normal",
+    density: "comfortable"
+  }
+});
 
 const getStatusColor = (status: TableType['status']) => {
   switch (status) {
@@ -29,17 +70,20 @@ const getStatusColor = (status: TableType['status']) => {
 };
 
 const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick, onTogglePriority, onBillClick }) => {
+  const { settings } = useSettings();
+  const cardSize = settings.ui.cardSize;
+  const cardDensity = settings.ui.cardDensity;
 
   if (!order) {
     return null;
   }
 
   return (
-    <Card className="bg-muted/30">
-      <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
+    <Card className={cn(tableCardVariants({ size: cardSize, density: cardDensity }))}>
+      <CardHeader className="p-0 flex-row items-start justify-between space-y-0">
         <div>
           <div className="flex items-center gap-2">
-            <CardTitle className="text-xl font-bold">
+            <CardTitle className={cn("font-bold", cardSize === 'compact' ? 'text-lg' : 'text-xl')}>
               {table.tableName}
             </CardTitle>
             {order?.priority === 'rush' && (
@@ -73,16 +117,16 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
           )}
         </div>
       </CardHeader>
-      <CardContent className="p-4 pt-0">
-        <div className="text-sm">
+      <CardContent className="p-0 pt-2">
+        <div className={cn("space-y-0.5", cardSize === 'compact' ? 'text-xs' : 'text-sm')}>
           <p><span className="font-semibold">Customer:</span> {order.customerName || 'N/A'}</p>
           <p><span className="font-semibold">Guests:</span> {order.guestCount || 'N/A'}</p>
           <OrderTimer startTime={order.orderTimestamp} />
         </div>
       </CardContent>
-      <CardFooter className="p-4 pt-0 grid grid-cols-2 gap-2">
-        <Button variant="outline" onClick={() => onBillClick(order)}>Bill</Button>
-        <Button onClick={() => onViewOrderClick(order)}>View Order</Button>
+      <CardFooter className="p-0 pt-2 grid grid-cols-2 gap-2">
+        <Button variant="outline" onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>Bill</Button>
+        <Button onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>View Order</Button>
       </CardFooter>
     </Card>
   );

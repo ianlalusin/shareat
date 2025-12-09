@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase/client-provider";
 import { cn } from "@/lib/utils";
 import { AuthContextProvider } from "@/context/auth-context";
+import { SettingsProvider } from "@/context/settings-context";
 
 const fontBody = Poppins({
   subsets: ['latin'],
@@ -36,7 +37,9 @@ export default function RootLayout({
       <body className={cn("font-body antialiased", fontBody.variable, fontHeadline.variable)}>
         <FirebaseClientProvider>
           <AuthContextProvider>
-            {children}
+            <SettingsProvider>
+              {children}
+            </SettingsProvider>
           </AuthContextProvider>
           <Toaster />
         </FirebaseClientProvider>
