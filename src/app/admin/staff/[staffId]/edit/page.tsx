@@ -34,6 +34,7 @@ import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useAuthContext } from '@/context/auth-context';
+import { Timestamp } from 'firebase/firestore';
 
 export default function EditStaffPage() {
   const params = useParams();
@@ -47,7 +48,7 @@ export default function EditStaffPage() {
   const storage = useStorage();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
-  const { devMode } = useAuthContext();
+  const { user, devMode } = useAuthContext();
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -296,7 +297,7 @@ export default function EditStaffPage() {
                   name="uid" 
                   value={formData.uid || ''} 
                   onChange={handleInputChange}
-                  disabled={!devMode} 
+                  disabled={!user && !devMode} 
                 />
               </div>
                <div className="md:col-span-3 space-y-2">
