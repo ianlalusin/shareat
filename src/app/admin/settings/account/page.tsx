@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { LogOut, Loader2 } from 'lucide-react';
-import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, Timestamp, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Staff, User, PendingAccount } from '@/lib/types';
 import { Label } from '@/components/ui/label';
