@@ -3,7 +3,8 @@
 
 import { useState, useEffect, useReducer, useMemo } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
-import { useFirestore, useAuthContext } from '@/firebase';
+import { useFirestore } from '@/firebase';
+import { useAuthContext } from '@/context/auth-context';
 import {
   doc,
   onSnapshot,
