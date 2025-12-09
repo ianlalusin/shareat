@@ -1,8 +1,7 @@
 
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ListOrdered } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from 'next/link';
 
 export interface TopItem {
@@ -13,21 +12,22 @@ export interface TopItem {
 interface TopItemsCardProps {
     title: string;
     items: TopItem[];
+    icon: React.ReactNode;
     linkTo?: string;
 }
 
-export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
+export function TopItemsCard({ title, items, icon, linkTo }: TopItemsCardProps) {
     const InnerContent = () => (
       <>
         <CardHeader>
             <CardTitle className="flex items-center justify-between text-sm font-medium">
                 {title}
-                <ListOrdered className="h-4 w-4 text-muted-foreground" />
+                {icon}
             </CardTitle>
         </CardHeader>
         <CardContent>
             {items.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-4">No data for this period.</div>
+                <div className="text-sm text-muted-foreground text-center py-4">No data available.</div>
             ) : (
                 <div className="space-y-2">
                     {items.map((item, index) => (
