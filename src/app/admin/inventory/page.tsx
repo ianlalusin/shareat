@@ -59,6 +59,7 @@ import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type FormData = Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt' | 'storeId' | 'expiryDate'> & {
     expiryDate: string;
@@ -506,65 +507,67 @@ export default function InventoryPage() {
                     </Button>
                    </div>
                   <AccordionContent className="p-0">
-                    <div className="border-t overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="px-2 h-10 w-16"></TableHead>
-                            <TableHead className="px-2 h-10">Name</TableHead>
-                            <TableHead className="px-2 h-10">SKU</TableHead>
-                            <TableHead className="px-2 h-10">Type</TableHead>
-                            <TableHead className="px-2 h-10 text-right">Qty</TableHead>
-                            <TableHead className="px-2 h-10">Unit</TableHead>
-                            <TableHead className="px-2 h-10 text-right">Cost</TableHead>
-                            <TableHead className="px-2 h-10">Stock Level</TableHead>
-                            <TableHead className="px-2 h-10">
-                              <span className="sr-only">Actions</span>
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {itemsInCategory.map((item) => {
-                              const product = getProductForInventoryItem(item);
-                              return (
-                                <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
-                                  <TableCell className="p-2">
-                                     <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
-                                        {product?.imageUrl ? (
-                                            <Image src={product.imageUrl} alt={item.name} width={40} height={40} className="object-cover h-full w-full" />
-                                        ) : (
-                                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                                        )}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="p-2 font-medium">{product?.productName ?? item.name}</TableCell>
-                                  <TableCell className="p-2 text-muted-foreground">{product?.barcode ?? item.sku}</TableCell>
-                                   <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
-                                  <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
-                                  <TableCell className="p-2">{product?.unit ?? item.unit}</TableCell>
-                                  <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
-                                  <TableCell className="p-2">{getStockLevel(item)}</TableCell>
-                                  <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button aria-haspopup="true" size="icon" variant="ghost">
-                                            <MoreHorizontal className="h-4 w-4" />
-                                            <span className="sr-only">Toggle menu</span>
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                            <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                            <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
+                    <ScrollArea className="w-full max-w-full">
+                      <div className="border-t">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="px-2 h-10 w-16"></TableHead>
+                              <TableHead className="px-2 h-10">Name</TableHead>
+                              <TableHead className="px-2 h-10">SKU</TableHead>
+                              <TableHead className="px-2 h-10">Type</TableHead>
+                              <TableHead className="px-2 h-10 text-right">Qty</TableHead>
+                              <TableHead className="px-2 h-10">Unit</TableHead>
+                              <TableHead className="px-2 h-10 text-right">Cost</TableHead>
+                              <TableHead className="px-2 h-10">Stock Level</TableHead>
+                              <TableHead className="px-2 h-10">
+                                <span className="sr-only">Actions</span>
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {itemsInCategory.map((item) => {
+                                const product = getProductForInventoryItem(item);
+                                return (
+                                  <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer">
+                                    <TableCell className="p-2">
+                                      <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
+                                          {product?.imageUrl ? (
+                                              <Image src={product.imageUrl} alt={item.name} width={40} height={40} className="object-cover h-full w-full" />
+                                          ) : (
+                                              <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                          )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="p-2 font-medium">{product?.productName ?? item.name}</TableCell>
+                                    <TableCell className="p-2 text-muted-foreground">{product?.barcode ?? item.sku}</TableCell>
+                                    <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
+                                    <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
+                                    <TableCell className="p-2">{product?.unit ?? item.unit}</TableCell>
+                                    <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
+                                    <TableCell className="p-2">{getStockLevel(item)}</TableCell>
+                                    <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                      <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                              <Button aria-haspopup="true" size="icon" variant="ghost">
+                                              <MoreHorizontal className="h-4 w-4" />
+                                              <span className="sr-only">Toggle menu</span>
+                                              </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                              <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                              <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </ScrollArea>
                   </AccordionContent>
                  </div>
               </AccordionItem>

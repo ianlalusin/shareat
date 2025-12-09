@@ -68,6 +68,7 @@ import Image from 'next/image';
 import { BarcodeInput } from '@/components/ui/barcode-input';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const initialItemState: Omit<MenuItem, 'id'> = {
   menuName: '',
@@ -679,77 +680,79 @@ export default function MenuPage() {
                 </Button>
                </div>
               <AccordionContent className="p-0">
-                <div className="border-t overflow-x-auto">
-                  <Table className="text-xs">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="p-2 h-10 w-16"></TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
-                        <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
-                        <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
-                        <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Barcode</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">Status</TableHead>
-                        <TableHead className="px-2 h-10 text-xs">
-                          <span className="sr-only">Actions</span>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {itemsInCategory.map((item) => (
-                          <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium">
-                             <TableCell className="p-2">
-                                 <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
-                                    {item.imageUrl ? (
-                                        <Image src={item.imageUrl} alt={item.menuName} width={40} height={40} className="object-cover h-full w-full" />
-                                    ) : (
-                                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                                    )}
+                <ScrollArea className="w-full max-w-full">
+                  <div className="border-t">
+                    <Table className="text-xs">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="p-2 h-10 w-16"></TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
+                          <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
+                          <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
+                          <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Barcode</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Status</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">
+                            <span className="sr-only">Actions</span>
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {itemsInCategory.map((item) => (
+                            <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium">
+                              <TableCell className="p-2">
+                                  <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
+                                      {item.imageUrl ? (
+                                          <Image src={item.imageUrl} alt={item.menuName} width={40} height={40} className="object-cover h-full w-full" />
+                                      ) : (
+                                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                      )}
+                                  </div>
+                              </TableCell>
+                              <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
+                              <TableCell className="p-2 text-xs">
+                                <Badge variant="outline" className="mr-1 mb-1 whitespace-nowrap">
+                                  {(item.availability || 'Always').substring(0, 6)}{(item.availability && item.availability.length > 6) ? '...' : ''}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
+                              <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
+                              <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
+                              <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
+                              <TableCell className="p-2 text-xs">{item.barcode}</TableCell>
+                              <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex flex-col items-center gap-1">
+                                  <Switch
+                                    checked={item.isAvailable}
+                                    onCheckedChange={(newStatus) => handleAvailabilityChange(item.id, newStatus)}
+                                    aria-label={`Toggle ${item.menuName} availability`}
+                                  />
+                                  <span className="text-xs text-muted-foreground">{item.isAvailable ? 'Available' : 'Unavailable'}</span>
                                 </div>
-                            </TableCell>
-                            <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
-                            <TableCell className="p-2 text-xs">
-                              <Badge variant="outline" className="mr-1 mb-1 whitespace-nowrap">
-                                {(item.availability || 'Always').substring(0, 6)}{(item.availability && item.availability.length > 6) ? '...' : ''}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
-                            <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
-                            <TableCell className="p-2 text-xs">{item.barcode}</TableCell>
-                            <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex flex-col items-center gap-1">
-                                <Switch
-                                  checked={item.isAvailable}
-                                  onCheckedChange={(newStatus) => handleAvailabilityChange(item.id, newStatus)}
-                                  aria-label={`Toggle ${item.menuName} availability`}
-                                />
-                                <span className="text-xs text-muted-foreground">{item.isAvailable ? 'Available' : 'Unavailable'}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button aria-haspopup="true" size="icon" variant="ghost">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                    <span className="sr-only">Toggle menu</span>
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                              </TableCell>
+                              <TableCell className="p-2" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                      <span className="sr-only">Toggle menu</span>
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                    <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </ScrollArea>
               </AccordionContent>
              </div>
           </AccordionItem>

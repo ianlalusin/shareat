@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User, Lock } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
   if (!staff) return null;
@@ -112,77 +113,79 @@ export default function StaffPage() {
             </Link>
           </Button>
         </div>
-        <div className="rounded-lg border shadow-sm bg-background overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Full Name</TableHead>
-                <TableHead>Assigned Store</TableHead>
-                <TableHead>Position</TableHead>
-                <TableHead>Employment Status</TableHead>
-                <TableHead>
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {staff.map((member) => (
-                <TableRow
-                  key={member.id}
-                  onClick={() => handleRowClick(member.id)}
-                  className="cursor-pointer"
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={member.picture} alt={member.fullName} />
-                        <AvatarFallback>
-                          <User />
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="font-medium">{member.fullName}</div>
-                        <div className="text-sm text-muted-foreground">{member.email}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{member.assignedStore}</TableCell>
-                  <TableCell>{member.position}</TableCell>
-                  <TableCell>
-                    <Badge variant={member.employmentStatus === 'Active' ? 'default' : 'secondary'} 
-                      className={member.employmentStatus === 'Active' ? 'bg-green-500' : ''}>
-                      {member.employmentStatus}
-                    </Badge>
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button aria-haspopup="true" size="icon" variant="ghost">
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Toggle menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem onSelect={() => router.push(`/admin/staff/${member.id}/edit`)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setSelectedStaffForAccess(member)}>
-                          Access
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => handleDelete(member.id)}
-                          className="text-destructive"
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+        <div className="rounded-lg border shadow-sm bg-background">
+          <ScrollArea className="w-full max-w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Full Name</TableHead>
+                  <TableHead>Assigned Store</TableHead>
+                  <TableHead>Position</TableHead>
+                  <TableHead>Employment Status</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {staff.map((member) => (
+                  <TableRow
+                    key={member.id}
+                    onClick={() => handleRowClick(member.id)}
+                    className="cursor-pointer"
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={member.picture} alt={member.fullName} />
+                          <AvatarFallback>
+                            <User />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium">{member.fullName}</div>
+                          <div className="text-sm text-muted-foreground">{member.email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>{member.assignedStore}</TableCell>
+                    <TableCell>{member.position}</TableCell>
+                    <TableCell>
+                      <Badge variant={member.employmentStatus === 'Active' ? 'default' : 'secondary'} 
+                        className={member.employmentStatus === 'Active' ? 'bg-green-500' : ''}>
+                        {member.employmentStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button aria-haspopup="true" size="icon" variant="ghost">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Toggle menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem onSelect={() => router.push(`/admin/staff/${member.id}/edit`)}>
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setSelectedStaffForAccess(member)}>
+                            Access
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => handleDelete(member.id)}
+                            className="text-destructive"
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         </div>
       </main>
       <AccessModal 

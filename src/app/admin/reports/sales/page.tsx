@@ -392,24 +392,26 @@ export default function SalesReportPage() {
             </CardHeader>
              <CardContent>
                 {reportData.length > 0 ? (
-                    <Table>
-                        <TableHeader>
-                        <TableRow>
-                            <TableHead>Menu Item</TableHead>
-                            <TableHead className="text-right">Qty Sold</TableHead>
-                            <TableHead className="text-right">Total Sales</TableHead>
-                        </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                        {reportData.map((item) => (
-                            <TableRow key={item.menuItemId}>
-                            <TableCell className="font-medium">{item.menuName}</TableCell>
-                            <TableCell className="text-right">{item.quantitySold}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(item.totalSales)}</TableCell>
+                    <ScrollArea className="h-96">
+                        <Table>
+                            <TableHeader>
+                            <TableRow>
+                                <TableHead>Menu Item</TableHead>
+                                <TableHead className="text-right">Qty Sold</TableHead>
+                                <TableHead className="text-right">Total Sales</TableHead>
                             </TableRow>
-                        ))}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody>
+                            {reportData.map((item) => (
+                                <TableRow key={item.menuItemId}>
+                                <TableCell className="font-medium">{item.menuName}</TableCell>
+                                <TableCell className="text-right">{item.quantitySold}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(item.totalSales)}</TableCell>
+                                </TableRow>
+                            ))}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
                 ): (
                     <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm bg-background/50 h-64">
                         <div className="flex flex-col items-center gap-1 text-center">
@@ -453,5 +455,3 @@ interface SalesReportItem {
   quantitySold: number;
   totalSales: number;
 }
-
-    

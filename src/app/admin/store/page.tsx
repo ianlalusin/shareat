@@ -33,6 +33,7 @@ import Link from 'next/link';
 import { Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 export default function StorePage() {
@@ -90,58 +91,60 @@ export default function StorePage() {
         </Button>
       </div>
       
-      <div className="rounded-lg border shadow-sm bg-background overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Store Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Contact No.</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Opening Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {stores.map((store) => (
-              <TableRow key={store.id} onClick={() => handleRowClick(store.id)} className="cursor-pointer">
-                <TableCell>{store.storeName}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{store.type}</Badge>
-                </TableCell>
-                <TableCell>{store.contactNo}</TableCell>
-                <TableCell>{store.email}</TableCell>
-                <TableCell>{store.openingDate || 'N/A'}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={store.status === 'Active' ? 'default' : 'destructive'}
-                    className={store.status === 'Active' ? 'bg-green-500' : ''}
-                  >
-                    {store.status}
-                  </Badge>
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button aria-haspopup="true" size="icon" variant="ghost">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Toggle menu</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => handleDelete(store.id)} className="text-destructive">Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+      <div className="rounded-lg border shadow-sm bg-background">
+        <ScrollArea className="w-full max-w-full">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Store Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Contact No.</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Opening Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {stores.map((store) => (
+                <TableRow key={store.id} onClick={() => handleRowClick(store.id)} className="cursor-pointer">
+                  <TableCell>{store.storeName}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{store.type}</Badge>
+                  </TableCell>
+                  <TableCell>{store.contactNo}</TableCell>
+                  <TableCell>{store.email}</TableCell>
+                  <TableCell>{store.openingDate || 'N/A'}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={store.status === 'Active' ? 'default' : 'destructive'}
+                      className={store.status === 'Active' ? 'bg-green-500' : ''}
+                    >
+                      {store.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button aria-haspopup="true" size="icon" variant="ghost">
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Toggle menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleDelete(store.id)} className="text-destructive">Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </ScrollArea>
       </div>
       </main>
   );

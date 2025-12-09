@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/accordion';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const initialItemState: Omit<GListItem, 'id'> = {
   item: '',
@@ -350,57 +351,59 @@ export default function GListPage() {
                 </Button>
                </div>
               <AccordionContent className="p-0">
-                <div className="border-t">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="px-2 h-10">Item</TableHead>
-                        <TableHead className="px-2 h-10">Store</TableHead>
-                        <TableHead className="px-2 h-10">Status</TableHead>
-                        <TableHead className="px-2 h-10">
-                          <span className="sr-only">Actions</span>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {itemsInCategory.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="p-2">{item.item}</TableCell>
-                          <TableCell className="p-2">
-                            <div className="flex flex-wrap gap-1">
-                              {item.storeIds?.map(id => (
-                                <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="p-2">
-                            <Badge
-                              variant={item.is_active ? 'default' : 'destructive'}
-                              className={item.is_active ? 'bg-green-500' : ''}
-                            >
-                              {item.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="p-2">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button aria-haspopup="true" size="icon" variant="ghost">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                  <span className="sr-only">Toggle menu</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
+                <ScrollArea className="w-full max-w-full">
+                  <div className="border-t">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="px-2 h-10">Item</TableHead>
+                          <TableHead className="px-2 h-10">Store</TableHead>
+                          <TableHead className="px-2 h-10">Status</TableHead>
+                          <TableHead className="px-2 h-10">
+                            <span className="sr-only">Actions</span>
+                          </TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {itemsInCategory.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="p-2">{item.item}</TableCell>
+                            <TableCell className="p-2">
+                              <div className="flex flex-wrap gap-1">
+                                {item.storeIds?.map(id => (
+                                  <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="p-2">
+                              <Badge
+                                variant={item.is_active ? 'default' : 'destructive'}
+                                className={item.is_active ? 'bg-green-500' : ''}
+                              >
+                                {item.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="p-2">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button aria-haspopup="true" size="icon" variant="ghost">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Toggle menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </ScrollArea>
               </AccordionContent>
              </div>
           </AccordionItem>
