@@ -43,7 +43,7 @@ const menuItems = [
 
 const bottomMenuItems = [
   { href: "/admin/settings/receipt", label: "Settings", icon: Settings },
-  { href: "#account", label: "Account", icon: CircleUser },
+  { href: "/admin/settings/account", label: "Account", icon: CircleUser },
 ];
 
 export function AdminSidebar() {

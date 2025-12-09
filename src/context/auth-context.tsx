@@ -26,10 +26,17 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     try {
-      const devModeStatus = sessionStorage.getItem(DEV_MODE_KEY) === 'true';
-      setDevModeState(devModeStatus);
+      const devModeStatus = sessionStorage.getItem(DEV_MODE_KEY);
+      if (devModeStatus === null) {
+        // Default to dev mode if nothing is set
+        setDevModeState(true);
+        sessionStorage.setItem(DEV_MODE_KEY, 'true');
+      } else {
+        setDevModeState(devModeStatus === 'true');
+      }
     } catch (e) {
-      // sessionStorage not available
+      // sessionStorage not available, default to dev mode for this session
+      setDevModeState(true);
     }
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
