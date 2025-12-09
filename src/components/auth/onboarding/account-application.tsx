@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
+import { autoformatDate, formatAndValidateDate, revertToInputFormat } from "@/lib/utils";
 
 interface Props {
   firebaseUser: FirebaseUser;
@@ -32,9 +33,14 @@ export function AccountApplicationScreen({
   const [birthday, setBirthday] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dateError, setDateError] = useState<string | undefined>();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dateError) {
+      alert('Please fix the birthday format.');
+      return;
+    }
     if (!firebaseUser.email) {
       alert("Your account has no email. Please contact the admin.");
       return;
@@ -50,7 +56,7 @@ export function AccountApplicationScreen({
         email: firebaseUser.email,
         fullName,
         phone,
-        birthday,
+        birthday: birthday || null,
         notes,
         status: "pending",
         createdAt: serverTimestamp(),
@@ -65,6 +71,31 @@ export function AccountApplicationScreen({
       setSaving(false);
     }
   };
+  
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const updatedValue = autoformatDate(value, birthday);
+    setBirthday(updatedValue);
+     if (updatedValue === '') {
+      setDateError(undefined);
+    }
+  };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    if (!value) return;
+    const { formatted, error } = formatAndValidateDate(value);
+    setBirthday(formatted);
+    setDateError(error);
+  };
+  
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    if (!value) return;
+    const formattedValue = revertToInputFormat(value);
+    setBirthday(formattedValue);
+  }
+
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
@@ -104,13 +135,18 @@ export function AccountApplicationScreen({
                 />
                 </div>
                 <div className="space-y-2">
-                <Label htmlFor="birthday">Birthday</Label>
-                <Input
-                    id="birthday"
-                    type="date"
-                    value={birthday}
-                    onChange={(e) => setBirthday(e.target.value)}
-                />
+                    <Label htmlFor="birthday">Birthday</Label>
+                    <Input 
+                        id="birthday"
+                        type="text" 
+                        value={birthday}
+                        onChange={handleDateChange}
+                        onBlur={handleDateBlur}
+                        onFocus={handleDateFocus}
+                        placeholder="MM/DD/YYYY"
+                        maxLength={10}
+                    />
+                    {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                 </div>
             </div>
 
@@ -124,12 +160,12 @@ export function AccountApplicationScreen({
                 />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+             <CardFooter className="p-0 pt-2 flex justify-end">
                 <Button type="submit" disabled={saving}>
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                     {saving ? "Submitting…" : "Submit request"}
                 </Button>
-            </div>
+            </CardFooter>
             </form>
         </CardContent>
       </Card>

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
+import { parse, isValid } from 'date-fns';
 
 interface Props {
   staff: Staff & { id: string };
@@ -26,13 +28,26 @@ export function ExistingStaffVerification({
 }: Props) {
   const [fullName, setFullName] = useState(staff.fullName ?? "");
   const [phone, setPhone] = useState(staff.contactNo ?? "");
-  const [birthday, setBirthday] = useState(staff.birthday instanceof Timestamp ? staff.birthday.toDate().toISOString().split('T')[0] : (staff.birthday as string) ?? "");
+  const [birthday, setBirthday] = useState(() => {
+      if (!staff.birthday) return '';
+      if (staff.birthday instanceof Timestamp) {
+          return formatAndValidateDate(staff.birthday.toDate()).formatted;
+      }
+      return staff.birthday as string;
+  });
+  const [dateError, setDateError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if(dateError){
+      alert('Please fix the birthday format.');
+      return;
+    }
     setSaving(true);
     try {
+      const birthdayDate = birthday ? parse(birthday as string, 'MMMM dd, yyyy', new Date()) : null;
+
       const userRef = doc(firestore, "users", firebaseUser.uid);
       await setDoc(userRef, {
         staffId: staff.id,
@@ -49,7 +64,7 @@ export function ExistingStaffVerification({
         authUid: firebaseUser.uid,
         fullName,
         contactNo: phone,
-        birthday: birthday ? Timestamp.fromDate(new Date(birthday)) : null,
+        birthday: isValid(birthdayDate) ? Timestamp.fromDate(birthdayDate) : null,
         lastLoginAt: serverTimestamp(),
       });
 
@@ -61,6 +76,31 @@ export function ExistingStaffVerification({
       setSaving(false);
     }
   };
+  
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    const updatedValue = autoformatDate(value, birthday);
+    setBirthday(updatedValue);
+     if (updatedValue === '') {
+      setDateError(undefined);
+    }
+  };
+
+  const handleDateBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    if (!value) return;
+    const { formatted, error } = formatAndValidateDate(value);
+    setBirthday(formatted);
+    setDateError(error);
+  };
+  
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    if (!value) return;
+    const formattedValue = revertToInputFormat(value);
+    setBirthday(formattedValue);
+  }
+
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
@@ -100,22 +140,27 @@ export function ExistingStaffVerification({
                 />
                 </div>
                 <div className="space-y-2">
-                <Label htmlFor="birthday">Birthday</Label>
-                <Input
-                    id="birthday"
-                    type="date"
-                    value={birthday}
-                    onChange={(e) => setBirthday(e.target.value)}
-                />
+                    <Label htmlFor="birthday">Birthday</Label>
+                    <Input 
+                        id="birthday"
+                        type="text" 
+                        value={birthday}
+                        onChange={handleDateChange}
+                        onBlur={handleDateBlur}
+                        onFocus={handleDateFocus}
+                        placeholder="MM/DD/YYYY"
+                        maxLength={10}
+                    />
+                    {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                 </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <CardFooter className="p-0 pt-2 flex justify-end">
                 <Button type="submit" disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                 {saving ? "Saving…" : "Confirm & continue"}
                 </Button>
-            </div>
+            </CardFooter>
             </form>
         </CardContent>
       </Card>
