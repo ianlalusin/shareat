@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SuccessConfirm } from "@/components/ui/success-confirm";
 import { PinLock } from "@/components/admin/pin-lock";
+import { AuthProvider } from "@/context/auth-context";
 
 export default function AdminLayout({
   children,
@@ -15,17 +16,19 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <PinLock>
-      <SidebarProvider>
-        <Sidebar collapsible="icon">
-          <AdminSidebar />
-        </Sidebar>
-        <SidebarInset>
-          <AdminHeader />
-          {children}
-          <SuccessConfirm />
-        </SidebarInset>
-      </SidebarProvider>
-    </PinLock>
+    <AuthProvider>
+      <PinLock>
+        <SidebarProvider>
+          <Sidebar collapsible="icon">
+            <AdminSidebar />
+          </Sidebar>
+          <SidebarInset>
+            <AdminHeader />
+            {children}
+            <SuccessConfirm />
+          </SidebarInset>
+        </SidebarProvider>
+      </PinLock>
+    </AuthProvider>
   );
 }

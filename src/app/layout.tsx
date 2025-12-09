@@ -1,9 +1,11 @@
+
 import type { Metadata } from "next";
 import { Baloo_2, Poppins } from 'next/font/google';
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase/client-provider";
 import { cn } from "@/lib/utils";
+import { AuthContextProvider } from "@/context/auth-context";
 
 const fontBody = Poppins({
   subsets: ['latin'],
@@ -33,7 +35,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={cn("font-body antialiased", fontBody.variable, fontHeadline.variable)}>
         <FirebaseClientProvider>
-          {children}
+          <AuthContextProvider>
+            {children}
+          </AuthContextProvider>
           <Toaster />
         </FirebaseClientProvider>
       </body>
