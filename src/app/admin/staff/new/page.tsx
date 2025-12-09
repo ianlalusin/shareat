@@ -111,6 +111,9 @@ export default function NewStaffPage() {
             const rate = parseFloat(value);
             return { ...prev, [name]: isNaN(rate) ? '' : rate };
         }
+        if (name === 'uid') {
+          return { ...prev, uid: value };
+        }
         return { ...prev, [name]: value };
     });
   };
@@ -253,6 +256,16 @@ export default function NewStaffPage() {
                 </Select>
               </div>
               <div className="space-y-2">
+                  <Label htmlFor="uid">Auth UID</Label>
+                  <Input 
+                    id="uid" 
+                    name="uid" 
+                    value={formData.uid || ''} 
+                    onChange={handleInputChange}
+                    placeholder="Enter Firebase Auth UID manually"
+                  />
+              </div>
+              <div className="space-y-2">
                 <Label>Picture</Label>
                 <ImageUpload imageUrl={formData.picture} onFileChange={handleFileChange} />
               </div>
@@ -277,3 +290,4 @@ export default function NewStaffPage() {
     </main>
   );
 }
+

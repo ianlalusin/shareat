@@ -33,6 +33,7 @@ import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/li
 import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
+import { useAuthContext } from '@/context/auth-context';
 
 export default function EditStaffPage() {
   const params = useParams();
@@ -46,6 +47,7 @@ export default function EditStaffPage() {
   const storage = useStorage();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
+  const { devMode } = useAuthContext();
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -116,6 +118,9 @@ export default function EditStaffPage() {
       if (name === 'rate') {
           const rate = parseFloat(value);
           return { ...prev, [name]: isNaN(rate) ? 0 : rate };
+      }
+      if (name === 'uid') {
+        return { ...prev, uid: value };
       }
       return { ...prev, [name]: value };
     });
@@ -286,7 +291,13 @@ export default function EditStaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="uid">Auth UID</Label>
-                <Input id="uid" name="uid" value={formData.uid || ''} disabled readOnly />
+                <Input 
+                  id="uid" 
+                  name="uid" 
+                  value={formData.uid || ''} 
+                  onChange={handleInputChange}
+                  disabled={!devMode} 
+                />
               </div>
                <div className="md:col-span-3 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
