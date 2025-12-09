@@ -2,7 +2,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { BarChart, ListOrdered } from "lucide-react";
+import { ListOrdered } from "lucide-react";
 import Link from 'next/link';
 
 export interface TopItem {
@@ -17,7 +17,8 @@ interface TopItemsCardProps {
 }
 
 export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
-    const CardContentWrapper = ({ children }: { children: React.ReactNode }) => (
+    const CardInnerContent = () => (
+      <>
         <CardHeader>
             <CardTitle className="flex items-center justify-between text-sm font-medium">
                 {title}
@@ -38,15 +39,14 @@ export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
                 </div>
             )}
         </CardContent>
-        {children}
-    </Card>
+      </>
     );
 
     if (linkTo) {
         return (
             <Link href={linkTo} className="block hover:shadow-lg transition-shadow">
                 <Card>
-                    <CardContentWrapper />
+                    <CardInnerContent />
                 </Card>
             </Link>
         )
@@ -54,7 +54,7 @@ export function TopItemsCard({ title, items, linkTo }: TopItemsCardProps) {
 
     return (
         <Card>
-           <CardContentWrapper />
+           <CardInnerContent />
         </Card>
     );
 }
