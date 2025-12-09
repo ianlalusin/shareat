@@ -35,11 +35,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { formatCurrency } from '@/lib/utils';
 import { Order, OrderItem, OrderTransaction, Store } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, TrendingUp, Hash, Wallet, Coins } from 'lucide-react';
+import { Loader2, TrendingUp, Hash, Wallet, Coins, History } from 'lucide-react';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { OrderUpdateLogModal } from '@/components/admin/reports/order-update-log-modal';
 
 const ReceiptViewerModal = dynamic(
   () => import('@/components/admin/reports/receipt-viewer-modal').then(mod => mod.ReceiptViewerModal),
@@ -63,6 +64,7 @@ export default function SalesReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [isReceiptsPanelOpen, setIsReceiptsPanelOpen] = useState(false);
+  const [isUpdateLogModalOpen, setIsUpdateLogModalOpen] = useState(false);
 
   const [selectedOrderForView, setSelectedOrderForView] = useState<Order | null>(null);
 
@@ -258,7 +260,7 @@ export default function SalesReportPage() {
         )}
 
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
@@ -337,6 +339,15 @@ export default function SalesReportPage() {
                 ) : <p className="text-xs text-muted-foreground">No sales data</p>}
             </CardContent>
         </Card>
+        <Card className="cursor-pointer hover:bg-muted/50" onClick={() => setIsUpdateLogModalOpen(true)}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Order Update Log</CardTitle>
+                <History className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">View Log</div>
+            </CardContent>
+        </Card>
       </div>
 
        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
@@ -409,6 +420,14 @@ export default function SalesReportPage() {
           transactions={transactions.filter(trans => trans.orderId === selectedOrderForView?.id)}
       />
     )}
+     {isUpdateLogModalOpen && selectedStoreId && dateRange && dateRange.from && dateRange.to && (
+        <OrderUpdateLogModal
+            isOpen={isUpdateLogModalOpen}
+            onClose={() => setIsUpdateLogModalOpen(false)}
+            storeId={selectedStoreId}
+            dateRange={dateRange as { from: Date; to: Date; }}
+        />
+     )}
     </>
   );
 }
