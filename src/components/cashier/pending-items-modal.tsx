@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertDialog,
@@ -36,6 +36,13 @@ export function PendingItemsModal({
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+
+  useEffect(() => {
+    // If the modal is open and the list of items becomes empty, close it.
+    if (isOpen && localPendingItems.length === 0) {
+      handleDone();
+    }
+  }, [localPendingItems, isOpen]);
 
   const handleIncludeSingleItem = async (itemToInclude: OrderItem) => {
     if (!firestore || !order) return;
