@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -169,7 +168,7 @@ export default function RefillPage() {
     if (!selectedStoreId) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-4">
-                 <Alert variant="info" className="max-w-md">
+                 <Alert variant="info" size="sm" className="max-w-md">
                     <AlertTitle>No Store Selected</AlertTitle>
                     <AlertDescription>Please select a store from the header to manage refills and add-ons.</AlertDescription>
                 </Alert>
