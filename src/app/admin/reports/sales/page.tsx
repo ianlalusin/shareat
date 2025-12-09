@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -47,16 +46,10 @@ const ReceiptViewerModal = dynamic(
   { ssr: false, loading: () => <p>Loading...</p> }
 );
 
-const DynamicBarChart = dynamic(
-  () => import('recharts').then(mod => mod.BarChart),
-  { ssr: false }
+const SalesBarChart = dynamic(
+    () => import('@/components/admin/reports/sales-bar-chart').then(mod => mod.SalesBarChart),
+    { ssr: false, loading: () => <div className="h-[350px] w-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground"/></div> }
 );
-const Bar = dynamic(() => import('recharts').then(mod => mod.Bar), { ssr: false });
-const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then(mod => mod.XAxis), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then(mod => mod.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then(mod => mod.Tooltip), { ssr: false });
-const CartesianGrid = dynamic(() => import('recharts').then(mod => mod.CartesianGrid), { ssr: false });
 
 
 export default function SalesReportPage() {
@@ -351,36 +344,7 @@ export default function SalesReportPage() {
                 <CardTitle>Sales Overview</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
-                <ResponsiveContainer width="100%" height={350}>
-                    <DynamicBarChart data={salesChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                            dataKey="date"
-                            stroke="#888888"
-                            fontSize={12}
-                            tickLine={false}
-                            axisLine={false}
-                        />
-                        <YAxis
-                            stroke="#888888"
-                            fontSize={12}
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(value) => `₱${Number(value) / 1000}k`}
-                        />
-                         <Tooltip
-                            contentStyle={{
-                                background: "hsl(var(--background))",
-                                border: "1px solid hsl(var(--border))",
-                                borderRadius: "var(--radius)",
-                            }}
-                            labelStyle={{ color: "hsl(var(--foreground))" }}
-                            itemStyle={{ fontWeight: "bold" }}
-                            formatter={(value) => [formatCurrency(value as number), "Sales"]}
-                        />
-                        <Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                    </DynamicBarChart>
-                </ResponsiveContainer>
+                <SalesBarChart data={salesChartData} />
             </CardContent>
         </Card>
         <Card className="col-span-4 lg:col-span-3">
