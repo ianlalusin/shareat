@@ -195,17 +195,15 @@ export default function SalesReportPage() {
   }, [transactions]);
   
   const salesChartData = useMemo(() => {
+    if (!dateRange || !dateRange.from || !dateRange.to) return [];
+    
     const salesByDate: Record<string, number> = {};
-    const range = dateRange?.to && dateRange.from ? 
-      Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24))
-      : 7;
+    let currentDate = startOfDay(dateRange.from);
 
-    const defaultEndDate = dateRange?.to || new Date();
-
-    for (let i = 0; i < (range > 1 ? range : 7); i++) {
-        const date = subDays(defaultEndDate, i);
-        const formattedDate = format(date, 'MMM d');
+    while (currentDate <= endOfDay(dateRange.to)) {
+        const formattedDate = format(currentDate, 'MMM d');
         salesByDate[formattedDate] = 0;
+        currentDate = subDays(currentDate, -1);
     }
 
     transactions.filter(t => t.type === 'Payment').forEach(t => {
@@ -217,7 +215,7 @@ export default function SalesReportPage() {
         }
     });
     
-    return Object.entries(salesByDate).map(([date, total]) => ({ date, total })).reverse();
+    return Object.entries(salesByDate).map(([date, total]) => ({ date, total }));
   }, [transactions, dateRange]);
   
   const selectedOrderStore = useMemo(() => {
@@ -234,7 +232,7 @@ export default function SalesReportPage() {
           Sales Report
         </h1>
         <div className="flex items-center gap-2">
-            <DateRangePicker onUpdate={setDateRange} />
+            <DateRangePicker value={dateRange} onUpdate={setDateRange} />
             <Button onClick={handleGenerateReport} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Generate Report
@@ -419,3 +417,5 @@ interface SalesReportItem {
   quantitySold: number;
   totalSales: number;
 }
+
+    

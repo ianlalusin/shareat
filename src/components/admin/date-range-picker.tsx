@@ -2,8 +2,8 @@
 "use client"
 
 import * as React from "react"
-import { addDays, format, subDays, startOfMonth, endOfMonth, isSameDay, startOfDay, endOfDay } from "date-fns"
-import { Calendar as CalendarIcon, ChevronRight } from "lucide-react"
+import { format } from "date-fns"
+import { Calendar as CalendarIcon } from "lucide-react"
 import { DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
@@ -14,118 +14,132 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible"
-import { Label } from "../ui/label"
-import { Input } from "../ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { subDays, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns"
+
 
 const PRESETS = [
-  { label: "Today", getValue: () => ({ from: startOfDay(new Date()), to: endOfDay(new Date()) }) },
-  { label: "Yesterday", getValue: () => ({ from: startOfDay(subDays(new Date(), 1)), to: endOfDay(subDays(new Date(), 1)) }) },
-  { label: "Last 7 days", getValue: () => ({ from: startOfDay(subDays(new Date(), 6)), to: endOfDay(new Date()) }) },
-  { label: "Last 30 days", getValue: () => ({ from: startOfDay(subDays(new Date(), 29)), to: endOfDay(new Date()) }) },
-  { label: "This month", getValue: () => ({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) }) },
-  { label: "Last month", getValue: () => ({ from: startOfMonth(subDays(startOfMonth(new Date()), 1)), to: endOfMonth(subDays(startOfMonth(new Date()), 1)) }) },
-]
+  { label: "Today", value: "today" },
+  { label: "Yesterday", value: "yesterday" },
+  { label: "Last 7 days", value: "last7" },
+  { label: "Last 30 days", value: "last30" },
+  { label: "This month", value: "thisMonth" },
+  { label: "Last month", value: "lastMonth" },
+];
+
+function getPresetRange(value: string): DateRange | undefined {
+    const now = new Date();
+    switch (value) {
+        case "today":
+            return { from: startOfDay(now), to: endOfDay(now) };
+        case "yesterday":
+            const yesterday = subDays(now, 1);
+            return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
+        case "last7":
+            return { from: startOfDay(subDays(now, 6)), to: endOfDay(now) };
+        case "last30":
+            return { from: startOfDay(subDays(now, 29)), to: endOfDay(now) };
+        case "thisMonth":
+            return { from: startOfMonth(now), to: endOfDay(now) };
+        case "lastMonth":
+            const lastMonthStart = startOfMonth(subDays(startOfMonth(now), 1));
+            return { from: lastMonthStart, to: endOfMonth(lastMonthStart) };
+        default:
+            return undefined;
+    }
+}
 
 
 export function DateRangePicker({
   className,
+  value,
   onUpdate,
-}: React.HTMLAttributes<HTMLDivElement> & { onUpdate?: (range: DateRange | undefined) => void }) {
-  const [date, setDate] = React.useState<DateRange | undefined>({
-    from: startOfDay(new Date()),
-    to: endOfDay(new Date()),
-  })
-  const [isOpen, setIsOpen] = React.useState(false)
-  const [showCustomPicker, setShowCustomPicker] = React.useState(false);
-  const [startDateInput, setStartDateInput] = React.useState('');
-  const [endDateInput, setEndDateInput] = React.useState('');
+}: React.HTMLAttributes<HTMLDivElement> & { value?: DateRange; onUpdate?: (range: DateRange | undefined) => void }) {
+  const [date, setDate] = React.useState<DateRange | undefined>(value)
+  const [preset, setPreset] = React.useState<string | undefined>(undefined);
 
-  const handleApply = () => {
+  React.useEffect(() => {
+    setDate(value);
+  }, [value]);
+
+  const handleDateChange = (newDate: DateRange | undefined) => {
+    setDate(newDate);
+    setPreset(undefined);
     if(onUpdate) {
-        onUpdate(date);
+      onUpdate(newDate);
     }
-    setIsOpen(false);
-  }
-  
-   const handleCustomClick = () => {
-    setShowCustomPicker(true);
-    setStartDateInput(date?.from ? format(date.from, 'MM/dd/yyyy') : '');
-    setEndDateInput(date?.to ? format(date.to, 'MM/dd/yyyy') : '');
-  };
-
-  const handlePresetClick = (presetValue: DateRange) => {
-    setDate(presetValue);
-    setShowCustomPicker(false);
-  };
-  
-  const handleApplyCustomDate = () => {
-      const from = new Date(startDateInput);
-      const to = new Date(endDateInput);
-      const newRange = { from: startOfDay(from), to: endOfDay(to) };
-      setDate(newRange);
-      setShowCustomPicker(false);
   }
 
-  const isPresetActive = (presetValue: DateRange) => {
-    if (!date?.from || !date.to) return false;
-    return isSameDay(presetValue.from, date.from) && isSameDay(presetValue.to, date.to);
-  };
+  const handlePresetChange = (presetValue: string) => {
+    const newRange = getPresetRange(presetValue);
+    setPreset(presetValue);
+    setDate(newRange);
+    if(onUpdate) {
+        onUpdate(newRange);
+    }
+  }
 
   return (
     <div className={cn("grid gap-2", className)}>
-       <div className="flex flex-wrap items-start gap-2">
-          <Button variant={isPresetActive(PRESETS[0].getValue()) ? 'secondary': "outline"} size="sm" onClick={() => handlePresetClick(PRESETS[0].getValue())}>
-            Today
-          </Button>
-          <Collapsible>
-            <div className="flex items-start gap-2">
-                <CollapsibleTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-9 w-9 data-[state=open]:rotate-90">
-                    <ChevronRight className="h-4 w-4 transition-transform" />
-                    <span className="sr-only">Toggle date presets</span>
-                  </Button>
-                </CollapsibleTrigger>
-              <CollapsibleContent asChild>
-                <div className="flex flex-col items-start gap-2 sm:flex-row animate-in fade-in duration-300">
-                  {!showCustomPicker ? (
-                    <>
-                      <Button variant={isPresetActive(PRESETS[1].getValue()) ? 'secondary': "outline"} size="sm" onClick={() => handlePresetClick(PRESETS[1].getValue())}>
-                        Yesterday
-                      </Button>
-                      <Button variant={isPresetActive(PRESETS[2].getValue()) ? 'secondary': "outline"} size="sm" onClick={() => handlePresetClick(PRESETS[2].getValue())}>
-                        Last 7 Days
-                      </Button>
-                      <Button variant={isPresetActive(PRESETS[4].getValue()) ? 'secondary': "outline"} size="sm" onClick={() => handlePresetClick(PRESETS[4].getValue())}>
-                        This Month
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={handleCustomClick}>
-                        Custom
-                      </Button>
-                    </>
-                  ) : (
-                     <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm">
-                        <div className="flex items-center gap-4">
-                           <div className="grid gap-2">
-                                <Label htmlFor="start-date">Start date</Label>
-                                <Input id="start-date" value={startDateInput} onChange={e => setStartDateInput(e.target.value)} placeholder="mm/dd/yyyy" />
-                           </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="end-date">End date</Label>
-                                <Input id="end-date" value={endDateInput} onChange={e => setEndDateInput(e.target.value)} placeholder="mm/dd/yyyy" />
-                            </div>
-                        </div>
-                         <div className="flex justify-end gap-2">
-                            <Button variant="ghost" onClick={() => setShowCustomPicker(false)}>Cancel</Button>
-                            <Button onClick={handleApplyCustomDate}>Apply</Button>
-                         </div>
-                    </div>
-                  )}
-                </div>
-              </CollapsibleContent>
-            </div>
-          </Collapsible>
-        </div>
+      <div className="flex items-center gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              id="date"
+              variant={"outline"}
+              className={cn(
+                "w-[300px] justify-start text-left font-normal",
+                !date && "text-muted-foreground"
+              )}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {date?.from ? (
+                date.to ? (
+                  <>
+                    {format(date.from, "LLL dd, y")} -{" "}
+                    {format(date.to, "LLL dd, y")}
+                  </>
+                ) : (
+                  format(date.from, "LLL dd, y")
+                )
+              ) : (
+                <span>Pick a date</span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={date?.from}
+              selected={date}
+              onSelect={handleDateChange}
+              numberOfMonths={2}
+            />
+          </PopoverContent>
+        </Popover>
+
+        <Select value={preset} onValueChange={handlePresetChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Presets" />
+          </SelectTrigger>
+          <SelectContent>
+            {PRESETS.map(p => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   )
 }
+
+    
