@@ -110,7 +110,7 @@ export default function AdminPage() {
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
                 getDocs(orderItemsQuery),
-                getDocs(refillsSnapshot),
+                getDocs(refillsQuery),
             ]);
 
             const sales = transSnapshot.docs.reduce((sum, doc) => sum + doc.data().amount, 0);
