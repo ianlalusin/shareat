@@ -240,6 +240,21 @@ export type OrderTransaction = {
   cashierUid?: string | null;
 };
 
+export type OrderUpdateLog = {
+    id: string;
+    orderId: string;
+    storeId: string;
+    timestamp: Timestamp;
+    updatedByUid: string;
+    updatedByName: string;
+    reason: string;
+    changes: {
+        field: 'guestCount' | 'packageName' | 'totalAmount';
+        oldValue: string | number;
+        newValue: string | number;
+    }[];
+};
+
 export type ReceiptSettings = {
     id: string; // Same as storeId
     showLogo: boolean;

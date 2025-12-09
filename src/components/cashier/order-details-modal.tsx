@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useAuthContext } from '@/firebase';
 import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, where } from 'firebase/firestore';
 import { Order, OrderItem, RefillItem, MenuItem } from '@/lib/types';
 import {
@@ -19,6 +19,7 @@ import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { AddToCartModal } from './add-to-cart-modal';
+import { UpdateOrderModal } from './update-order-modal';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { Badge } from '@/components/ui/badge';
 
@@ -44,6 +45,8 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isUpdateSelectionModalOpen, setIsUpdateSelectionModalOpen] = useState(false);
+  const [isUpdateOrderModalOpen, setIsUpdateOrderModalOpen] = useState(false);
+  const [updateType, setUpdateType] = useState<'guestCount' | 'package' | null>(null);
   const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
   const { openSuccessModal } = useSuccessModal();
 
@@ -142,6 +145,12 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
   const handleCloseCart = () => {
     setIsAddToCartModalOpen(false);
   };
+  
+  const handleOpenUpdateModal = (type: 'guestCount' | 'package') => {
+    setUpdateType(type);
+    setIsUpdateOrderModalOpen(true);
+    setIsUpdateSelectionModalOpen(false);
+  }
 
   return (
     <>
@@ -237,6 +246,16 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
       />
     )}
 
+    {isUpdateOrderModalOpen && updateType && (
+        <UpdateOrderModal
+            isOpen={isUpdateOrderModalOpen}
+            onClose={() => setIsUpdateOrderModalOpen(false)}
+            order={order}
+            menu={menu}
+            updateType={updateType}
+        />
+    )}
+
     <Dialog open={isUpdateSelectionModalOpen} onOpenChange={setIsUpdateSelectionModalOpen}>
         <DialogContent>
             <DialogHeader>
@@ -246,8 +265,8 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
                 </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                <Button variant="outline" size="lg">Update Guest Count</Button>
-                <Button variant="outline" size="lg">Update Package</Button>
+                <Button variant="outline" size="lg" onClick={() => handleOpenUpdateModal('guestCount')}>Update Guest Count</Button>
+                <Button variant="outline" size="lg" onClick={() => handleOpenUpdateModal('package')}>Update Package</Button>
             </div>
         </DialogContent>
     </Dialog>
