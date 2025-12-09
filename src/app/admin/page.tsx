@@ -24,7 +24,7 @@ import { TopItemsCard, TopItem } from '@/components/admin/dashboard/top-items-ca
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { DashboardSkeleton } from '@/components/admin/dashboard/dashboard-skeleton';
-import { TrendingUp, Hash, Timer, PackageWarning } from 'lucide-react';
+import { TrendingUp, Hash, Timer, PackageX } from 'lucide-react';
 import { startOfDay, endOfDay } from 'date-fns';
 
 export default function AdminPage() {
@@ -110,7 +110,7 @@ export default function AdminPage() {
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
                 getDocs(orderItemsQuery),
-                getDocs(refillsQuery),
+                getDocs(refillsSnapshot),
             ]);
 
             const sales = transSnapshot.docs.reduce((sum, doc) => sum + doc.data().amount, 0);
@@ -272,7 +272,7 @@ export default function AdminPage() {
           <TopItemsCard
             title="Low Stocks Inventory"
             items={lowStockItems}
-            icon={<PackageWarning className="h-4 w-4 text-muted-foreground" />}
+            icon={<PackageX className="h-4 w-4 text-muted-foreground" />}
             linkTo="/admin/inventory"
           />
            <TopItemsByCategoryCard
