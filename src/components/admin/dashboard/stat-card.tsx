@@ -7,14 +7,26 @@ import Link from 'next/link';
 
 interface StatCardProps {
     title: string;
-    value: number;
+    value: number | string;
     icon: React.ReactNode;
-    format?: 'currency' | 'number';
+    format?: 'currency' | 'number' | 'custom';
+    customFormatter?: (value: number) => string;
     linkTo?: string;
 }
 
-export function StatCard({ title, value, icon, format = 'number', linkTo }: StatCardProps) {
-    const formattedValue = format === 'currency' ? formatCurrency(value) : value.toLocaleString();
+export function StatCard({ title, value, icon, format = 'number', customFormatter, linkTo }: StatCardProps) {
+    const formattedValue = () => {
+      if (format === 'currency' && typeof value === 'number') {
+        return formatCurrency(value);
+      }
+      if (format === 'custom' && typeof value === 'number' && customFormatter) {
+        return customFormatter(value);
+      }
+      if (typeof value === 'number') {
+          return value.toLocaleString();
+      }
+      return value;
+    }
 
     const CardInnerContent = () => (
       <>
@@ -23,7 +35,7 @@ export function StatCard({ title, value, icon, format = 'number', linkTo }: Stat
           {icon}
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{formattedValue}</div>
+          <div className="text-2xl font-bold">{formattedValue()}</div>
         </CardContent>
       </>
     );

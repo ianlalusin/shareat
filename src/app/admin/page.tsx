@@ -57,8 +57,8 @@ export default function AdminPage() {
     setError(null);
 
     try {
-      const startDate = Timestamp.fromDate(startOfDay(dateRange.from));
-      const endDate = Timestamp.fromDate(endOfDay(dateRange.to));
+      const startDate = Timestamp.fromDate(dateRange.from);
+      const endDate = Timestamp.fromDate(dateRange.to);
 
       const ordersQuery = query(
         collection(firestore, 'orders'),
@@ -237,7 +237,9 @@ export default function AdminPage() {
           />
           <StatCard
             title="Avg. Serving Time"
-            value={formatServingTime(avgServingTime)}
+            value={avgServingTime}
+            format="custom"
+            customFormatter={formatServingTime}
             icon={<Timer className="h-4 w-4 text-muted-foreground" />}
             linkTo="/admin/reports/kitchen"
           />

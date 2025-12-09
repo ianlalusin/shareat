@@ -2,18 +2,13 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { Calendar as CalendarIcon } from "lucide-react"
+import { format, parse, isValid } from "date-fns"
 import { DateRange } from "react-day-picker"
+import { subDays, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -21,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { subDays, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns"
+import { autoformatDate, formatAndValidateDate, revertToInputFormat } from "@/lib/utils"
 
 
 const PRESETS = [
@@ -61,30 +56,48 @@ export function DateRangePicker({
   value,
   onUpdate,
 }: React.HTMLAttributes<HTMLDivElement> & { value?: DateRange; onUpdate?: (range: DateRange | undefined) => void }) {
-  const [date, setDate] = React.useState<DateRange | undefined>(value)
+  const [fromString, setFromString] = React.useState(value?.from ? format(value.from, 'MM/dd/yyyy') : '');
+  const [toString, setToString] = React.useState(value?.to ? format(value.to, 'MM/dd/yyyy') : '');
   const [preset, setPreset] = React.useState<string | undefined>(undefined);
-  const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
 
   React.useEffect(() => {
-    setDate(value);
+    setFromString(value?.from ? format(value.from, 'MM/dd/yyyy') : '');
+    setToString(value?.to ? format(value.to, 'MM/dd/yyyy') : '');
   }, [value]);
 
-  const handleDateSelect = (newDate: DateRange | undefined) => {
-    setDate(newDate);
-    setPreset(undefined); // Clear preset when custom date is chosen
-    if (onUpdate) {
-      onUpdate(newDate);
+  const handleManualDateUpdate = () => {
+    const fromDate = parse(fromString, 'MM/dd/yyyy', new Date());
+    const toDate = parse(toString, 'MM/dd/yyyy', new Date());
+    
+    if (isValid(fromDate) && isValid(toDate)) {
+        onUpdate?.({ from: startOfDay(fromDate), to: endOfDay(toDate) });
+        setPreset(undefined);
     }
-    // Close the popover after a date range is selected
-    if (newDate?.from && newDate?.to) {
-        setIsPopoverOpen(false);
-    }
+  };
+
+  const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = autoformatDate(e.target.value, fromString);
+    setFromString(formatted);
+  };
+  
+  const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = autoformatDate(e.target.value, toString);
+    setToString(formatted);
+  };
+  
+  const handleBlur = (field: 'from' | 'to') => {
+      const dateStr = field === 'from' ? fromString : toString;
+      if (dateStr && !isValid(parse(dateStr, 'MM/dd/yyyy', new Date()))) {
+        // Optionally show an error or just clear it if invalid
+        console.error(`Invalid date format for ${field}: ${dateStr}`);
+      } else {
+        handleManualDateUpdate();
+      }
   }
 
   const handlePresetChange = (presetValue: string) => {
     const newRange = getPresetRange(presetValue);
     setPreset(presetValue);
-    setDate(newRange);
     if(onUpdate) {
         onUpdate(newRange);
     }
@@ -93,43 +106,22 @@ export function DateRangePicker({
   return (
     <div className={cn("grid gap-2", className)}>
       <div className="flex items-center gap-2">
-        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              id="date"
-              variant={"outline"}
-              className={cn(
-                "w-[240px] justify-start text-left font-normal",
-                !date && "text-muted-foreground"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {date?.from ? (
-                date.to ? (
-                  <>
-                    {format(date.from, "LLL dd, y")} -{" "}
-                    {format(date.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(date.from, "LLL dd, y")
-                )
-              ) : (
-                <span>Pick a date</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0 max-w-[700px]" align="center">
-            <Calendar
-              initialFocus
-              mode="range"
-              defaultMonth={date?.from}
-              selected={date}
-              onSelect={handleDateSelect}
-              numberOfMonths={2}
-            />
-          </PopoverContent>
-        </Popover>
-
+         <Input
+            placeholder="MM/DD/YYYY"
+            value={fromString}
+            onChange={handleFromChange}
+            onBlur={() => handleBlur('from')}
+            className="w-[120px]"
+        />
+        <span className="text-muted-foreground">to</span>
+        <Input
+            placeholder="MM/DD/YYYY"
+            value={toString}
+            onChange={handleToChange}
+            onBlur={() => handleBlur('to')}
+            className="w-[120px]"
+        />
+        
         <Select value={preset} onValueChange={handlePresetChange}>
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="Presets" />

@@ -112,8 +112,8 @@ export default function SalesReportPage() {
     setOrderItems([]);
 
     try {
-      const startDate = Timestamp.fromDate(startOfDay(dateRange.from));
-      const endDate = Timestamp.fromDate(endOfDay(dateRange.to));
+      const startDate = Timestamp.fromDate(dateRange.from);
+      const endDate = Timestamp.fromDate(dateRange.to);
 
       const completedOrdersQuery = query(
         collection(firestore, 'orders'),
