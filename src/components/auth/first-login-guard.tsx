@@ -1,7 +1,7 @@
 
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
 import {
@@ -28,7 +28,6 @@ type OnboardingStatus =
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const { user, loading, isOnboarded, devMode } = useAuthContext();
-  const firestore = useFirestore();
   const router = useRouter();
 
   useEffect(() => {
@@ -74,8 +73,8 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
 function OnboardingFlowManager() {
     const { user, devMode } = useAuthContext();
     const firestore = useFirestore();
-    const [status, setStatus] = React.useState<OnboardingStatus>("loading");
-    const [staffData, setStaffData] = React.useState<any>(null);
+    const [status, setStatus] = useState<OnboardingStatus>("loading");
+    const [staffData, setStaffData] = useState<any>(null);
 
     useEffect(() => {
         if (devMode) {
