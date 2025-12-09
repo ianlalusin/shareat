@@ -290,24 +290,29 @@ export default function EditStaffPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="uid">Auth UID</Label>
-                <Input 
-                  id="uid" 
-                  name="uid" 
-                  value={formData.uid || ''} 
-                  onChange={handleInputChange}
-                  disabled={!user && !devMode} 
-                />
-              </div>
+
                <div className="md:col-span-3 space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea id="notes" name="notes" value={formData.notes || ''} onChange={handleInputChange} />
               </div>
-               <div className="space-y-2">
-                <Label htmlFor="encoder">Encoder</Label>
-                <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} disabled />
+
+              <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="uid">Auth UID</Label>
+                  <Input 
+                    id="uid" 
+                    name="uid" 
+                    value={formData.uid || ''} 
+                    onChange={handleInputChange}
+                    disabled={!user && !devMode} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="encoder">Encoder</Label>
+                  <Input id="encoder" name="encoder" value={formData.encoder} onChange={handleInputChange} disabled />
+                </div>
               </div>
+
             </div>
             <div className="flex justify-end gap-2 mt-6">
               <Button type="button" variant="outline" asChild>

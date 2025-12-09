@@ -215,7 +215,6 @@ export default function StaffDetailPage() {
                 {staff.employmentStatus}
             </Badge>
           </div>
-          <InfoItem label="Auth UID" value={staff.uid} />
           <InfoItem label="Notes" value={staff.notes} className="md:col-span-3" />
         </CardContent>
       </Card>
