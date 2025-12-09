@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Order, MenuItem, OrderUpdateLog } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
-import { doc, writeBatch, serverTimestamp, collection, runTransaction } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, collection, runTransaction, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
@@ -99,6 +99,20 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
             if (newTotalAmount !== currentOrder.totalAmount) {
                 updates.totalAmount = newTotalAmount;
                 auditChanges.push({ field: 'totalAmount', oldValue: currentOrder.totalAmount, newValue: newTotalAmount });
+            }
+            
+            // If guest count changed, find and update the initial package order item
+            if (updates.guestCount) {
+              const itemsQuery = query(
+                collection(firestore, 'orders', order.id, 'orderItems'),
+                where('sourceTag', '==', 'initial'),
+                limit(1)
+              );
+              const itemsSnap = await getDocs(itemsQuery);
+              if (!itemsSnap.empty) {
+                const initialItemDoc = itemsSnap.docs[0];
+                transaction.update(initialItemDoc.ref, { quantity: updates.guestCount });
+              }
             }
 
             // Create audit log
