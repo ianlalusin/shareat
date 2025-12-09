@@ -56,10 +56,15 @@ export function autoformatDate(currentValue: string, previousValue: string): str
 }
 
 export function formatCurrency(value: number | string | undefined | null) {
-  const numericValue = Number(value);
-  if (isNaN(numericValue)) {
+  if (value === null || value === undefined || value === '') {
     return '₱0.00';
   }
+
+  const numericValue =
+    typeof value === 'number' ? value : parseCurrency(value);
+
+  if (isNaN(numericValue)) return '₱0.00';
+
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
