@@ -10,6 +10,7 @@ export function Logo({ className }: { className?: string }) {
       aria-labelledby="logoTitle"
     >
       <title id="logoTitle">SharEat Hub Logo</title>
+      <circle cx="50" cy="50" r="50" fill="white" />
       <g fontFamily="sans-serif" fontWeight="bold">
         {/* SE logo */}
         <text
