@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -53,7 +54,7 @@ export default function RefillPage() {
             const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', '==', 'Active'));
             const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
                 const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
-                setOrders(ordersData);
+                setOrders([...ordersData]);
                 
                 // For each active order, listen to its refills
                 ordersData.forEach(order => {
