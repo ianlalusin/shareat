@@ -477,7 +477,7 @@ export default function InventoryPage() {
       </div>
 
        {!selectedStoreId ? (
-          <Alert variant="info">
+          <Alert variant="info" size="sm">
             <AlertTitle>No Store Selected</AlertTitle>
             <AlertDescription>Please select a store from the dropdown above to manage its inventory.</AlertDescription>
           </Alert>
