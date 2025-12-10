@@ -639,12 +639,18 @@ export default function MenuPage() {
                 </div>
                  
                  <div className="space-y-4 rounded-lg border p-4">
-                     <div className="flex items-center space-x-2">
-                        <Switch id="is_refillable" name="is_refillable" checked={formData.is_refillable} onCheckedChange={(c) => handleSwitchChange('is_refillable', c)} />
-                        <Label htmlFor="is_refillable">Is Refillable?</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-center space-x-2">
+                           <Switch id="is_refillable" name="is_refillable" checked={formData.is_refillable} onCheckedChange={(c) => handleSwitchChange('is_refillable', c)} />
+                           <Label htmlFor="is_refillable">Is Refillable?</Label>
+                        </div>
+                         <div className="flex items-center space-x-2">
+                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
+                            <Label htmlFor="trackInventory">Track Inventory</Label>
+                        </div>
                     </div>
                     {formData.is_refillable && (
-                        <div className="space-y-2 pl-6">
+                        <div className="space-y-2">
                             <Label htmlFor="allowed_refills">Allowed Refills</Label>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -688,10 +694,6 @@ export default function MenuPage() {
                     <div className="flex items-center space-x-2 pt-6">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
-                      <Label htmlFor="trackInventory">Track Inventory</Label>
                     </div>
                      {formData.trackInventory && (
                         <div className="flex items-center space-x-2">
