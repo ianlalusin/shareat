@@ -42,7 +42,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-import { GListItem, Store } from '@/lib/types';
+import { CollectionItem, Store } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -55,7 +55,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 
-const initialItemState: Omit<GListItem, 'id'> = {
+const initialItemState: Omit<CollectionItem, 'id'> = {
   item: '',
   category: '',
   is_active: true,
@@ -74,16 +74,16 @@ const initialScheduleState: any = {
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function GlobalCollectionsPage() {
-  const [items, setItems] = useState<GListItem[]>([]);
-  const [schedules, setSchedules] = useState<GListItem[]>([]);
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [schedules, setSchedules] = useState<CollectionItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<GListItem | null>(null);
-  const [itemFormData, setItemFormData] = useState<Omit<GListItem, 'id'>>(initialItemState);
+  const [editingItem, setEditingItem] = useState<CollectionItem | null>(null);
+  const [itemFormData, setItemFormData] = useState<Omit<CollectionItem, 'id'>>(initialItemState);
   
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<GListItem | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<CollectionItem | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState(initialScheduleState);
 
   const firestore = useFirestore();
@@ -95,7 +95,7 @@ export default function GlobalCollectionsPage() {
 
     const q = query(collection(firestore, 'lists'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+      const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CollectionItem[];
       setItems(allItems.filter(item => item.category !== 'menu schedules').map(item => ({ ...item, storeIds: item.storeIds || [] })));
       setSchedules(allItems.filter(item => item.category === 'menu schedules').map(item => ({...item, days: (item as any).days || []})));
     });
@@ -165,7 +165,7 @@ export default function GlobalCollectionsPage() {
     }
   };
   
-  const handleEditItem = (item: GListItem) => {
+  const handleEditItem = (item: CollectionItem) => {
     setEditingItem(item);
     setItemFormData({
       item: item.item,
@@ -216,7 +216,7 @@ export default function GlobalCollectionsPage() {
     if (!acc[category]) { acc[category] = []; }
     acc[category].push(item);
     return acc;
-  }, {} as Record<string, GListItem[]>);
+  }, {} as Record<string, CollectionItem[]>);
   
   // Schedule Modal Handlers
   const handleScheduleModalOpenChange = (open: boolean) => {
@@ -262,7 +262,7 @@ export default function GlobalCollectionsPage() {
     }
   };
 
-  const handleEditSchedule = (schedule: GListItem) => {
+  const handleEditSchedule = (schedule: CollectionItem) => {
     setEditingSchedule(schedule);
     setScheduleFormData({
         item: schedule.item,

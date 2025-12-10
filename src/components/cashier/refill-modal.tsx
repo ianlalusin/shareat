@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { Table as TableType, Order, MenuItem, GListItem, RefillItem, OrderItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, CollectionItem, RefillItem, OrderItem } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -64,7 +64,7 @@ interface RefillSelection {
 }
 
 export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder }: RefillModalProps) {
-    const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
+    const [flavorOptions, setFlavorOptions] = useState<CollectionItem[]>([]);
     const [refillSelections, setRefillSelections] = useState<Record<string, RefillSelection>>({});
     const [refillCart, setRefillCart] = useState<RefillCartItem[]>([]);
     
@@ -95,7 +95,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                 where('storeIds', 'array-contains', order.storeId)
             );
             const flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
-                setFlavorOptions(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem));
+                setFlavorOptions(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as CollectionItem));
             });
 
             return () => flavorsUnsubscribe();

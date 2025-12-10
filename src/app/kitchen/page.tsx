@@ -16,7 +16,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Order, OrderItem, RefillItem, GListItem } from '@/lib/types';
+import { Order, OrderItem, RefillItem, CollectionItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 export default function KitchenPage() {
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [kitchenItemsByOrder, setKitchenItemsByOrder] = useState<Record<string, KitchenItem[]>>({});
-  const [storeStations, setStoreStations] = useState<GListItem[]>([]);
+  const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
   const [activeTab, setActiveTab] = useState<string | undefined>();
   
   const { selectedStoreId } = useStoreSelector();
@@ -48,7 +48,7 @@ export default function KitchenPage() {
       where('storeIds', 'array-contains', selectedStoreId)
     );
     const unsubStations = onSnapshot(stationsQuery, (snapshot) => {
-        const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem);
+        const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
         stationData.sort((a,b) => a.item.localeCompare(b.item));
         setStoreStations(stationData);
         if (stationData.length > 0 && !activeTab) {

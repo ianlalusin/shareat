@@ -31,7 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Store as StoreIcon } from 'lucide-react';
-import { Store, GListItem } from '@/lib/types';
+import { Store, CollectionItem } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { TagsInput } from '@/components/ui/tags-input';
 import { ImageUpload } from '@/components/ui/image-upload';
@@ -45,8 +45,8 @@ export default function EditStorePage() {
   const [loading, setLoading] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
-  const [storeTags, setStoreTags] = useState<GListItem[]>([]);
-  const [mopOptions, setMopOptions] = useState<GListItem[]>([]);
+  const [storeTags, setStoreTags] = useState<CollectionItem[]>([]);
+  const [mopOptions, setMopOptions] = useState<CollectionItem[]>([]);
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -77,7 +77,7 @@ export default function EditStorePage() {
       where('is_active', '==', true)
     );
     const tagsUnsubscribe = onSnapshot(tagsQuery, (snapshot) => {
-      const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+      const tagsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CollectionItem[];
       setStoreTags(tagsData);
     });
 
@@ -87,7 +87,7 @@ export default function EditStorePage() {
       where('is_active', '==', true)
     );
     const mopUnsubscribe = onSnapshot(mopQuery, (snapshot) => {
-      const mopData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
+      const mopData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CollectionItem[];
       setMopOptions(mopData);
     });
     

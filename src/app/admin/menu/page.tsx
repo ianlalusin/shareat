@@ -44,7 +44,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, GListItem, Product, InventoryItem } from '@/lib/types';
+import { MenuItem, Store, CollectionItem, Product, InventoryItem } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -97,9 +97,9 @@ export default function MenuPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-  const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
-  const [taxRates, setTaxRates] = useState<GListItem[]>([]);
-  const [storeStations, setStoreStations] = useState<GListItem[]>([]);
+  const [availabilityOptions, setAvailabilityOptions] = useState<CollectionItem[]>([]);
+  const [taxRates, setTaxRates] = useState<CollectionItem[]>([]);
+  const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -163,7 +163,7 @@ export default function MenuPage() {
       );
   
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
         setAvailabilityOptions(availabilityData);
       });
     
@@ -178,7 +178,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
           setTaxRates(taxRateData);
         });
 
@@ -189,7 +189,7 @@ export default function MenuPage() {
             where('storeIds', 'array-contains', selectedStoreId)
         );
         storeStationsUnsubscribe = onSnapshot(storeStationsQuery, (snapshot) => {
-            const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+            const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
             setStoreStations(stationData);
         });
 

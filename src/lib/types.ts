@@ -19,7 +19,7 @@ export type Store = {
   tinNumber?: string;
 };
 
-export type GListItem = {
+export type CollectionItem = {
   id: string;
   item: string;
   category: string;
