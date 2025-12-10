@@ -270,8 +270,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsList>
                     
                     <TabsContent value="refill" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-2 gap-6 h-full pt-2">
-                            <div className="flex flex-col gap-4 h-full">
+                        <div className="grid grid-cols-3 gap-6 h-full pt-2">
+                            <div className="col-span-2 flex flex-col gap-4 h-full">
                                 <h3 className="font-semibold">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
                                     <div className="p-4 space-y-4">
@@ -313,7 +313,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="flex flex-col border rounded-lg">
+                            <div className="col-span-1 flex flex-col border rounded-lg">
                                 <div className="p-4 border-b">
                                     <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
                                 </div>
@@ -351,8 +351,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsContent>
                     
                     <TabsContent value="add-ons" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-2 gap-6 h-full pt-2">
-                            <div className="flex flex-col gap-4 h-full">
+                        <div className="grid grid-cols-3 gap-6 h-full pt-2">
+                            <div className="col-span-2 flex flex-col gap-4 h-full">
                                 <div className="relative">
                                     <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -378,7 +378,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="flex flex-col border rounded-lg h-full">
+                            <div className="col-span-1 flex flex-col border rounded-lg h-full">
                                 <div className="p-4 border-b">
                                     <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
                                 </div>
@@ -476,3 +476,4 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
