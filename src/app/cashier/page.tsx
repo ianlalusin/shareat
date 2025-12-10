@@ -1,10 +1,11 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, PendingOrderUpdate } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -69,14 +70,25 @@ export default function CashierPage() {
               setMenu(menuData);
             });
             
-            const updatesQuery = query(collection(firestore, `stores/${selectedStoreId}/pendingOrderUpdates`));
-            const updatesUnsubscribe = onSnapshot(updatesQuery, (snapshot) => {
-                const updatesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PendingOrderUpdate));
-                const updatesWithOrders = updatesData
-                    .map(update => ({ ...update, order: orders.find(o => o.id === update.orderId)! }))
-                    .filter(item => item.order); // Ensure order exists
-                setPendingUpdates(updatesWithOrders);
+            const updatesQuery = query(collection(firestore, `orders`), where('storeId', '==', selectedStoreId), where('status', '==', 'Active'));
+            const updatesUnsubscribe = onSnapshot(updatesQuery, async (ordersSnapshot) => {
+                const currentOrders = ordersSnapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Order);
+                
+                const updatePromises = currentOrders.map(async (order) => {
+                    const pendingUpdatesRef = collection(firestore, `orders/${order.id}/pendingUpdates`);
+                    const pendingUpdatesSnap = await getDocs(pendingUpdatesRef);
+                    return pendingUpdatesSnap.docs.map(doc => ({
+                        id: doc.id,
+                        ...(doc.data() as PendingOrderUpdate),
+                        order,
+                    }));
+                });
+
+                const updatesByOrder = await Promise.all(updatePromises);
+                const allUpdates = updatesByOrder.flat();
+                setPendingUpdates(allUpdates);
             });
+
 
             return () => {
                 tablesUnsubscribe();
@@ -90,7 +102,7 @@ export default function CashierPage() {
             setMenu([]);
             setPendingUpdates([]);
         }
-    }, [firestore, selectedStoreId, orders]); // depends on orders to map updates correctly
+    }, [firestore, selectedStoreId, toast]);
 
     const availableTables = useMemo(() => tables.filter(t => t.status === 'Available'), [tables]);
     
@@ -162,8 +174,8 @@ export default function CashierPage() {
               </div>
           </div>
            <Button 
-                variant="secondary" 
-                className="absolute top-1/2 -right-4 -translate-y-1/2 h-10 w-8 p-0 rounded-full z-10"
+                variant="destructive"
+                className={`absolute top-1/2 -right-4 -translate-y-1/2 h-12 w-10 p-0 rounded-full z-10`}
                 onClick={() => setIsAvailableCollapsed(!isAvailableCollapsed)}
             >
                 {isAvailableCollapsed ? <ChevronRight className="h-5 w-5"/> : <ChevronLeft className="h-5 w-5"/>}
