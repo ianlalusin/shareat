@@ -27,11 +27,11 @@ import {
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { useToast } from '@/hooks/use-toast';
-import { GListItem } from '@/lib/types';
+import { CollectionItem } from '@/lib/types';
 
 export function NewListSetting() {
   const [isOpen, setIsOpen] = useState(false);
-  const [items, setItems] = useState<GListItem[]>([]);
+  const [items, setItems] = useState<CollectionItem[]>([]);
   const [newItem, setNewItem] = useState('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingItemValue, setEditingItemValue] = useState('');
@@ -48,7 +48,7 @@ export function NewListSetting() {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedItems = snapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() } as GListItem)
+        (doc) => ({ id: doc.id, ...doc.data() } as CollectionItem)
       );
       setItems(fetchedItems);
     });
@@ -92,7 +92,7 @@ export function NewListSetting() {
     }
   };
 
-  const handleEditItem = (item: GListItem) => {
+  const handleEditItem = (item: CollectionItem) => {
     setEditingItemId(item.id);
     setEditingItemValue(item.item);
   };

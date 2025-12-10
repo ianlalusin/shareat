@@ -17,7 +17,7 @@ import {
   runTransaction,
   deleteDoc,
 } from 'firebase/firestore';
-import { Order, OrderItem, GListItem, OrderTransaction, Store, PendingOrderUpdate, OrderUpdateLog } from '@/lib/types';
+import { Order, OrderItem, CollectionItem, OrderTransaction, Store, PendingOrderUpdate, OrderUpdateLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -100,13 +100,13 @@ export default function OrderDetailPage() {
   const [discountValue, setDiscountValue] = useState('');
   const [discountType, setDiscountType] = useState<'₱' | '%'>('₱');
   const [selectedDiscount, setSelectedDiscount] = useState('');
-  const [discountTypes, setDiscountTypes] = useState<GListItem[]>([]);
+  const [discountTypes, setDiscountTypes] = useState<CollectionItem[]>([]);
   
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [chargeValue, setChargeValue] = useState('');
   const [selectedCharge, setSelectedCharge] = useState('');
   const [customChargeType, setCustomChargeType] = useState('');
-  const [chargeTypes, setChargeTypes] = useState<GListItem[]>([]);
+  const [chargeTypes, setChargeTypes] = useState<CollectionItem[]>([]);
   
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
@@ -169,7 +169,7 @@ export default function OrderDetailPage() {
       );
 
       const discountsUnsubscribe = onSnapshot(discountsQuery, (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GListItem));
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollectionItem));
         setDiscountTypes(types);
       });
       
@@ -180,7 +180,7 @@ export default function OrderDetailPage() {
         where('storeIds', 'array-contains', order.storeId)
       );
       const chargesUnsubscribe = onSnapshot(chargesQuery, (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GListItem));
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollectionItem));
         setChargeTypes(types);
       });
 
