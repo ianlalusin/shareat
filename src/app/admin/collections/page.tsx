@@ -10,6 +10,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -74,6 +84,9 @@ export default function CollectionsPage() {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CollectionItem | null>(null);
   const [itemFormData, setItemFormData] = useState<Omit<CollectionItem, 'id'>>(initialItemState);
+
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
@@ -163,16 +176,23 @@ export default function CollectionsPage() {
     setIsItemModalOpen(true);
   };
   
-  const handleDelete = async (e: React.MouseEvent, itemId: string) => {
+  const handleDeleteRequest = (e: React.MouseEvent, itemId: string) => {
     e.stopPropagation();
-    if (!firestore) return;
-    if (!window.confirm('Are you sure you want to delete this?')) return;
+    setItemToDelete(itemId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const executeDelete = async () => {
+    if (!firestore || !itemToDelete) return;
     try {
-      await deleteDoc(doc(firestore, 'collections', itemId));
+      await deleteDoc(doc(firestore, 'collections', itemToDelete));
       toast({ title: "Success!", description: "The entry has been deleted." });
     } catch (error) {
        console.error("Delete error:", error);
        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not delete. Please try again." });
+    } finally {
+        setItemToDelete(null);
+        setIsDeleteDialogOpen(false);
     }
   };
 
@@ -267,7 +287,7 @@ export default function CollectionsPage() {
                         <TableCell>
                             <div className="flex items-center gap-1">
                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleEditItem(item);}}><Pencil className="h-4 w-4" /></Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => handleDelete(e, item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => handleDeleteRequest(e, item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                             </div>
                         </TableCell>
                         </TableRow>
@@ -334,6 +354,21 @@ export default function CollectionsPage() {
             </form>
         </DialogContent>
       </Dialog>
+      
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete this item.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDelete} className="bg-destructive hover:bg-destructive/90">Continue</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </main>
   );
 }
