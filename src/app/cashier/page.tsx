@@ -1,10 +1,10 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirestore } from '@/firebase';
-import { useAuthContext } from '@/context/auth-context';
+import { useFirestore, useAuthContext } from '@/firebase';
 import { collection, onSnapshot, query, where, getDocs, writeBatch, serverTimestamp, doc, runTransaction } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Table as TableType, Order, MenuItem, PendingOrderUpdate, OrderItem } from '@/lib/types';
@@ -18,6 +18,7 @@ import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
+import { Badge } from '@/components/ui/badge';
 
 const NewOrderModal = dynamic(() => import('@/components/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
@@ -103,7 +104,7 @@ export default function CashierPage() {
             setMenu([]);
             setPendingUpdates([]);
         }
-    }, [firestore, selectedStoreId, toast]);
+    }, [firestore, selectedStoreId]);
 
     const availableTables = useMemo(() => tables.filter(t => t.status === 'Available'), [tables]);
     
