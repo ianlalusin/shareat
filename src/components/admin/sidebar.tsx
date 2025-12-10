@@ -40,7 +40,7 @@ const menuItems = [
   { href: "/admin/inventory", label: "Inventory", icon: Warehouse },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "/admin/reports/sales", label: "Sales Report", icon: AreaChart },
-  { href: "/admin/g-list", label: "G.List", icon: ListChecks },
+  { href: "/admin/global-collections", label: "Global Collections", icon: ListChecks },
   { href: "#maintenance", label: "Maintenance", icon: Wrench },
 ];
 
