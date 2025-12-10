@@ -315,18 +315,18 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                             </div>
                             <div className="col-span-1 flex flex-col border rounded-lg">
                                 <div className="p-4 border-b">
-                                    <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
+                                    <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
                                 </div>
                                 <ScrollArea className="flex-1">
                                     {refillCart.length === 0 ? (
-                                        <div className="text-center text-muted-foreground p-8">Refill cart is empty.</div>
+                                        <div className="text-center text-muted-foreground p-8 text-sm">Refill cart is empty.</div>
                                     ) : (
                                         <div className="p-4 space-y-3">
                                             {refillCart.map(item => (
                                                 <div key={`${item.meatType}-${item.flavor}`}>
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <p className="font-medium capitalize">{item.meatType} - {item.flavor}</p>
+                                                            <p className="font-medium capitalize text-xs">{item.meatType} - {item.flavor}</p>
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <PopoverTrigger asChild>
@@ -335,7 +335,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                                                 </Button>
                                                             </PopoverTrigger>
                                                             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                            <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                            <span className="w-6 text-center font-bold text-sm">{item.quantity}</span>
                                                             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
                                                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateRefillCartQuantity(item.meatType, item.flavor, 0)}><Trash2 className="h-4 w-4" /></Button>
                                                         </div>
@@ -380,19 +380,19 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                             </div>
                             <div className="col-span-1 flex flex-col border rounded-lg h-full">
                                 <div className="p-4 border-b">
-                                    <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
+                                    <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
                                 </div>
                                 <ScrollArea className="flex-1">
                                     {cart.length === 0 ? (
-                                        <div className="text-center text-muted-foreground p-8">Cart is empty.</div>
+                                        <div className="text-center text-muted-foreground p-8 text-sm">Cart is empty.</div>
                                     ) : (
                                         <div className="p-4 space-y-3">
                                             {cart.map(item => (
                                                 <div key={item.id}>
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <p className="font-medium">{item.menuName}</p>
-                                                            <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                            <p className="font-medium text-xs">{item.menuName}</p>
+                                                            <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <PopoverTrigger asChild>
@@ -401,7 +401,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                                                 </Button>
                                                             </PopoverTrigger>
                                                             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity - 1)}><Minus className="h-4 w-4" /></Button>
-                                                            <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                                            <span className="w-6 text-center font-bold text-sm">{item.quantity}</span>
                                                             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQuantity(item.id, item.quantity + 1)}><Plus className="h-4 w-4" /></Button>
                                                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => updateCartQuantity(item.id, 0)}><Trash2 className="h-4 w-4" /></Button>
                                                         </div>
@@ -414,7 +414,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                 </ScrollArea>
                                 {cart.length > 0 && (
                                     <div className="p-4 border-t">
-                                        <div className="flex justify-between items-center font-semibold text-lg">
+                                        <div className="flex justify-between items-center font-semibold text-base">
                                             <span>Subtotal</span>
                                             <span>{formatCurrency(cartSubtotal)}</span>
                                         </div>
@@ -476,6 +476,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
 
 
 
