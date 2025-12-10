@@ -218,10 +218,10 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + (item.price * item.quantity), 0), [cart]);
 
     const getSelectedFlavorText = (meatType: string) => {
-        const selection = refillSelections[meatType];
-        if (!selection || selection.flavors.length === 0) return 'Select up to 3 flavors';
-        const count = selection.flavors.length;
-        return `${count} flavor${count > 1 ? 's' : ''} selected`;
+      const selection = refillSelections[meatType];
+      if (!selection || selection.flavors.length === 0) return 'Select up to 3 flavors';
+      const count = selection.flavors.length;
+      return `${count} flavor${count > 1 ? 's' : ''} selected`;
     }
     
     const handleSaveNote = () => {
@@ -254,8 +254,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     return (
         <>
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
-                <DialogHeader>
+            <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
+                <DialogHeader className='p-4 pb-0 sm:p-0'>
                     <DialogTitle>Refill / Add-on for Table {table.tableName}</DialogTitle>
                     <DialogDescription>
                         Customer: {order.customerName} | Package: {order.packageName}
@@ -270,11 +270,11 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsList>
                     
                     <TabsContent value="refill" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-3 gap-6 h-full pt-2">
-                            <div className="col-span-2 flex flex-col gap-4 h-full">
-                                <h3 className="font-semibold">Select Meat & Flavor</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full pt-2">
+                            <div className="md:col-span-2 flex flex-col gap-4 h-full">
+                                <h3 className="font-semibold px-4 md:px-0">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
-                                    <div className="p-4 grid grid-cols-2 gap-4">
+                                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {meatTypesForPackage.map(meatType => (
                                         <div key={meatType} className="p-3 border rounded-lg">
                                             <p className="capitalize font-semibold text-lg mb-2">{meatType}</p>
@@ -309,11 +309,11 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                             </div>
                                         </div>
                                     ))}
-                                    {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4 col-span-2">This package has no specified meat types for refill.</p>}
+                                    {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4 col-span-full">This package has no specified meat types for refill.</p>}
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="col-span-1 flex flex-col border rounded-lg">
+                            <div className="md:col-span-1 flex flex-col border rounded-lg">
                                 <div className="p-4 border-b">
                                     <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
                                 </div>
@@ -351,11 +351,11 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsContent>
                     
                     <TabsContent value="add-ons" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-3 gap-6 h-full pt-2">
-                            <div className="col-span-2 flex flex-col gap-4 h-full">
-                                <div className="relative">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full pt-2">
+                            <div className="md:col-span-2 flex flex-col gap-4 h-full">
+                                <div className="relative px-4 md:px-0">
                                     <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 </div>
                                 <ScrollArea className="flex-1 rounded-md border">
                                     <div className="p-4 space-y-2">
@@ -378,7 +378,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="col-span-1 flex flex-col border rounded-lg h-full">
+                            <div className="md:col-span-1 flex flex-col border rounded-lg h-full">
                                 <div className="p-4 border-b">
                                     <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
                                 </div>
@@ -446,12 +446,12 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
 
                 </Popover>
 
-                <DialogFooter className="mt-4 flex-row justify-between">
-                    <div className='flex gap-2'>
+                <DialogFooter className="mt-4 flex flex-col sm:flex-row sm:justify-between gap-2">
+                    <div className='flex gap-2 justify-start'>
                         <Button type="button" variant="secondary" onClick={() => handleOpenUpdateModal('guestCount')}>Update Guest Count</Button>
                         <Button type="button" variant="secondary" onClick={() => handleOpenUpdateModal('package')}>Update Package</Button>
                     </div>
-                    <div className='flex gap-2'>
+                    <div className='flex gap-2 justify-end'>
                         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                         <Button 
                             size="lg" 
@@ -476,6 +476,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
 
 
 
