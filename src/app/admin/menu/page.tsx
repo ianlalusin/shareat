@@ -674,52 +674,53 @@ export default function MenuPage() {
                     )}
                  </div>
 
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                        <Label htmlFor="publicDescription">Public Description</Label>
-                        <Textarea id="publicDescription" name="publicDescription" value={formData.publicDescription} onChange={handleInputChange}/>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 space-y-2">
+                    <Label htmlFor="publicDescription">Public Description</Label>
+                    <Textarea
+                      id="publicDescription"
+                      name="publicDescription"
+                      value={formData.publicDescription}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2 pt-6">
+                        <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                        <Label htmlFor="isAvailable">Available</Label>
                     </div>
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center space-x-2">
-                            <Label htmlFor="isAvailable">Available</Label>
-                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                    <div className="flex items-center space-x-2">
+                      <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
+                      <Label htmlFor="trackInventory">Track Inventory</Label>
+                    </div>
+                     {formData.trackInventory && (
+                        <div className="flex items-center space-x-2">
+                            <Label htmlFor="alertLevel">Alert Level</Label>
+                            <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
                         </div>
-                          <div className="flex items-center space-x-2">
-                            <Label htmlFor="trackInventory">Track Inventory</Label>
-                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
-                          </div>
-                        </div>
+                    )}
+                  </div>
+                </div>
 
-                        {formData.inventoryItemId && (
-                            <div className='space-y-2'>
-                                <Label>Linked Inventory Item</Label>
-                                {linkedInventoryItem && (
-                                    <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
-                                        <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
-                                        <Badge variant="secondary">Auto-linked</Badge>
-                                    </div>
-                                )}
-                                {formError && (
-                                     <Alert variant="destructive" className="p-2">
-                                        <div className="flex items-center gap-2">
-                                            <AlertCircle className="h-4 w-4" />
-                                            <AlertDescription className="text-xs">
-                                                {formError}
-                                            </AlertDescription>
-                                        </div>
-                                    </Alert>
-                                )}
+                {formData.inventoryItemId && (
+                    <div className='space-y-2'>
+                        <Label>Linked Inventory Item</Label>
+                        {linkedInventoryItem && (
+                            <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
+                                <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
+                                <Badge variant="secondary">Auto-linked</Badge>
                             </div>
                         )}
-
-                        {formData.trackInventory && (
-                            <div className="flex items-center space-x-2">
-                                <Label htmlFor="alertLevel">Alert Level</Label>
-                                <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
-                            </div>
+                        {formError && (
+                             <Alert variant="destructive" className="p-2">
+                                <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription className="text-xs">
+                                        {formError}
+                                    </AlertDescription>
+                                </div>
+                            </Alert>
                         )}
-
                         {formData.trackInventory && !formError && (
                             <Alert>
                                 <AlertDescription>
@@ -728,7 +729,7 @@ export default function MenuPage() {
                             </Alert>
                         )}
                     </div>
-                </div>
+                )}
                  
               </div>
               <DialogFooter className="flex-row justify-end gap-2">
