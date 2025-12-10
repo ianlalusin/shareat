@@ -638,46 +638,63 @@ export default function MenuPage() {
                     </div>
                 </div>
                  
-                 <div className="space-y-4 rounded-lg border p-4">
-                    <div className="grid grid-cols-2 gap-4">
+                 <div className="grid md:grid-cols-2 gap-6 rounded-lg border p-4">
+                    <div className='space-y-4'>
                         <div className="flex items-center space-x-2">
                            <Switch id="is_refillable" name="is_refillable" checked={formData.is_refillable} onCheckedChange={(c) => handleSwitchChange('is_refillable', c)} />
                            <Label htmlFor="is_refillable">Is Refillable?</Label>
                         </div>
+                        {formData.is_refillable && (
+                            <div className="space-y-2 pl-2">
+                                <Label htmlFor="allowed_refills">Allowed Refills</Label>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between">
+                                        <span>{getSelectedRefillNames()}</span>
+                                        <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: refillOptions.map(r => r.item)}))}>Select All</DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: []}))}>Select None</DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        {refillOptions.map(option => (
+                                            <DropdownMenuCheckboxItem
+                                                key={option.id}
+                                                checked={formData.allowed_refills.includes(option.item)}
+                                                onSelect={(e) => e.preventDefault()}
+                                                onClick={() => handleAllowedRefillsChange(option.item)}
+                                            >
+                                                {option.item}
+                                            </DropdownMenuCheckboxItem>
+                                        ))}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                 <p className="text-xs text-muted-foreground">Select which items from the 'refill' collection can be requested for this menu item.</p>
+                            </div>
+                        )}
+                    </div>
+                    <div className='space-y-4'>
                          <div className="flex items-center space-x-2">
                             <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
                             <Label htmlFor="trackInventory">Track Inventory</Label>
                         </div>
+                        {formData.trackInventory && (
+                            <div className="space-y-2 pl-2">
+                                <Label htmlFor="alertLevel">Low Stock Alert Level</Label>
+                                <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-full" />
+                                <div className='space-y-1 pt-2'>
+                                  <Label>Linked Inventory Item</Label>
+                                  {linkedInventoryItem && (
+                                    <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
+                                        <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
+                                        <Badge variant="secondary">Auto-linked</Badge>
+                                    </div>
+                                  )}
+                                </div>
+                            </div>
+                        )}
                     </div>
-                    {formData.is_refillable && (
-                        <div className="space-y-2">
-                            <Label htmlFor="allowed_refills">Allowed Refills</Label>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="w-full justify-between">
-                                    <span>{getSelectedRefillNames()}</span>
-                                    <ChevronDown className="h-4 w-4" />
-                                </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: refillOptions.map(r => r.item)}))}>Select All</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: []}))}>Select None</DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    {refillOptions.map(option => (
-                                        <DropdownMenuCheckboxItem
-                                            key={option.id}
-                                            checked={formData.allowed_refills.includes(option.item)}
-                                            onSelect={(e) => e.preventDefault()}
-                                            onClick={() => handleAllowedRefillsChange(option.item)}
-                                        >
-                                            {option.item}
-                                        </DropdownMenuCheckboxItem>
-                                    ))}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                             <p className="text-xs text-muted-foreground">Select which items from the 'refill' collection can be requested for this menu item.</p>
-                        </div>
-                    )}
                  </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -690,47 +707,30 @@ export default function MenuPage() {
                       onChange={handleInputChange}
                     />
                   </div>
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-2 pt-6">
+                  <div className="space-y-2 pt-6">
+                    <div className="flex items-center space-x-2">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
                     </div>
-                     {formData.trackInventory && (
-                        <div className="flex items-center space-x-2">
-                            <Label htmlFor="alertLevel">Alert Level</Label>
-                            <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-24" />
-                        </div>
-                    )}
                   </div>
                 </div>
 
-                {formData.inventoryItemId && (
-                    <div className='space-y-2'>
-                        <Label>Linked Inventory Item</Label>
-                        {linkedInventoryItem && (
-                            <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
-                                <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
-                                <Badge variant="secondary">Auto-linked</Badge>
-                            </div>
-                        )}
-                        {formError && (
-                             <Alert variant="destructive" className="p-2">
-                                <div className="flex items-center gap-2">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription className="text-xs">
-                                        {formError}
-                                    </AlertDescription>
-                                </div>
-                            </Alert>
-                        )}
-                        {formData.trackInventory && !formError && (
-                            <Alert>
-                                <AlertDescription>
-                                    Cost, Barcode, and Unit are now locked to the linked inventory item. Low stock alerts will be triggered when the quantity in stock reaches the alert level.
-                                </AlertDescription>
-                            </Alert>
-                        )}
-                    </div>
+                {formError && (
+                    <Alert variant="destructive" className="p-2">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription className="text-xs">
+                                {formError}
+                            </AlertDescription>
+                        </div>
+                    </Alert>
+                )}
+                 {formData.trackInventory && !formError && (
+                    <Alert>
+                        <AlertDescription>
+                            Cost, Barcode, and Unit are now locked to the linked inventory item. Low stock alerts will be triggered when the quantity in stock reaches the alert level.
+                        </AlertDescription>
+                    </Alert>
                 )}
                  
               </div>
