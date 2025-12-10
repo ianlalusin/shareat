@@ -289,7 +289,7 @@ export default function NewStorePage() {
                                 {tag.item}
                             </Button>
                             ))}
-                             {storeTags.length === 0 && <p className='text-sm text-muted-foreground'>No tags found. Add them in G.List.</p>}
+                             {storeTags.length === 0 && <p className='text-sm text-muted-foreground'>No tags found. Add them in Global Collections.</p>}
                         </div>
                     </div>
                      <div className="space-y-2">
@@ -315,7 +315,7 @@ export default function NewStorePage() {
                                 {mop.item}
                             </Button>
                             ))}
-                             {mopOptions.length === 0 && <p className='text-sm text-muted-foreground'>No MOPs found. Add them in G.List.</p>}
+                             {mopOptions.length === 0 && <p className='text-sm text-muted-foreground'>No MOPs found. Add them in Global Collections.</p>}
                         </div>
                     </div>
                 </div>
@@ -331,3 +331,4 @@ export default function NewStorePage() {
     </main>
   );
 }
+
