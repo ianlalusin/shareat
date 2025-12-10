@@ -29,7 +29,7 @@ export function SuccessConfirm() {
 
   return (
     <Dialog open={isSuccessModalOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xs p-6 sm:p-8 bg-background/90 backdrop-blur-sm border-none shadow-2xl">
+      <DialogContent className="sm:max-w-xs p-6 sm:p-8 bg-background border-none shadow-2xl">
         <DialogHeader>
           <DialogTitle className="sr-only">Success</DialogTitle>
         </DialogHeader>
