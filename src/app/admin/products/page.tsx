@@ -92,8 +92,6 @@ export default function ProductsPage() {
   const [formData, setFormData] = useState<Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'>>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ defaultCost: string; defaultPrice: string }>({ defaultCost: '', defaultPrice: '' });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   
   const firestore = useFirestore();
   const auth = useAuth();
@@ -249,16 +247,10 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteRequest = (e: React.MouseEvent, itemId: string) => {
-    e.stopPropagation();
-    setItemToDelete(itemId);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const executeDelete = async () => {
-    if (!firestore || !itemToDelete) return;
+  const handleDelete = async (itemId: string) => {
+    if (!firestore) return;
     try {
-      await deleteDoc(doc(firestore, 'products', itemToDelete));
+      await deleteDoc(doc(firestore, 'products', itemId));
       toast({
         title: "Success!",
         description: "The product has been deleted.",
@@ -270,9 +262,6 @@ export default function ProductsPage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete the product. Please try again.",
       });
-    } finally {
-        setItemToDelete(null);
-        setIsDeleteDialogOpen(false);
     }
   };
 
@@ -488,7 +477,7 @@ export default function ProductsPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={(e) => handleDeleteRequest(e, item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -504,22 +493,7 @@ export default function ProductsPage() {
         ))}
       </Accordion>
       
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-            <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete this product.
-            </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={executeDelete} className="bg-destructive hover:bg-destructive/90">Continue</AlertDialogAction>
-            </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       </main>
   );
 }
 
-    

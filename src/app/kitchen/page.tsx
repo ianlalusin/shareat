@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -17,7 +18,7 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Order, OrderItem, RefillItem } from '@/lib/types';
+import { Order, OrderItem, RefillItem, GListItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
@@ -26,6 +27,9 @@ export default function KitchenPage() {
   const [ordersById, setOrdersById] = useState<Record<string, Order>>({});
   const [orderItems, setOrderItems] = useState<KitchenItem[]>([]);
   const [refillItems, setRefillItems] = useState<KitchenItem[]>([]);
+  const [storeStations, setStoreStations] = useState<GListItem[]>([]);
+  const [activeTab, setActiveTab] = useState<string | undefined>();
+  
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -33,8 +37,26 @@ export default function KitchenPage() {
   useEffect(() => {
     if (!firestore || !selectedStoreId) {
       setOrdersById({});
+      setStoreStations([]);
+      setActiveTab(undefined);
       return;
     }
+
+    const stationsQuery = query(
+      collection(firestore, 'lists'),
+      where('category', '==', 'store stations'),
+      where('is_active', '==', true),
+      where('storeIds', 'array-contains', selectedStoreId)
+    );
+    const unsubStations = onSnapshot(stationsQuery, (snapshot) => {
+        const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem);
+        setStoreStations(stationData);
+        if (stationData.length > 0 && !activeTab) {
+            setActiveTab(stationData[0].item);
+        } else if (stationData.length === 0) {
+            setActiveTab(undefined);
+        }
+    });
 
     const ordersQuery = query(
       collection(firestore, 'orders'),
@@ -50,7 +72,10 @@ export default function KitchenPage() {
       setOrdersById(map);
     });
 
-    return () => unsubscribe();
+    return () => {
+        unsubStations();
+        unsubscribe();
+    };
   }, [firestore, selectedStoreId]);
 
   useEffect(() => {
@@ -143,28 +168,15 @@ export default function KitchenPage() {
       );
     });
   }, [kitchenItems, ordersById]);
-
-  const hotGroups = useMemo(
-    () =>
-      groupedByOrder
+  
+  const getGroupsForStation = (station: string) => {
+      return groupedByOrder
         .map((group) => ({
           ...group,
-          items: group.items.filter((i) => i.targetStation === 'Hot'),
+          items: group.items.filter((i) => i.targetStation === station),
         }))
-        .filter((g) => g.items.length > 0),
-    [groupedByOrder]
-  );
-
-  const coldGroups = useMemo(
-    () =>
-      groupedByOrder
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((i) => i.targetStation === 'Cold'),
-        }))
-        .filter((g) => g.items.length > 0),
-    [groupedByOrder]
-  );
+        .filter((g) => g.items.length > 0);
+  }
   
   const handleServeItem = async (item: KitchenItem) => {
     if (!firestore) return;
@@ -214,47 +226,38 @@ export default function KitchenPage() {
   }
 
   return (
-    <Tabs defaultValue="hot" className="flex flex-col flex-1">
-      <TabsList className="grid w-full grid-cols-2">
-        <TabsTrigger value="hot">Hot Station</TabsTrigger>
-        <TabsTrigger value="cold">Cold Station</TabsTrigger>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
+      <TabsList>
+        {storeStations.map(station => (
+            <TabsTrigger key={station.id} value={station.item}>{station.item}</TabsTrigger>
+        ))}
+        {storeStations.length === 0 && (
+            <div className="text-sm text-muted-foreground p-2">No kitchen stations configured for this store.</div>
+        )}
       </TabsList>
-      <TabsContent value="hot" className="flex-1 mt-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {hotGroups.map((group) => (
-            <KitchenOrderCard
-              key={group.orderId}
-              order={group.order}
-              items={group.items}
-              onServeItem={handleServeItem}
-              onServeAll={() => handleServeAll(group.items)}
-            />
-          ))}
-          {hotGroups.length === 0 && (
-            <p className="text-muted-foreground col-span-full text-center">
-              No pending items for the hot station.
-            </p>
-          )}
-        </div>
-      </TabsContent>
-      <TabsContent value="cold" className="flex-1 mt-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {coldGroups.map((group, index) => (
-            <KitchenOrderCard
-              key={group.order?.id ?? group.orderId ?? `cold-${index}`}
-              order={group.order}
-              items={group.items}
-              onServeItem={handleServeItem}
-              onServeAll={() => handleServeAll(group.items)}
-            />
-          ))}
-          {coldGroups.length === 0 && (
-            <p className="text-muted-foreground col-span-full text-center">
-              No pending items for the cold station.
-            </p>
-          )}
-        </div>
-      </TabsContent>
+      {storeStations.map(station => {
+          const stationGroups = getGroupsForStation(station.item);
+          return (
+            <TabsContent key={station.id} value={station.item} className="flex-1 mt-6">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {stationGroups.map((group) => (
+                    <KitchenOrderCard
+                    key={group.orderId}
+                    order={group.order}
+                    items={group.items}
+                    onServeItem={handleServeItem}
+                    onServeAll={() => handleServeAll(group.items)}
+                    />
+                ))}
+                {stationGroups.length === 0 && (
+                    <p className="text-muted-foreground col-span-full text-center">
+                    No pending items for the {station.item} station.
+                    </p>
+                )}
+                </div>
+            </TabsContent>
+          )
+      })}
     </Tabs>
   );
 }

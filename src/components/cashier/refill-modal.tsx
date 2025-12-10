@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -40,6 +41,7 @@ interface RefillCartItem {
     flavor: string;
     quantity: number;
     note?: string;
+    targetStation?: string;
 }
 
 interface CartItem extends MenuItem {
@@ -159,6 +161,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
             return;
         }
 
+        const refillMenuItem = menu.find(m => m.menuName.toLowerCase().includes(meatType.toLowerCase()));
+
         setRefillCart(prev => {
             let updatedCart = [...prev];
             selection.flavors.forEach(flavor => {
@@ -169,7 +173,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                         quantity: updatedCart[existingIndex].quantity + 1
                     };
                 } else {
-                    updatedCart.push({ meatType, flavor, quantity: 1, note: '' });
+                    updatedCart.push({ meatType, flavor, quantity: 1, note: '', targetStation: refillMenuItem?.targetStation });
                 }
             });
             return updatedCart;

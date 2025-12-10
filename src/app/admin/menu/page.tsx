@@ -99,6 +99,7 @@ export default function MenuPage() {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<GListItem[]>([]);
   const [taxRates, setTaxRates] = useState<GListItem[]>([]);
+  const [storeStations, setStoreStations] = useState<GListItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -167,6 +168,8 @@ export default function MenuPage() {
       });
     
       let taxRateUnsubscribe = () => {};
+      let storeStationsUnsubscribe = () => {};
+
       if (selectedStoreId) {
         const taxRateQuery = query(
           collection(firestore, 'lists'),
@@ -178,13 +181,27 @@ export default function MenuPage() {
           const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
           setTaxRates(taxRateData);
         });
+
+        const storeStationsQuery = query(
+            collection(firestore, 'lists'),
+            where('category', '==', 'store stations'),
+            where('is_active', '==', true),
+            where('storeIds', 'array-contains', selectedStoreId)
+        );
+        storeStationsUnsubscribe = onSnapshot(storeStationsQuery, (snapshot) => {
+            const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem[]);
+            setStoreStations(stationData);
+        });
+
       } else {
         setTaxRates([]);
+        setStoreStations([]);
       }
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
+        storeStationsUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
@@ -535,22 +552,13 @@ export default function MenuPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="targetStation">Target Station</Label>
-                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)} required>
-                      <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Hot">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-orange-500" />
-                            Hot
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="Cold">
-                           <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-blue-500" />
-                            Cold
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
+                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                        <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
+                        <SelectContent>
+                            {storeStations.length > 0 ? storeStations.map(station => (
+                                <SelectItem key={station.id} value={station.item}>{station.item}</SelectItem>
+                            )) : <SelectItem value="no-stations" disabled>No stations for this store</SelectItem>}
+                        </SelectContent>
                     </Select>
                   </div>
                     <div className="space-y-2">
@@ -764,5 +772,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
-    
