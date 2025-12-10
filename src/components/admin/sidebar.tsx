@@ -25,6 +25,7 @@ import {
   Warehouse,
   Receipt,
   MailCheck,
+  List,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -40,6 +41,7 @@ const menuItems = [
   { href: "/admin/inventory", label: "Inventory", icon: Warehouse },
   { href: "/admin/menu", label: "Menu", icon: BookMarked },
   { href: "/admin/reports/sales", label: "Sales Report", icon: AreaChart },
+  { href: "/admin/collections", label: "Collections", icon: List },
   { href: "/admin/global-collections", label: "Global Collections", icon: ListChecks },
   { href: "#maintenance", label: "Maintenance", icon: Wrench },
 ];
