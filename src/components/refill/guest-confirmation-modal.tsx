@@ -67,7 +67,7 @@ export function GuestConfirmationModal({
         <DialogHeader>
           <DialogTitle>Confirm Guests for {order.tableName}</DialogTitle>
           <DialogDescription>
-            Verify the number of guests at the table. The higher count between cashier and server will be used.
+            Verify the number of guests at the table and their order.
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 space-y-4">
