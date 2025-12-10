@@ -180,7 +180,7 @@ export default function CashierPage() {
             isRefill: true,
             timestamp: serverTimestamp() as any,
             status: 'Pending',
-            targetStation: 'Hot',
+            targetStation: orderData.selectedPackage.targetStation,
             sourceTag: 'initial',
           };
           const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));

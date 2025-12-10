@@ -88,11 +88,12 @@ export function KitchenOrderCard({
             <div className="flex flex-col">
               <span className="font-semibold text-sm">
                 {item.quantity}x {item.menuName}
+                {item.sourceTag === 'initial' && order?.selectedFlavors && ` (${order.selectedFlavors.join(', ')})`}
               </span>
 
               {'kitchenNote' in item && (item as any).kitchenNote && (
                 <span className="text-xs text-muted-foreground">
-                  {(item as any).kitchenNote}
+                  Note: {(item as any).kitchenNote}
                 </span>
               )}
 
