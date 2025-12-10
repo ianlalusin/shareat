@@ -78,7 +78,7 @@ export default function NewStorePage() {
       
       const mopQuery = query(
         collection(firestore, 'lists'),
-        where('category', '==', 'MOP'),
+        where('category', '==', 'Mode of Payment'),
         where('is_active', '==', true)
       );
       const mopUnsubscribe = onSnapshot(mopQuery, (snapshot) => {
