@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -84,7 +83,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         return menu.find(m => m.menuName === order.packageName && m.category === 'Unlimited');
     }, [order, menu]);
     
-    const meatTypesForPackage = useMemo(() => packageDetails?.specialTags || [], [packageDetails]);
+    const meatTypesForPackage = useMemo(() => packageDetails?.allowed_refills || [], [packageDetails]);
 
     useEffect(() => {
         if (firestore && order.storeId) {
