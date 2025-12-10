@@ -163,7 +163,8 @@ export default function CollectionsPage() {
     setIsItemModalOpen(true);
   };
   
-  const handleDelete = async (itemId: string) => {
+  const handleDelete = async (e: React.MouseEvent, itemId: string) => {
+    e.stopPropagation();
     if (!firestore) return;
     if (!window.confirm('Are you sure you want to delete this?')) return;
     try {
@@ -249,7 +250,7 @@ export default function CollectionsPage() {
                     </TableHeader>
                     <TableBody>
                     {groupedItems[category].map((item) => (
-                        <TableRow key={item.id}>
+                        <TableRow key={item.id} onClick={() => handleEditItem(item)} className="cursor-pointer">
                         <TableCell>{item.item}</TableCell>
                         <TableCell>
                             <div className="flex flex-wrap gap-1">
@@ -265,8 +266,8 @@ export default function CollectionsPage() {
                         </TableCell>
                         <TableCell>
                             <div className="flex items-center gap-1">
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditItem(item)}><Pencil className="h-4 w-4" /></Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleEditItem(item);}}><Pencil className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => handleDelete(e, item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                             </div>
                         </TableCell>
                         </TableRow>
