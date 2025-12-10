@@ -330,9 +330,6 @@ export default function MenuPage() {
 
   const handleSwitchChange = (name: string, checked: boolean) => {
     const newFormData = { ...formData, [name]: checked };
-    if (name === 'trackInventory' && !checked) {
-        newFormData.inventoryItemId = null;
-    }
     if (name === 'is_refillable' && !checked) {
         newFormData.allowed_refills = [];
     }
