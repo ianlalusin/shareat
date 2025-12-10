@@ -23,6 +23,7 @@ export type CollectionItem = {
   id: string;
   item: string;
   category: string;
+  subCategory?: string;
   is_active: boolean;
   storeIds: string[];
 };

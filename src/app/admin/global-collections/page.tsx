@@ -58,6 +58,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 const initialItemState: Omit<CollectionItem, 'id'> = {
   item: '',
   category: '',
+  subCategory: '',
   is_active: true,
   storeIds: [],
 };
@@ -170,6 +171,7 @@ export default function GlobalCollectionsPage() {
     setItemFormData({
       item: item.item,
       category: item.category,
+      subCategory: item.subCategory || '',
       is_active: item.is_active,
       storeIds: item.storeIds || [],
     });
@@ -318,6 +320,7 @@ export default function GlobalCollectionsPage() {
                         <TableHeader>
                         <TableRow>
                             <TableHead>Item</TableHead>
+                            <TableHead>Sub-category</TableHead>
                             <TableHead>Assigned Stores</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="w-24">Actions</TableHead>
@@ -327,6 +330,7 @@ export default function GlobalCollectionsPage() {
                         {groupedItems[category].map((item) => (
                             <TableRow key={item.id}>
                             <TableCell>{item.item}</TableCell>
+                            <TableCell>{item.subCategory}</TableCell>
                             <TableCell>
                                 <div className="flex flex-wrap gap-1">
                                 {item.storeIds?.map(id => (
@@ -410,7 +414,7 @@ export default function GlobalCollectionsPage() {
 
       {/* Item Modal */}
       <Dialog open={isItemModalOpen} onOpenChange={handleItemModalOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
             <DialogHeader>
             <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
             </DialogHeader>
@@ -446,9 +450,15 @@ export default function GlobalCollectionsPage() {
                 <Label htmlFor="item">Item</Label>
                 <Input id="item" name="item" value={itemFormData.item} onChange={handleItemInputChange} required />
                 </div>
-                <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Input id="category" name="category" value={itemFormData.category} onChange={handleItemInputChange} required />
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="category">Category</Label>
+                        <Input id="category" name="category" value={itemFormData.category} onChange={handleItemInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="subCategory">Sub-category</Label>
+                        <Input id="subCategory" name="subCategory" value={itemFormData.subCategory} onChange={handleItemInputChange} />
+                    </div>
                 </div>
                 <div className="flex items-center space-x-2">
                 <Switch id="is_active" name="is_active" checked={itemFormData.is_active} onCheckedChange={handleItemSwitchChange} />
@@ -515,5 +525,3 @@ export default function GlobalCollectionsPage() {
       </main>
   );
 }
-
-    
