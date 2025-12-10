@@ -256,7 +256,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
                 <DialogHeader className='p-4 pb-0 sm:p-0'>
-                    <DialogTitle>Refill / Add-on for Table {table.tableName}</DialogTitle>
+                    <DialogTitle>Refill / Add-on: {table.tableName}</DialogTitle>
                     <DialogDescription>
                         Customer: {order.customerName} | Package: {order.packageName}
                     </DialogDescription>
@@ -476,6 +476,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
 
 
 

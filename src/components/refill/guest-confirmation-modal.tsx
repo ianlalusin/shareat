@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -65,7 +66,7 @@ export function GuestConfirmationModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirm Guests for {order.tableName}</DialogTitle>
+          <DialogTitle>Confirm Guests: {order.tableName}</DialogTitle>
           <DialogDescription>
             Verify the number of guests at the table and their order.
           </DialogDescription>
