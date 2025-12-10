@@ -22,6 +22,7 @@ import { Order, OrderItem, RefillItem, GListItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
+import { cn } from '@/lib/utils';
 
 export default function KitchenPage() {
   const [ordersById, setOrdersById] = useState<Record<string, Order>>({});
@@ -227,7 +228,7 @@ export default function KitchenPage() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
-      <TabsList>
+      <TabsList className="h-auto flex-wrap">
         {storeStations.map(station => (
             <TabsTrigger key={station.id} value={station.item}>{station.item}</TabsTrigger>
         ))}
