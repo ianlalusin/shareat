@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useFirestore } from '@/firebase';
 import {
@@ -79,27 +79,7 @@ export default function SalesReportPage() {
   }, [firestore]);
 
 
-  useEffect(() => {
-    if (firestore && selectedStoreId) {
-      // Listener for active orders - not tied to date range
-      const activeOrdersQuery = query(
-        collection(firestore, 'orders'), 
-        where('storeId', '==', selectedStoreId),
-        where('status', '==', 'Active')
-      );
-      const activeUnsubscribe = onSnapshot(activeOrdersQuery, (snapshot) => {
-        setActiveOrders(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order));
-      });
-
-      // Initial report generation
-      handleGenerateReport();
-
-      return () => activeUnsubscribe();
-    }
-  }, [firestore, selectedStoreId]);
-
-
-  const handleGenerateReport = async () => {
+  const fetchData = useCallback(async () => {
     if (!firestore || !dateRange || !dateRange.from || !dateRange.to || !selectedStoreId) {
       setError('Please select a store and a valid date range.');
       return;
@@ -182,7 +162,29 @@ export default function SalesReportPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [firestore, dateRange, selectedStoreId]);
+
+
+  useEffect(() => {
+    if (firestore && selectedStoreId) {
+      // Listener for active orders - not tied to date range
+      const activeOrdersQuery = query(
+        collection(firestore, 'orders'), 
+        where('storeId', '==', selectedStoreId),
+        where('status', '==', 'Active')
+      );
+      const activeUnsubscribe = onSnapshot(activeOrdersQuery, (snapshot) => {
+        setActiveOrders(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as Order));
+      });
+      
+      return () => activeUnsubscribe();
+    }
+  }, [firestore, selectedStoreId]);
+
+  useEffect(() => {
+      fetchData();
+  }, [selectedStoreId, fetchData]);
+
 
   const totalRevenue = transactions.filter(t => t.type === 'Payment').reduce((sum, item) => sum + item.amount, 0);
   const totalReceipts = completedOrders.length;
@@ -236,7 +238,7 @@ export default function SalesReportPage() {
         </h1>
         <div className="flex items-center justify-end gap-2">
             <DateRangePicker value={dateRange} onUpdate={setDateRange} />
-            <Button onClick={handleGenerateReport} disabled={loading}>
+            <Button onClick={fetchData} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Generate Report
             </Button>
