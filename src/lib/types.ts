@@ -147,6 +147,8 @@ export type MenuItem = {
   specialTags: string[];
   productId?: string | null;
   unit: string;
+  is_refillable: boolean;
+  allowed_refills: string[];
 };
 
 export type Table = {

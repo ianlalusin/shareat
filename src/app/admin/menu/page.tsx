@@ -22,7 +22,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle, Image as ImageIcon, ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -30,6 +30,8 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { useFirestore, useStorage } from '@/firebase';
 import {
@@ -89,6 +91,8 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   alertLevel: 0,
   specialTags: [],
   productId: null,
+  is_refillable: false,
+  allowed_refills: [],
 };
 
 
@@ -100,6 +104,7 @@ export default function MenuPage() {
   const [availabilityOptions, setAvailabilityOptions] = useState<CollectionItem[]>([]);
   const [taxRates, setTaxRates] = useState<CollectionItem[]>([]);
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
+  const [refillOptions, setRefillOptions] = useState<CollectionItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -169,6 +174,7 @@ export default function MenuPage() {
     
       let taxRateUnsubscribe = () => {};
       let storeStationsUnsubscribe = () => {};
+      let refillOptionsUnsubscribe = () => {};
 
       if (selectedStoreId) {
         const taxRateQuery = query(
@@ -192,16 +198,29 @@ export default function MenuPage() {
             const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
             setStoreStations(stationData);
         });
+        
+        const refillOptionsQuery = query(
+            collection(firestore, 'lists'),
+            where('category', '==', 'refill'),
+            where('is_active', '==', true),
+            where('storeIds', 'array-contains', selectedStoreId)
+        );
+        refillOptionsUnsubscribe = onSnapshot(refillOptionsQuery, (snapshot) => {
+            const refillData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+            setRefillOptions(refillData);
+        });
 
       } else {
         setTaxRates([]);
         setStoreStations([]);
+        setRefillOptions([]);
       }
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
         storeStationsUnsubscribe();
+        refillOptionsUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
@@ -314,8 +333,27 @@ export default function MenuPage() {
     if (name === 'trackInventory' && !checked) {
         newFormData.inventoryItemId = null;
     }
+    if (name === 'is_refillable' && !checked) {
+        newFormData.allowed_refills = [];
+    }
     setFormData(newFormData);
   }
+  
+  const handleAllowedRefillsChange = (refillItem: string) => {
+    setFormData((prev) => {
+      const newAllowedRefills = prev.allowed_refills.includes(refillItem)
+        ? prev.allowed_refills.filter(id => id !== refillItem)
+        : [...prev.allowed_refills, refillItem];
+      return { ...prev, allowed_refills: newAllowedRefills };
+    });
+  };
+
+  const getSelectedRefillNames = () => {
+    if (formData.allowed_refills.length === 0) return "Select allowed refills";
+    if (formData.allowed_refills.length === refillOptions.length) return "All refills selected";
+    if (formData.allowed_refills.length > 2) return `${formData.allowed_refills.length} refills selected`;
+    return formData.allowed_refills.join(', ');
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -359,6 +397,7 @@ export default function MenuPage() {
         ...initialItemState,
         ...item,
         specialTags: item.specialTags || [],
+        allowed_refills: item.allowed_refills || [],
     });
     setDisplayValues({
         cost: formatCurrency(item.cost),
@@ -598,6 +637,42 @@ export default function MenuPage() {
                       <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
                 </div>
+                 
+                 <div className="space-y-4 rounded-lg border p-4">
+                     <div className="flex items-center space-x-2">
+                        <Switch id="is_refillable" name="is_refillable" checked={formData.is_refillable} onCheckedChange={(c) => handleSwitchChange('is_refillable', c)} />
+                        <Label htmlFor="is_refillable">Is Refillable?</Label>
+                    </div>
+                    {formData.is_refillable && (
+                        <div className="space-y-2 pl-6">
+                            <Label htmlFor="allowed_refills">Allowed Refills</Label>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="w-full justify-between">
+                                    <span>{getSelectedRefillNames()}</span>
+                                    <ChevronDown className="h-4 w-4" />
+                                </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: refillOptions.map(r => r.item)}))}>Select All</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: []}))}>Select None</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {refillOptions.map(option => (
+                                        <DropdownMenuCheckboxItem
+                                            key={option.id}
+                                            checked={formData.allowed_refills.includes(option.item)}
+                                            onSelect={(e) => e.preventDefault()}
+                                            onClick={() => handleAllowedRefillsChange(option.item)}
+                                        >
+                                            {option.item}
+                                        </DropdownMenuCheckboxItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                             <p className="text-xs text-muted-foreground">Select which items from the 'refill' collection can be requested for this menu item.</p>
+                        </div>
+                    )}
+                 </div>
 
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="space-y-2">
@@ -698,12 +773,10 @@ export default function MenuPage() {
                         <TableRow>
                           <TableHead className="p-2 h-10 w-16"></TableHead>
                           <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
-                          <TableHead className="px-2 h-10 text-xs">Availability</TableHead>
                           <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
-                          <TableHead className="px-2 h-10 text-xs text-right">Cost</TableHead>
                           <TableHead className="px-2 h-10 text-xs text-right">Price</TableHead>
-                          <TableHead className="px-2 h-10 text-xs text-right">Profit %</TableHead>
-                          <TableHead className="px-2 h-10 text-xs">Barcode</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Refillable?</TableHead>
+                          <TableHead className="px-2 h-10 text-xs">Allowed Refills</TableHead>
                           <TableHead className="px-2 h-10 text-xs">Status</TableHead>
                           <TableHead className="px-2 h-10 text-xs">
                             <span className="sr-only">Actions</span>
@@ -723,16 +796,14 @@ export default function MenuPage() {
                                   </div>
                               </TableCell>
                               <TableCell className="p-2 text-xs">{item.menuName}</TableCell>
-                              <TableCell className="p-2 text-xs">
-                                <Badge variant="outline" className="mr-1 mb-1 whitespace-nowrap">
-                                  {(item.availability || 'Always').substring(0, 6)}{(item.availability && item.availability.length > 6) ? '...' : ''}
-                                </Badge>
-                              </TableCell>
                               <TableCell className="p-2 capitalize text-xs">{item.targetStation}</TableCell>
-                              <TableCell className="p-2 text-right text-xs">{formatCurrency(item.cost)}</TableCell>
                               <TableCell className="p-2 text-right text-xs">{formatCurrency(item.price)}</TableCell>
-                              <TableCell className="p-2 text-right text-xs">{calculateProfit(item.cost, item.price)}</TableCell>
-                              <TableCell className="p-2 text-xs">{item.barcode}</TableCell>
+                              <TableCell className="p-2 text-xs">{item.is_refillable ? 'Yes' : 'No'}</TableCell>
+                              <TableCell className="p-2 text-xs">
+                                <div className="flex flex-wrap gap-1">
+                                {(item.allowed_refills || []).map(refill => <Badge key={refill} variant="outline">{refill}</Badge>)}
+                                </div>
+                              </TableCell>
                               <TableCell className="p-2 text-xs" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex flex-col items-center gap-1">
                                   <Switch
