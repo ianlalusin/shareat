@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -270,7 +271,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     
                     <TabsContent value="refill" className="flex-1 overflow-hidden p-1">
                         <div className="grid grid-cols-2 gap-6 h-full pt-2">
-                            <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-4 h-full">
                                 <h3 className="font-semibold">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
                                     <div className="p-4 space-y-4">
