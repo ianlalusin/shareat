@@ -14,7 +14,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TableCard } from '@/components/cashier/table-card';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { PendingItemsModal } from '@/components/cashier/pending-items-modal';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,12 +32,10 @@ export default function CashierPage() {
 
     const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-    const [isPendingItemsModalOpen, setIsPendingItemsModalOpen] = useState(false);
     const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
 
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-    const [pendingItemsForOrder, setPendingItemsForOrder] = useState<any[]>([]);
     
     const firestore = useFirestore();
     const router = useRouter();
@@ -329,15 +326,6 @@ export default function CashierPage() {
           isOpen={isDetailsModalOpen}
           onClose={() => setIsDetailsModalOpen(false)}
           order={selectedOrder}
-        />
-      )}
-
-      {isPendingItemsModalOpen && selectedOrder && (
-        <PendingItemsModal
-            isOpen={isPendingItemsModalOpen}
-            onClose={() => setIsPendingItemsModalOpen(false)}
-            order={selectedOrder}
-            pendingItems={pendingItemsForOrder}
         />
       )}
     </>

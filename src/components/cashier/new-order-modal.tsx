@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PlusCircle, Minus, Plus, ChevronDown, Loader2 } from 'lucide-react';
-import { Table as TableType, MenuItem, Order, OrderItem, GListItem } from '@/lib/types';
+import { Table as TableType, MenuItem, Order, OrderItem, collectionItem } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -47,7 +47,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
     const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
-    const [flavorOptions, setFlavorOptions] = useState<GListItem[]>([]);
+    const [flavorOptions, setFlavorOptions] = useState<collectionItem[]>([]);
     const [kitchenNote, setKitchenNote] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
             where('storeIds', 'array-contains', storeId)
         );
         const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
-            const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as GListItem);
+            const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as collectionItem);
             setFlavorOptions(flavors);
         });
         return () => unsubscribe();
