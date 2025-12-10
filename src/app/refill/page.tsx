@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc, runTransaction, limit, getDocs, collectionGroup } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
@@ -40,7 +40,8 @@ export default function RefillPage() {
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-    
+    const [activeTab, setActiveTab] = useState('active');
+
     const firestore = useFirestore();
     const { user } = useAuthContext();
     const { selectedStoreId } = useStoreSelector();
@@ -258,6 +259,21 @@ export default function RefillPage() {
         }));
     }, [tables, orders]);
     
+    // Effect to auto-switch tabs
+    const prevPendingCountRef = useRef(pendingConfirmationOrders.length);
+    useEffect(() => {
+        const currentPendingCount = pendingConfirmationOrders.length;
+        // Check if a new order has arrived
+        if (currentPendingCount > prevPendingCountRef.current) {
+            // Only switch tabs if no modals are open
+            if (!isRefillModalOpen && !isConfirmModalOpen) {
+                setActiveTab('waiting');
+            }
+        }
+        // Update the ref for the next render
+        prevPendingCountRef.current = currentPendingCount;
+    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen]);
+
     if (!selectedStoreId) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-4">
@@ -272,7 +288,7 @@ export default function RefillPage() {
   return (
     <>
       <main className="flex-1 p-4">
-        <Tabs defaultValue="active" className="flex flex-col flex-1">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
             <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="waiting">Waiting for Confirmation ({pendingConfirmationOrders.length})</TabsTrigger>
                 <TabsTrigger value="active">Active Tables ({activeOrders.length})</TabsTrigger>
