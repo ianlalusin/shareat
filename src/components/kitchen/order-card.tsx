@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React from 'react';
@@ -52,7 +53,7 @@ export function KitchenOrderCard({
             <CardTitle className="text-xl font-bold">{tableLabel}</CardTitle>
             {order?.priority === 'rush' && (
               <Badge variant="destructive" className="text-[10px]">
-                RUSH
+                Priority
               </Badge>
             )}
           </div>

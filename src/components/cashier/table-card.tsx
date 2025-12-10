@@ -94,7 +94,7 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
             </CardTitle>
             {order?.priority === 'rush' && (
               <Badge variant="destructive" className="text-[10px]">
-                RUSH
+                Priority
               </Badge>
             )}
           </div>
@@ -118,7 +118,7 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
               }}
             >
               <Flame className="h-3 w-3 mr-1" />
-              {order.priority === 'rush' ? 'Rush' : 'Make Rush'}
+              {order.priority === 'rush' ? 'Priority' : 'Add to Priority'}
             </Button>
           )}
         </div>
