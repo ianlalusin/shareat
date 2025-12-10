@@ -160,6 +160,7 @@ export default function GlobalCollectionsPage() {
       handleItemModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       console.error("Save error:", error);
        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "There was a problem with your request." });
     }
   };
@@ -177,11 +178,13 @@ export default function GlobalCollectionsPage() {
   
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
+    console.log("Deleting item:", itemId); // DEBUG
     if (!window.confirm('Are you sure you want to delete this?')) return;
     try {
       await deleteDoc(doc(firestore, 'lists', itemId));
       toast({ title: "Success!", description: "The entry has been deleted." });
     } catch (error) {
+       console.error("Delete error:", error);
        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not delete. Please try again." });
     }
   };
@@ -254,6 +257,7 @@ export default function GlobalCollectionsPage() {
       handleScheduleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       console.error("Save error:", error);
        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not save schedule." });
     }
   };

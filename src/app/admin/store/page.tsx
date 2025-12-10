@@ -56,6 +56,7 @@ export default function StorePage() {
 
   const handleDelete = async (storeId: string) => {
     if (!firestore) return;
+    console.log("Deleting item:", storeId); // DEBUG
     if (!window.confirm('Are you sure you want to delete this store?')) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
@@ -64,6 +65,7 @@ export default function StorePage() {
         description: "The store has been deleted.",
       });
     } catch (error) {
+      console.error("Delete error:", error);
       toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -136,7 +138,7 @@ export default function StorePage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => handleDelete(store.id)} className="text-destructive">Delete</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(store.id); }} className="text-destructive">Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -149,3 +151,5 @@ export default function StorePage() {
       </main>
   );
 }
+
+    

@@ -327,6 +327,7 @@ export default function MenuPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+       console.error("Save error:", error);
        toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -351,10 +352,12 @@ export default function MenuPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
+    console.log("Deleting item:", itemId); // DEBUG
     try {
       await deleteDoc(doc(firestore, 'menu', itemId));
       openSuccessModal();
     } catch (error) {
+       console.error("Delete error:", error);
        toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -743,7 +746,7 @@ export default function MenuPage() {
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(item.id); }} className="text-destructive">Delete</DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -761,3 +764,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
+    

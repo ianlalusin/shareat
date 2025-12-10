@@ -168,6 +168,7 @@ export default function ProductsPage() {
             const snapshot = await uploadBytes(imageRef, imageFile);
             imageUrl = await getDownloadURL(snapshot.ref);
         } catch (error) {
+           console.error("Save error:", error);
            toast({
             variant: "destructive",
             title: "Image upload failed.",
@@ -213,6 +214,7 @@ export default function ProductsPage() {
       handleModalOpenChange(false);
       openSuccessModal();
     } catch (error) {
+      console.error("Save error:", error);
       toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -237,6 +239,7 @@ export default function ProductsPage() {
 
   const handleDelete = async (itemId: string) => {
     if (!firestore) return;
+    console.log("Deleting item:", itemId); // DEBUG
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
       await deleteDoc(doc(firestore, 'products', itemId));
@@ -245,6 +248,7 @@ export default function ProductsPage() {
         description: "The product has been deleted.",
       });
     } catch (error) {
+      console.error("Delete error:", error);
       toast({
         variant: "destructive",
         title: "Uh oh! Something went wrong.",
@@ -465,7 +469,7 @@ export default function ProductsPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(item.id); }} className="text-destructive">Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -483,3 +487,5 @@ export default function ProductsPage() {
       </main>
   );
 }
+
+    

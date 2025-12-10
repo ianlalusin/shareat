@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, MoreHorizontal, User, Lock } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
   if (!staff) return null;
@@ -72,6 +73,7 @@ export default function StaffPage() {
   const [selectedStaffForAccess, setSelectedStaffForAccess] = useState<Staff | null>(null);
   const firestore = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (firestore) {
@@ -88,10 +90,20 @@ export default function StaffPage() {
 
   const handleDelete = async (staffId: string) => {
     if (!firestore) return;
+    console.log("Deleting item:", staffId); // DEBUG
     try {
       await deleteDoc(doc(firestore, 'staff', staffId));
+       toast({
+        title: "Success!",
+        description: "The staff member has been deleted.",
+      });
     } catch (error) {
       console.error('Error deleting document: ', error);
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not delete staff member. Please try again.",
+      });
     }
   };
 
@@ -173,7 +185,7 @@ export default function StaffPage() {
                             Access
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onSelect={() => handleDelete(member.id)}
+                            onSelect={(e) => { e.preventDefault(); handleDelete(member.id); }}
                             className="text-destructive"
                           >
                             Delete
@@ -196,3 +208,5 @@ export default function StaffPage() {
     </>
   );
 }
+
+    
