@@ -274,7 +274,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                             <div className="col-span-2 flex flex-col gap-4 h-full">
                                 <h3 className="font-semibold">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
-                                    <div className="p-4 space-y-4">
+                                    <div className="p-4 grid grid-cols-2 gap-4">
                                     {meatTypesForPackage.map(meatType => (
                                         <div key={meatType} className="p-3 border rounded-lg">
                                             <p className="capitalize font-semibold text-lg mb-2">{meatType}</p>
@@ -309,7 +309,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                             </div>
                                         </div>
                                     ))}
-                                    {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4">This package has no specified meat types for refill.</p>}
+                                    {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4 col-span-2">This package has no specified meat types for refill.</p>}
                                     </div>
                                 </ScrollArea>
                             </div>
@@ -476,4 +476,5 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
 
