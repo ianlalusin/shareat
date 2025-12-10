@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
 import { Badge } from '@/components/ui/badge';
 
-const NewOrderModal = dynamic(() => import('@/components/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
+const NewOrderModal = dynamic(() => import('@/app/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
 
 
@@ -116,17 +116,17 @@ export default function CashierPage() {
         }));
     }, [tables, orders]);
     
-    const handleAvailableTableClick = (table: TableType) => {
+    const handleAvailableTableClick = useCallback((table: TableType) => {
         setSelectedTable(table);
         setIsNewOrderModalOpen(true);
-    }
+    }, []);
     
-    const handleViewOrderClick = (order: Order) => {
+    const handleViewOrderClick = useCallback((order: Order) => {
         setSelectedOrder(order);
         setIsDetailsModalOpen(true);
-    }
+    }, []);
 
-    const handleCreateOrder = async (
+    const handleCreateOrder = useCallback(async (
         table: TableType,
         orderData: {
             customerName: string;
@@ -185,9 +185,9 @@ export default function CashierPage() {
     
           transaction.update(tableRef, { status: 'Occupied', activeOrderId: newOrderRef.id, resetCounter: table.resetCounter + 1 });
         });
-    };
+    }, [firestore, user]);
 
-    const handleTogglePriority = async (order: Order) => {
+    const handleTogglePriority = useCallback(async (order: Order) => {
         if (!firestore) return;
         const orderRef = doc(firestore, 'orders', order.id);
         const newPriority = order.priority === 'rush' ? 'normal' : 'rush';
@@ -220,11 +220,11 @@ export default function CashierPage() {
                 description: 'Could not update order priority.',
             });
         }
-    };
+    }, [firestore, toast]);
 
-    const handleBillClick = (order: Order) => {
+    const handleBillClick = useCallback((order: Order) => {
         router.push(`/cashier/order/${order.id}`);
-    };
+    }, [router]);
     
     if (!selectedStoreId) {
         return (
@@ -287,9 +287,9 @@ export default function CashierPage() {
                                 key={table.id}
                                 table={table}
                                 order={order}
-                                onViewOrderClick={() => handleViewOrderClick(order)}
-                                onTogglePriority={() => handleTogglePriority(order)}
-                                onBillClick={() => handleBillClick(order)}
+                                onViewOrderClick={handleViewOrderClick}
+                                onTogglePriority={handleTogglePriority}
+                                onBillClick={handleBillClick}
                             />
                             )
                         })}
