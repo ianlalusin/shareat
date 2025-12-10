@@ -4,10 +4,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFirestore, useAuth } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import {
   collection,
-  collectionGroup,
   query,
   where,
   onSnapshot,
@@ -15,7 +14,6 @@ import {
   updateDoc,
   serverTimestamp,
   writeBatch,
-  orderBy,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Order, OrderItem, RefillItem, GListItem } from '@/lib/types';
@@ -25,9 +23,8 @@ import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
 import { cn } from '@/lib/utils';
 
 export default function KitchenPage() {
-  const [ordersById, setOrdersById] = useState<Record<string, Order>>({});
-  const [orderItems, setOrderItems] = useState<KitchenItem[]>([]);
-  const [refillItems, setRefillItems] = useState<KitchenItem[]>([]);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [kitchenItemsByOrder, setKitchenItemsByOrder] = useState<Record<string, KitchenItem[]>>({});
   const [storeStations, setStoreStations] = useState<GListItem[]>([]);
   const [activeTab, setActiveTab] = useState<string | undefined>();
   
@@ -37,8 +34,9 @@ export default function KitchenPage() {
 
   useEffect(() => {
     if (!firestore || !selectedStoreId) {
-      setOrdersById({});
       setStoreStations([]);
+      setActiveOrders([]);
+      setKitchenItemsByOrder({});
       setActiveTab(undefined);
       return;
     }
@@ -51,6 +49,7 @@ export default function KitchenPage() {
     );
     const unsubStations = onSnapshot(stationsQuery, (snapshot) => {
         const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GListItem);
+        stationData.sort((a,b) => a.item.localeCompare(b.item));
         setStoreStations(stationData);
         if (stationData.length > 0 && !activeTab) {
             setActiveTab(stationData[0].item);
@@ -59,116 +58,105 @@ export default function KitchenPage() {
         }
     });
 
+    return () => unsubStations();
+  }, [firestore, selectedStoreId]);
+
+  useEffect(() => {
+    if (!firestore || !selectedStoreId) return;
+
     const ordersQuery = query(
       collection(firestore, 'orders'),
       where('storeId', '==', selectedStoreId),
       where('status', '==', 'Active')
     );
 
-    const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
-      const map: Record<string, Order> = {};
-      snapshot.docs.forEach((docSnap) => {
-        map[docSnap.id] = { id: docSnap.id, ...(docSnap.data() as Order) };
+    const unsubOrders = onSnapshot(ordersQuery, (snapshot) => {
+      const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      setActiveOrders(orders);
+    });
+
+    return () => unsubOrders();
+  }, [firestore, selectedStoreId]);
+
+
+  useEffect(() => {
+    if (!firestore || activeOrders.length === 0) {
+        setKitchenItemsByOrder({});
+        return;
+    };
+
+    const unsubscribers = activeOrders.map(order => {
+      const orderItemsQuery = query(
+        collection(firestore, `orders/${order.id}/orderItems`),
+        where('status', '==', 'Pending')
+      );
+      const refillsQuery = query(
+        collection(firestore, `orders/${order.id}/refills`),
+        where('status', '==', 'Pending')
+      );
+
+      const unsubOrderItems = onSnapshot(orderItemsQuery, (snapshot) => {
+        const items = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...(docSnap.data() as OrderItem),
+          orderId: order.id,
+          sourceCollection: 'orderItems',
+          ref: docSnap.ref,
+        }));
+        setKitchenItemsByOrder(prev => ({
+          ...prev,
+          [order.id]: [
+            ...(prev[order.id]?.filter(i => i.sourceCollection !== 'orderItems') || []),
+            ...items,
+          ],
+        }));
       });
-      setOrdersById(map);
+
+      const unsubRefills = onSnapshot(refillsQuery, (snapshot) => {
+        const items = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...(docSnap.data() as RefillItem),
+          orderId: order.id,
+          sourceCollection: 'refills',
+          ref: docSnap.ref,
+        }));
+        setKitchenItemsByOrder(prev => ({
+          ...prev,
+          [order.id]: [
+            ...(prev[order.id]?.filter(i => i.sourceCollection !== 'refills') || []),
+            ...items,
+          ],
+        }));
+      });
+
+      return [unsubOrderItems, unsubRefills];
     });
 
     return () => {
-        unsubStations();
-        unsubscribe();
+      unsubscribers.flat().forEach(unsub => unsub());
     };
-  }, [firestore, selectedStoreId]);
+  }, [firestore, activeOrders]);
 
-  useEffect(() => {
-    if (!firestore || !selectedStoreId) {
-      setOrderItems([]);
-      return;
-    }
-    const pendingOrderItemsQuery = query(
-      collectionGroup(firestore, 'orderItems'),
-      where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Pending'),
-      orderBy('timestamp')
-    );
-    const unsubOrderItems = onSnapshot(pendingOrderItemsQuery, (snapshot) => {
-      const data: KitchenItem[] = snapshot.docs.map((docSnap) => {
-        const itemData = docSnap.data() as OrderItem;
-        const orderId = itemData.orderId;
-        return {
-          id: docSnap.id,
-          ...itemData,
-          orderId,
-          order: ordersById[orderId],
-          sourceCollection: 'orderItems',
-          ref: docSnap.ref,
-        };
-      });
-      setOrderItems(data);
-    });
-    return () => unsubOrderItems();
-  }, [firestore, selectedStoreId, ordersById]);
-
-  useEffect(() => {
-    if (!firestore || !selectedStoreId) {
-      setRefillItems([]);
-      return;
-    }
-    const pendingRefillsQuery = query(
-      collectionGroup(firestore, 'refills'),
-      where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Pending'),
-      orderBy('timestamp')
-    );
-    const unsubRefills = onSnapshot(pendingRefillsQuery, (snapshot) => {
-      const data: KitchenItem[] = snapshot.docs.map((docSnap) => {
-        const itemData = docSnap.data() as RefillItem;
-        const orderId = itemData.orderId;
-        return {
-          id: docSnap.id,
-          ...itemData,
-          orderId,
-          order: ordersById[orderId],
-          sourceCollection: 'refills',
-          ref: docSnap.ref,
-        };
-      });
-      setRefillItems(data);
-    });
-    return () => unsubRefills();
-  }, [firestore, selectedStoreId, ordersById]);
-
-  const kitchenItems: KitchenItem[] = useMemo(
-    () => [...orderItems, ...refillItems],
-    [orderItems, refillItems]
-  );
 
   const groupedByOrder = useMemo(() => {
-    const groups: {
-      [orderId: string]: { orderId: string; order?: Order; items: KitchenItem[] };
-    } = {};
+    return activeOrders
+      .map(order => ({
+        orderId: order.id,
+        order: order,
+        items: kitchenItemsByOrder[order.id] || [],
+      }))
+      .filter(group => group.items.length > 0)
+      .sort((a, b) => {
+        const pa = a.order?.priority === 'rush' ? 1 : 0;
+        const pb = b.order?.priority === 'rush' ? 1 : 0;
+        if (pa !== pb) return pb - pa;
+        return (
+          (a.order?.orderTimestamp?.toMillis?.() || 0) -
+          (b.order?.orderTimestamp?.toMillis?.() || 0)
+        );
+      });
+  }, [activeOrders, kitchenItemsByOrder]);
 
-    kitchenItems.forEach((item) => {
-      const orderId = item.orderId;
-      if (!groups[orderId]) {
-        groups[orderId] = {
-          orderId,
-          order: item.order ?? ordersById[orderId],
-          items: [],
-        };
-      }
-      groups[orderId].items.push(item);
-    });
-
-    return Object.values(groups).sort((a, b) => {
-      const pa = a.order?.priority === 'rush' ? 1 : 0;
-      const pb = b.order?.priority === 'rush' ? 1 : 0;
-      if (pa !== pb) return pb - pa;
-      return (
-        (a.order?.orderTimestamp?.toMillis?.() || 0) -
-        (b.order?.orderTimestamp?.toMillis?.() || 0)
-      );
-    });
-  }, [kitchenItems, ordersById]);
   
   const getGroupsForStation = (station: string) => {
       return groupedByOrder
@@ -228,7 +216,7 @@ export default function KitchenPage() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
-      <TabsList className="h-auto flex-wrap">
+      <TabsList className="h-auto flex-wrap justify-start">
         {storeStations.map(station => (
             <TabsTrigger key={station.id} value={station.item}>{station.item}</TabsTrigger>
         ))}
