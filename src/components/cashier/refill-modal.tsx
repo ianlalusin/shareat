@@ -218,10 +218,10 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     const cartSubtotal = useMemo(() => cart.reduce((total, item) => total + (item.price * item.quantity), 0), [cart]);
 
     const getSelectedFlavorText = (meatType: string) => {
-      const selection = refillSelections[meatType];
-      if (!selection || selection.flavors.length === 0) return 'Select up to 3 flavors';
-      if (selection.flavors.length > 2) return `${selection.flavors.length} flavors selected`;
-      return selection.flavors.join(', ');
+        const selection = refillSelections[meatType];
+        if (!selection || selection.flavors.length === 0) return 'Select up to 3 flavors';
+        const count = selection.flavors.length;
+        return `${count} flavor${count > 1 ? 's' : ''} selected`;
     }
     
     const handleSaveNote = () => {
@@ -476,6 +476,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </>
     );
 }
+
 
 
 
