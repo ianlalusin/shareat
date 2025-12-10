@@ -1,17 +1,16 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
+import { useFirestore, useAuthContext } from '@/firebase';
+import { collection, onSnapshot, query, where, getDocs, writeBatch, serverTimestamp, doc, runTransaction } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, PendingOrderUpdate } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, PendingOrderUpdate, OrderItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TableCard } from '@/components/cashier/table-card';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { PendingItemsModal } from '@/components/cashier/pending-items-modal';
 import dynamic from 'next/dynamic';
@@ -41,6 +40,7 @@ export default function CashierPage() {
     const firestore = useFirestore();
     const router = useRouter();
     const { selectedStoreId } = useStoreSelector();
+    const { user } = useAuthContext();
     const { toast } = useToast();
     
     useEffect(() => {
@@ -128,13 +128,98 @@ export default function CashierPage() {
 
     const handleCreateOrder = async (
         table: TableType,
-        orderData: any
+        orderData: {
+            customerName: string;
+            guestCount: number;
+            selectedPackage: MenuItem;
+            selectedFlavors: string[];
+            kitchenNote?: string;
+        }
     ) => {
-       // Omitted for brevity: This function is now in refill/page.tsx
+        if (!firestore || !user) {
+          throw new Error('Firestore not available');
+        }
+    
+        await runTransaction(firestore, async (transaction) => {
+          const tableRef = doc(firestore, 'tables', table.id);
+          const tableDoc = await transaction.get(tableRef);
+    
+          if (!tableDoc.exists() || tableDoc.data().status !== 'Available') {
+            throw new Error(`Table ${table.tableName} is no longer available.`);
+          }
+    
+          const newOrderRef = doc(collection(firestore, 'orders'));
+          
+          const newOrder: Omit<Order, 'id'> = {
+            storeId: table.storeId,
+            tableId: table.id,
+            tableName: table.tableName,
+            status: 'Active',
+            guestCount: orderData.guestCount,
+            customerName: orderData.customerName,
+            orderTimestamp: serverTimestamp() as any,
+            totalAmount: orderData.selectedPackage.price * orderData.guestCount,
+            packageName: orderData.selectedPackage.menuName,
+            selectedFlavors: orderData.selectedFlavors,
+            kitchenNote: orderData.kitchenNote || '',
+            priority: 'normal',
+            isServerConfirmed: false,
+          };
+          transaction.set(newOrderRef, newOrder);
+          
+          const initialItem: Omit<OrderItem, 'id'> = {
+            orderId: newOrderRef.id,
+            storeId: table.storeId,
+            menuItemId: orderData.selectedPackage.id,
+            menuName: orderData.selectedPackage.menuName,
+            quantity: orderData.guestCount,
+            priceAtOrder: orderData.selectedPackage.price,
+            isRefill: true,
+            timestamp: serverTimestamp() as any,
+            status: 'Pending',
+            targetStation: 'Hot',
+            sourceTag: 'initial',
+          };
+          const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
+          transaction.set(orderItemRef, initialItem);
+    
+          transaction.update(tableRef, { status: 'Occupied', activeOrderId: newOrderRef.id, resetCounter: table.resetCounter + 1 });
+        });
     };
 
     const handleTogglePriority = async (order: Order) => {
-      // Omitted for brevity
+        if (!firestore) return;
+        const orderRef = doc(firestore, 'orders', order.id);
+        const newPriority = order.priority === 'rush' ? 'normal' : 'rush';
+        try {
+            const batch = writeBatch(firestore);
+            batch.update(orderRef, { priority: newPriority });
+
+            const itemsQuery = query(collection(firestore, 'orders', order.id, 'orderItems'), where('status', '==', 'Pending'));
+            const itemsSnapshot = await getDocs(itemsQuery);
+            itemsSnapshot.forEach(doc => {
+                batch.update(doc.ref, { priority: newPriority });
+            });
+
+            const refillsQuery = query(collection(firestore, 'orders', order.id, 'refills'), where('status', '==', 'Pending'));
+            const refillsSnapshot = await getDocs(refillsQuery);
+            refillsSnapshot.forEach(doc => {
+                batch.update(doc.ref, { priority: newPriority });
+            });
+
+            await batch.commit();
+
+            toast({
+                title: 'Priority Updated',
+                description: `Order for table ${order.tableName} marked as ${newPriority}.`,
+            });
+        } catch (error) {
+             toast({
+                variant: 'destructive',
+                title: 'Update Failed',
+                description: 'Could not update order priority.',
+            });
+        }
     };
 
     const handleBillClick = (order: Order) => {
@@ -232,7 +317,7 @@ export default function CashierPage() {
             table={selectedTable}
             menu={menu}
             storeId={selectedStoreId!}
-            onCreateOrder={async () => {}} // This logic is now in refill page, provide dummy
+            onCreateOrder={handleCreateOrder}
         />
       )}
       
