@@ -61,7 +61,7 @@ const initialItemState: Omit<GListItem, 'id'> = {
   storeIds: [],
 };
 
-export default function GListPage() {
+export default function GlobalCollectionsPage() {
   const [items, setItems] = useState<GListItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -72,23 +72,46 @@ export default function GListPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (firestore) {
-      const unsubscribe = onSnapshot(collection(firestore, 'lists'), (snapshot) => {
-        const itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as GListItem[];
-        setItems(itemsData.map(item => ({ ...item, storeIds: item.storeIds || [] })));
-      });
+    if (!firestore) return;
 
-      const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
-        const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
-        setStores(storesData);
-      });
+    const itemsQuery = collection(firestore, 'lists');
+    const unsubscribeItems = onSnapshot(itemsQuery, (snapshot) => {
+        const updatedItems: GListItem[] = [];
+        snapshot.forEach(doc => {
+            updatedItems.push({ id: doc.id, ...doc.data() } as GListItem);
+        });
+        setItems(updatedItems.map(item => ({ ...item, storeIds: item.storeIds || [] })));
+    }, (error) => {
+        console.error("Error fetching lists: ", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Could not fetch global lists.",
+        });
+    });
 
-      return () => {
-        unsubscribe();
-        storesUnsubscribe();
-      }
-    }
-  }, [firestore]);
+    const storesQuery = collection(firestore, 'stores');
+    const unsubscribeStores = onSnapshot(storesQuery, (snapshot) => {
+        const updatedStores: Store[] = [];
+        snapshot.forEach(doc => {
+            updatedStores.push({ id: doc.id, ...doc.data() } as Store);
+        });
+        setStores(updatedStores);
+    }, (error) => {
+        console.error("Error fetching stores: ", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Could not fetch stores.",
+        });
+    });
+
+    return () => {
+        unsubscribeItems();
+        unsubscribeStores();
+    };
+}, [firestore, toast]);
+
 
   const handleModalOpenChange = (open: boolean) => {
     setIsModalOpen(open);
