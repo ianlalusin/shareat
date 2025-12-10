@@ -89,7 +89,6 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   trackInventory: false,
   inventoryItemId: null,
   alertLevel: 0,
-  specialTags: [],
   productId: null,
   is_refillable: false,
   allowed_refills: [],
@@ -252,7 +251,6 @@ export default function MenuPage() {
             unit: selectedInventoryItem.unit,
             cost: selectedInventoryItem.costPerUnit,
             price: product?.defaultPrice || 0,
-            specialTags: product?.specialTags || [],
             imageUrl: product?.imageUrl || '',
             productId: selectedInventoryItem.productId,
         }));
@@ -266,24 +264,24 @@ export default function MenuPage() {
   useEffect(() => {
     setFormError(null); // Clear previous errors
     if (formData.trackInventory) {
-      if (selectedInventoryItem) {
+      if (!formData.inventoryItemId) {
+         setFormError("An inventory item must be selected to enable tracking.");
+      } else if (selectedInventoryItem) {
           const product = products.find(p => p.id === selectedInventoryItem.productId);
-        setFormData(prev => ({
-            ...prev,
-            cost: selectedInventoryItem.costPerUnit,
-            price: prev.price === 0 ? (product?.defaultPrice || 0) : prev.price,
-            barcode: selectedInventoryItem.sku,
-            unit: selectedInventoryItem.unit
-        }));
-        setDisplayValues(prev => ({
-            cost: formatCurrency(selectedInventoryItem.costPerUnit),
-            price: formatCurrency(prev.price === 0 ? (product?.defaultPrice || 0) : prev.price),
-        }));
-      } else {
-         setFormError("This product is not in the store's inventory. Please add it to inventory before tracking.");
+          setFormData(prev => ({
+              ...prev,
+              cost: selectedInventoryItem.costPerUnit,
+              price: prev.price === 0 ? (product?.defaultPrice || 0) : prev.price,
+              barcode: selectedInventoryItem.sku,
+              unit: selectedInventoryItem.unit
+          }));
+          setDisplayValues(prev => ({
+              cost: formatCurrency(selectedInventoryItem.costPerUnit),
+              price: formatCurrency(prev.price === 0 ? (product?.defaultPrice || 0) : prev.price),
+          }));
       }
     }
-  }, [formData.trackInventory, selectedInventoryItem, products, formData.price]);
+  }, [formData.trackInventory, selectedInventoryItem, products, formData.price, formData.inventoryItemId]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -393,7 +391,6 @@ export default function MenuPage() {
     setFormData({
         ...initialItemState,
         ...item,
-        specialTags: item.specialTags || [],
         allowed_refills: item.allowed_refills || [],
     });
     setDisplayValues({
@@ -619,14 +616,6 @@ export default function MenuPage() {
                             ) : (
                                 <ImageIcon className="h-10 w-10 text-muted-foreground" />
                             )}
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="specialTags">Special Tags</Label>
-                        <div className="flex flex-wrap gap-1 rounded-md border min-h-10 items-center p-2 bg-muted">
-                           {formData.specialTags?.length > 0 ? formData.specialTags.map(tag => (
-                            <Badge key={tag} variant="outline" className="bg-background">{tag}</Badge>
-                           )) : <span className='text-sm text-muted-foreground'>No tags</span>}
                         </div>
                     </div>
                     <div className="space-y-2">

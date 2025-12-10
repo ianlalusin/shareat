@@ -87,7 +87,6 @@ export type Product = {
   category: string;
   barcode: string;
   unit: string;
-  specialTags: string[];
   isActive: boolean;
   defaultCost: number;
   defaultPrice: number;
@@ -144,7 +143,6 @@ export type MenuItem = {
   trackInventory: boolean;
   inventoryItemId?: string | null;
   alertLevel: number;
-  specialTags: string[];
   productId?: string | null;
   unit: string;
   is_refillable: boolean;

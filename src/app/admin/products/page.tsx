@@ -63,7 +63,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { TagsInput } from '@/components/ui/tags-input';
 import { formatCurrency, parseCurrency, UNIT_OPTIONS } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Image from 'next/image';
@@ -78,7 +77,6 @@ const initialItemState: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUp
   category: '',
   barcode: '',
   unit: 'pc',
-  specialTags: [],
   isActive: true,
   defaultCost: 0,
   defaultPrice: 0,
@@ -155,10 +153,6 @@ export default function ProductsPage() {
 
   const handleSwitchChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, isActive: checked }));
-  };
-  
-  const handleTagsChange = (newTags: string[]) => {
-    setFormData(prev => ({...prev, specialTags: newTags}));
   };
   
   const handleSelectChange = (name: string, value: string) => {
@@ -238,7 +232,6 @@ export default function ProductsPage() {
     setFormData({
         ...initialItemState,
         ...item,
-        specialTags: item.specialTags || [],
     });
     setDisplayValues({
       defaultCost: formatCurrency(item.defaultCost),
@@ -364,16 +357,6 @@ export default function ProductsPage() {
                             onFileChange={handleFileChange}
                         />
                     </div>
-                     <div className="space-y-2">
-                        <Label htmlFor="specialTags">Special Tags</Label>
-                        <TagsInput
-                            id="specialTags"
-                            name="specialTags"
-                            value={formData.specialTags}
-                            onChange={handleTagsChange}
-                            placeholder="Add tags..."
-                        />
-                     </div>
                      <div className="flex items-center space-x-2 self-end pb-2">
                         <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
                         <Label htmlFor="isActive">Active</Label>
@@ -427,7 +410,6 @@ export default function ProductsPage() {
                           <TableHead className="px-2 h-10">Unit</TableHead>
                           <TableHead className="px-2 h-10 text-right">Cost</TableHead>
                           <TableHead className="px-2 h-10 text-right">Price</TableHead>
-                          <TableHead className="px-2 h-10">Tags</TableHead>
                           <TableHead className="px-2 h-10">Status</TableHead>
                           <TableHead className="px-2 h-10">
                             <span className="sr-only">Actions</span>
@@ -451,13 +433,6 @@ export default function ProductsPage() {
                             <TableCell className="p-2">{item.unit}</TableCell>
                             <TableCell className="p-2 text-right">{formatCurrency(item.defaultCost)}</TableCell>
                             <TableCell className="p-2 text-right">{formatCurrency(item.defaultPrice)}</TableCell>
-                            <TableCell className="p-2">
-                              <div className="flex flex-wrap gap-1">
-                                {item.specialTags?.map(tag => (
-                                  <Badge key={tag} variant="outline">{tag}</Badge>
-                                ))}
-                              </div>
-                            </TableCell>
                             <TableCell className="p-2">
                               <Badge
                                 variant={item.isActive ? 'default' : 'destructive'}
@@ -496,4 +471,5 @@ export default function ProductsPage() {
       </main>
   );
 }
+
 
