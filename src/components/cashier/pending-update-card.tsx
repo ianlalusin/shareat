@@ -30,12 +30,7 @@ export function PendingUpdateCard({ update }: PendingUpdateCardProps) {
     setIsProcessing(true);
     let reason = '';
     if (action === 'accept') {
-        reason = window.prompt(`Reason for accepting this ${update.type} change:`);
-        if (!reason) {
-            toast({ variant: 'destructive', title: 'Reason Required', description: 'You must provide a reason to accept an update.' });
-            setIsProcessing(false);
-            return;
-        }
+        reason = `Accepted by ${user.displayName}`;
     } else {
         reason = `Rejected by ${user.displayName}`;
     }
@@ -64,7 +59,7 @@ export function PendingUpdateCard({ update }: PendingUpdateCardProps) {
             timestamp: serverTimestamp() as any,
             updatedByUid: user.uid,
             updatedByName: user.displayName || user.email!,
-            reason: `Accepted: ${reason}. (Initiated by: ${update.initiatedByName})`,
+            reason: `${reason}. (Initiated by: ${update.initiatedByName})`,
             changes: update.changes,
           };
           transaction.set(auditLogRef, auditLog);
@@ -94,7 +89,7 @@ export function PendingUpdateCard({ update }: PendingUpdateCardProps) {
         <CardHeader className="pb-3">
             <div className="flex justify-between items-start">
                 <div>
-                    <CardTitle className="text-lg">Table {order.tableName}</CardTitle>
+                    <CardTitle className="text-lg">{order.tableName}</CardTitle>
                     <CardDescription>Customer: {order.customerName || 'N/A'}</CardDescription>
                 </div>
                 <div className="text-right text-xs text-muted-foreground">
