@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
 import { Badge } from '@/components/ui/badge';
+import { NewOrderModal } from '@/components/cashier/new-order-modal';
 
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
 
@@ -31,6 +32,8 @@ export default function CashierPage() {
     const [pendingUpdates, setPendingUpdates] = useState<(PendingOrderUpdate & {order: Order})[]>([]);
 
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+    const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+    const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
 
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -114,6 +117,66 @@ export default function CashierPage() {
         }
     }, [firestore, selectedStoreId]);
 
+    const handleCreateOrder = async (table: TableType, orderData: { customerName: string; guestCount: number; selectedPackage: MenuItem; selectedFlavors: string[], kitchenNote?: string }) => {
+        if (!firestore) throw new Error("Firestore not available");
+        if (!selectedStoreId) throw new Error("No store selected");
+    
+        const orderRef = doc(collection(firestore, 'orders'));
+    
+        await runTransaction(firestore, async (transaction) => {
+          const tableRef = doc(firestore, 'tables', table.id);
+          const tableDoc = await transaction.get(tableRef);
+          if (!tableDoc.exists() || tableDoc.data()?.status !== 'Available') {
+            throw new Error(`Table ${table.tableName} is no longer available.`);
+          }
+    
+          const { selectedPackage, guestCount } = orderData;
+    
+          const newOrder: Omit<Order, 'id'> = {
+            storeId: selectedStoreId,
+            tableId: table.id,
+            tableName: table.tableName,
+            status: 'Active',
+            guestCount: guestCount,
+            customerName: orderData.customerName,
+            orderTimestamp: serverTimestamp() as any,
+            totalAmount: selectedPackage.price * guestCount,
+            packageName: selectedPackage.menuName,
+            selectedFlavors: orderData.selectedFlavors,
+            kitchenNote: orderData.kitchenNote,
+            isServerConfirmed: false, // Server needs to confirm guest count
+          };
+          transaction.set(orderRef, newOrder);
+    
+          const rate = selectedPackage.taxRate ?? 0;
+          const initialOrderItem: Omit<OrderItem, 'id'> = {
+            orderId: orderRef.id,
+            storeId: selectedStoreId,
+            menuItemId: selectedPackage.id,
+            menuName: selectedPackage.menuName,
+            quantity: guestCount,
+            priceAtOrder: selectedPackage.price,
+            targetStation: selectedPackage.targetStation,
+            timestamp: serverTimestamp() as any,
+            status: 'Pending',
+            isRefill: false,
+            sourceTag: 'initial',
+            taxRate: rate,
+            taxProfileCode: selectedPackage.taxProfileCode ?? null,
+            isFree: false,
+          };
+          const orderItemRef = doc(collection(firestore, 'orders', orderRef.id, 'orderItems'));
+          transaction.set(orderItemRef, initialOrderItem);
+    
+          transaction.update(tableRef, { status: 'Occupied', activeOrderId: orderRef.id });
+        });
+    };
+
+    const handleNewOrderClick = (table: TableType) => {
+        setSelectedTable(table);
+        setIsNewOrderModalOpen(true);
+    };
+
     const availableTables = useMemo(() => tables.filter(t => t.status === 'Available'), [tables]);
     
     const occupiedTables = useMemo(() => {
@@ -192,7 +255,7 @@ export default function CashierPage() {
                       <Card 
                           key={table.id} 
                           className="cursor-pointer hover:shadow-lg transition-shadow h-14 flex items-center justify-center border-2 border-green-500"
-                          onClick={() => alert('New order creation is now handled in the Refill section.')}
+                          onClick={() => handleNewOrderClick(table)}
                       >
                           <CardContent className="p-1 text-center">
                               <p className="font-bold text-lg md:text-xl lg:text-2xl">{table.tableName}</p>
@@ -261,6 +324,17 @@ export default function CashierPage() {
           menu={menu}
         />
       )}
+       {isNewOrderModalOpen && selectedTable && selectedStoreId && (
+        <NewOrderModal
+            isOpen={isNewOrderModalOpen}
+            onClose={() => setIsNewOrderModalOpen(false)}
+            table={selectedTable}
+            menu={menu}
+            schedules={schedules}
+            storeId={selectedStoreId}
+            onCreateOrder={handleCreateOrder}
+        />
+       )}
     </>
   );
 }
