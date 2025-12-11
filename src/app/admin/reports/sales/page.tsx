@@ -12,8 +12,16 @@ import {
   Timestamp,
   collection,
   onSnapshot,
+  getDoc,
 } from 'firebase/firestore';
 import { DateRange } from 'react-day-picker';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -22,24 +30,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
-import { Order, OrderItem, OrderTransaction, Store } from '@/lib/types';
+import { Order, OrderItem, OrderTransaction, Store, MenuItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, TrendingUp, Hash, Wallet, Coins } from 'lucide-react';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { TopCategoriesAccordion, CategorySalesData } from '@/components/admin/reports/top-categories-accordion';
 
 const ReceiptViewerModal = dynamic(
   () => import('@/components/admin/reports/receipt-viewer-modal').then(mod => mod.ReceiptViewerModal),
@@ -53,7 +54,7 @@ const SalesBarChart = dynamic(
 
 
 export default function SalesReportPage() {
-  const [reportData, setReportData] = useState<SalesReportItem[]>([]);
+  const [categorySales, setCategorySales] = useState<CategorySalesData[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [transactions, setTransactions] = useState<OrderTransaction[]>([]);
@@ -86,7 +87,7 @@ export default function SalesReportPage() {
     }
     setLoading(true);
     setError(null);
-    setReportData([]);
+    setCategorySales([]);
     setTransactions([]);
     setCompletedOrders([]);
     setOrderItems([]);
@@ -111,7 +112,7 @@ export default function SalesReportPage() {
 
       if (completedOrdersData.length === 0) {
         setTransactions([]);
-        setReportData([]);
+        setCategorySales([]);
         setOrderItems([]);
         setLoading(false);
         return;
@@ -119,42 +120,60 @@ export default function SalesReportPage() {
       
       const orderIds = completedOrdersData.map(o => o.id);
 
-      const transactionsQuery = query(
-        collectionGroup(firestore, 'transactions'),
-        where('orderId', 'in', orderIds)
-      );
-      const transSnapshot = await getDocs(transactionsQuery);
+      const [transSnapshot, orderItemsSnapshot, menuSnapshot] = await Promise.all([
+          getDocs(query(collectionGroup(firestore, 'transactions'), where('orderId', 'in', orderIds))),
+          getDocs(query(collectionGroup(firestore, 'orderItems'), where('orderId', 'in', orderIds))),
+          getDocs(query(collection(firestore, 'menu'), where('storeId', '==', selectedStoreId)))
+      ]);
+
       const transData = transSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as OrderTransaction);
       setTransactions(transData);
 
-      const orderItemsQuery = query(
-        collectionGroup(firestore, 'orderItems'),
-        where('orderId', 'in', orderIds)
-      );
-      const orderItemsSnapshot = await getDocs(orderItemsQuery);
       const allItems = orderItemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OrderItem));
       setOrderItems(allItems);
 
-      const aggregatedData = new Map<string, SalesReportItem>();
+      const menuMap = new Map(menuSnapshot.docs.map(doc => [doc.id, doc.data() as MenuItem]));
+      const completedOrderMap = new Map(completedOrdersData.map(o => [o.id, o]));
+
+      const itemSales: Record<string, { menuItemId: string; menuName: string; category: string; quantity: number; orderIds: Set<string> }> = {};
+      
       for (const item of allItems) {
-          const existing = aggregatedData.get(item.menuItemId);
-          const saleAmount = item.quantity * item.priceAtOrder;
-          if (existing) {
-              existing.quantitySold += item.quantity;
-              existing.totalSales += saleAmount;
-          } else {
-              aggregatedData.set(item.menuItemId, {
-                  menuItemId: item.menuItemId,
-                  menuName: item.menuName,
-                  category: 'N/A', // Placeholder
-                  quantitySold: item.quantity,
-                  totalSales: saleAmount,
-              });
-          }
+        if(item.sourceTag === 'initial') continue;
+        const menuItem = menuMap.get(item.menuItemId);
+        const category = menuItem?.category || 'Uncategorized';
+        
+        if (!itemSales[item.menuItemId]) {
+          itemSales[item.menuItemId] = {
+            menuItemId: item.menuItemId,
+            menuName: item.menuName,
+            category: category,
+            quantity: 0,
+            orderIds: new Set(),
+          };
+        }
+        itemSales[item.menuItemId].quantity += item.quantity;
+        itemSales[item.menuItemId].orderIds.add(item.orderId);
       }
       
-      const sortedReport = Array.from(aggregatedData.values()).sort((a,b) => b.totalSales - a.totalSales);
-      setReportData(sortedReport);
+      const categoryMap: Record<string, CategorySalesData> = {};
+      for (const item of Object.values(itemSales)) {
+          if(!categoryMap[item.category]) {
+              categoryMap[item.category] = { categoryName: item.category, totalQuantity: 0, items: [] };
+          }
+          categoryMap[item.category].totalQuantity += item.quantity;
+          categoryMap[item.category].items.push({
+              itemName: item.menuName,
+              quantity: item.quantity,
+              receipts: Array.from(item.orderIds).map(oid => completedOrderMap.get(oid)?.receiptDetails?.receiptNumber || 'N/A')
+          });
+      }
+
+      Object.values(categoryMap).forEach(cat => {
+          cat.items.sort((a,b) => b.quantity - a.quantity);
+      });
+
+      const finalCategorySales = Object.values(categoryMap).sort((a,b) => b.totalQuantity - a.totalQuantity);
+      setCategorySales(finalCategorySales);
 
     } catch (e) {
       console.error('Error generating report:', e);
@@ -352,48 +371,27 @@ export default function SalesReportPage() {
         </Card>
         <Card className="col-span-4 lg:col-span-3">
              <CardHeader>
-                <CardTitle>Item Sales Breakdown</CardTitle>
+                <CardTitle>Top Category</CardTitle>
                  <CardDescription>
-                    Top selling items in the selected date range.
+                    Top selling items grouped by category.
                 </CardDescription>
             </CardHeader>
              <CardContent>
-                {reportData.length > 0 ? (
-                    <ScrollArea className="h-96">
-                        <Table>
-                            <TableHeader>
-                            <TableRow>
-                                <TableHead>Menu Item</TableHead>
-                                <TableHead className="text-right">Qty Sold</TableHead>
-                                <TableHead className="text-right">Total Sales</TableHead>
-                            </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                            {reportData.map((item) => (
-                                <TableRow key={item.menuItemId}>
-                                <TableCell className="font-medium">{item.menuName}</TableCell>
-                                <TableCell className="text-right">{item.quantitySold}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(item.totalSales)}</TableCell>
-                                </TableRow>
-                            ))}
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
+                {loading ? (
+                    <div className="flex items-center justify-center h-64">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                ) : categorySales.length > 0 ? (
+                    <TopCategoriesAccordion data={categorySales} />
                 ): (
                     <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm bg-background/50 h-64">
                         <div className="flex flex-col items-center gap-1 text-center">
-                             {loading ? (
-                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                             ) : (
-                                <>
-                                 <h3 className="text-xl font-bold tracking-tight font-headline">
-                                    No sales data
-                                </h3>
-                                <p className="text-sm text-muted-foreground">
-                                    No items were sold in this period.
-                                </p>
-                                </>
-                             )}
+                             <h3 className="text-xl font-bold tracking-tight font-headline">
+                                No sales data
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                                No items were sold in this period.
+                            </p>
                         </div>
                     </div>
                 )}
@@ -413,12 +411,4 @@ export default function SalesReportPage() {
     )}
     </>
   );
-}
-
-interface SalesReportItem {
-  menuItemId: string;
-  menuName: string;
-  category: string;
-  quantitySold: number;
-  totalSales: number;
 }

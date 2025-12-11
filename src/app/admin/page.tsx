@@ -18,15 +18,18 @@ import { useStoreSelector } from '@/store/use-store-selector';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
 import { Order, OrderItem, MenuItem, RefillItem, InventoryItem, OrderUpdateLog } from '@/lib/types';
 import { StatCard } from '@/components/admin/dashboard/stat-card';
-import { TopCategory, TopItemsByCategoryCard } from '@/components/admin/dashboard/top-categories-card';
-import { TopItemsByCategoryModal } from '@/components/admin/dashboard/top-items-by-category-modal';
 import { TopItemsCard, TopItem } from '@/components/admin/dashboard/top-items-card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { DashboardSkeleton } from '@/components/admin/dashboard/dashboard-skeleton';
-import { TrendingUp, Hash, Timer, PackageX, History } from 'lucide-react';
+import { TrendingUp, Hash, Timer, PackageX, History, Layers } from 'lucide-react';
 import { startOfDay, endOfDay } from 'date-fns';
 import { OrderUpdateLogModal } from '@/components/admin/reports/order-update-log-modal';
+
+interface TopCategory {
+    name: string;
+    quantity: number;
+}
 
 export default function AdminPage() {
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date()) });
@@ -40,9 +43,7 @@ export default function AdminPage() {
   const [lowStockItems, setLowStockItems] = React.useState<TopItem[]>([]);
   const [updateLogCount, setUpdateLogCount] = React.useState(0);
   
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = React.useState(false);
   const [isUpdateLogModalOpen, setIsUpdateLogModalOpen] = React.useState(false);
-  const [selectedCategory, setSelectedCategory] = React.useState<TopCategory | null>(null);
 
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
@@ -122,7 +123,7 @@ export default function AdminPage() {
 
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
-                getDocs(orderItemsQuery),
+                getDocs(orderItemsSnapshot),
                 getDocs(refillsQuery),
             ]);
 
@@ -131,7 +132,7 @@ export default function AdminPage() {
 
             const allOrderItems = orderItemsSnapshot.docs.map(doc => doc.data() as OrderItem);
             
-            const categorySales: Record<string, TopCategory> = {};
+            const categorySales: Record<string, { name: string, quantity: number }> = {};
             allOrderItems.forEach(item => {
                 if(item.sourceTag === 'initial') return;
                 
@@ -139,14 +140,10 @@ export default function AdminPage() {
                 const category = menuItem?.category || 'Uncategorized';
                 
                 if (!categorySales[category]) {
-                    categorySales[category] = { name: category, quantity: 0, items: {} };
+                    categorySales[category] = { name: category, quantity: 0 };
                 }
                 
                 categorySales[category].quantity += item.quantity;
-                if (!categorySales[category].items[item.menuName]) {
-                    categorySales[category].items[item.menuName] = 0;
-                }
-                categorySales[category].items[item.menuName] += item.quantity;
             });
 
             const sortedCategories = Object.values(categorySales)
@@ -222,11 +219,6 @@ export default function AdminPage() {
     }
   }, [selectedStoreId, fetchData]);
   
-  const handleCategoryClick = (category: TopCategory) => {
-    setSelectedCategory(category);
-    setIsCategoryModalOpen(true);
-  };
-  
   const formatServingTime = (seconds: number) => {
       if (seconds < 60) return `${Math.round(seconds)}s`;
       const minutes = Math.floor(seconds / 60);
@@ -297,22 +289,16 @@ export default function AdminPage() {
             icon={<PackageX className="h-4 w-4 text-muted-foreground" />}
             linkTo="/admin/inventory"
           />
-           <TopItemsByCategoryCard
+           <TopItemsCard
             title="Top Selling Categories"
-            categories={topCategories}
-            onCategoryClick={handleCategoryClick}
+            items={topCategories}
+            icon={<Layers className="h-4 w-4 text-muted-foreground" />}
+            linkTo="/admin/reports/sales"
           />
         </div>
       )}
     </main>
     
-    {selectedCategory && (
-        <TopItemsByCategoryModal
-            isOpen={isCategoryModalOpen}
-            onClose={() => setIsCategoryModalOpen(false)}
-            category={selectedCategory}
-        />
-    )}
      {isUpdateLogModalOpen && selectedStoreId && dateRange && dateRange.from && dateRange.to && (
         <OrderUpdateLogModal
             isOpen={isUpdateLogModalOpen}

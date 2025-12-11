@@ -19,7 +19,7 @@ interface TopItemsByCategoryCardProps {
 export function TopItemsByCategoryCard({ title, categories, onCategoryClick }: TopItemsByCategoryCardProps) {
 
     return (
-        <Card>
+        <Card className="col-span-2">
             <CardHeader>
                 <CardTitle className="flex items-center justify-between text-sm font-medium">
                     {title}
