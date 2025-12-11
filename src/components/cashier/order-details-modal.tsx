@@ -19,7 +19,6 @@ import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, BellRing, CheckCircle, Hourglass, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
-import { AddToCartModal } from './add-to-cart-modal';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { Badge } from '@/components/ui/badge';
 
@@ -44,7 +43,6 @@ export function OrderDetailsModal({ isOpen, onClose, order, menu }: OrderDetails
   const firestore = useFirestore();
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
-  const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
   const { openSuccessModal } = useSuccessModal();
 
 
@@ -127,14 +125,7 @@ export function OrderDetailsModal({ isOpen, onClose, order, menu }: OrderDetails
     return Array.from(itemMap.values());
   }, [refillItems]);
 
-
-  const handleCloseCart = () => {
-    setIsAddToCartModalOpen(false);
-  };
-  
-
   return (
-    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
@@ -152,10 +143,6 @@ export function OrderDetailsModal({ isOpen, onClose, order, menu }: OrderDetails
             <div>
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-md font-semibold">Initial Order & Add-ons</h3>
-                <Button variant="outline" size="sm" onClick={() => setIsAddToCartModalOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Item
-                </Button>
               </div>
               <div className="space-y-2">
                 {unlimitedPackageItem && (
@@ -214,15 +201,5 @@ export function OrderDetailsModal({ isOpen, onClose, order, menu }: OrderDetails
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-    {isAddToCartModalOpen && (
-      <AddToCartModal
-        isOpen={isAddToCartModalOpen}
-        onClose={handleCloseCart}
-        order={order}
-        menu={menu}
-      />
-    )}
-    </>
   );
 }
