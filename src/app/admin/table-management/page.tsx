@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Wrench } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import {
   addDoc,
@@ -35,10 +35,11 @@ import {
   query,
   where,
   writeBatch,
+  getDocs,
   getDoc,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table, Store } from '@/lib/types';
+import { Table, Store, Order } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -216,6 +217,56 @@ export default function TableManagementPage() {
     }
   };
   
+  const handleResetStuckTables = async () => {
+    if (!firestore || !selectedStoreId) return;
+    if (!window.confirm('This will check all occupied tables and reset any that are stuck or linked to inactive orders. Continue?')) return;
+
+    toast({ title: 'Starting Cleanup...', description: 'Checking all occupied tables for inconsistencies.' });
+
+    try {
+        const tablesQuery = query(collection(firestore, 'tables'), where('storeId', '==', selectedStoreId), where('status', '==', 'Occupied'));
+        const tablesSnapshot = await getDocs(tablesQuery);
+
+        if (tablesSnapshot.empty) {
+            toast({ title: 'No Occupied Tables', description: 'All tables are already available.' });
+            return;
+        }
+
+        const batch = writeBatch(firestore);
+        let tablesResetCount = 0;
+
+        for (const tableDoc of tablesSnapshot.docs) {
+            const table = { id: tableDoc.id, ...tableDoc.data() } as Table;
+            
+            if (table.activeOrderId) {
+                const orderRef = doc(firestore, 'orders', table.activeOrderId);
+                const orderSnap = await getDoc(orderRef);
+
+                if (!orderSnap.exists() || (orderSnap.data() as Order).status !== 'Active') {
+                    // Order doesn't exist or is not Active, so table is stuck.
+                    batch.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
+                    tablesResetCount++;
+                }
+            } else {
+                // Table is 'Occupied' but has no activeOrderId, reset it.
+                batch.update(tableDoc.ref, { status: 'Available', activeOrderId: '' });
+                tablesResetCount++;
+            }
+        }
+        
+        if (tablesResetCount > 0) {
+            await batch.commit();
+            toast({ title: 'Cleanup Complete', description: `${tablesResetCount} stuck table(s) have been reset to "Available".` });
+        } else {
+            toast({ title: 'All Clear!', description: 'No stuck tables were found.' });
+        }
+
+    } catch (error) {
+        console.error("Error resetting stuck tables:", error);
+        toast({ variant: 'destructive', title: 'Cleanup Failed', description: 'An error occurred while resetting tables.' });
+    }
+  };
+  
   const getStatusColor = (status: Table['status']) => {
     switch (status) {
       case 'Available': return 'bg-green-500';
@@ -233,6 +284,9 @@ export default function TableManagementPage() {
           Table Management
         </h1>
         <div className="flex items-center gap-2">
+           <Button variant="outline" onClick={handleResetStuckTables} disabled={!selectedStoreId}>
+             <Wrench className="mr-2 h-4 w-4" /> Reset Stuck Tables
+           </Button>
            <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0}>
             Reset All Counters
           </Button>
