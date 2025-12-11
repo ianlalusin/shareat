@@ -102,6 +102,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   productId: null,
   is_refillable: false,
   allowed_refills: [],
+  sortOrder: 0,
 };
 
 
@@ -176,7 +177,7 @@ export default function MenuPage() {
       const availabilityQuery = query(
           collection(firestore, 'lists'),
           where('category', '==', 'menu schedules'),
-          where('is_active', '==', true),
+          where('is_active', '==', true)
         );
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
           const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
@@ -363,6 +364,7 @@ export default function MenuPage() {
     const dataToSave: Partial<MenuItem> = {
       ...formData,
       targetStation: formData.targetStation || null,
+      sortOrder: Number(formData.sortOrder) || 0,
     };
     
     try {
@@ -470,7 +472,7 @@ export default function MenuPage() {
     
     return Object.keys(grouped).sort().reduce(
       (obj, key) => { 
-        obj[key] = grouped[key].sort((a, b) => a.menuName.localeCompare(b.menuName)); 
+        obj[key] = grouped[key].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.menuName.localeCompare(b.menuName)); 
         return obj;
       }, 
       {} as Record<string, MenuItem[]>
@@ -526,7 +528,7 @@ export default function MenuPage() {
               <span>Add Menu Item</span>
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>
                 {editingItem 
@@ -617,8 +619,8 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                     <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                     <div className="space-y-2 md:col-span-2">
                         <Label>Image</Label>
                          <div className="h-24 w-24 flex items-center justify-center rounded-md bg-muted overflow-hidden relative">
                             {formData.imageUrl ? (
@@ -699,14 +701,21 @@ export default function MenuPage() {
                     </div>
                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="publicDescription">Public Description</Label>
-                  <Textarea
-                    id="publicDescription"
-                    name="publicDescription"
-                    value={formData.publicDescription}
-                    onChange={handleInputChange}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="publicDescription">Public Description</Label>
+                    <Textarea
+                      id="publicDescription"
+                      name="publicDescription"
+                      value={formData.publicDescription}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sortOrder">Sort Order</Label>
+                    <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
+                    <p className="text-xs text-muted-foreground">Lower numbers appear first within a category.</p>
+                  </div>
                 </div>
 
                 {formError && (
@@ -768,6 +777,7 @@ export default function MenuPage() {
                     <Table className="text-xs">
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="p-2 h-10 w-12">Sort</TableHead>
                           <TableHead className="p-2 h-10 w-16"></TableHead>
                           <TableHead className="px-2 h-10 text-xs">Menu Name</TableHead>
                           <TableHead className="px-2 h-10 text-xs">Target Station</TableHead>
@@ -783,6 +793,7 @@ export default function MenuPage() {
                       <TableBody>
                         {itemsInCategory.map((item) => (
                             <TableRow key={item.id} onClick={() => handleEdit(item)} className="cursor-pointer font-medium">
+                              <TableCell className="p-2 text-center text-xs text-muted-foreground">{item.sortOrder || 0}</TableCell>
                               <TableCell className="p-2">
                                   <div className="h-10 w-10 flex items-center justify-center rounded-md bg-muted overflow-hidden">
                                       {item.imageUrl ? (
@@ -842,7 +853,7 @@ export default function MenuPage() {
         open={!!deleteTargetId}
         onOpenChange={(open) => !open && setDeleteTargetId(null)}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Menu Item?</AlertDialogTitle>
             <AlertDialogDescription>
