@@ -55,32 +55,53 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
     
     const firestore = useFirestore();
 
-    const unlimitedPackages = useMemo(() => {
-        const now = new Date();
-        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-
-        const activeScheduleNames = new Set(
-            schedules
-                .filter(s => {
-                    const schedule = s as Schedule;
-                    return schedule.days.includes(currentDay) &&
-                           schedule.startTime <= currentTime &&
-                           schedule.endTime >= currentTime;
-                })
-                .map(s => s.item)
-        );
-
-        return menu.filter(item => {
-            if (item.category !== 'Unlimited' || !item.isAvailable) {
-                return false;
-            }
-            if (item.availability === 'always') {
-                return true;
-            }
-            return activeScheduleNames.has(item.availability);
-        });
-    }, [menu, schedules]);
+    const packages = useMemo(() => {
+      if (!menu || menu.length === 0) return [];
+    
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(
+        now.getMinutes()
+      ).padStart(2, '0')}`;
+      const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+    
+      const activeScheduleNames = new Set(
+        schedules
+          .map((s) => s as Schedule)
+          .filter((schedule) => {
+            const dayMatch = schedule.days.includes(currentDay);
+    
+            const start = schedule.startTime; // "HH:MM"
+            const end = schedule.endTime;     // "HH:MM"
+            const nowT = currentTime;
+    
+            // handle both normal and overnight windows
+            const timeMatch =
+              start <= end
+                ? nowT >= start && nowT <= end      // e.g. 10:00–14:00
+                : nowT >= start || nowT <= end;     // e.g. 17:00–01:00
+    
+            return schedule.is_active && dayMatch && timeMatch;
+          })
+          .map((s) => s.item) // e.g. "Lunch Time", "Dinner Time"
+      );
+    
+      return menu.filter((item) => {
+        // 1) Only category = "Package"
+        if (item.category !== 'Package') return false;
+    
+        // 2) Must be available
+        if (!item.isAvailable) return false;
+    
+        // 3) Must match the active store
+        if (item.storeId !== storeId) return false;
+    
+        // 4) Availability label check
+        if (item.availability === 'always') return true;
+    
+        // otherwise, menu.availability must match an active schedule name
+        return activeScheduleNames.has(item.availability);
+      });
+    }, [menu, schedules, storeId]);
     
     useEffect(() => {
         if(!isOpen || !firestore || !storeId) return;
@@ -119,9 +140,9 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
     };
 
     const handlePackageChange = (menuItemId: string) => {
-        const pkg = unlimitedPackages.find(p => p.id === menuItemId);
-        setSelectedPackage(pkg || null);
-    }
+      const pkg = packages.find((p) => p.id === menuItemId);
+      setSelectedPackage(pkg || null);
+    };
 
     const handleFlavorSelect = (flavor: string) => {
         setSelectedFlavors(prev => {
@@ -194,16 +215,16 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
                      <div className="space-y-2 col-span-3">
                         <Label htmlFor="package">Package</Label>
                         <Select onValueChange={handlePackageChange} value={selectedPackage?.id}>
-                            <SelectTrigger className="h-10">
-                                <SelectValue placeholder="Choose package..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {unlimitedPackages.map(pkg => (
-                                    <SelectItem key={pkg.id} value={pkg.id}>
-                                        {pkg.menuName}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Choose package..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {packages.map((pkg) => (
+                              <SelectItem key={pkg.id} value={pkg.id}>
+                                {pkg.menuName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
                         </Select>
                     </div>
                 </div>
