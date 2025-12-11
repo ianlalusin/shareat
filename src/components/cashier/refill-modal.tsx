@@ -131,7 +131,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                             quantity: updatedCart[existingIndex].quantity + 1
                         };
                     } else {
-                        updatedCart.push({ meatType: meatTypeItem.menuName, flavor, quantity: 1, note: '', targetStation: meatTypeItem?.targetStation });
+                        updatedCart.push({ meatType: meatTypeItem.menuName, flavor, quantity: 1, targetStation: meatTypeItem?.targetStation });
                     }
                 });
             } else { // No flavors
@@ -142,7 +142,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                         quantity: updatedCart[existingIndex].quantity + 1
                     };
                 } else {
-                    updatedCart.push({ meatType: meatTypeItem.menuName, flavor: 'Original', quantity: 1, note: '', targetStation: meatTypeItem?.targetStation });
+                    updatedCart.push({ meatType: meatTypeItem.menuName, flavor: 'Original', quantity: 1, targetStation: meatTypeItem?.targetStation });
                 }
             }
             return updatedCart;

@@ -13,15 +13,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, Minus, ShoppingCart, Trash2, MessageSquarePlus } from 'lucide-react';
-import { Table as TableType, MenuItem, Order, OrderItem } from '@/lib/types';
+import { Table as TableType, MenuItem, Order } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '../ui/separator';
 import Image from 'next/image';
-import { Badge } from '../ui/badge';
-import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Textarea } from '../ui/textarea';
+
+interface CartItem extends MenuItem {
+    quantity: number;
+    note?: string;
+}
 
 interface AddonsModalProps {
   isOpen: boolean;
@@ -30,11 +33,6 @@ interface AddonsModalProps {
   order: Order;
   menu: MenuItem[];
   onPlaceOrder: (order: Order, cart: CartItem[]) => void;
-}
-
-interface CartItem extends MenuItem {
-    quantity: number;
-    note?: string;
 }
 
 export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder }: AddonsModalProps) {
@@ -117,9 +115,9 @@ export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
+      <DialogContent className="max-w-full md:max-w-7xl h-full md:h-[90vh] flex flex-col p-2 sm:p-4">
         <DialogHeader className='p-4 pb-0 sm:p-0'>
-          <DialogTitle>Add-ons: {table.tableName}</DialogTitle>
+          <DialogTitle>Add Items to Order: {table.tableName}</DialogTitle>
           <DialogDescription>
             Customer: {order.customerName} | Package: {order.packageName}
           </DialogDescription>
@@ -139,7 +137,7 @@ export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     />
                 </div>
                 <ScrollArea className="flex-1">
-                    <div className="grid grid-cols-3 gap-2 pr-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pr-4">
                         {availableMenuForAddons.map(item => (
                             <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center aspect-square">
                                 <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
@@ -239,7 +237,7 @@ export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                 Cancel
               </Button>
               <Button type="button" onClick={handlePlaceOrderClick} disabled={cart.length === 0}>
-                Place Add-ons ({cart.reduce((acc, item) => acc + item.quantity, 0)})
+                Add to Order ({cart.reduce((acc, item) => acc + item.quantity, 0)})
               </Button>
             </div>
         </DialogFooter>
