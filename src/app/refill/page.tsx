@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -18,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { GuestConfirmationModal } from '@/components/refill/guest-confirmation-modal';
 import { useAuthContext } from '@/context/auth-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AddToCartModal } from '@/components/cashier/add-to-cart-modal';
 
 const getStatusColor = (status: TableType['status']) => {
     switch (status) {
@@ -37,6 +39,7 @@ export default function RefillPage() {
     const [refills, setRefills] = useState<Record<string, RefillItem[]>>({});
     
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
+    const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -135,16 +138,28 @@ export default function RefillPage() {
         });
     }, [menu, schedules]);
 
-    const handleTableClick = (table: TableType) => {
+    const handleRefillClick = (table: TableType) => {
+        const order = orders.find(o => o.id === table.activeOrderId);
+        if(order) {
+            setSelectedOrder(order);
+            setIsRefillModalOpen(true);
+        }
+    }
+    
+    const handleAddOnClick = (table: TableType) => {
+        const order = orders.find(o => o.id === table.activeOrderId);
+        if(order) {
+            setSelectedOrder(order);
+            setIsAddToCartModalOpen(true);
+        }
+    }
+
+    const handleConfirmClick = (table: TableType) => {
         const order = orders.find(o => o.id === table.activeOrderId);
         if (order) {
             setSelectedTable(table);
             setSelectedOrder(order);
-            if (!order.isServerConfirmed) {
-              setIsConfirmModalOpen(true);
-            } else {
-              setIsRefillModalOpen(true);
-            }
+            setIsConfirmModalOpen(true);
         }
     }
 
@@ -209,6 +224,7 @@ export default function RefillPage() {
                 description: 'Refills and add-ons have been sent to the kitchen.',
             });
             setIsRefillModalOpen(false);
+            setIsAddToCartModalOpen(false);
         } catch (error) {
             console.error("Error placing order:", error);
             toast({
@@ -304,16 +320,13 @@ export default function RefillPage() {
     const prevPendingCountRef = useRef(pendingConfirmationOrders.length);
     useEffect(() => {
         const currentPendingCount = pendingConfirmationOrders.length;
-        // Check if a new order has arrived
         if (currentPendingCount > prevPendingCountRef.current) {
-            // Only switch tabs if no modals are open
-            if (!isRefillModalOpen && !isConfirmModalOpen) {
+            if (!isRefillModalOpen && !isConfirmModalOpen && !isAddToCartModalOpen) {
                 setActiveTab('waiting');
             }
         }
-        // Update the ref for the next render
         prevPendingCountRef.current = currentPendingCount;
-    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen]);
+    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen, isAddToCartModalOpen]);
 
     if (!selectedStoreId) {
         return (
@@ -345,7 +358,7 @@ export default function RefillPage() {
                         <Card 
                             key={table.id} 
                             className="bg-yellow-100 dark:bg-yellow-900/40 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-                            onClick={() => handleTableClick(table)}
+                            onClick={() => handleConfirmClick(table)}
                         >
                             <CardHeader className="p-4">
                                 <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
@@ -378,8 +391,7 @@ export default function RefillPage() {
                     return (
                         <Card 
                             key={table.id} 
-                            className="bg-muted/30 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-                            onClick={() => handleTableClick(table)}
+                            className="bg-muted/30 hover:shadow-lg transition-shadow flex flex-col"
                         >
                             <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
                                 <div>
@@ -405,6 +417,10 @@ export default function RefillPage() {
                                     )}
                                 </div>
                             </CardContent>
+                             <CardFooter className="p-2 border-t grid grid-cols-2 gap-2">
+                                <Button variant="outline" onClick={() => handleRefillClick(table)}>Refill</Button>
+                                <Button variant="outline" onClick={() => handleAddOnClick(table)}>Add-ons</Button>
+                            </CardFooter>
                         </Card>
                     )
                 })}
@@ -413,14 +429,23 @@ export default function RefillPage() {
         </Tabs>
       </main>
 
-      {selectedOrder && selectedTable && (
+      {isRefillModalOpen && selectedOrder && (
         <RefillModal
             isOpen={isRefillModalOpen}
             onClose={() => setIsRefillModalOpen(false)}
-            table={selectedTable}
+            table={tables.find(t => t.id === selectedOrder.tableId)!}
             order={selectedOrder}
             menu={filteredMenu}
             onPlaceOrder={handlePlaceOrder}
+        />
+      )}
+      
+      {isAddToCartModalOpen && selectedOrder && (
+        <AddToCartModal
+            isOpen={isAddToCartModalOpen}
+            onClose={() => setIsAddToCartModalOpen(false)}
+            order={selectedOrder}
+            menu={filteredMenu}
         />
       )}
 

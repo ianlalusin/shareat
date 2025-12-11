@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -40,7 +41,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
   const { toast } = useToast();
 
   const availableMenu = useMemo(() => 
-    menu.filter(item => item.category !== 'Unlimited' && item.isAvailable && item.price > 0),
+    menu.filter(item => item.category !== 'Package' && item.isAvailable && item.price > 0),
     [menu]
   );
   

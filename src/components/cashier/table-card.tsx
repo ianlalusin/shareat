@@ -16,7 +16,8 @@ import { cva } from 'class-variance-authority';
 interface TableCardProps {
   table: TableType;
   order: Order | undefined;
-  onViewOrderClick: (order: Order) => void;
+  onRefillClick: (order: Order) => void;
+  onAddOnClick: (order: Order) => void;
   onTogglePriority: (order: Order) => void;
   onBillClick: (order: Order) => void;
 }
@@ -70,7 +71,7 @@ const getStatusColor = (status: TableType['status']) => {
   }
 };
 
-const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrderClick, onTogglePriority, onBillClick }) => {
+const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onRefillClick, onAddOnClick, onTogglePriority, onBillClick }) => {
   const { settings } = useSettings();
   const cardSize = settings.ui.cardSize;
   const cardDensity = settings.ui.cardDensity;
@@ -131,8 +132,9 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onViewOrde
         </div>
       </CardContent>
       <CardFooter className="p-0 pt-2 grid grid-cols-2 gap-2">
-        <Button variant="outline" onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>Bill</Button>
-        <Button onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>View Order</Button>
+        <Button variant="outline" onClick={() => onRefillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>Refill</Button>
+        <Button variant="outline" onClick={() => onAddOnClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>Add-ons</Button>
+        <Button onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} className="col-span-2">Bill</Button>
       </CardFooter>
     </Card>
   );

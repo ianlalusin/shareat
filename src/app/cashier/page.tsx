@@ -14,14 +14,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TableCard } from '@/components/cashier/table-card';
 import { ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
 import { Badge } from '@/components/ui/badge';
 import { NewOrderModal } from '@/components/cashier/new-order-modal';
-
-const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
+import { RefillModal } from '@/components/cashier/refill-modal';
+import { AddToCartModal } from '@/components/cashier/add-to-cart-modal';
 
 
 export default function CashierPage() {
@@ -31,12 +30,12 @@ export default function CashierPage() {
     const [schedules, setSchedules] = useState<CollectionItem[]>([]);
     const [pendingUpdates, setPendingUpdates] = useState<(PendingOrderUpdate & {order: Order})[]>([]);
 
-    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+    const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
+    const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
-    const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
-
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+    const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
     
     const firestore = useFirestore();
     const router = useRouter();
@@ -77,7 +76,7 @@ export default function CashierPage() {
               where('is_active', '==', true)
             );
             const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
-                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
+                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
                 setSchedules(schedulesData);
             });
             
@@ -177,6 +176,79 @@ export default function CashierPage() {
         setIsNewOrderModalOpen(true);
     };
 
+    const handlePlaceOrder = async (
+        order: Order,
+        refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[],
+        cart: (MenuItem & { quantity: number; note?: string; })[]
+    ) => {
+        if (!firestore) return;
+
+        const batch = writeBatch(firestore);
+
+        if (refillCart.length > 0) {
+            const refillsRef = collection(firestore, 'orders', order.id, 'refills');
+            refillCart.forEach(refill => {
+                const newRefillRef = doc(refillsRef);
+                const refillData: Omit<RefillItem, 'id'> = {
+                    orderId: order.id,
+                    storeId: order.storeId,
+                    menuItemId: refill.meatType.toLowerCase(),
+                    menuName: `${refill.meatType} - ${refill.flavor}`,
+                    quantity: refill.quantity,
+                    targetStation: refill.targetStation as 'Hot' | 'Cold',
+                    timestamp: serverTimestamp() as any,
+                    status: 'Pending',
+                    kitchenNote: refill.note || '',
+                };
+                batch.set(newRefillRef, refillData);
+            });
+        }
+
+        if (cart.length > 0) {
+            const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
+            cart.forEach(cartItem => {
+                const newItemRef = doc(orderItemsRef);
+                const rate = cartItem.taxRate ?? 0;
+                const orderItemData: Omit<OrderItem, 'id'> = {
+                    orderId: order.id,
+                    storeId: order.storeId,
+                    menuItemId: cartItem.id,
+                    menuName: cartItem.menuName,
+                    quantity: cartItem.quantity,
+                    priceAtOrder: cartItem.price,
+                    isRefill: false,
+                    timestamp: serverTimestamp() as any,
+                    status: 'Pending',
+                    targetStation: cartItem.targetStation,
+                    sourceTag: 'refill',
+                    kitchenNote: cartItem.note || '',
+                    taxRate: rate,
+                    taxProfileCode: cartItem.taxProfileCode ?? null,
+                    isFree: false,
+                };
+                batch.set(newItemRef, orderItemData);
+            });
+        }
+
+        try {
+            await batch.commit();
+            toast({
+                title: 'Order Sent!',
+                description: 'Refills and add-ons have been sent to the kitchen.',
+            });
+            setIsRefillModalOpen(false);
+            setIsAddToCartModalOpen(false);
+        } catch (error) {
+            console.error("Error placing order:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Order Failed',
+                description: 'Failed to place order. Please try again.',
+            });
+        }
+    };
+
+
     const availableTables = useMemo(() => tables.filter(t => t.status === 'Available'), [tables]);
     
     const occupiedTables = useMemo(() => {
@@ -189,9 +261,14 @@ export default function CashierPage() {
         }));
     }, [tables, orders]);
     
-    const handleViewOrderClick = useCallback((order: Order) => {
+    const handleRefillClick = useCallback((order: Order) => {
         setSelectedOrder(order);
-        setIsDetailsModalOpen(true);
+        setIsRefillModalOpen(true);
+    }, []);
+    
+    const handleAddOnClick = useCallback((order: Order) => {
+        setSelectedOrder(order);
+        setIsAddToCartModalOpen(true);
     }, []);
 
     const handleTogglePriority = useCallback(async (order: Order) => {
@@ -294,7 +371,8 @@ export default function CashierPage() {
                                 key={table.id}
                                 table={table}
                                 order={order}
-                                onViewOrderClick={() => handleViewOrderClick(order)}
+                                onRefillClick={() => handleRefillClick(order)}
+                                onAddOnClick={() => handleAddOnClick(order)}
                                 onTogglePriority={handleTogglePriority}
                                 onBillClick={handleBillClick}
                             />
@@ -317,14 +395,6 @@ export default function CashierPage() {
       </div>
       </div>
       
-      {isDetailsModalOpen && selectedOrder && (
-        <OrderDetailsModal
-          isOpen={isDetailsModalOpen}
-          onClose={() => setIsDetailsModalOpen(false)}
-          order={selectedOrder}
-          menu={menu}
-        />
-      )}
        {isNewOrderModalOpen && selectedTable && selectedStoreId && (
         <NewOrderModal
             isOpen={isNewOrderModalOpen}
@@ -335,6 +405,24 @@ export default function CashierPage() {
             storeId={selectedStoreId}
             onCreateOrder={handleCreateOrder}
         />
+       )}
+       {isRefillModalOpen && selectedOrder && (
+            <RefillModal
+                isOpen={isRefillModalOpen}
+                onClose={() => setIsRefillModalOpen(false)}
+                table={tables.find(t => t.id === selectedOrder.tableId)!}
+                order={selectedOrder}
+                menu={menu}
+                onPlaceOrder={handlePlaceOrder}
+            />
+       )}
+        {isAddToCartModalOpen && selectedOrder && (
+            <AddToCartModal
+                isOpen={isAddToCartModalOpen}
+                onClose={() => setIsAddToCartModalOpen(false)}
+                order={selectedOrder}
+                menu={menu}
+            />
        )}
     </>
   );
