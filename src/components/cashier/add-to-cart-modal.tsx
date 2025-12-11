@@ -41,7 +41,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
   const { toast } = useToast();
 
   const availableMenu = useMemo(() => 
-    menu.filter(item => item.category !== 'Unlimited' && item.isAvailable),
+    menu.filter(item => item.category !== 'Unlimited' && item.isAvailable && item.price > 0),
     [menu]
   );
   
@@ -153,20 +153,18 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                     />
                 </div>
                 <ScrollArea className="flex-1">
-                    <div className="space-y-2 pr-4">
+                    <div className="grid grid-cols-2 gap-2 pr-4">
                         {filteredMenu.map(item => (
-                            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg border">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-12 w-12 flex-shrink-0 bg-muted rounded-md overflow-hidden relative">
-                                        {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
-                                    </div>
-                                    <div>
-                                        <p className="font-semibold">{item.menuName}</p>
-                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
-                                    </div>
+                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center">
+                                <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
+                                    {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
                                 </div>
-                                <Button size="sm" onClick={() => handleAddToCart(item)}>
-                                    <Plus className="h-4 w-4 mr-2" /> Add
+                                <div className='flex-grow'>
+                                    <p className="font-semibold text-xs leading-tight">{item.menuName}</p>
+                                    <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
+                                </div>
+                                <Button size="sm" className="mt-2 w-full h-8 text-xs" onClick={() => handleAddToCart(item)}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add
                                 </Button>
                             </div>
                         ))}
