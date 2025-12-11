@@ -104,7 +104,6 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   is_refillable: false,
   allowed_refills: [],
   sortOrder: 0,
-  flavors: [],
   preparationTime: 1,
 };
 
@@ -701,34 +700,33 @@ export default function MenuPage() {
                     </div>
                 </div>
                  
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center rounded-lg border p-4">
-                  <div className="space-y-2">
-                    <Label>Image</Label>
-                    <button
-                      type="button"
-                      onClick={() => imageInputRef.current?.click()}
-                      className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
-                    >
-                      <input
-                        type="file"
-                        ref={imageInputRef}
-                        onChange={handleFileChange}
-                        className="hidden"
-                        accept="image/*"
-                      />
-                      {formData.imageUrl ? (
-                        <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
-                      ) : (
-                        <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                      )}
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="barcode">Barcode</Label>
-                    <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center rounded-lg border p-4">
+                    <div className="space-y-2 col-span-3">
+                        <Label>Image</Label>
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          className="w-24 h-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
+                        >
+                          <input
+                            type="file"
+                            ref={imageInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
+                            accept="image/*"
+                          />
+                          {formData.imageUrl ? (
+                            <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                          ) : (
+                            <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                          )}
+                        </button>
+                    </div>
+                    <div className="space-y-2 col-span-5">
+                        <Label htmlFor="barcode">Barcode</Label>
+                        <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                    </div>
+                    <div className="space-y-2 col-span-3">
                       <Label htmlFor="sortOrder">Sort</Label>
                       <div className="flex items-center gap-1">
                         <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: Math.max(0, (prev.sortOrder || 0) - 1)}))}><Minus className="h-4 w-4"/></Button>
@@ -736,11 +734,10 @@ export default function MenuPage() {
                         <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: (prev.sortOrder || 0) + 1}))}><Plus className="h-4 w-4"/></Button>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2 pt-6">
+                     <div className="flex items-center space-x-2 pt-6 col-span-1">
                       <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                       <Label htmlFor="isAvailable">Available</Label>
                     </div>
-                  </div>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-6 rounded-lg border p-4">
