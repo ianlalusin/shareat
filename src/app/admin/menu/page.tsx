@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -165,7 +164,7 @@ export default function MenuPage() {
       const availabilityQuery = query(
           collection(firestore, 'lists'),
           where('category', '==', 'menu schedules'),
-          where('is_active', '==', true)
+          where('is_active', '==', true),
         );
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
           const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
@@ -180,7 +179,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
           setTaxRates(taxRateData);
         });
 
@@ -191,7 +190,7 @@ export default function MenuPage() {
             where('storeIds', 'array-contains', selectedStoreId)
         );
         storeStationsUnsubscribe = onSnapshot(storeStationsQuery, (snapshot) => {
-            const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+            const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
             setStoreStations(stationData);
         });
         
@@ -468,11 +467,16 @@ export default function MenuPage() {
 
   const availableInventoryItems = useMemo(() => {
     if (editingItem) return inventoryItems;
-    const existingProductIds = items.map(item => item.productId).filter(Boolean);
+    // Get product IDs of items already on the menu for the current store
+    const existingProductIdsOnMenu = items.map(item => item.productId).filter(Boolean);
+    
+    // Filter inventory items:
+    // 1. Must have a productId
+    // 2. The productId must NOT be in the list of products already on the menu
     return inventoryItems.filter(invItem => 
-        invItem.productId && !existingProductIds.includes(invItem.productId)
+        invItem.productId && !existingProductIdsOnMenu.includes(invItem.productId)
     );
-}, [items, inventoryItems, editingItem]);
+  }, [items, inventoryItems, editingItem]);
 
   const groupedAvailableInventoryItems = useMemo(() => {
     return availableInventoryItems.reduce((acc, item) => {
@@ -597,7 +601,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                      <div className="space-y-2">
                         <Label>Image</Label>
                          <div className="h-24 w-24 flex items-center justify-center rounded-md bg-muted overflow-hidden relative">
@@ -611,6 +615,12 @@ export default function MenuPage() {
                     <div className="space-y-2">
                       <Label htmlFor="barcode">Barcode</Label>
                       <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                    </div>
+                    <div className="space-y-2 self-center">
+                        <div className="flex items-center space-x-2">
+                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                            <Label htmlFor="isAvailable">Available</Label>
+                        </div>
                     </div>
                 </div>
                  
@@ -673,22 +683,14 @@ export default function MenuPage() {
                     </div>
                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2 space-y-2">
-                    <Label htmlFor="publicDescription">Public Description</Label>
-                    <Textarea
-                      id="publicDescription"
-                      name="publicDescription"
-                      value={formData.publicDescription}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="space-y-2 pt-6">
-                    <div className="flex items-center space-x-2">
-                        <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
-                        <Label htmlFor="isAvailable">Available</Label>
-                    </div>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="publicDescription">Public Description</Label>
+                  <Textarea
+                    id="publicDescription"
+                    name="publicDescription"
+                    value={formData.publicDescription}
+                    onChange={handleInputChange}
+                  />
                 </div>
 
                 {formError && (
@@ -825,3 +827,4 @@ export default function MenuPage() {
 
 
 
+    
