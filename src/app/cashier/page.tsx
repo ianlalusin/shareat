@@ -190,8 +190,9 @@ export default function CashierPage() {
     }, [tables, orders]);
     
     const handleViewOrderClick = useCallback((order: Order) => {
-        router.push(`/cashier/order/${order.id}`);
-    }, [router]);
+        setSelectedOrder(order);
+        setIsDetailsModalOpen(true);
+    }, []);
 
     const handleTogglePriority = useCallback(async (order: Order) => {
         if (!firestore) return;
@@ -293,7 +294,7 @@ export default function CashierPage() {
                                 key={table.id}
                                 table={table}
                                 order={order}
-                                onViewOrderClick={() => router.push(`/cashier/order/${order.id}`)}
+                                onViewOrderClick={() => handleViewOrderClick(order)}
                                 onTogglePriority={handleTogglePriority}
                                 onBillClick={handleBillClick}
                             />
