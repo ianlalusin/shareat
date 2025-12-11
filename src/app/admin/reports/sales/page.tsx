@@ -202,7 +202,9 @@ export default function SalesReportPage() {
   }, [firestore, selectedStoreId]);
 
   useEffect(() => {
+    if (selectedStoreId) {
       fetchData();
+    }
   }, [selectedStoreId, fetchData]);
 
 
