@@ -44,6 +44,7 @@ export default function KitchenPage() {
       setActiveOrders([]);
       setKitchenItemsByOrder({});
       setActiveTab(undefined);
+      setServedItems([]);
       return;
     }
 
@@ -64,28 +65,31 @@ export default function KitchenPage() {
         }
     });
     
+    // Fetch recently served items and filter on the client
     const servedItemsQuery = query(
       collectionGroup(firestore, 'orderItems'),
       where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Served'),
       orderBy('servedTimestamp', 'desc'),
-      limit(20)
+      limit(50) // Fetch more to account for client-side filtering
     );
     const servedRefillsQuery = query(
       collectionGroup(firestore, 'refills'),
       where('storeId', '==', selectedStoreId),
-      where('status', '==', 'Served'),
       orderBy('servedTimestamp', 'desc'),
-      limit(20)
+      limit(50)
     );
 
     const unsubServedItems = onSnapshot(servedItemsQuery, (snapshot) => {
-      const items = snapshot.docs.map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'orderItems'}) as KitchenItem);
+      const items = snapshot.docs
+        .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'orderItems'}) as KitchenItem)
+        .filter(item => item.status === 'Served'); // Filter client-side
       setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'orderItems')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
     });
     
     const unsubServedRefills = onSnapshot(servedRefillsQuery, (snapshot) => {
-        const items = snapshot.docs.map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'refills'}) as KitchenItem);
+        const items = snapshot.docs
+          .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'refills'}) as KitchenItem)
+          .filter(item => item.status === 'Served'); // Filter client-side
         setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'refills')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
     });
 
