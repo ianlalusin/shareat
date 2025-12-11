@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -119,13 +120,16 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         }
     }, [isOpen, meatTypesForPackage]);
 
-    const availableMenuForAddons = useMemo(() => 
-        menu.filter(item => 
-            item.category !== 'Package' &&
-            item.isAvailable &&
-            (item.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             item.category.toLowerCase().includes(searchTerm.toLowerCase()))
-        ), [menu, searchTerm]
+    const availableMenuForAddons = useMemo(() =>
+      menu.filter(
+        (item) =>
+          item.category !== 'Package' &&
+          item.isAvailable &&
+          item.price > 0 &&
+          (item.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.category.toLowerCase().includes(searchTerm.toLowerCase()))
+      ),
+      [menu, searchTerm]
     );
 
     const handleFlavorSelect = (meatType: string, flavor: string) => {
@@ -380,20 +384,18 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 </div>
                                 <ScrollArea className="flex-1 rounded-md border">
-                                    <div className="p-4 space-y-2">
+                                    <div className="grid grid-cols-3 gap-2 p-4">
                                         {availableMenuForAddons.map(item => (
-                                            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg border">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="h-12 w-12 flex-shrink-0 bg-muted rounded-md overflow-hidden relative">
-                                                        {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold">{item.menuName}</p>
-                                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
-                                                    </div>
+                                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center aspect-square">
+                                                <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
+                                                    {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
                                                 </div>
-                                                <Button size="sm" onClick={() => handleAddToCart(item)}>
-                                                    <Plus className="h-4 w-4 mr-2" /> Add
+                                                <div className='flex-grow flex flex-col justify-center'>
+                                                    <p className="font-semibold text-xs leading-tight">{item.menuName}</p>
+                                                    <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
+                                                </div>
+                                                <Button size="sm" className="mt-2 w-full h-8 text-xs" onClick={() => handleAddToCart(item)}>
+                                                    <Plus className="h-4 w-4 mr-1" /> Add
                                                 </Button>
                                             </div>
                                         ))}
