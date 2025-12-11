@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -14,19 +13,26 @@ import {
   updateDoc,
   serverTimestamp,
   writeBatch,
+  collectionGroup,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Order, OrderItem, RefillItem, CollectionItem } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
-import { cn } from '@/lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function KitchenPage() {
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [kitchenItemsByOrder, setKitchenItemsByOrder] = useState<Record<string, KitchenItem[]>>({});
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
   const [activeTab, setActiveTab] = useState<string | undefined>();
+  const [servedItems, setServedItems] = useState<KitchenItem[]>([]);
   
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
@@ -57,8 +63,38 @@ export default function KitchenPage() {
             setActiveTab(undefined);
         }
     });
+    
+    const servedItemsQuery = query(
+      collectionGroup(firestore, 'orderItems'),
+      where('storeId', '==', selectedStoreId),
+      where('status', '==', 'Served'),
+      orderBy('servedTimestamp', 'desc'),
+      limit(20)
+    );
+    const servedRefillsQuery = query(
+      collectionGroup(firestore, 'refills'),
+      where('storeId', '==', selectedStoreId),
+      where('status', '==', 'Served'),
+      orderBy('servedTimestamp', 'desc'),
+      limit(20)
+    );
 
-    return () => unsubStations();
+    const unsubServedItems = onSnapshot(servedItemsQuery, (snapshot) => {
+      const items = snapshot.docs.map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'orderItems'}) as KitchenItem);
+      setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'orderItems')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
+    });
+    
+    const unsubServedRefills = onSnapshot(servedRefillsQuery, (snapshot) => {
+        const items = snapshot.docs.map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'refills'}) as KitchenItem);
+        setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'refills')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
+    });
+
+
+    return () => {
+      unsubStations();
+      unsubServedItems();
+      unsubServedRefills();
+    }
   }, [firestore, selectedStoreId]);
 
   useEffect(() => {
@@ -157,6 +193,14 @@ export default function KitchenPage() {
       });
   }, [activeOrders, kitchenItemsByOrder]);
 
+  const servedWithOrderDetails = useMemo(() => {
+      const orderMap = new Map(activeOrders.map(o => [o.id, o]));
+      return servedItems.map(item => ({
+          ...item,
+          order: orderMap.get(item.orderId)
+      }));
+  }, [servedItems, activeOrders]);
+
   
   const getGroupsForStation = (station: string) => {
       return groupedByOrder
@@ -215,38 +259,72 @@ export default function KitchenPage() {
   }
 
   return (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
-      <TabsList className="h-auto flex-wrap justify-start">
-        {storeStations.map(station => (
-            <TabsTrigger key={station.id} value={station.item}>{station.item}</TabsTrigger>
-        ))}
-        {storeStations.length === 0 && (
-            <div className="text-sm text-muted-foreground p-2">No kitchen stations configured for this store.</div>
-        )}
-      </TabsList>
-      {storeStations.map(station => {
-          const stationGroups = getGroupsForStation(station.item);
-          return (
-            <TabsContent key={station.id} value={station.item} className="flex-1 mt-6">
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {stationGroups.map((group) => (
-                    <KitchenOrderCard
-                    key={group.orderId}
-                    order={group.order}
-                    items={group.items}
-                    onServeItem={handleServeItem}
-                    onServeAll={() => handleServeAll(group.items)}
-                    />
+    <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6 h-full">
+        <div className="flex-1">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+            <TabsList className="h-auto flex-wrap justify-start">
+                {storeStations.map(station => (
+                    <TabsTrigger key={station.id} value={station.item}>{station.item}</TabsTrigger>
                 ))}
-                {stationGroups.length === 0 && (
-                    <p className="text-muted-foreground col-span-full text-center">
-                    No pending items for the {station.item} station.
-                    </p>
+                {storeStations.length === 0 && (
+                    <div className="text-sm text-muted-foreground p-2">No kitchen stations configured for this store.</div>
                 )}
-                </div>
-            </TabsContent>
-          )
-      })}
-    </Tabs>
+            </TabsList>
+            {storeStations.map(station => {
+                const stationGroups = getGroupsForStation(station.item);
+                return (
+                    <TabsContent key={station.id} value={station.item} className="flex-1 mt-6">
+                        <ScrollArea className="h-full">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 pr-4">
+                        {stationGroups.map((group) => (
+                            <KitchenOrderCard
+                            key={group.orderId}
+                            order={group.order}
+                            items={group.items}
+                            onServeItem={handleServeItem}
+                            onServeAll={() => handleServeAll(group.items)}
+                            />
+                        ))}
+                        {stationGroups.length === 0 && (
+                            <p className="text-muted-foreground col-span-full text-center">
+                            No pending items for the {station.item} station.
+                            </p>
+                        )}
+                        </div>
+                        </ScrollArea>
+                    </TabsContent>
+                )
+            })}
+            </Tabs>
+        </div>
+        <aside className="hidden lg:block">
+            <Card className="sticky top-[80px]">
+                <CardHeader>
+                    <CardTitle className="text-lg">Recently Served</CardTitle>
+                </CardHeader>
+                <Separator />
+                <CardContent className="p-0">
+                    <ScrollArea className="h-[calc(100vh-14rem)]">
+                        <div className="p-4 space-y-4">
+                            {servedWithOrderDetails.map(item => (
+                                <div key={item.id}>
+                                    <div className="flex justify-between items-start">
+                                        <p className="font-medium text-sm leading-tight max-w-[180px]">
+                                            {item.quantity}x {item.menuName}
+                                        </p>
+                                        <p className="text-sm font-semibold">{item.order?.tableName}</p>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {item.servedTimestamp ? formatDistanceToNow(item.servedTimestamp.toDate(), { addSuffix: true }) : 'Just now'}
+                                    </p>
+                                </div>
+                            ))}
+                            {servedItems.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">No items served recently.</p>}
+                        </div>
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+        </aside>
+    </div>
   );
 }
