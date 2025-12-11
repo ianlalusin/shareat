@@ -163,6 +163,16 @@ export default function MenuPage() {
       let storeStationsUnsubscribe = () => {};
       let availabilityUnsubscribe = () => {};
 
+      const availabilityQuery = query(
+          collection(firestore, 'lists'),
+          where('category', '==', 'menu schedules'),
+          where('is_active', '==', true)
+        );
+      availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
+          const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          setAvailabilityOptions(availabilityData);
+      });
+
       if (selectedStoreId) {
         const taxRateQuery = query(
           collection(firestore, 'lists'),
@@ -186,21 +196,9 @@ export default function MenuPage() {
             setStoreStations(stationData);
         });
         
-        const availabilityQuery = query(
-          collection(firestore, 'lists'),
-          where('category', '==', 'menu schedules'),
-          where('is_active', '==', true),
-          where('storeIds', 'array-contains', selectedStoreId)
-        );
-        availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-          const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
-          setAvailabilityOptions(availabilityData);
-        });
-        
       } else {
         setTaxRates([]);
         setStoreStations([]);
-        setAvailabilityOptions([]);
       }
       
       return () => {

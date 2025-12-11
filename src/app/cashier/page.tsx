@@ -74,8 +74,7 @@ export default function CashierPage() {
             const schedulesQuery = query(
               collection(firestore, 'lists'),
               where('category', '==', 'menu schedules'),
-              where('is_active', '==', true),
-              where('storeIds', 'array-contains', selectedStoreId)
+              where('is_active', '==', true)
             );
             const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
                 const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
