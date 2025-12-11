@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -108,7 +109,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                 quantity: cartItem.quantity,
                 priceAtOrder: cartItem.price,
                 isRefill: false,
-                timestamp: serverTimestamp(),
+                timestamp: serverTimestamp() as any,
                 status: 'Pending',
                 targetStation: cartItem.targetStation,
                 sourceTag: 'cashier',

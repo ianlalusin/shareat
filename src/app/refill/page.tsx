@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc, runTransaction, limit, getDocs, collectionGroup } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, RefillItem, OrderItem, OrderUpdateLog } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem, OrderItem, OrderUpdateLog, CollectionItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ export default function RefillPage() {
     const [tables, setTables] = useState<TableType[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menu, setMenu] = useState<MenuItem[]>([]);
+    const [schedules, setSchedules] = useState<CollectionItem[]>([]);
     const [refills, setRefills] = useState<Record<string, RefillItem[]>>({});
     
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
@@ -84,19 +85,56 @@ export default function RefillPage() {
               })) as MenuItem[];
               setMenu(menuData);
             });
+            
+            const schedulesQuery = query(
+              collection(firestore, 'lists'),
+              where('category', '==', 'menu schedules'),
+              where('is_active', '==', true),
+              where('storeIds', 'array-contains', selectedStoreId)
+            );
+            const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
+                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+                setSchedules(schedulesData);
+            });
 
             return () => {
                 tablesUnsubscribe();
                 ordersUnsubscribe();
                 menuUnsubscribe();
+                schedulesUnsubscribe();
             };
         } else {
             setTables([]);
             setOrders([]);
             setMenu([]);
+            setSchedules([]);
             setRefills({});
         }
     }, [firestore, selectedStoreId]);
+    
+    const filteredMenu = useMemo(() => {
+        if (schedules.length === 0) return menu;
+
+        const now = new Date();
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+
+        const activeSchedules = new Set(schedules
+            .filter(schedule => 
+                (schedule as any).days.includes(currentDay) &&
+                (schedule as any).startTime <= currentTime &&
+                (schedule as any).endTime >= currentTime
+            )
+            .map(schedule => schedule.item)
+        );
+
+        return menu.filter(menuItem => {
+            if (menuItem.availability === 'always') {
+                return true;
+            }
+            return activeSchedules.has(menuItem.availability);
+        });
+    }, [menu, schedules]);
 
     const handleTableClick = (table: TableType) => {
         const order = orders.find(o => o.id === table.activeOrderId);
@@ -113,7 +151,7 @@ export default function RefillPage() {
 
     const handlePlaceOrder = async (
         order: Order,
-        refillCart: { meatType: string; flavor: string; quantity: number; note?: string }[],
+        refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[],
         cart: { id: string; menuName: string; price: number; quantity: number; targetStation?: 'Hot' | 'Cold'; note?: string }[]
     ) => {
         if (!firestore) return;
@@ -130,8 +168,8 @@ export default function RefillPage() {
                     menuItemId: refill.meatType.toLowerCase(),
                     menuName: `${refill.meatType} - ${refill.flavor}`,
                     quantity: refill.quantity,
-                    targetStation: 'Cold',
-                    timestamp: serverTimestamp(),
+                    targetStation: refill.targetStation as 'Hot' | 'Cold',
+                    timestamp: serverTimestamp() as any,
                     status: 'Pending',
                     kitchenNote: refill.note || '',
                 };
@@ -151,7 +189,7 @@ export default function RefillPage() {
                     quantity: cartItem.quantity,
                     priceAtOrder: cartItem.price,
                     isRefill: false,
-                    timestamp: serverTimestamp(),
+                    timestamp: serverTimestamp() as any,
                     status: 'Pending',
                     targetStation: cartItem.targetStation,
                     sourceTag: 'refill',
@@ -378,7 +416,7 @@ export default function RefillPage() {
             onClose={() => setIsRefillModalOpen(false)}
             table={selectedTable}
             order={selectedOrder}
-            menu={menu}
+            menu={filteredMenu}
             onPlaceOrder={handlePlaceOrder}
         />
       )}

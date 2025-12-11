@@ -28,6 +28,7 @@ interface OrderDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   order: Order;
+  menu: MenuItem[];
 }
 
 const calculateLapseTime = (start: Timestamp | undefined, end: Timestamp | undefined) => {
@@ -39,11 +40,10 @@ const calculateLapseTime = (start: Timestamp | undefined, end: Timestamp | undef
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
-export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalProps) {
+export function OrderDetailsModal({ isOpen, onClose, order, menu }: OrderDetailsModalProps) {
   const firestore = useFirestore();
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [refillItems, setRefillItems] = useState<RefillItem[]>([]);
-  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
   const { openSuccessModal } = useSuccessModal();
 
@@ -63,21 +63,10 @@ export function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalP
         setRefillItems(items);
     });
 
-    const menuQuery = query(
-        collection(firestore, 'menu'),
-        where('storeId', '==', order.storeId),
-        where('isAvailable', '==', true)
-    );
-    const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
-        const menuData = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as MenuItem));
-        setMenu(menuData);
-    });
-
 
     return () => {
       orderItemsUnsubscribe();
       refillItemsUnsubscribe();
-      menuUnsubscribe();
     };
   }, [firestore, order.id, order.storeId]);
 
