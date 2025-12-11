@@ -49,7 +49,7 @@ export type DiscountProperties = {
     code: string;
     discountMode: 'ABS' | 'PCT';
     discountValue: number;
-    appliesTo: 'bill' | 'line';
+    appliesTo: 'bill' | 'line' | 'both';
     requiresTin: boolean;
     requiresName: boolean;
 }
@@ -251,6 +251,8 @@ export type OrderItem = {
   lineDiscountType?: 'ABS' | 'PCT';
   lineDiscountValue?: number;
   lineDiscountAmount?: number;
+  lineDiscountCode?: string | null;
+  lineDiscountLabel?: string | null;
 };
 
 export type RefillItem = {

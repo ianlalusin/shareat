@@ -113,6 +113,7 @@ export default function OrderDetailPage() {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [lineDiscountType, setLineDiscountType] = useState<'₱' | '%'>('₱');
   const [lineDiscountValueInput, setLineDiscountValueInput] = useState('');
+  const [selectedLineDiscountCode, setSelectedLineDiscountCode] = useState<string>('');
 
 
   const firestore = useFirestore();
@@ -195,6 +196,18 @@ export default function OrderDetailPage() {
       }
     }
   }, [firestore, order?.storeId]);
+
+  useEffect(() => {
+    console.log('discountTypes:', discountTypes);
+  }, [discountTypes]);
+
+  const lineDiscountTypes = useMemo(
+    () =>
+      discountTypes.filter((d) =>
+        !d.appliesTo || d.appliesTo === 'line' || d.appliesTo === 'both'
+      ),
+    [discountTypes]
+  );
   
   const billableItems = useMemo(() => {
     return orderItems.filter((item) => {
@@ -467,7 +480,7 @@ export default function OrderDetailPage() {
       });
       return;
     }
-
+  
     const raw = parseFloat(lineDiscountValueInput);
     if (isNaN(raw) || raw <= 0) {
       toast({
@@ -477,14 +490,14 @@ export default function OrderDetailPage() {
       });
       return;
     }
-
+  
     const price = item.priceAtOrder ?? 0;
     const qty = item.quantity ?? 0;
     const base = price * qty;
-
+  
     let discountAmount = 0;
     let discountTypeInternal: 'ABS' | 'PCT' = 'ABS';
-
+  
     if (lineDiscountType === '₱') {
       discountAmount = raw;
       discountTypeInternal = 'ABS';
@@ -500,16 +513,29 @@ export default function OrderDetailPage() {
       discountAmount = (base * raw) / 100;
       discountTypeInternal = 'PCT';
     }
-
-    discountAmount = Math.min(discountAmount, base); // do not exceed line total
-
-    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
-
+  
+    discountAmount = Math.min(discountAmount, base);
+  
+    const selected = lineDiscountTypes.find(
+      (d) =>
+        d.code === selectedLineDiscountCode || d.item === selectedLineDiscountCode
+    );
+  
+    const itemRef = doc(
+      firestore,
+      'orders',
+      order.id,
+      'orderItems',
+      item.id
+    );
+  
     try {
       await updateDoc(itemRef, {
         lineDiscountType: discountTypeInternal,
         lineDiscountValue: raw,
         lineDiscountAmount: discountAmount,
+        lineDiscountCode: selected?.code ?? null,
+        lineDiscountLabel: selected?.item ?? null,
       });
       toast({
         title: 'Line Discount Applied',
@@ -535,6 +561,8 @@ export default function OrderDetailPage() {
         lineDiscountType: null,
         lineDiscountValue: null,
         lineDiscountAmount: null,
+        lineDiscountCode: null,
+        lineDiscountLabel: null,
       });
       toast({
         title: 'Line Discount Removed',
@@ -637,7 +665,8 @@ export default function OrderDetailPage() {
                                             setEditingLineId(null);
                                           } else {
                                             setEditingLineId(item.id);
-                                            setLineDiscountType('₱');
+                                            setSelectedLineDiscountCode('');
+                                            setLineDiscountType(item.lineDiscountType === 'PCT' ? '%' : '₱');
                                             setLineDiscountValueInput(
                                               item.lineDiscountValue ? String(item.lineDiscountValue) : ''
                                             );
@@ -667,44 +696,85 @@ export default function OrderDetailPage() {
 
                                           <Separator />
 
-                                          {/* Line discount editor */}
-                                          <div className="flex flex-wrap items-stretch gap-2">
-                                            <div className="flex flex-auto">
-                                              <Input
-                                                type="number"
-                                                value={lineDiscountValueInput}
-                                                onChange={(e) => setLineDiscountValueInput(e.target.value)}
-                                                placeholder="Discount value"
-                                                className="rounded-r-none focus-visible:ring-offset-0"
-                                              />
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                className="rounded-l-none border-l-0 px-3 font-bold"
-                                                onClick={() =>
-                                                  setLineDiscountType((prev) => (prev === '₱' ? '%' : '₱'))
-                                                }
-                                              >
-                                                {lineDiscountType}
-                                              </Button>
+                                          <div className="flex flex-col gap-2">
+                                            <div className="flex flex-wrap items-stretch gap-2">
+                                                {/* Discount type dropdown */}
+                                                <Select
+                                                value={selectedLineDiscountCode}
+                                                onValueChange={(code) => {
+                                                    setSelectedLineDiscountCode(code);
+                                                    const selected = lineDiscountTypes.find(
+                                                    (d) => d.code === code || d.item === code
+                                                    );
+                                                    if (selected) {
+                                                    if (selected.discountMode === 'PCT') {
+                                                        setLineDiscountType('%');
+                                                    } else if (selected.discountMode === 'ABS') {
+                                                        setLineDiscountType('₱');
+                                                    }
+                                                    if (typeof selected.discountValue === 'number') {
+                                                        setLineDiscountValueInput(String(selected.discountValue));
+                                                    } else {
+                                                        // leave as-is if discountValue is not defined
+                                                    }
+                                                    }
+                                                }}
+                                                >
+                                                <SelectTrigger className="w-full sm:w-56">
+                                                    <SelectValue placeholder="Select discount type (optional)" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {lineDiscountTypes.map((d) => (
+                                                    <SelectItem
+                                                        key={d.id}
+                                                        value={d.code || d.item}
+                                                    >
+                                                        {d.item}
+                                                    </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                                </Select>
                                             </div>
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              onClick={() => handleApplyLineDiscount(item)}
-                                            >
-                                              Apply Line Discount
-                                            </Button>
-                                            <Button
-                                              type="button"
-                                              size="icon"
-                                              variant="ghost"
-                                              onClick={() => handleClearLineDiscount(item)}
-                                            >
-                                              <X className="h-4 w-4" />
-                                              <span className="sr-only">Clear line discount</span>
-                                            </Button>
-                                          </div>
+
+                                            {/* Value + ₱/% toggle + buttons */}
+                                            <div className="flex flex-wrap items-stretch gap-2">
+                                                <div className="flex flex-auto">
+                                                <Input
+                                                    type="number"
+                                                    value={lineDiscountValueInput}
+                                                    onChange={(e) => setLineDiscountValueInput(e.target.value)}
+                                                    placeholder="Discount value"
+                                                    className="rounded-r-none focus-visible:ring-offset-0"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    className="rounded-l-none border-l-0 px-3 font-bold"
+                                                    onClick={() =>
+                                                    setLineDiscountType((prev) => (prev === '₱' ? '%' : '₱'))
+                                                    }
+                                                >
+                                                    {lineDiscountType}
+                                                </Button>
+                                                </div>
+                                                <Button
+                                                type="button"
+                                                size="sm"
+                                                onClick={() => handleApplyLineDiscount(item)}
+                                                >
+                                                Apply Line Discount
+                                                </Button>
+                                                <Button
+                                                type="button"
+                                                size="icon"
+                                                variant="ghost"
+                                                onClick={() => handleClearLineDiscount(item)}
+                                                >
+                                                <X className="h-4 w-4" />
+                                                <span className="sr-only">Clear line discount</span>
+                                                </Button>
+                                            </div>
+                                            </div>
                                         </div>
                                       </TableCell>
                                     </TableRow>
