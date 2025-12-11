@@ -91,7 +91,7 @@ export default function AdminPage() {
         const [ordersSnapshot, menuSnapshot, auditLogsSnapshot] = await Promise.all([
           getDocs(ordersQuery),
           getDocs(menuQuery),
-          getDocs(auditLogsQuery),
+          getDocs(auditLogsSnapshot),
         ]);
         
         const menuItems = menuSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MenuItem));
@@ -123,7 +123,7 @@ export default function AdminPage() {
 
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
-                getDocs(orderItemsQuery),
+                getDocs(orderItemsSnapshot),
                 getDocs(refillsQuery),
             ]);
 
