@@ -139,7 +139,6 @@ export default function SalesReportPage() {
       const itemSales: Record<string, { menuItemId: string; menuName: string; category: string; quantity: number; orderIds: Set<string> }> = {};
       
       for (const item of allItems) {
-        if(item.sourceTag === 'initial') continue;
         const menuItem = menuMap.get(item.menuItemId);
         const category = menuItem?.category || 'Uncategorized';
         
