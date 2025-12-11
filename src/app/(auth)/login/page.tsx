@@ -23,12 +23,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/admin/logo';
 import { useAuthContext } from '@/context/auth-context';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
@@ -116,13 +118,24 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="login-password">Password</Label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+                <div className="relative">
+                  <Input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                  >
+                    {showPassword ? <EyeOff /> : <Eye />}
+                  </Button>
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Logging in...' : 'Login'}
@@ -165,13 +178,24 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="signup-password">Password</Label>
-                <Input
-                  id="signup-password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+                <div className="relative">
+                  <Input
+                    id="signup-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                   <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                  >
+                    {showPassword ? <EyeOff /> : <Eye />}
+                  </Button>
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Creating Account...' : 'Sign Up'}
