@@ -74,7 +74,7 @@ const initialScheduleState: any = {
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export default function GlobalCollectionsPage() {
+export default function CollectionsPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [schedules, setSchedules] = useState<CollectionItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -281,7 +281,7 @@ export default function GlobalCollectionsPage() {
       <main className="flex flex-1 flex-col gap-6 p-4 lg:gap-8 lg:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
-          Global Collections
+          Collections
         </h1>
       </div>
       
