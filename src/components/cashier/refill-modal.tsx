@@ -260,7 +260,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
                 <DialogHeader className='p-4 pb-0 sm:p-0'>
-                    <DialogTitle>Refill / Add-on: {table.tableName}</DialogTitle>
+                    <DialogTitle>Request Refill: {table.tableName}</DialogTitle>
                     <DialogDescription>
                         Customer: {order.customerName} | Package: {order.packageName}
                     </DialogDescription>
@@ -274,8 +274,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsList>
                     
                     <TabsContent value="refill" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full pt-2">
-                            <div className="md:col-span-2 flex flex-col gap-4 h-full">
+                        <div className="grid md:grid-cols-[3fr_2fr] gap-6 h-full pt-2">
+                            <div className="flex flex-col gap-4 h-full">
                                 <h3 className="font-semibold px-4 md:px-0">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
                                     <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -322,7 +322,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="md:col-span-1 flex flex-col border rounded-lg">
+                            <div className="flex flex-col border rounded-lg">
                                 <div className="p-4 border-b">
                                     <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
                                 </div>
@@ -360,20 +360,20 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                     </TabsContent>
                     
                     <TabsContent value="add-ons" className="flex-1 overflow-hidden p-1">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full pt-2">
-                            <div className="md:col-span-2 flex flex-col gap-4 h-full">
+                        <div className="grid md:grid-cols-[3fr_2fr] gap-6 h-full pt-2">
+                            <div className="flex flex-col gap-4 h-full">
                                 <div className="relative px-4 md:px-0">
                                     <Input placeholder="Search add-ons..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                     <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 </div>
                                 <ScrollArea className="flex-1 rounded-md border">
-                                    <div className="p-4 grid grid-cols-2 gap-2">
+                                     <div className="p-4 grid grid-cols-3 gap-2">
                                         {availableMenuForAddons.map(item => (
-                                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center">
+                                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center aspect-square">
                                                 <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
                                                     {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
                                                 </div>
-                                                <div className='flex-grow'>
+                                                <div className='flex-grow flex flex-col justify-center'>
                                                     <p className="font-semibold text-xs leading-tight">{item.menuName}</p>
                                                     <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
                                                 </div>
@@ -385,7 +385,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                     </div>
                                 </ScrollArea>
                             </div>
-                            <div className="md:col-span-1 flex flex-col border rounded-lg h-full">
+                            <div className="flex flex-col border rounded-lg h-full">
                                 <div className="p-4 border-b">
                                     <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Add-ons</h3>
                                 </div>

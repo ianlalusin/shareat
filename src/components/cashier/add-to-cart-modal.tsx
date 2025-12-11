@@ -136,11 +136,11 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
+      <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Add Items to Order</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-6 flex-1 overflow-hidden">
+        <div className="grid md:grid-cols-[3fr_2fr] gap-6 flex-1 overflow-hidden">
             {/* Left: Menu */}
             <div className="flex flex-col gap-4">
                 <div className="relative">
@@ -153,13 +153,13 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                     />
                 </div>
                 <ScrollArea className="flex-1">
-                    <div className="grid grid-cols-2 gap-2 pr-4">
+                    <div className="grid grid-cols-3 gap-2 pr-4">
                         {filteredMenu.map(item => (
-                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center">
+                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center aspect-square">
                                 <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
                                     {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
                                 </div>
-                                <div className='flex-grow'>
+                                <div className='flex-grow flex flex-col justify-center'>
                                     <p className="font-semibold text-xs leading-tight">{item.menuName}</p>
                                     <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
                                 </div>
