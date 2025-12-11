@@ -105,6 +105,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   allowed_refills: [],
   sortOrder: 0,
   flavors: [],
+  preparationTime: 1,
 };
 
 
@@ -513,12 +514,10 @@ export default function MenuPage() {
     }
     setEditingItem(null);
     
-    let newFormData = {...initialItemState, storeId: selectedStoreId};
-    
     const categoryToUse = category || '';
     const categoryItems = items.filter(i => i.category === categoryToUse);
     const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
-    newFormData = {...newFormData, category: categoryToUse, sortOrder: maxSortOrder + 1};
+    const newFormData = {...initialItemState, storeId: selectedStoreId, category: categoryToUse, sortOrder: maxSortOrder + 1};
 
     setFormData(newFormData);
     setDisplayValues({ cost: '', price: '' });
@@ -646,7 +645,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="cost">Cost</Label>
                     <Input id="cost" name="cost" type="text" inputMode="decimal" value={displayValues.cost} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required readOnly disabled />
@@ -654,6 +653,10 @@ export default function MenuPage() {
                   <div className="space-y-2">
                     <Label htmlFor="price">Price</Label>
                     <Input id="price" name="price" type="text" inputMode="decimal" value={displayValues.price} onChange={handleCurrencyInputChange} onBlur={handleCurrencyInputBlur} onFocus={handleCurrencyInputFocus} required />
+                  </div>
+                   <div className="space-y-2">
+                    <Label htmlFor="preparationTime">Prep Time (mins)</Label>
+                    <Input id="preparationTime" name="preparationTime" type="number" value={formData.preparationTime} onChange={handleInputChange} min="1" required />
                   </div>
                    <div className="space-y-2">
                     <Label htmlFor="unit">Unit</Label>
@@ -725,7 +728,7 @@ export default function MenuPage() {
                     <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="space-y-2 w-32">
+                    <div className="space-y-2">
                       <Label htmlFor="sortOrder">Sort</Label>
                       <div className="flex items-center gap-1">
                         <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: Math.max(0, (prev.sortOrder || 0) - 1)}))}><Minus className="h-4 w-4"/></Button>

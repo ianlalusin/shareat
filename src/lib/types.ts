@@ -150,6 +150,7 @@ export type MenuItem = {
   allowed_refills: string[];
   sortOrder?: number;
   flavors?: string[];
+  preparationTime: number;
 };
 
 export type Table = {
