@@ -178,7 +178,7 @@ export default function MenuPage() {
       const availabilityQuery = query(
           collection(firestore, 'lists'),
           where('category', '==', 'menu schedules'),
-          where('is_active', '==', true),
+          where('is_active', '==', true)
         );
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
           const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
@@ -193,7 +193,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
           setTaxRates(taxRateData);
         });
 
@@ -359,6 +359,33 @@ export default function MenuPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!formData.targetStation) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Field',
+        description: 'Please select a Target Station before saving.',
+      });
+      return;
+    }
+
+    const sortOrderNumber = Number(formData.sortOrder);
+    const isDuplicateSortOrder = items.some(
+      item =>
+        item.category === formData.category &&
+        item.sortOrder === sortOrderNumber &&
+        item.id !== editingItem?.id 
+    );
+
+    if (isDuplicateSortOrder) {
+      toast({
+        variant: 'destructive',
+        title: 'Duplicate Sort Order',
+        description: `An item in the "${formData.category}" category already has the sort order ${sortOrderNumber}. Please use a unique number.`,
+      });
+      return;
+    }
+
     if (formError) {
         toast({
             variant: 'destructive',
@@ -371,8 +398,7 @@ export default function MenuPage() {
     
     const dataToSave: Partial<MenuItem> = {
       ...formData,
-      targetStation: formData.targetStation || null,
-      sortOrder: Number(formData.sortOrder) || 0,
+      sortOrder: sortOrderNumber,
     };
     
     try {
@@ -619,8 +645,8 @@ export default function MenuPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="targetStation">Target Station</Label>
-                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)}>
+                    <Label htmlFor="targetStation">Target Station (required)</Label>
+                    <Select name="targetStation" value={formData.targetStation} onValueChange={(value) => handleSelectChange('targetStation', value)} required>
                         <SelectTrigger><SelectValue placeholder="Select station"/></SelectTrigger>
                         <SelectContent>
                             {storeStations.length > 0 ? storeStations.map(station => (
@@ -668,12 +694,12 @@ export default function MenuPage() {
                         <Label htmlFor="barcode">Barcode</Label>
                         <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
+                    <div className="flex items-end gap-4">
+                         <div className="space-y-2 w-20">
                           <Label htmlFor="sortOrder">Sort</Label>
                           <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
                         </div>
-                        <div className="flex items-center space-x-2 pb-2 self-end justify-end">
+                        <div className="flex items-center space-x-2 pb-2">
                             <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                             <Label htmlFor="isAvailable">Available</Label>
                         </div>
