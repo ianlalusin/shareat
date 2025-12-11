@@ -35,7 +35,7 @@ export function AdminHeader() {
         </div>
       </div>
 
-      <div className="flex w-full items-center justify-end gap-4 md:gap-2 lg:gap-4">
+      <div className="flex w-full items-center justify-end gap-2 md:gap-4">
         <StoreSelector />
         <NavButtonGroup />
         

@@ -336,7 +336,7 @@ export default function ProductsPage() {
                 <span>Add Product</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-3xl" onPointerDownOutside={(e) => e.preventDefault()}>
+            <DialogContent className="sm:max-w-3xl sm:max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
                 <DialogTitle>{editingItem ? 'Edit Product' : 'Add New Product'}</DialogTitle>
               </DialogHeader>
@@ -441,10 +441,10 @@ export default function ProductsPage() {
                         <TableRow>
                           <TableHead className="px-2 h-10 w-16"></TableHead>
                           <TableHead className="px-2 h-10">Product Name</TableHead>
-                          <TableHead className="px-2 h-10">Barcode/SKU</TableHead>
-                          <TableHead className="px-2 h-10">Unit</TableHead>
-                          <TableHead className="px-2 h-10 text-right">Cost</TableHead>
-                          <TableHead className="px-2 h-10 text-right">Price</TableHead>
+                          <TableHead className="px-2 h-10 hidden sm:table-cell">Barcode/SKU</TableHead>
+                          <TableHead className="px-2 h-10 hidden md:table-cell">Unit</TableHead>
+                          <TableHead className="px-2 h-10 text-right hidden sm:table-cell">Cost</TableHead>
+                          <TableHead className="px-2 h-10 text-right hidden sm:table-cell">Price</TableHead>
                           <TableHead className="px-2 h-10">Status</TableHead>
                           <TableHead className="px-2 h-10">
                             <span className="sr-only">Actions</span>
@@ -464,10 +464,10 @@ export default function ProductsPage() {
                               </div>
                             </TableCell>
                             <TableCell className="p-2 font-medium">{item.productName}</TableCell>
-                            <TableCell className="p-2">{item.barcode}</TableCell>
-                            <TableCell className="p-2">{item.unit}</TableCell>
-                            <TableCell className="p-2 text-right">{formatCurrency(item.defaultCost)}</TableCell>
-                            <TableCell className="p-2 text-right">{formatCurrency(item.defaultPrice)}</TableCell>
+                            <TableCell className="p-2 hidden sm:table-cell">{item.barcode}</TableCell>
+                            <TableCell className="p-2 hidden md:table-cell">{item.unit}</TableCell>
+                            <TableCell className="p-2 text-right hidden sm:table-cell">{formatCurrency(item.defaultCost)}</TableCell>
+                            <TableCell className="p-2 text-right hidden sm:table-cell">{formatCurrency(item.defaultPrice)}</TableCell>
                             <TableCell className="p-2">
                               <Badge
                                 variant={item.isActive ? 'default' : 'destructive'}

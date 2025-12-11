@@ -123,7 +123,7 @@ export default function AdminPage() {
 
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
-                getDocs(orderItemsQuery),
+                getDocs(orderItemsSnapshot),
                 getDocs(refillsQuery),
             ]);
 
@@ -254,18 +254,18 @@ export default function AdminPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <StatCard
             title="Total Sales"
             value={totalSales}
             format="currency"
-            icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
+            icon={<TrendingUp />}
             linkTo="/admin/reports/sales"
           />
           <StatCard
             title="Total Receipts"
             value={totalReceipts}
-            icon={<Hash className="h-4 w-4 text-muted-foreground" />}
+            icon={<Hash />}
             linkTo="/admin/reports/sales"
           />
           <StatCard
@@ -273,26 +273,26 @@ export default function AdminPage() {
             value={avgServingTime}
             format="custom"
             customFormatter={formatServingTime}
-            icon={<Timer className="h-4 w-4 text-muted-foreground" />}
+            icon={<Timer />}
             linkTo="/admin/reports/kitchen"
           />
            <div onClick={() => setIsUpdateLogModalOpen(true)} className="cursor-pointer">
               <StatCard
                 title="Order Updates"
                 value={updateLogCount}
-                icon={<History className="h-4 w-4 text-muted-foreground" />}
+                icon={<History />}
               />
            </div>
           <TopItemsCard
             title="Low Stocks Inventory"
             items={lowStockItems}
-            icon={<PackageX className="h-4 w-4 text-muted-foreground" />}
+            icon={<PackageX />}
             linkTo="/admin/inventory"
           />
            <TopItemsCard
             title="Top Selling Categories"
             items={topCategories}
-            icon={<Layers className="h-4 w-4 text-muted-foreground" />}
+            icon={<Layers />}
             linkTo="/admin/reports/sales"
           />
         </div>

@@ -386,7 +386,7 @@ export default function InventoryPage() {
                     <span>Add Inventory Item</span>
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
+            <DialogContent className="sm:max-w-4xl sm:max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
                 <DialogTitle>{editingItem ? `Edit ${editingItem.name}`: 'Add New Inventory Item'}</DialogTitle>
               </DialogHeader>
@@ -532,11 +532,11 @@ export default function InventoryPage() {
                             <TableRow>
                               <TableHead className="px-2 h-10 w-16"></TableHead>
                               <TableHead className="px-2 h-10">Name</TableHead>
-                              <TableHead className="px-2 h-10">SKU</TableHead>
-                              <TableHead className="px-2 h-10">Type</TableHead>
+                              <TableHead className="px-2 h-10 hidden sm:table-cell">SKU</TableHead>
+                              <TableHead className="px-2 h-10 hidden md:table-cell">Type</TableHead>
                               <TableHead className="px-2 h-10 text-right">Qty</TableHead>
-                              <TableHead className="px-2 h-10">Unit</TableHead>
-                              <TableHead className="px-2 h-10 text-right">Cost</TableHead>
+                              <TableHead className="px-2 h-10 hidden md:table-cell">Unit</TableHead>
+                              <TableHead className="px-2 h-10 text-right hidden sm:table-cell">Cost</TableHead>
                               <TableHead className="px-2 h-10">Stock Level</TableHead>
                               <TableHead className="px-2 h-10">
                                 <span className="sr-only">Actions</span>
@@ -558,11 +558,11 @@ export default function InventoryPage() {
                                       </div>
                                     </TableCell>
                                     <TableCell className="p-2 font-medium">{product?.productName ?? item.name}</TableCell>
-                                    <TableCell className="p-2 text-muted-foreground">{product?.barcode ?? item.sku}</TableCell>
-                                    <TableCell className="p-2"><Badge variant="outline">{item.itemType}</Badge></TableCell>
+                                    <TableCell className="p-2 text-muted-foreground hidden sm:table-cell">{product?.barcode ?? item.sku}</TableCell>
+                                    <TableCell className="p-2 hidden md:table-cell"><Badge variant="outline">{item.itemType}</Badge></TableCell>
                                     <TableCell className="p-2 text-right font-bold text-lg">{item.currentQty}</TableCell>
-                                    <TableCell className="p-2">{product?.unit ?? item.unit}</TableCell>
-                                    <TableCell className="p-2 text-right">{formatCurrency(item.costPerUnit)}</TableCell>
+                                    <TableCell className="p-2 hidden md:table-cell">{product?.unit ?? item.unit}</TableCell>
+                                    <TableCell className="p-2 text-right hidden sm:table-cell">{formatCurrency(item.costPerUnit)}</TableCell>
                                     <TableCell className="p-2">{getStockLevel(item)}</TableCell>
                                     <TableCell className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
                                       <DropdownMenu>

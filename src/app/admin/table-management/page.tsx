@@ -295,15 +295,15 @@ export default function TableManagementPage() {
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-lg font-semibold md:text-2xl font-headline">
           Table Management
         </h1>
-        <div className="flex items-center gap-2">
-           <Button variant="outline" onClick={handleResetStuckTables} disabled={!selectedStoreId}>
+        <div className="flex items-center gap-2 self-end sm:self-center">
+           <Button variant="outline" onClick={handleResetStuckTables} disabled={!selectedStoreId} size="sm">
              <Wrench className="mr-2 h-4 w-4" /> Reset Stuck Tables
            </Button>
-           <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0}>
+           <Button variant="destructive" onClick={resetAllCounters} disabled={tables.length === 0} size="sm">
             Reset All Counters
           </Button>
           <Dialog open={isModalOpen} onOpenChange={handleModalOpenChange}>
@@ -313,7 +313,7 @@ export default function TableManagementPage() {
                 <span>Add Table</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
                 <DialogTitle>{editingTable ? 'Edit Table' : 'Add New Table'}</DialogTitle>
               </DialogHeader>
@@ -382,7 +382,30 @@ export default function TableManagementPage() {
             </div>
           </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        <>
+        {/* Mobile View: List */}
+        <div className="sm:hidden space-y-2">
+            {tables.map(table => (
+                 <Card key={table.id} className="flex items-center p-3 gap-3">
+                     <div className="flex-1">
+                        <p className="font-bold text-lg">{table.tableName}</p>
+                        {table.location && <Badge variant="outline" className="text-xs">{table.location}</Badge>}
+                         <p className="text-xs text-muted-foreground">Counter: {table.resetCounter}</p>
+                     </div>
+                      <Badge className={cn("text-white justify-center w-20", getStatusColor(table.status))}>{table.status}</Badge>
+                      <div className="flex flex-col gap-1">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenModal(table)}>
+                              <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => setDeleteTargetId(table.id)}>
+                              <Trash2 className="h-4 w-4" />
+                          </Button>
+                      </div>
+                 </Card>
+            ))}
+        </div>
+        {/* Desktop View: Grid */}
+        <div className="hidden sm:grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
             {tables.map((table) => (
             <Card key={table.id} className="flex flex-col">
                 <CardHeader className="flex-grow pb-2">
@@ -407,6 +430,7 @@ export default function TableManagementPage() {
             </Card>
             ))}
         </div>
+        </>
       )}
 
       <AlertDialog
