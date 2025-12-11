@@ -29,6 +29,7 @@ type OnboardingStatus =
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const { user, loading, isOnboarded, devMode } = useAuthContext();
   const router = useRouter();
+  const firestore = useFirestore();
 
   useEffect(() => {
     if (!loading && !user && !devMode) {
@@ -58,7 +59,6 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
   // to avoid re-running the checks constantly. For now, we will redirect to a generic
   // onboarding start page if one existed, or directly to the application. A full implementation
   // requires a more sophisticated state machine now that the primary check is in the context.
-  // For this fix, we assume if you're not onboarded, you need to apply.
   if (user && firestore) {
      // A simplified check for the purpose of showing the correct initial screen
      // This could be further optimized into its own state machine if onboarding becomes more complex
