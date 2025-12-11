@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -319,6 +318,5 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-        </>
     );
 }
