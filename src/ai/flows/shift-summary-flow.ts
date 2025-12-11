@@ -50,6 +50,6 @@ ${JSON.stringify(stats, null, 2)}
       },
     });
 
-    return llmResponse.output()!;
+    return llmResponse.output!;
   }
 );
