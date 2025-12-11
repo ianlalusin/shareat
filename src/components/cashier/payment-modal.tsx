@@ -3,15 +3,6 @@
 
 import { useState, useEffect } from 'react';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -25,10 +16,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { X, Plus, Loader2 } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
-import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem, RefillItem } from '@/lib/types';
+import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem, Receipt } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { computeTaxFromGross } from '@/lib/tax';
 
 interface Payment {
   id: number;
@@ -131,31 +123,70 @@ export function PaymentModal({
         await runTransaction(firestore, async (transaction) => {
             const orderRef = doc(firestore, 'orders', order.id);
             const orderSnap = await transaction.get(orderRef);
-
-            if (!orderSnap.exists()) {
-              throw new Error("Order not found");
-            }
+            if (!orderSnap.exists()) throw new Error("Order not found");
             const orderData = orderSnap.data() as Order;
-            if (orderData.status === "Completed") {
-              throw new Error("This order has already been completed.");
-            }
+            if (orderData.status === "Completed") throw new Error("This order has already been completed.");
 
             const settingsRef = doc(firestore, 'receiptSettings', order.storeId);
             const settingsSnap = await transaction.get(settingsRef);
-
-            if (!settingsSnap.exists()) {
-                throw new Error("Receipt settings for this store not found!");
-            }
+            if (!settingsSnap.exists()) throw new Error("Receipt settings for this store not found!");
             const settings = settingsSnap.data() as ReceiptSettings;
+            
+            const orderItemsQuery = query(
+              collection(firestore, 'orders', order.id, 'orderItems'), 
+              where('status', '==', 'Served'),
+              where('isFree', '!=', true)
+            );
+            const orderItemsSnap = await getDocs(orderItemsQuery);
+            const billableItems = orderItemsSnap.docs.map(d => d.data() as OrderItem);
+
+            let subtotalGross = 0;
+            let subtotalNet = 0;
+            let subtotalTax = 0;
+
+            for (const item of billableItems) {
+                const gross = item.priceAtOrder * item.quantity;
+                const { net, tax } = computeTaxFromGross(gross, item.taxRate);
+                subtotalGross += gross;
+                subtotalNet += net;
+                subtotalTax += tax;
+            }
+
+            const adjustments = (await getDocs(collection(firestore, 'orders', order.id, 'transactions'))).docs
+                .map(d => d.data() as OrderTransaction)
+                .filter(t => t.type === 'Discount' || t.type === 'Charge');
+                
+            const discountAmount = adjustments.filter(t => t.type === 'Discount').reduce((sum, t) => sum + t.amount, 0);
+
+            const grandTotalGross = subtotalGross - discountAmount;
+            
+            const receiptRef = doc(collection(firestore, 'receipts'));
+            const receiptData: Omit<Receipt, 'id'> = {
+                orderId: order.id,
+                storeId: order.storeId,
+                subtotalGross,
+                subtotalNet,
+                subtotalTax,
+                discountAmount,
+                grandTotalGross,
+                grandTotalNet: subtotalNet - discountAmount,
+                grandTotalTax: subtotalTax,
+                createdAt: serverTimestamp(),
+                createdByUid: user?.uid || 'unknown',
+                createdByName: user?.displayName || user?.email || 'Unknown',
+            };
+            transaction.set(receiptRef, receiptData);
+
             const nextNumber = settings.nextReceiptNumber || 1;
             const receiptNumber = `${settings.receiptNumberPrefix || ''}${String(nextNumber).padStart(6, '0')}`;
             
             const receiptDetails = {
-                receiptNumber: receiptNumber,
+                receiptNumber,
+                receiptId: receiptRef.id,
                 cashierName: user?.displayName || user?.email || 'System',
                 cashierUid: user?.uid || null,
                 printedAt: serverTimestamp(),
-                totalAmount: totalAmount,
+                totalAmount: grandTotalGross,
                 totalPaid: totalPaid,
                 change: change,
             };
@@ -170,7 +201,6 @@ export function PaymentModal({
             payments.forEach(payment => {
                 const amount = parseCurrency(payment.amount);
                 paymentSummary.push({ method: payment.method, amount });
-
                 const newPaymentRef = doc(transactionsRef);
                 const paymentData: Omit<OrderTransaction, 'id'> = {
                     orderId: order.id,
@@ -186,19 +216,17 @@ export function PaymentModal({
             
             transaction.update(orderRef, {
                 status: 'Completed',
+                receiptId: receiptRef.id,
                 completedTimestamp: serverTimestamp(),
-                totalAmount: totalAmount,
-                totalPaid: totalPaid,
-                change: change,
-                paymentSummary: paymentSummary,
-                receiptDetails: receiptDetails,
+                totalAmount: grandTotalGross,
+                totalPaid,
+                change,
+                paymentSummary,
+                receiptDetails,
             });
 
             transaction.update(settingsRef, { nextReceiptNumber: nextNumber + 1 });
         });
-        
-        // After successful transaction, clean up kitchen data
-        await clearKitchenDataForOrder(order.id);
       
       onFinalizeSuccess();
 
@@ -214,38 +242,6 @@ export function PaymentModal({
       setIsProcessing(false);
     }
   }
-
-  const clearKitchenDataForOrder = async (orderId: string) => {
-    if (!firestore) return;
-    try {
-      const batch = writeBatch(firestore);
-
-      // Get all order items to delete
-      const orderItemsRef = collection(firestore, 'orders', orderId, 'orderItems');
-      const orderItemsSnapshot = await getDocs(orderItemsRef);
-      orderItemsSnapshot.forEach(doc => batch.delete(doc.ref));
-
-      // Get all refills to delete
-      const refillsRef = collection(firestore, 'orders', orderId, 'refills');
-      const refillsSnapshot = await getDocs(refillsRef);
-      refillsSnapshot.forEach(doc => batch.delete(doc.ref));
-
-      await batch.commit();
-      toast({
-        title: 'Kitchen Data Cleared',
-        description: `Items for order ${orderId.slice(0, 6)}... have been cleared from the kitchen view.`,
-      });
-    } catch (error) {
-      console.error("Failed to clear kitchen data: ", error);
-      // This is a background task, so we don't need to show a blocking error,
-      // but we can log it and maybe show a non-destructive toast.
-      toast({
-        variant: 'destructive',
-        title: 'Cleanup Failed',
-        description: 'Could not clear all items from the kitchen view.',
-      });
-    }
-  };
 
   const handleOpenChange = (open: boolean) => {
     if (!open && !isProcessing) {

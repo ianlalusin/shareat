@@ -1,12 +1,11 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc, runTransaction, limit, getDocs, collectionGroup } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, RefillItem, OrderUpdateLog, CollectionItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem, OrderUpdateLog, CollectionItem, OrderItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -152,7 +151,7 @@ export default function RefillPage() {
     const handlePlaceOrder = async (
         order: Order,
         refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[],
-        cart: { id: string; menuName: string; price: number; quantity: number; targetStation?: 'Hot' | 'Cold'; note?: string }[]
+        cart: (MenuItem & { quantity: number; note?: string; })[]
     ) => {
         if (!firestore) return;
 
@@ -181,6 +180,7 @@ export default function RefillPage() {
             const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
             cart.forEach(cartItem => {
                 const newItemRef = doc(orderItemsRef);
+                const rate = cartItem.taxRate ?? 0;
                 const orderItemData: Omit<OrderItem, 'id'> = {
                     orderId: order.id,
                     storeId: order.storeId,
@@ -194,6 +194,9 @@ export default function RefillPage() {
                     targetStation: cartItem.targetStation,
                     sourceTag: 'refill',
                     kitchenNote: cartItem.note || '',
+                    taxRate: rate,
+                    taxProfileCode: cartItem.taxProfileCode ?? null,
+                    isFree: false,
                 };
                 batch.set(newItemRef, orderItemData);
             });

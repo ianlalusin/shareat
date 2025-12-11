@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -101,6 +100,7 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
 
         cart.forEach(cartItem => {
             const newItemRef = doc(orderItemsRef);
+            const rate = cartItem.taxRate ?? 0;
             const orderItemData: Omit<OrderItem, 'id'> = {
                 orderId: order.id,
                 storeId: order.storeId,
@@ -113,6 +113,9 @@ export function AddToCartModal({ isOpen, onClose, order, menu }: AddToCartModalP
                 status: 'Pending',
                 targetStation: cartItem.targetStation,
                 sourceTag: 'cashier',
+                taxRate: rate,
+                taxProfileCode: cartItem.taxProfileCode ?? null,
+                isFree: false,
             };
             batch.set(newItemRef, orderItemData);
         });

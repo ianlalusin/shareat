@@ -201,6 +201,7 @@ export type Order = {
   kitchenNote?: string;
   priority?: 'normal' | 'rush';
   isServerConfirmed: boolean;
+  receiptId?: string;
   receiptDetails?: {
     receiptNumber: string;
     cashierName: string;
@@ -233,6 +234,9 @@ export type OrderItem = {
   priority?: 'normal' | 'rush';
   servedAt?: Timestamp;
   servedBy?: string;
+  taxRate?: number;
+  taxProfileCode?: string | null;
+  isFree?: boolean;
 };
 
 export type RefillItem = {
@@ -309,3 +313,19 @@ export type ReceiptSettings = {
     printerType: 'thermal' | 'standard';
     paperWidth: '58mm' | '80mm';
 };
+
+export interface Receipt {
+  id: string;
+  orderId: string;
+  storeId: string;
+  subtotalGross: number;
+  subtotalNet: number;
+  subtotalTax: number;
+  discountAmount?: number;
+  grandTotalGross: number;
+  grandTotalNet: number;
+  grandTotalTax: number;
+  createdAt: any;
+  createdByUid: string;
+  createdByName?: string | null;
+}
