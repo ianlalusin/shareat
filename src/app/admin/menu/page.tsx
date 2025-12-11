@@ -178,7 +178,7 @@ export default function MenuPage() {
       const availabilityQuery = query(
           collection(firestore, 'lists'),
           where('category', '==', 'menu schedules'),
-          where('is_active', '==', true)
+          where('is_active', '==', true),
         );
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
           const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
@@ -243,6 +243,10 @@ export default function MenuPage() {
   useEffect(() => {
     if (selectedInventoryItem && !editingItem) {
         const product = products.find(p => p.id === selectedInventoryItem.productId);
+        
+        const categoryItems = items.filter(i => i.category === selectedInventoryItem.category);
+        const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
+
         setFormData(prev => ({
             ...prev,
             menuName: selectedInventoryItem.name,
@@ -253,13 +257,14 @@ export default function MenuPage() {
             price: product?.defaultPrice || 0,
             imageUrl: product?.imageUrl || '',
             productId: selectedInventoryItem.productId,
+            sortOrder: maxSortOrder + 1,
         }));
         setDisplayValues({
             cost: formatCurrency(selectedInventoryItem.costPerUnit || 0),
             price: formatCurrency(product?.defaultPrice || 0),
         });
     }
-  }, [selectedInventoryItem, products, editingItem]);
+  }, [selectedInventoryItem, products, editingItem, items]);
   
   useEffect(() => {
     setFormError(null); // Clear previous errors
@@ -449,7 +454,17 @@ export default function MenuPage() {
       return;
     }
     setEditingItem(null);
-    const newFormData = category ? {...initialItemState, category, storeId: selectedStoreId} : {...initialItemState, storeId: selectedStoreId};
+    
+    let newFormData = {...initialItemState, storeId: selectedStoreId};
+    if (category) {
+        const categoryItems = items.filter(i => i.category === category);
+        const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
+        newFormData = {...newFormData, category, sortOrder: maxSortOrder + 1};
+    } else {
+        // If adding without category, we can't auto-sort, default to 0 or 1
+        newFormData.sortOrder = 1;
+    }
+
     setFormData(newFormData);
     setDisplayValues({ cost: '', price: '' });
     setImageFile(null);
@@ -622,7 +637,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 items-end gap-4 rounded-lg border p-4">
+                 <div className="grid grid-cols-[auto,1fr,auto,auto] items-end gap-4 rounded-lg border p-4">
                     <div className="space-y-2">
                       <Label>Image</Label>
                       <input
@@ -644,15 +659,15 @@ export default function MenuPage() {
                         )}
                       </button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 self-start">
                       <Label htmlFor="barcode">Barcode</Label>
                       <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                     <div className="space-y-2">
-                      <Label htmlFor="sortOrder">Sort Order</Label>
+                     <div className="space-y-2 self-start w-20">
+                      <Label htmlFor="sortOrder">Sort</Label>
                       <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
                     </div>
-                    <div className="flex items-center space-x-2 pb-2">
+                    <div className="flex items-center space-x-2 pb-2 self-end">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
                     </div>
