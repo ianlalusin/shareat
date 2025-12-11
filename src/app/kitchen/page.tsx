@@ -32,8 +32,9 @@ export default function KitchenPage() {
   const [kitchenItemsByOrder, setKitchenItemsByOrder] = useState<Record<string, KitchenItem[]>>({});
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
   const [activeTab, setActiveTab] = useState<string | undefined>();
-  const [servedItems, setServedItems] = useState<KitchenItem[]>([]);
-  
+  const [servedOrderItems, setServedOrderItems] = useState<KitchenItem[]>([]);
+  const [servedRefillItems, setServedRefillItems] = useState<KitchenItem[]>([]);
+
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -44,7 +45,8 @@ export default function KitchenPage() {
       setActiveOrders([]);
       setKitchenItemsByOrder({});
       setActiveTab(undefined);
-      setServedItems([]);
+      setServedOrderItems([]);
+      setServedRefillItems([]);
       return;
     }
 
@@ -64,42 +66,41 @@ export default function KitchenPage() {
             setActiveTab(undefined);
         }
     });
-    
-    // Fetch recently served items and filter on the client
+
+    // Fetch recently served order items
     const servedItemsQuery = query(
       collectionGroup(firestore, 'orderItems'),
       where('storeId', '==', selectedStoreId),
       orderBy('servedTimestamp', 'desc'),
-      limit(50) // Fetch more to account for client-side filtering
+      limit(25)
     );
+    const unsubServedItems = onSnapshot(servedItemsQuery, (snapshot) => {
+      const items = snapshot.docs
+        .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'orderItems'}) as KitchenItem)
+        .filter(item => item.status === 'Served');
+      setServedOrderItems(items);
+    });
+
+    // Fetch recently served refills
     const servedRefillsQuery = query(
       collectionGroup(firestore, 'refills'),
       where('storeId', '==', selectedStoreId),
       orderBy('servedTimestamp', 'desc'),
-      limit(50)
+      limit(25)
     );
-
-    const unsubServedItems = onSnapshot(servedItemsQuery, (snapshot) => {
-      const items = snapshot.docs
-        .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'orderItems'}) as KitchenItem)
-        .filter(item => item.status === 'Served'); // Filter client-side
-      setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'orderItems')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
-    });
-    
     const unsubServedRefills = onSnapshot(servedRefillsQuery, (snapshot) => {
-        const items = snapshot.docs
-          .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'refills'}) as KitchenItem)
-          .filter(item => item.status === 'Served'); // Filter client-side
-        setServedItems(prev => [...items, ...prev.filter(p => p.sourceCollection !== 'refills')].sort((a,b) => (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)).slice(0, 20));
+      const items = snapshot.docs
+        .map(d => ({...d.data(), id: d.id, ref: d.ref, sourceCollection: 'refills'}) as KitchenItem)
+        .filter(item => item.status === 'Served');
+      setServedRefillItems(items);
     });
-
 
     return () => {
       unsubStations();
       unsubServedItems();
       unsubServedRefills();
     }
-  }, [firestore, selectedStoreId]);
+  }, [firestore, selectedStoreId, activeTab]);
 
   useEffect(() => {
     if (!firestore || !selectedStoreId) return;
@@ -198,12 +199,17 @@ export default function KitchenPage() {
   }, [activeOrders, kitchenItemsByOrder]);
 
   const servedWithOrderDetails = useMemo(() => {
-      const orderMap = new Map(activeOrders.map(o => [o.id, o]));
-      return servedItems.map(item => ({
-          ...item,
-          order: orderMap.get(item.orderId)
-      }));
-  }, [servedItems, activeOrders]);
+    const combinedServed = [...servedOrderItems, ...servedRefillItems];
+    const sortedServed = combinedServed.sort((a, b) => 
+      (b.servedTimestamp?.toMillis() || 0) - (a.servedTimestamp?.toMillis() || 0)
+    ).slice(0, 20);
+
+    const orderMap = new Map(activeOrders.map(o => [o.id, o]));
+    return sortedServed.map(item => ({
+        ...item,
+        order: orderMap.get(item.orderId)
+    }));
+  }, [servedOrderItems, servedRefillItems, activeOrders]);
 
   
   const getGroupsForStation = (station: string) => {
@@ -323,7 +329,7 @@ export default function KitchenPage() {
                                     </p>
                                 </div>
                             ))}
-                            {servedItems.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">No items served recently.</p>}
+                            {servedWithOrderDetails.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">No items served recently.</p>}
                         </div>
                     </ScrollArea>
                 </CardContent>
