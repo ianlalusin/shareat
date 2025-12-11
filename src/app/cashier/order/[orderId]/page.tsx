@@ -17,7 +17,7 @@ import {
   runTransaction,
   deleteDoc,
 } from 'firebase/firestore';
-import { Order, OrderItem, CollectionItem, OrderTransaction, Store, PendingOrderUpdate, OrderUpdateLog } from '@/lib/types';
+import { Order, OrderItem, CollectionItem, OrderTransaction, Store, PendingOrderUpdate, OrderUpdateLog, DiscountType } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -100,7 +100,7 @@ export default function OrderDetailPage() {
   const [discountValue, setDiscountValue] = useState('');
   const [discountType, setDiscountType] = useState<'₱' | '%'>('₱');
   const [selectedDiscount, setSelectedDiscount] = useState('');
-  const [discountTypes, setDiscountTypes] = useState<CollectionItem[]>([]);
+  const [discountTypes, setDiscountTypes] = useState<DiscountType[]>([]);
   
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [chargeValue, setChargeValue] = useState('');
@@ -173,7 +173,7 @@ export default function OrderDetailPage() {
       );
 
       const discountsUnsubscribe = onSnapshot(discountsQuery, (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CollectionItem));
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DiscountType));
         setDiscountTypes(types);
       });
       
@@ -284,6 +284,15 @@ export default function OrderDetailPage() {
         }
     }
   };
+
+  const handleDiscountSelectChange = (value: string) => {
+    setSelectedDiscount(value);
+    const discountInfo = discountTypes.find(d => d.item === value);
+    if(discountInfo) {
+      setDiscountType(discountInfo.discountMode === 'ABS' ? '₱' : '%');
+      setDiscountValue(String(discountInfo.discountValue || ''));
+    }
+  }
   
   const handleApplyDiscount = async () => {
     if (!firestore || !order || !discountValue || !selectedDiscount) {
@@ -293,6 +302,18 @@ export default function OrderDetailPage() {
             description: 'Please enter a value and select a discount type.',
         });
         return;
+    }
+
+    const discountInfo = discountTypes.find(d => d.item === selectedDiscount);
+    if (discountInfo) {
+      if(discountInfo.requiresName && !order.customerName) {
+        toast({ variant: 'destructive', title: 'Name Required', description: `The ${discountInfo.item} discount requires a customer name.` });
+        return;
+      }
+      if(discountInfo.requiresTin && !order.tin) {
+        toast({ variant: 'destructive', title: 'TIN Required', description: `The ${discountInfo.item} discount requires a TIN.` });
+        return;
+      }
     }
 
     const value = parseFloat(discountValue);
@@ -327,6 +348,7 @@ export default function OrderDetailPage() {
         type: 'Discount',
         amount: amount,
         notes: selectedDiscount,
+        discountCode: discountInfo?.code || undefined,
         timestamp: serverTimestamp(),
     };
 
@@ -608,7 +630,7 @@ export default function OrderDetailPage() {
                                     </TableCell>
                                     <TableCell className="text-right">
                                       <Button
-                                        size="xs"
+                                        size="sm"
                                         variant={isEditing ? 'secondary' : 'outline'}
                                         onClick={() => {
                                           if (isEditing) {
@@ -692,7 +714,7 @@ export default function OrderDetailPage() {
                             })}
                              {billableItems.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>
+                                    <TableCell colSpan={5} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
@@ -748,7 +770,7 @@ export default function OrderDetailPage() {
                                </div>
                                
                                <Label htmlFor="discount-type" className="sr-only">Type</Label>
-                                <Select value={selectedDiscount} onValueChange={setSelectedDiscount}>
+                                <Select value={selectedDiscount} onValueChange={handleDiscountSelectChange}>
                                     <SelectTrigger id="discount-type" className="flex-auto">
                                         <SelectValue placeholder="Type" />
                                     </SelectTrigger>

@@ -278,6 +278,7 @@ export type OrderTransaction = {
   amount: number;
   method?: string;
   notes?: string;
+  discountCode?: string;
   timestamp: Timestamp; 
   cashierUid?: string | null;
 };
