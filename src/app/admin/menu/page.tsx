@@ -180,7 +180,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[];
           setTaxRates(taxRateData);
         });
 
@@ -467,10 +467,12 @@ export default function MenuPage() {
   }, [stores, selectedStoreId]);
 
   const availableInventoryItems = useMemo(() => {
-    if (editingItem) return inventoryItems; // Show all items when editing
-    const existingInventoryItemIds = items.map(item => item.inventoryItemId).filter(Boolean);
-    return inventoryItems.filter(invItem => !existingInventoryItemIds.includes(invItem.id));
-  }, [items, inventoryItems, editingItem]);
+    if (editingItem) return inventoryItems;
+    const existingProductIds = items.map(item => item.productId).filter(Boolean);
+    return inventoryItems.filter(invItem => 
+        !existingProductIds.includes(invItem.productId)
+    );
+}, [items, inventoryItems, editingItem]);
 
   const groupedAvailableInventoryItems = useMemo(() => {
     return availableInventoryItems.reduce((acc, item) => {
@@ -820,4 +822,5 @@ export default function MenuPage() {
       </main>
   );
 }
+
 
