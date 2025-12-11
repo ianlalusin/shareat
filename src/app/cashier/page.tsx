@@ -77,7 +77,7 @@ export default function CashierPage() {
               where('is_active', '==', true)
             );
             const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
-                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
                 setSchedules(schedulesData);
             });
             
@@ -117,30 +117,6 @@ export default function CashierPage() {
         }
     }, [firestore, selectedStoreId]);
 
-    const filteredMenu = useMemo(() => {
-        if (schedules.length === 0) return menu;
-
-        const now = new Date();
-        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-
-        const activeSchedules = new Set(schedules
-            .filter(schedule => 
-                (schedule as any).days.includes(currentDay) &&
-                (schedule as any).startTime <= currentTime &&
-                (schedule as any).endTime >= currentTime
-            )
-            .map(schedule => schedule.item)
-        );
-
-        return menu.filter(menuItem => {
-            if (menuItem.availability === 'always') {
-                return true;
-            }
-            return activeSchedules.has(menuItem.availability);
-        });
-    }, [menu, schedules]);
-
     const availableTables = useMemo(() => tables.filter(t => t.status === 'Available'), [tables]);
     
     const occupiedTables = useMemo(() => {
@@ -159,9 +135,8 @@ export default function CashierPage() {
     }, []);
     
     const handleViewOrderClick = useCallback((order: Order) => {
-        setSelectedOrder(order);
-        setIsDetailsModalOpen(true);
-    }, []);
+        router.push(`/cashier/order/${order.id}`);
+    }, [router]);
 
     const handleCreateOrder = useCallback(async (
         table: TableType,
@@ -324,7 +299,7 @@ export default function CashierPage() {
                                 key={table.id}
                                 table={table}
                                 order={order}
-                                onViewOrderClick={handleViewOrderClick}
+                                onViewOrderClick={() => router.push(`/cashier/order/${order.id}`)}
                                 onTogglePriority={handleTogglePriority}
                                 onBillClick={handleBillClick}
                             />
@@ -352,7 +327,8 @@ export default function CashierPage() {
             isOpen={isNewOrderModalOpen}
             onClose={() => setIsNewOrderModalOpen(false)}
             table={selectedTable}
-            menu={filteredMenu}
+            menu={menu}
+            schedules={schedules}
             storeId={selectedStoreId!}
             onCreateOrder={handleCreateOrder}
         />
@@ -363,7 +339,7 @@ export default function CashierPage() {
           isOpen={isDetailsModalOpen}
           onClose={() => setIsDetailsModalOpen(false)}
           order={selectedOrder}
-          menu={filteredMenu}
+          menu={menu}
         />
       )}
     </>

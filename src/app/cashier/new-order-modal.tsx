@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PlusCircle, Minus, Plus, ChevronDown, Loader2 } from 'lucide-react';
-import { Table as TableType, MenuItem, Order, OrderItem, CollectionItem } from '@/lib/types';
+import { Table as TableType, MenuItem, Order, OrderItem, CollectionItem, Schedule } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,13 +25,14 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '../ui/textarea';
 
 interface NewOrderModalProps {
     isOpen: boolean;
     onClose: () => void;
     table: TableType;
     menu: MenuItem[];
+    schedules: CollectionItem[];
     storeId: string;
     onCreateOrder: (table: TableType, orderData: {
       customerName: string;
@@ -42,7 +43,7 @@ interface NewOrderModalProps {
     }) => Promise<void>;
 }
 
-export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateOrder }: NewOrderModalProps) {
+export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId, onCreateOrder }: NewOrderModalProps) {
     const [customerName, setCustomerName] = useState('');
     const [guestCount, setGuestCount] = useState(2);
     const [selectedPackage, setSelectedPackage] = useState<MenuItem | null>(null);
@@ -54,14 +55,39 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
     
     const firestore = useFirestore();
 
-    const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
+    const unlimitedPackages = useMemo(() => {
+        const now = new Date();
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+
+        const activeScheduleNames = new Set(
+            schedules
+                .filter(s => {
+                    const schedule = s as Schedule;
+                    return schedule.days.includes(currentDay) &&
+                           schedule.startTime <= currentTime &&
+                           schedule.endTime >= currentTime;
+                })
+                .map(s => s.item)
+        );
+
+        return menu.filter(item => {
+            if (item.category !== 'Unlimited' || !item.isAvailable) {
+                return false;
+            }
+            if (item.availability === 'always') {
+                return true;
+            }
+            return activeScheduleNames.has(item.availability);
+        });
+    }, [menu, schedules]);
     
     useEffect(() => {
         if(!isOpen || !firestore || !storeId) return;
 
         const flavorsQuery = query(
             collection(firestore, 'lists'),
-            where('category', '==', 'flavors'),
+            where('category', '==', 'meat flavor'),
             where('is_active', '==', true),
             where('storeIds', 'array-contains', storeId)
         );
@@ -146,7 +172,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
 
     return (
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>New Order: {table?.tableName}</DialogTitle>
             </DialogHeader>
