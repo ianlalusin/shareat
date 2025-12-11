@@ -1,5 +1,4 @@
 
-
 import type { Timestamp } from 'firebase/firestore';
 
 export type Store = {
@@ -37,6 +36,15 @@ export type Schedule = {
     endTime: string;   // "HH:mm"
     days: string[];    // e.g., ["Mon", "Tue"]
 }
+
+export type TaxProfile = {
+    code: string;
+    rate: number;
+    isInclusive: boolean;
+}
+
+export type TaxRate = CollectionItem & TaxProfile;
+
 
 export type Staff = {
   id:string;

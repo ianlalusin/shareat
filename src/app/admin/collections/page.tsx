@@ -52,7 +52,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-import { CollectionItem, Store, Schedule } from '@/lib/types';
+import { CollectionItem, Store, Schedule, TaxRate } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -82,11 +82,22 @@ const initialScheduleState: Omit<Schedule, 'id'> = {
     days: [],
 };
 
+const initialTaxRateState: Omit<TaxRate, 'id'> = {
+    item: '',
+    category: 'tax profile',
+    code: '',
+    rate: 0,
+    isInclusive: false,
+    is_active: true,
+    storeIds: [],
+}
+
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function CollectionsPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -96,9 +107,13 @@ export default function CollectionsPage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState(initialScheduleState);
+
+  const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
+  const [editingTaxRate, setEditingTaxRate] = useState<TaxRate | null>(null);
+  const [taxFormData, setTaxFormData] = useState(initialTaxRateState);
   
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [deleteTargetType, setDeleteTargetType] = useState<'item' | 'schedule' | null>(null);
+  const [deleteTargetType, setDeleteTargetType] = useState<'item' | 'schedule' | 'tax' | null>(null);
 
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
@@ -111,11 +126,13 @@ export default function CollectionsPage() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      const regularItems = allItems.filter(item => item.category !== 'menu schedules').map(item => ({ ...item, storeIds: item.storeIds || [] })) as CollectionItem[];
+      const regularItems = allItems.filter(item => item.category !== 'menu schedules' && item.category !== 'tax profile').map(item => ({ ...item, storeIds: item.storeIds || [] })) as CollectionItem[];
       const scheduleItems = allItems.filter(item => item.category === 'menu schedules').map(item => ({...item, days: item.days || []})) as Schedule[];
+      const taxRateItems = allItems.filter(item => item.category === 'tax profile').map(item => ({...item, storeIds: item.storeIds || []})) as TaxRate[];
       
       setItems(regularItems);
       setSchedules(scheduleItems);
+      setTaxRates(taxRateItems);
     });
 
     const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -199,9 +216,14 @@ export default function CollectionsPage() {
 
     try {
         await deleteDoc(doc(firestore, 'lists', deleteTargetId));
+        let description = '';
+        if (deleteTargetType === 'item') description = 'The list item has been deleted.';
+        else if (deleteTargetType === 'schedule') description = 'The schedule has been deleted.';
+        else if (deleteTargetType === 'tax') description = 'The tax profile has been deleted.';
+        
         toast({
             title: 'Deleted',
-            description: deleteTargetType === 'item' ? 'The list item has been deleted.' : 'The schedule has been deleted.',
+            description: description,
         });
     } catch (error) {
         console.error('Delete error:', error);
@@ -228,12 +250,13 @@ export default function CollectionsPage() {
     setIsItemModalOpen(true);
   };
   
-  const getSelectedStoreNames = () => {
-    if (itemFormData.storeIds.length === 0) return "Select stores";
-    if (itemFormData.storeIds.length === stores.length) return "All stores selected";
-    if (itemFormData.storeIds.length > 2) return `${itemFormData.storeIds.length} stores selected`;
+  const getSelectedStoreNames = (formType: 'item' | 'tax' = 'item') => {
+    const storeIds = formType === 'item' ? itemFormData.storeIds : taxFormData.storeIds;
+    if (storeIds.length === 0) return "Select stores";
+    if (storeIds.length === stores.length) return "All stores selected";
+    if (storeIds.length > 2) return `${storeIds.length} stores selected`;
     return stores
-        .filter(s => itemFormData.storeIds.includes(s.id))
+        .filter(s => storeIds.includes(s.id))
         .map(s => s.storeName)
         .join(', ');
   };
@@ -302,6 +325,72 @@ export default function CollectionsPage() {
     setIsScheduleModalOpen(true);
   };
   
+  // Tax Modal Handlers
+  const handleTaxModalOpenChange = (open: boolean) => {
+    setIsTaxModalOpen(open);
+    if (!open) {
+      setEditingTaxRate(null);
+      setTaxFormData(initialTaxRateState);
+    }
+  };
+
+  const handleTaxInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type } = e.target;
+    setTaxFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
+  };
+  
+  const handleTaxStoreIdChange = (storeId: string) => {
+    setTaxFormData(prev => {
+      const newStoreIds = prev.storeIds.includes(storeId)
+        ? prev.storeIds.filter(id => id !== storeId)
+        : [...prev.storeIds, storeId];
+      return { ...prev, storeIds: newStoreIds };
+    });
+  };
+
+  const handleTaxSwitchChange = (name: 'is_active' | 'isInclusive', checked: boolean) => {
+    setTaxFormData(prev => ({ ...prev, [name]: checked }));
+  };
+
+  const handleTaxSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!firestore) return;
+
+    if (taxFormData.storeIds.length === 0) {
+      toast({ variant: 'destructive', title: 'No Store Selected', description: 'Please select at least one store.' });
+      return;
+    }
+
+    const dataToSave = { ...taxFormData };
+    
+    const operation = editingTaxRate
+      ? updateDoc(doc(firestore, 'lists', editingTaxRate.id), dataToSave)
+      : addDoc(collection(firestore, 'lists'), dataToSave);
+
+    operation.then(() => {
+      handleTaxModalOpenChange(false);
+      openSuccessModal();
+    }).catch(error => {
+      console.error("Save error:", error);
+      toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not save tax profile." });
+    });
+  };
+
+  const handleEditTaxRate = (taxRate: TaxRate) => {
+    setEditingTaxRate(taxRate);
+    setTaxFormData({
+      item: taxRate.item,
+      category: 'tax profile',
+      code: taxRate.code || '',
+      rate: taxRate.rate || 0,
+      isInclusive: taxRate.isInclusive || false,
+      is_active: taxRate.is_active,
+      storeIds: taxRate.storeIds || [],
+    });
+    setIsTaxModalOpen(true);
+  };
+
+
   return (
       <main className="flex flex-1 flex-col gap-6 p-4 lg:gap-8 lg:p-6">
       <div className="flex items-center justify-between">
@@ -389,6 +478,82 @@ export default function CollectionsPage() {
       </section>
 
       <Separator />
+      
+      {/* Tax Profiles Section */}
+      <section>
+        <Accordion type="single" collapsible defaultValue="taxes" className="w-full">
+            <AccordionItem value="taxes" className="border-0">
+                <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80">
+                        <AccordionTrigger className="flex-1 p-0 hover:no-underline">
+                            <div className='flex items-center gap-2'>
+                                <h2 className="text-lg font-semibold font-headline">Tax Profiles</h2>
+                                <Badge variant="secondary">{taxRates.length}</Badge>
+                            </div>
+                        </AccordionTrigger>
+                        <Button
+                            size="sm"
+                            className="flex items-center gap-2 mx-4"
+                            onClick={(e) => { e.stopPropagation(); handleTaxModalOpenChange(true); }}
+                        >
+                            <PlusCircle className="h-4 w-4" />
+                            <span>Add Tax Profile</span>
+                        </Button>
+                    </div>
+                    <AccordionContent className="p-0">
+                        <div className="border-t">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Display Name</TableHead>
+                                        <TableHead>Code</TableHead>
+                                        <TableHead>Rate</TableHead>
+                                        <TableHead>Inclusive</TableHead>
+                                        <TableHead>Assigned Stores</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead className="w-24">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {taxRates.map(rate => (
+                                        <TableRow key={rate.id}>
+                                            <TableCell>{rate.item}</TableCell>
+                                            <TableCell>{rate.code}</TableCell>
+                                            <TableCell>{(rate.rate * 100).toFixed(2)}%</TableCell>
+                                            <TableCell>{rate.isInclusive ? 'Yes' : 'No'}</TableCell>
+                                            <TableCell>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {rate.storeIds?.map(id => (
+                                                        <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
+                                                    ))}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge variant={rate.is_active ? 'default' : 'destructive'} className={rate.is_active ? 'bg-green-500' : ''}>
+                                                    {rate.is_active ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-1">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditTaxRate(rate)}><Pencil className="h-4 w-4" /></Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setDeleteTargetId(rate.id); setDeleteTargetType('tax'); }}>
+                                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {taxRates.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No tax profiles created yet.</p>}
+                        </div>
+                    </AccordionContent>
+                </div>
+            </AccordionItem>
+        </Accordion>
+      </section>
+
+      <Separator />
 
       {/* Menu Schedules Section */}
       <section>
@@ -471,7 +636,7 @@ export default function CollectionsPage() {
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="w-full justify-between">
-                        <span>{getSelectedStoreNames()}</span>
+                        <span>{getSelectedStoreNames('item')}</span>
                         <ChevronDown className="h-4 w-4" />
                     </Button>
                     </DropdownMenuTrigger>
@@ -568,6 +733,72 @@ export default function CollectionsPage() {
               </form>
             </DialogContent>
         </Dialog>
+        
+      {/* Tax Modal */}
+      <Dialog open={isTaxModalOpen} onOpenChange={handleTaxModalOpenChange}>
+        <DialogContent className="sm:max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{editingTaxRate ? 'Edit Tax Profile' : 'Add New Tax Profile'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleTaxSubmit}>
+            <div className="grid gap-4 py-4">
+               <div className="space-y-2">
+                <Label htmlFor="tax_storeIds">Store (required)</Label>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between">
+                        <span>{getSelectedStoreNames('tax')}</span>
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                        <DropdownMenuItem onSelect={() => setTaxFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setTaxFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {stores.map(store => (
+                            <DropdownMenuCheckboxItem
+                                key={store.id}
+                                checked={taxFormData.storeIds.includes(store.id)}
+                                onSelect={(e) => e.preventDefault()}
+                                onClick={() => handleTaxStoreIdChange(store.id)}
+                            >
+                                {store.storeName}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="tax_item">Display Name</Label>
+                    <Input id="tax_item" name="item" value={taxFormData.item} onChange={handleTaxInputChange} required />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="tax_code">Code</Label>
+                        <Input id="tax_code" name="code" value={taxFormData.code} onChange={handleTaxInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="tax_rate">Rate</Label>
+                        <Input id="tax_rate" name="rate" type="number" step="0.01" value={taxFormData.rate} onChange={handleTaxInputChange} required />
+                    </div>
+                </div>
+                 <div className="flex items-center space-x-2">
+                    <Switch id="isInclusive" name="isInclusive" checked={taxFormData.isInclusive} onCheckedChange={(c) => handleTaxSwitchChange('isInclusive', c)} />
+                    <Label htmlFor="isInclusive">Is Price Inclusive?</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Switch id="is_active_tax" name="is_active" checked={taxFormData.is_active} onCheckedChange={(c) => handleTaxSwitchChange('is_active', c)} />
+                    <Label htmlFor="is_active_tax">Active</Label>
+                </div>
+            </div>
+            <DialogFooter className="flex-row justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => handleTaxModalOpenChange(false)}>Cancel</Button>
+              <Button type="submit">{editingTaxRate ? 'Save Changes' : 'Save'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
 
         <AlertDialog
             open={!!deleteTargetId}
@@ -583,12 +814,12 @@ export default function CollectionsPage() {
                 <AlertDialogTitle>
                     {deleteTargetType === 'schedule'
                     ? "Delete schedule?"
+                    : deleteTargetType === 'tax'
+                    ? "Delete tax profile?"
                     : "Delete list item?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                    This action cannot be undone. The {deleteTargetType === 'schedule'
-                    ? "schedule"
-                    : "list item"} will be permanently removed.
+                    This action cannot be undone. The {deleteTargetType} will be permanently removed.
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
