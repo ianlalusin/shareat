@@ -180,7 +180,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[];
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
           setTaxRates(taxRateData);
         });
 
@@ -470,7 +470,7 @@ export default function MenuPage() {
     if (editingItem) return inventoryItems;
     const existingProductIds = items.map(item => item.productId).filter(Boolean);
     return inventoryItems.filter(invItem => 
-        !existingProductIds.includes(invItem.productId)
+        invItem.productId && !existingProductIds.includes(invItem.productId)
     );
 }, [items, inventoryItems, editingItem]);
 
@@ -822,5 +822,6 @@ export default function MenuPage() {
       </main>
   );
 }
+
 
 
