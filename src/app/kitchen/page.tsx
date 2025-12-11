@@ -16,6 +16,8 @@ import {
   collectionGroup,
   orderBy,
   limit,
+  Timestamp,
+  getDocs,
 } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Order, OrderItem, RefillItem, CollectionItem } from '@/lib/types';
@@ -25,7 +27,9 @@ import { KitchenItem, KitchenOrderCard } from '@/components/kitchen/order-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, startOfDay, endOfDay } from 'date-fns';
+import { useSettings } from '@/context/settings-context';
+import { ServingTimeStats } from '@/components/kitchen/serving-time-stats';
 
 export default function KitchenPage() {
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
@@ -34,10 +38,12 @@ export default function KitchenPage() {
   const [activeTab, setActiveTab] = useState<string | undefined>();
   const [servedOrderItems, setServedOrderItems] = useState<KitchenItem[]>([]);
   const [servedRefillItems, setServedRefillItems] = useState<KitchenItem[]>([]);
+  const [dailyServingStats, setDailyServingStats] = useState({ package: 0, refill: 0, addon: 0 });
 
   const { selectedStoreId } = useStoreSelector();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { settings } = useSettings();
 
   useEffect(() => {
     if (!firestore || !selectedStoreId) {
@@ -47,6 +53,7 @@ export default function KitchenPage() {
       setActiveTab(undefined);
       setServedOrderItems([]);
       setServedRefillItems([]);
+      setDailyServingStats({ package: 0, refill: 0, addon: 0 });
       return;
     }
 
@@ -67,7 +74,7 @@ export default function KitchenPage() {
         }
     });
 
-    // Fetch recently served order items
+    // --- Data for Recently Served List ---
     const servedItemsQuery = query(
       collectionGroup(firestore, 'orderItems'),
       where('storeId', '==', selectedStoreId),
@@ -81,7 +88,6 @@ export default function KitchenPage() {
       setServedOrderItems(items);
     });
 
-    // Fetch recently served refills
     const servedRefillsQuery = query(
       collectionGroup(firestore, 'refills'),
       where('storeId', '==', selectedStoreId),
@@ -95,10 +101,54 @@ export default function KitchenPage() {
       setServedRefillItems(items);
     });
 
+    // --- Data for Daily Stats ---
+    const todayStart = startOfDay(new Date());
+    const todayEnd = endOfDay(new Date());
+
+    const dailyOrderItemsQuery = query(
+      collectionGroup(firestore, 'orderItems'),
+      where('storeId', '==', selectedStoreId),
+      where('servedTimestamp', '>=', todayStart),
+      where('servedTimestamp', '<=', todayEnd)
+    );
+    const dailyRefillsQuery = query(
+      collectionGroup(firestore, 'refills'),
+      where('storeId', '==', selectedStoreId),
+      where('servedTimestamp', '>=', todayStart),
+      where('servedTimestamp', '<=', todayEnd)
+    );
+
+    const unsubDailyOrderItems = onSnapshot(dailyOrderItemsQuery, (snapshot) => {
+      const items = snapshot.docs.map(d => d.data() as OrderItem);
+      const packageItems = items.filter(i => i.sourceTag === 'initial');
+      const addonItems = items.filter(i => i.sourceTag !== 'initial');
+      
+      const packageTotal = packageItems.reduce((sum, i) => sum + (i.servedTimestamp!.toMillis() - i.timestamp.toMillis()), 0);
+      const addonTotal = addonItems.reduce((sum, i) => sum + (i.servedTimestamp!.toMillis() - i.timestamp.toMillis()), 0);
+
+      setDailyServingStats(prev => ({
+        ...prev,
+        package: packageItems.length > 0 ? (packageTotal / packageItems.length / 60000) : 0,
+        addon: addonItems.length > 0 ? (addonTotal / addonItems.length / 60000) : 0,
+      }));
+    });
+
+    const unsubDailyRefills = onSnapshot(dailyRefillsQuery, (snapshot) => {
+      const items = snapshot.docs.map(d => d.data() as RefillItem);
+      const refillTotal = items.reduce((sum, i) => sum + (i.servedTimestamp!.toMillis() - i.timestamp.toMillis()), 0);
+      setDailyServingStats(prev => ({
+        ...prev,
+        refill: items.length > 0 ? (refillTotal / items.length / 60000) : 0,
+      }));
+    });
+
+
     return () => {
       unsubStations();
       unsubServedItems();
       unsubServedRefills();
+      unsubDailyOrderItems();
+      unsubDailyRefills();
     }
   }, [firestore, selectedStoreId, activeTab]);
 
@@ -307,14 +357,18 @@ export default function KitchenPage() {
             })}
             </Tabs>
         </div>
-        <aside className="hidden lg:block">
-            <Card className="sticky top-[80px]">
+        <aside className="hidden lg:block space-y-4">
+             <ServingTimeStats 
+                stats={dailyServingStats} 
+                idealTimes={settings.kitchen.idealServingTimes} 
+             />
+            <Card className="sticky top-[240px]">
                 <CardHeader>
                     <CardTitle className="text-lg">Recently Served</CardTitle>
                 </CardHeader>
                 <Separator />
                 <CardContent className="p-0">
-                    <ScrollArea className="h-[calc(100vh-14rem)]">
+                    <ScrollArea className="h-[calc(100vh-24rem)]">
                         <div className="p-4 space-y-4">
                             {servedWithOrderDetails.map(item => (
                                 <div key={item.id}>

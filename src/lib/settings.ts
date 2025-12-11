@@ -44,6 +44,13 @@ export interface StoreSettings {
 
     /** Browser notification for new HOT items (if supported) */
     showHotNotifications: boolean;
+
+    /** Ideal serving times in minutes for different order types */
+    idealServingTimes: {
+        package: number;
+        refill: number;
+        addon: number;
+    }
   };
 
   refill: {
@@ -125,6 +132,11 @@ export const defaultStoreSettings: StoreSettings = {
     showPackageName: true,
     showRefillHistory: false,
     showHotNotifications: false,
+    idealServingTimes: {
+      package: 5,
+      refill: 3,
+      addon: 7,
+    },
   },
   refill: {
     allowAfterTimeLimit: false,
@@ -176,6 +188,10 @@ export async function getStoreSettings(
     kitchen: {
       ...defaultStoreSettings.kitchen,
       ...(data.kitchen || {}),
+      idealServingTimes: {
+        ...defaultStoreSettings.kitchen.idealServingTimes,
+        ...(data.kitchen?.idealServingTimes || {}),
+      }
     },
     refill: {
       ...defaultStoreSettings.refill,

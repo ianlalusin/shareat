@@ -262,6 +262,19 @@ export default function SettingsPage() {
             [category]: { ...prev[category], ...newValues },
         }));
     };
+
+    const handleKitchenSettingsChange = (key: string, value: any) => {
+        setSettings(prev => ({
+            ...prev,
+            kitchen: {
+                ...prev.kitchen,
+                idealServingTimes: {
+                    ...prev.kitchen.idealServingTimes,
+                    [key]: value
+                }
+            }
+        }));
+    };
     
     const handlePinSettingsChange = (newValues: any) => {
         setSettings(prev => ({
@@ -588,6 +601,24 @@ export default function SettingsPage() {
                                                     onCheckedChange={(c) => handleSettingsChange('kitchen', { showRefillHistory: c })}
                                                 />
                                                 <Label htmlFor="showRefillHistory">Show Refill History</Label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Separator/>
+                                    <div>
+                                        <h3 className="text-base font-medium mb-4">Ideal Serving Times (minutes)</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="ideal-package">Package</Label>
+                                                <Input id="ideal-package" type="number" value={settings.kitchen.idealServingTimes.package} onChange={(e) => handleKitchenSettingsChange('package', Number(e.target.value))} />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="ideal-refill">Refill</Label>
+                                                <Input id="ideal-refill" type="number" value={settings.kitchen.idealServingTimes.refill} onChange={(e) => handleKitchenSettingsChange('refill', Number(e.target.value))} />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="ideal-addon">Add-ons</Label>
+                                                <Input id="ideal-addon" type="number" value={settings.kitchen.idealServingTimes.addon} onChange={(e) => handleKitchenSettingsChange('addon', Number(e.target.value))} />
                                             </div>
                                         </div>
                                     </div>
