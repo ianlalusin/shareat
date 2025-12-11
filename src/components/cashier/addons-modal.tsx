@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, Minus, ShoppingCart, Trash2, MessageSquarePlus } from 'lucide-react';
-import { Table as TableType, MenuItem, Order } from '@/lib/types';
+import { Table as TableType, MenuItem, Order, OrderItem } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '../ui/separator';
@@ -42,13 +42,14 @@ export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
   const [editingNoteItem, setEditingNoteItem] = useState<{ key: string } | null>(null);
 
   const availableMenuForAddons = useMemo(() => 
-    menu.filter(item => 
-        item.category !== 'Package' &&
-        item.isAvailable &&
-        item.price > 0 &&
-        (item.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         item.category.toLowerCase().includes(searchTerm.toLowerCase()))
-    ), [menu, searchTerm]
+    menu.filter(item => {
+        const price = item.price ?? 0;
+        return item.category !== 'Package' &&
+            item.isAvailable &&
+            price > 0 &&
+            (item.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             item.category.toLowerCase().includes(searchTerm.toLowerCase()))
+    }), [menu, searchTerm]
   );
   
   const cartSubtotal = useMemo(() => 

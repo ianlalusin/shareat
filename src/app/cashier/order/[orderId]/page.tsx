@@ -192,11 +192,17 @@ export default function OrderDetailPage() {
     }
   }, [firestore, order?.storeId]);
   
-  const servedItems = useMemo(() => orderItems.filter(item => item.status === 'Served'), [orderItems]);
+  const billableItems = useMemo(() => {
+    return orderItems.filter(item => {
+      const price = item.priceAtOrder ?? 0;
+      const isFree = item.isFree === true || price === 0;
+      return !isFree && item.status === 'Served';
+    });
+  }, [orderItems]);
 
   const subtotal = useMemo(() => 
-      servedItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), 
-      [servedItems]
+      billableItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), 
+      [billableItems]
   );
 
   const grandTotal = useMemo(() => {
@@ -442,7 +448,7 @@ export default function OrderDetailPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {servedItems.map(item => (
+                            {billableItems.map(item => (
                                 <TableRow key={item.id}>
                                     <TableCell className="font-medium">{item.menuName}</TableCell>
                                     <TableCell className="text-center">{item.quantity}</TableCell>
@@ -450,7 +456,7 @@ export default function OrderDetailPage() {
                                     <TableCell className="text-right">{formatCurrency(item.quantity * item.priceAtOrder)}</TableCell>
                                 </TableRow>
                             ))}
-                             {servedItems.length === 0 && (
+                             {billableItems.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={4} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>
                                 </TableRow>
@@ -597,7 +603,7 @@ export default function OrderDetailPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)} disabled={servedItems.length === 0}>Finalize Bill</Button>
+                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)} disabled={billableItems.length === 0}>Finalize Bill</Button>
               </CardFooter>
             </Card>
           </div>

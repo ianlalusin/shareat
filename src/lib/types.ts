@@ -229,7 +229,7 @@ export type OrderItem = {
   servedTimestamp?: Timestamp;
   status: 'Pending' | 'Served' | 'Cancelled';
   isRefill: boolean;
-  sourceTag?: 'initial' | 'refill' | 'cashier' | 'addon';
+  sourceTag?: 'initial' | 'refill' | 'cashier' | 'addon' | 'promo';
   kitchenNote?: string;
   priority?: 'normal' | 'rush';
   servedAt?: Timestamp;

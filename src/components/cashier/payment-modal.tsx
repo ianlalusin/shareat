@@ -132,13 +132,15 @@ export function PaymentModal({
             if (!settingsSnap.exists()) throw new Error("Receipt settings for this store not found!");
             const settings = settingsSnap.data() as ReceiptSettings;
             
-            const orderItemsQuery = query(
-              collection(firestore, 'orders', order.id, 'orderItems'), 
-              where('status', '==', 'Served'),
-              where('isFree', '!=', true)
-            );
+            const orderItemsQuery = query(collection(firestore, 'orders', order.id, 'orderItems'));
             const orderItemsSnap = await getDocs(orderItemsQuery);
-            const billableItems = orderItemsSnap.docs.map(d => d.data() as OrderItem);
+            const allItems = orderItemsSnap.docs.map(d => d.data() as OrderItem);
+
+            const billableItems = allItems.filter(item => {
+                const price = item.priceAtOrder ?? 0;
+                const isFree = item.isFree === true || price === 0;
+                return !isFree && item.status === 'Served';
+            });
 
             let subtotalGross = 0;
             let subtotalNet = 0;
