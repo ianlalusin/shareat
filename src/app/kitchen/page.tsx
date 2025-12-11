@@ -241,6 +241,7 @@ export default function KitchenPage() {
         const pa = a.order?.priority === 'rush' ? 1 : 0;
         const pb = b.order?.priority === 'rush' ? 1 : 0;
         if (pa !== pb) return pb - pa;
+        // Oldest orders first
         return (
           (a.order?.orderTimestamp?.toMillis?.() || 0) -
           (b.order?.orderTimestamp?.toMillis?.() || 0)
