@@ -161,14 +161,13 @@ export default function MenuPage() {
     if (firestore) {
       let taxRateUnsubscribe = () => {};
       let storeStationsUnsubscribe = () => {};
-      let availabilityUnsubscribe = () => {};
-
+      
       const availabilityQuery = query(
           collection(firestore, 'lists'),
           where('category', '==', 'menu schedules'),
           where('is_active', '==', true)
         );
-      availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
+      const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
           const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
           setAvailabilityOptions(availabilityData);
       });
@@ -350,8 +349,9 @@ export default function MenuPage() {
     }
     if (!firestore || !storage || !selectedStoreId) return;
     
-    const dataToSave: Omit<MenuItem, 'id'> = {
+    const dataToSave: Partial<MenuItem> = {
       ...formData,
+      targetStation: formData.targetStation || null,
     };
     
     try {
@@ -820,3 +820,4 @@ export default function MenuPage() {
       </main>
   );
 }
+
