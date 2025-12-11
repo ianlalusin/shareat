@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc, runTransaction, limit, getDocs, collectionGroup } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, RefillItem, OrderItem, OrderUpdateLog, CollectionItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem, OrderUpdateLog, CollectionItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -335,7 +335,7 @@ export default function RefillPage() {
                 {pendingConfirmationOrders.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center pt-8">No new orders waiting for confirmation.</p>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {pendingConfirmationOrders.map(({ table, order }) => {
                     if (!order) return null;
                     return (
@@ -361,7 +361,7 @@ export default function RefillPage() {
             )}
             </TabsContent>
             <TabsContent value="active" className="flex-1 mt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {activeOrders.map(({table, order}) => {
                     if (!order) return null;
                     const orderRefills = refills[order.id] || [];
