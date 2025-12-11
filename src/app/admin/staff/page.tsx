@@ -57,7 +57,7 @@ function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
             <div className="flex items-start justify-between gap-2">
                 <DialogTitle>Access Control for {staff.fullName}</DialogTitle>

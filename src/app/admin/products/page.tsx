@@ -304,7 +304,7 @@ export default function ProductsPage() {
                 <span>Add Product</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-3xl">
+            <DialogContent className="sm:max-w-3xl" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
                 <DialogTitle>{editingItem ? 'Edit Product' : 'Add New Product'}</DialogTitle>
               </DialogHeader>
@@ -354,15 +354,15 @@ export default function ProductsPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                     <div className="space-y-2 md:col-span-2">
-                        <Label>Product Image</Label>
-                        <ImageUpload
-                            imageUrl={formData.imageUrl}
-                            onFileChange={handleFileChange}
-                        />
+                      <Label>Product Image</Label>
+                      <ImageUpload
+                          imageUrl={formData.imageUrl}
+                          onFileChange={handleFileChange}
+                      />
                     </div>
-                     <div className="flex items-center space-x-2 self-center pt-6">
-                        <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
-                        <Label htmlFor="isActive">Active</Label>
+                    <div className="flex items-center space-x-2 self-center justify-self-start pt-6">
+                      <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
+                      <Label htmlFor="isActive">Active</Label>
                     </div>
                   </div>
                 </div>

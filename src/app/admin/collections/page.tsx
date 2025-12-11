@@ -440,7 +440,7 @@ export default function CollectionsPage() {
 
       {/* Item Modal */}
       <Dialog open={isItemModalOpen} onOpenChange={handleItemModalOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
             <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
             </DialogHeader>
@@ -501,7 +501,7 @@ export default function CollectionsPage() {
       
       {/* Schedule Modal */}
        <Dialog open={isScheduleModalOpen} onOpenChange={handleScheduleModalOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="sm:max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
               <DialogHeader>
                 <DialogTitle>{editingSchedule ? 'Edit Schedule' : 'Add New Schedule'}</DialogTitle>
               </DialogHeader>

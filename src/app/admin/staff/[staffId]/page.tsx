@@ -173,7 +173,7 @@ export default function StaffDetailPage() {
                     <AvatarFallback><User className="h-8 w-8" /></AvatarFallback>
                 </Avatar>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
                 <DialogHeader>
                     <DialogTitle>{staff.fullName}&apos;s Photo</DialogTitle>
                 </DialogHeader>

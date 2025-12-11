@@ -62,7 +62,7 @@ export function ReceiptViewerModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Receipt Details</DialogTitle>
         </DialogHeader>
@@ -176,5 +176,3 @@ export function ReceiptViewerModal({
     </Dialog>
   );
 }
-
-    
