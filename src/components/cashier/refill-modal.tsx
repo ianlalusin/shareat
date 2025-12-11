@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useFirestore, useAuth } from '@/firebase';
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { Table as TableType, Order, MenuItem, CollectionItem, RefillItem, OrderItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, RefillItem } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -40,7 +38,7 @@ interface RefillModalProps {
   table: TableType;
   order: Order;
   menu: MenuItem[];
-  onPlaceOrder: (order: Order, refillCart: RefillCartItem[], cart: any[]) => void; // cart is empty here
+  onPlaceOrder: (order: Order, refillCart: RefillCartItem[]) => void;
 }
 
 interface RefillSelection {
@@ -53,7 +51,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     const [refillCart, setRefillCart] = useState<RefillCartItem[]>([]);
     
     const [noteInput, setNoteInput] = useState('');
-    const [editingNoteItem, setEditingNoteItem] = useState<{ type: 'refill'; key: string } | null>(null);
+    const [editingNoteItem, setEditingNoteItem] = useState<{ key: string } | null>(null);
 
     const { toast } = useToast();
     
@@ -162,9 +160,9 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
             ));
         }
     };
-
+    
     const handlePlaceOrderClick = () => {
-        onPlaceOrder(order, refillCart, []); // Pass empty cart for add-ons
+        onPlaceOrder(order, refillCart);
     }
     
     const getSelectedFlavorText = (meatType: string) => {
@@ -181,16 +179,16 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         setRefillCart(prev => prev.map(item => 
             item.meatType === meatType && item.flavor === flavor ? {...item, note: noteInput} : item
         ));
-
+        
         setEditingNoteItem(null);
         setNoteInput('');
     }
 
     const openNotePopover = (key: string, currentNote?: string) => {
-        setEditingNoteItem({ type: 'refill', key });
+        setEditingNoteItem({ key });
         setNoteInput(currentNote || '');
     };
-    
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
@@ -313,7 +311,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                         onClick={handlePlaceOrderClick} 
                         disabled={refillCart.length === 0}
                     >
-                        Place Order
+                        Place Refill Order
                     </Button>
                 </DialogFooter>
             </DialogContent>

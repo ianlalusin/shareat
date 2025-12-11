@@ -8,7 +8,7 @@ import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
 import { collection, onSnapshot, query, where, getDocs, writeBatch, serverTimestamp, doc, runTransaction } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, PendingOrderUpdate, OrderItem, CollectionItem } from '@/lib/types';
+import { Table as TableType, Order, MenuItem, PendingOrderUpdate, OrderItem, CollectionItem, RefillItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TableCard } from '@/components/cashier/table-card';
@@ -20,7 +20,8 @@ import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
 import { Badge } from '@/components/ui/badge';
 import { NewOrderModal } from '@/components/cashier/new-order-modal';
 import { RefillModal } from '@/components/cashier/refill-modal';
-import { AddToCartModal } from '@/components/cashier/add-to-cart-modal';
+import { AddonsModal } from '@/components/cashier/addons-modal';
+import { OrderDetailsModal } from '@/components/cashier/order-details-modal';
 
 
 export default function CashierPage() {
@@ -32,7 +33,8 @@ export default function CashierPage() {
 
     const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
-    const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
+    const [isAddonsModalOpen, setIsAddonsModalOpen] = useState(false);
+    const [isOrderDetailsModalOpen, setIsOrderDetailsModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
@@ -176,76 +178,69 @@ export default function CashierPage() {
         setIsNewOrderModalOpen(true);
     };
 
-    const handlePlaceOrder = async (
-        order: Order,
-        refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[],
-        cart: (MenuItem & { quantity: number; note?: string; })[]
-    ) => {
-        if (!firestore) return;
-
-        const batch = writeBatch(firestore);
-
-        if (refillCart.length > 0) {
-            const refillsRef = collection(firestore, 'orders', order.id, 'refills');
-            refillCart.forEach(refill => {
-                const newRefillRef = doc(refillsRef);
-                const refillData: Omit<RefillItem, 'id'> = {
-                    orderId: order.id,
-                    storeId: order.storeId,
-                    menuItemId: refill.meatType.toLowerCase(),
-                    menuName: `${refill.meatType} - ${refill.flavor}`,
-                    quantity: refill.quantity,
-                    targetStation: refill.targetStation as 'Hot' | 'Cold',
-                    timestamp: serverTimestamp() as any,
-                    status: 'Pending',
-                    kitchenNote: refill.note || '',
-                };
-                batch.set(newRefillRef, refillData);
-            });
-        }
-
-        if (cart.length > 0) {
-            const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
-            cart.forEach(cartItem => {
-                const newItemRef = doc(orderItemsRef);
-                const rate = cartItem.taxRate ?? 0;
-                const orderItemData: Omit<OrderItem, 'id'> = {
-                    orderId: order.id,
-                    storeId: order.storeId,
-                    menuItemId: cartItem.id,
-                    menuName: cartItem.menuName,
-                    quantity: cartItem.quantity,
-                    priceAtOrder: cartItem.price,
-                    isRefill: false,
-                    timestamp: serverTimestamp() as any,
-                    status: 'Pending',
-                    targetStation: cartItem.targetStation,
-                    sourceTag: 'refill',
-                    kitchenNote: cartItem.note || '',
-                    taxRate: rate,
-                    taxProfileCode: cartItem.taxProfileCode ?? null,
-                    isFree: false,
-                };
-                batch.set(newItemRef, orderItemData);
-            });
-        }
-
-        try {
-            await batch.commit();
-            toast({
-                title: 'Order Sent!',
-                description: 'Refills and add-ons have been sent to the kitchen.',
-            });
-            setIsRefillModalOpen(false);
-            setIsAddToCartModalOpen(false);
-        } catch (error) {
-            console.error("Error placing order:", error);
-            toast({
-                variant: 'destructive',
-                title: 'Order Failed',
-                description: 'Failed to place order. Please try again.',
-            });
-        }
+    const handlePlaceRefillOrder = async (order: Order, refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[]) => {
+      if (!firestore || refillCart.length === 0) return;
+      const batch = writeBatch(firestore);
+      const refillsRef = collection(firestore, 'orders', order.id, 'refills');
+      refillCart.forEach(refill => {
+        const newRefillRef = doc(refillsRef);
+        const refillData: Omit<RefillItem, 'id'> = {
+          orderId: order.id,
+          storeId: order.storeId,
+          menuItemId: refill.meatType.toLowerCase(),
+          menuName: `${refill.meatType} - ${refill.flavor}`,
+          quantity: refill.quantity,
+          targetStation: refill.targetStation as 'Hot' | 'Cold',
+          timestamp: serverTimestamp() as any,
+          status: 'Pending',
+          kitchenNote: refill.note || '',
+        };
+        batch.set(newRefillRef, refillData);
+      });
+      try {
+        await batch.commit();
+        toast({ title: 'Refill Sent!', description: 'Refill order has been sent to the kitchen.' });
+        setIsRefillModalOpen(false);
+      } catch (error) {
+        console.error("Error placing refill:", error);
+        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place refill order.' });
+      }
+    };
+    
+    const handlePlaceAddonsOrder = async (order: Order, cart: (MenuItem & { quantity: number; note?: string; })[]) => {
+      if (!firestore || cart.length === 0) return;
+      const batch = writeBatch(firestore);
+      const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
+      cart.forEach(cartItem => {
+        const newItemRef = doc(orderItemsRef);
+        const rate = cartItem.taxRate ?? 0;
+        const orderItemData: Omit<OrderItem, 'id'> = {
+          orderId: order.id,
+          storeId: order.storeId,
+          menuItemId: cartItem.id,
+          menuName: cartItem.menuName,
+          quantity: cartItem.quantity,
+          priceAtOrder: cartItem.price,
+          isRefill: false,
+          timestamp: serverTimestamp() as any,
+          status: 'Pending',
+          targetStation: cartItem.targetStation,
+          sourceTag: 'cashier', 
+          kitchenNote: cartItem.note || '',
+          taxRate: rate,
+          taxProfileCode: cartItem.taxProfileCode ?? null,
+          isFree: false,
+        };
+        batch.set(newItemRef, orderItemData);
+      });
+      try {
+        await batch.commit();
+        toast({ title: 'Add-ons Sent!', description: 'Add-on items have been sent to the kitchen.' });
+        setIsAddonsModalOpen(false);
+      } catch (error) {
+        console.error("Error placing add-ons:", error);
+        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place add-on order.' });
+      }
     };
 
 
@@ -268,7 +263,12 @@ export default function CashierPage() {
     
     const handleAddOnClick = useCallback((order: Order) => {
         setSelectedOrder(order);
-        setIsAddToCartModalOpen(true);
+        setIsAddonsModalOpen(true);
+    }, []);
+
+    const handleViewOrderClick = useCallback((order: Order) => {
+      setSelectedOrder(order);
+      setIsOrderDetailsModalOpen(true);
     }, []);
 
     const handleTogglePriority = useCallback(async (order: Order) => {
@@ -373,6 +373,7 @@ export default function CashierPage() {
                                 order={order}
                                 onRefillClick={() => handleRefillClick(order)}
                                 onAddOnClick={() => handleAddOnClick(order)}
+                                onViewOrderClick={() => handleViewOrderClick(order)}
                                 onTogglePriority={handleTogglePriority}
                                 onBillClick={handleBillClick}
                             />
@@ -413,16 +414,26 @@ export default function CashierPage() {
                 table={tables.find(t => t.id === selectedOrder.tableId)!}
                 order={selectedOrder}
                 menu={menu}
-                onPlaceOrder={handlePlaceOrder}
+                onPlaceOrder={handlePlaceRefillOrder}
             />
        )}
-        {isAddToCartModalOpen && selectedOrder && (
-            <AddToCartModal
-                isOpen={isAddToCartModalOpen}
-                onClose={() => setIsAddToCartModalOpen(false)}
+        {isAddonsModalOpen && selectedOrder && (
+            <AddonsModal
+                isOpen={isAddonsModalOpen}
+                onClose={() => setIsAddonsModalOpen(false)}
+                table={tables.find(t => t.id === selectedOrder.tableId)!}
                 order={selectedOrder}
                 menu={menu}
+                onPlaceOrder={handlePlaceAddonsOrder}
             />
+       )}
+       {isOrderDetailsModalOpen && selectedOrder && (
+        <OrderDetailsModal
+          isOpen={isOrderDetailsModalOpen}
+          onClose={() => setIsOrderDetailsModalOpen(false)}
+          order={selectedOrder}
+          menu={menu}
+        />
        )}
     </>
   );

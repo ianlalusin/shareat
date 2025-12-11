@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { GuestConfirmationModal } from '@/components/refill/guest-confirmation-modal';
 import { useAuthContext } from '@/context/auth-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AddToCartModal } from '@/components/cashier/add-to-cart-modal';
+import { AddonsModal } from '@/components/cashier/addons-modal';
 
 const getStatusColor = (status: TableType['status']) => {
     switch (status) {
@@ -39,7 +39,7 @@ export default function RefillPage() {
     const [refills, setRefills] = useState<Record<string, RefillItem[]>>({});
     
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
-    const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
+    const [isAddonsModalOpen, setIsAddonsModalOpen] = useState(false);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -142,6 +142,7 @@ export default function RefillPage() {
         const order = orders.find(o => o.id === table.activeOrderId);
         if(order) {
             setSelectedOrder(order);
+            setSelectedTable(table);
             setIsRefillModalOpen(true);
         }
     }
@@ -150,7 +151,8 @@ export default function RefillPage() {
         const order = orders.find(o => o.id === table.activeOrderId);
         if(order) {
             setSelectedOrder(order);
-            setIsAddToCartModalOpen(true);
+            setSelectedTable(table);
+            setIsAddonsModalOpen(true);
         }
     }
 
@@ -163,76 +165,69 @@ export default function RefillPage() {
         }
     }
 
-    const handlePlaceOrder = async (
-        order: Order,
-        refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[],
-        cart: (MenuItem & { quantity: number; note?: string; })[]
-    ) => {
-        if (!firestore) return;
-
-        const batch = writeBatch(firestore);
-
-        if (refillCart.length > 0) {
-            const refillsRef = collection(firestore, 'orders', order.id, 'refills');
-            refillCart.forEach(refill => {
-                const newRefillRef = doc(refillsRef);
-                const refillData: Omit<RefillItem, 'id'> = {
-                    orderId: order.id,
-                    storeId: order.storeId,
-                    menuItemId: refill.meatType.toLowerCase(),
-                    menuName: `${refill.meatType} - ${refill.flavor}`,
-                    quantity: refill.quantity,
-                    targetStation: refill.targetStation as 'Hot' | 'Cold',
-                    timestamp: serverTimestamp() as any,
-                    status: 'Pending',
-                    kitchenNote: refill.note || '',
-                };
-                batch.set(newRefillRef, refillData);
-            });
-        }
-
-        if (cart.length > 0) {
-            const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
-            cart.forEach(cartItem => {
-                const newItemRef = doc(orderItemsRef);
-                const rate = cartItem.taxRate ?? 0;
-                const orderItemData: Omit<OrderItem, 'id'> = {
-                    orderId: order.id,
-                    storeId: order.storeId,
-                    menuItemId: cartItem.id,
-                    menuName: cartItem.menuName,
-                    quantity: cartItem.quantity,
-                    priceAtOrder: cartItem.price,
-                    isRefill: false,
-                    timestamp: serverTimestamp() as any,
-                    status: 'Pending',
-                    targetStation: cartItem.targetStation,
-                    sourceTag: 'refill',
-                    kitchenNote: cartItem.note || '',
-                    taxRate: rate,
-                    taxProfileCode: cartItem.taxProfileCode ?? null,
-                    isFree: false,
-                };
-                batch.set(newItemRef, orderItemData);
-            });
-        }
-
-        try {
-            await batch.commit();
-            toast({
-                title: 'Order Sent!',
-                description: 'Refills and add-ons have been sent to the kitchen.',
-            });
-            setIsRefillModalOpen(false);
-            setIsAddToCartModalOpen(false);
-        } catch (error) {
-            console.error("Error placing order:", error);
-            toast({
-                variant: 'destructive',
-                title: 'Order Failed',
-                description: 'Failed to place order. Please try again.',
-            });
-        }
+    const handlePlaceRefillOrder = async (order: Order, refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[]) => {
+      if (!firestore || refillCart.length === 0) return;
+      const batch = writeBatch(firestore);
+      const refillsRef = collection(firestore, 'orders', order.id, 'refills');
+      refillCart.forEach(refill => {
+        const newRefillRef = doc(refillsRef);
+        const refillData: Omit<RefillItem, 'id'> = {
+          orderId: order.id,
+          storeId: order.storeId,
+          menuItemId: refill.meatType.toLowerCase(),
+          menuName: `${refill.meatType} - ${refill.flavor}`,
+          quantity: refill.quantity,
+          targetStation: refill.targetStation as 'Hot' | 'Cold',
+          timestamp: serverTimestamp() as any,
+          status: 'Pending',
+          kitchenNote: refill.note || '',
+        };
+        batch.set(newRefillRef, refillData);
+      });
+      try {
+        await batch.commit();
+        toast({ title: 'Refill Sent!', description: 'Refill order has been sent to the kitchen.' });
+        setIsRefillModalOpen(false);
+      } catch (error) {
+        console.error("Error placing refill:", error);
+        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place refill order.' });
+      }
+    };
+    
+    const handlePlaceAddonsOrder = async (order: Order, cart: (MenuItem & { quantity: number; note?: string; })[]) => {
+      if (!firestore || cart.length === 0) return;
+      const batch = writeBatch(firestore);
+      const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
+      cart.forEach(cartItem => {
+        const newItemRef = doc(orderItemsRef);
+        const rate = cartItem.taxRate ?? 0;
+        const orderItemData: Omit<OrderItem, 'id'> = {
+          orderId: order.id,
+          storeId: order.storeId,
+          menuItemId: cartItem.id,
+          menuName: cartItem.menuName,
+          quantity: cartItem.quantity,
+          priceAtOrder: cartItem.price,
+          isRefill: false,
+          timestamp: serverTimestamp() as any,
+          status: 'Pending',
+          targetStation: cartItem.targetStation,
+          sourceTag: 'refill', // Indicates it came from the refill station staff
+          kitchenNote: cartItem.note || '',
+          taxRate: rate,
+          taxProfileCode: cartItem.taxProfileCode ?? null,
+          isFree: false,
+        };
+        batch.set(newItemRef, orderItemData);
+      });
+      try {
+        await batch.commit();
+        toast({ title: 'Add-ons Sent!', description: 'Add-on items have been sent to the kitchen.' });
+        setIsAddonsModalOpen(false);
+      } catch (error) {
+        console.error("Error placing add-ons:", error);
+        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place add-on order.' });
+      }
     };
 
     const handleConfirmGuests = async (order: Order, serverGuestCount: number) => {
@@ -321,12 +316,12 @@ export default function RefillPage() {
     useEffect(() => {
         const currentPendingCount = pendingConfirmationOrders.length;
         if (currentPendingCount > prevPendingCountRef.current) {
-            if (!isRefillModalOpen && !isConfirmModalOpen && !isAddToCartModalOpen) {
+            if (!isRefillModalOpen && !isConfirmModalOpen && !isAddonsModalOpen) {
                 setActiveTab('waiting');
             }
         }
         prevPendingCountRef.current = currentPendingCount;
-    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen, isAddToCartModalOpen]);
+    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen, isAddonsModalOpen]);
 
     if (!selectedStoreId) {
         return (
@@ -418,7 +413,7 @@ export default function RefillPage() {
                                 </div>
                             </CardContent>
                              <CardFooter className="p-2 border-t grid grid-cols-2 gap-2">
-                                <Button variant="outline" onClick={() => handleRefillClick(table)}>Refill</Button>
+                                <Button variant="secondary" onClick={() => handleRefillClick(table)}>Refill</Button>
                                 <Button variant="outline" onClick={() => handleAddOnClick(table)}>Add-ons</Button>
                             </CardFooter>
                         </Card>
@@ -429,23 +424,25 @@ export default function RefillPage() {
         </Tabs>
       </main>
 
-      {isRefillModalOpen && selectedOrder && (
+      {isRefillModalOpen && selectedOrder && selectedTable && (
         <RefillModal
             isOpen={isRefillModalOpen}
             onClose={() => setIsRefillModalOpen(false)}
-            table={tables.find(t => t.id === selectedOrder.tableId)!}
+            table={selectedTable}
             order={selectedOrder}
             menu={filteredMenu}
-            onPlaceOrder={handlePlaceOrder}
+            onPlaceOrder={handlePlaceRefillOrder}
         />
       )}
       
-      {isAddToCartModalOpen && selectedOrder && (
-        <AddToCartModal
-            isOpen={isAddToCartModalOpen}
-            onClose={() => setIsAddToCartModalOpen(false)}
+      {isAddonsModalOpen && selectedOrder && selectedTable && (
+        <AddonsModal
+            isOpen={isAddonsModalOpen}
+            onClose={() => setIsAddonsModalOpen(false)}
+            table={selectedTable}
             order={selectedOrder}
             menu={filteredMenu}
+            onPlaceOrder={handlePlaceAddonsOrder}
         />
       )}
 
