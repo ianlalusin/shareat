@@ -45,6 +45,17 @@ export type TaxProfile = {
 
 export type TaxRate = CollectionItem & TaxProfile;
 
+export type DiscountProperties = {
+    code: string;
+    discountMode: 'ABS' | 'PCT';
+    discountValue: number;
+    appliesTo: 'bill' | 'line';
+    requiresTin: boolean;
+    requiresName: boolean;
+}
+
+export type DiscountType = CollectionItem & DiscountProperties;
+
 
 export type Staff = {
   id:string;

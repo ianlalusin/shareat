@@ -41,6 +41,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore } from '@/firebase';
 import {
   addDoc,
@@ -52,7 +53,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-import { CollectionItem, Store, Schedule, TaxRate } from '@/lib/types';
+import { CollectionItem, Store, Schedule, TaxRate, DiscountType } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -92,12 +93,26 @@ const initialTaxRateState: Omit<TaxRate, 'id'> = {
     storeIds: [],
 }
 
+const initialDiscountTypeState: Omit<DiscountType, 'id'> = {
+    item: '',
+    category: 'discount type',
+    code: '',
+    discountMode: 'PCT',
+    discountValue: 0,
+    appliesTo: 'bill',
+    requiresTin: false,
+    requiresName: false,
+    is_active: true,
+    storeIds: [],
+};
+
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function CollectionsPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+  const [discountTypes, setDiscountTypes] = useState<DiscountType[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -111,9 +126,13 @@ export default function CollectionsPage() {
   const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
   const [editingTaxRate, setEditingTaxRate] = useState<TaxRate | null>(null);
   const [taxFormData, setTaxFormData] = useState(initialTaxRateState);
+
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
+  const [editingDiscountType, setEditingDiscountType] = useState<DiscountType | null>(null);
+  const [discountFormData, setDiscountFormData] = useState(initialDiscountTypeState);
   
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [deleteTargetType, setDeleteTargetType] = useState<'item' | 'schedule' | 'tax' | null>(null);
+  const [deleteTargetType, setDeleteTargetType] = useState<'item' | 'schedule' | 'tax' | 'discount' | null>(null);
 
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
@@ -126,13 +145,15 @@ export default function CollectionsPage() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      const regularItems = allItems.filter(item => item.category !== 'menu schedules' && item.category !== 'tax profile').map(item => ({ ...item, storeIds: item.storeIds || [] })) as CollectionItem[];
+      const regularItems = allItems.filter(item => item.category !== 'menu schedules' && item.category !== 'tax profile' && item.category !== 'discount type').map(item => ({ ...item, storeIds: item.storeIds || [] })) as CollectionItem[];
       const scheduleItems = allItems.filter(item => item.category === 'menu schedules').map(item => ({...item, days: item.days || []})) as Schedule[];
       const taxRateItems = allItems.filter(item => item.category === 'tax profile').map(item => ({...item, storeIds: item.storeIds || []})) as TaxRate[];
-      
+      const discountTypeItems = allItems.filter(item => item.category === 'discount type').map(item => ({...item, storeIds: item.storeIds || []})) as DiscountType[];
+
       setItems(regularItems);
       setSchedules(scheduleItems);
       setTaxRates(taxRateItems);
+      setDiscountTypes(discountTypeItems);
     });
 
     const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -216,10 +237,10 @@ export default function CollectionsPage() {
 
     try {
         await deleteDoc(doc(firestore, 'lists', deleteTargetId));
-        let description = '';
-        if (deleteTargetType === 'item') description = 'The list item has been deleted.';
-        else if (deleteTargetType === 'schedule') description = 'The schedule has been deleted.';
+        let description = 'The item has been deleted.';
+        if (deleteTargetType === 'schedule') description = 'The schedule has been deleted.';
         else if (deleteTargetType === 'tax') description = 'The tax profile has been deleted.';
+        else if (deleteTargetType === 'discount') description = 'The discount type has been deleted.';
         
         toast({
             title: 'Deleted',
@@ -250,8 +271,12 @@ export default function CollectionsPage() {
     setIsItemModalOpen(true);
   };
   
-  const getSelectedStoreNames = (formType: 'item' | 'tax' = 'item') => {
-    const storeIds = formType === 'item' ? itemFormData.storeIds : taxFormData.storeIds;
+  const getSelectedStoreNames = (formType: 'item' | 'tax' | 'discount' = 'item') => {
+    let storeIds: string[] = [];
+    if (formType === 'item') storeIds = itemFormData.storeIds;
+    else if (formType === 'tax') storeIds = taxFormData.storeIds;
+    else if (formType === 'discount') storeIds = discountFormData.storeIds;
+
     if (storeIds.length === 0) return "Select stores";
     if (storeIds.length === stores.length) return "All stores selected";
     if (storeIds.length > 2) return `${storeIds.length} stores selected`;
@@ -398,6 +423,76 @@ export default function CollectionsPage() {
     });
     setIsTaxModalOpen(true);
   };
+  
+  // Discount Modal Handlers
+    const handleDiscountModalOpenChange = (open: boolean) => {
+        setIsDiscountModalOpen(open);
+        if (!open) {
+            setEditingDiscountType(null);
+            setDiscountFormData(initialDiscountTypeState);
+        }
+    };
+
+    const handleDiscountInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value, type } = e.target;
+        setDiscountFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
+    };
+
+    const handleDiscountSelectChange = (name: keyof Omit<DiscountType, 'id'>, value: string) => {
+        setDiscountFormData(prev => ({ ...prev, [name]: value as any }));
+    };
+
+    const handleDiscountSwitchChange = (name: 'is_active' | 'requiresTin' | 'requiresName', checked: boolean) => {
+        setDiscountFormData(prev => ({ ...prev, [name]: checked }));
+    };
+    
+    const handleDiscountStoreIdChange = (storeId: string) => {
+        setDiscountFormData(prev => {
+            const newStoreIds = prev.storeIds.includes(storeId)
+                ? prev.storeIds.filter(id => id !== storeId)
+                : [...prev.storeIds, storeId];
+            return { ...prev, storeIds: newStoreIds };
+        });
+    };
+
+    const handleDiscountSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!firestore) return;
+
+        if (discountFormData.storeIds.length === 0) {
+            toast({ variant: 'destructive', title: 'No Store Selected', description: 'Please select at least one store.' });
+            return;
+        }
+
+        const operation = editingDiscountType
+            ? updateDoc(doc(firestore, 'lists', editingDiscountType.id), discountFormData)
+            : addDoc(collection(firestore, 'lists'), discountFormData);
+
+        operation.then(() => {
+            handleDiscountModalOpenChange(false);
+            openSuccessModal();
+        }).catch(error => {
+            console.error("Save error:", error);
+            toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not save discount type." });
+        });
+    };
+
+    const handleEditDiscountType = (discountType: DiscountType) => {
+        setEditingDiscountType(discountType);
+        setDiscountFormData({
+            item: discountType.item,
+            category: 'discount type',
+            code: discountType.code || '',
+            discountMode: discountType.discountMode || 'PCT',
+            discountValue: discountType.discountValue || 0,
+            appliesTo: discountType.appliesTo || 'bill',
+            requiresTin: discountType.requiresTin || false,
+            requiresName: discountType.requiresName || false,
+            is_active: discountType.is_active,
+            storeIds: discountType.storeIds || [],
+        });
+        setIsDiscountModalOpen(true);
+    };
 
 
   return (
@@ -486,6 +581,74 @@ export default function CollectionsPage() {
         </Accordion>
       </section>
 
+      <Separator />
+
+       {/* Discount Types Section */}
+      <section>
+        <Accordion type="single" collapsible defaultValue="discounts" className="w-full">
+            <AccordionItem value="discounts" className="border-0">
+                <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
+                    <div className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80">
+                        <AccordionTrigger className="flex-1 p-0 hover:no-underline">
+                            <div className='flex items-center gap-2'>
+                                <h2 className="text-lg font-semibold font-headline">Discount Types</h2>
+                                <Badge variant="secondary">{discountTypes.length}</Badge>
+                            </div>
+                        </AccordionTrigger>
+                        <Button
+                            size="sm"
+                            className="flex items-center gap-2 mx-4"
+                            onClick={(e) => { e.stopPropagation(); handleDiscountModalOpenChange(true); }}
+                        >
+                            <PlusCircle className="h-4 w-4" />
+                            <span>Add Discount Type</span>
+                        </Button>
+                    </div>
+                    <AccordionContent className="p-0">
+                        <div className="border-t">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Display Name</TableHead>
+                                        <TableHead>Code</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Value</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead className="w-24">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {discountTypes.map(d => (
+                                        <TableRow key={d.id}>
+                                            <TableCell>{d.item}</TableCell>
+                                            <TableCell>{d.code}</TableCell>
+                                            <TableCell>{d.discountMode}</TableCell>
+                                            <TableCell>{d.discountMode === 'PCT' ? `${d.discountValue}%` : `₱${d.discountValue}`}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={d.is_active ? 'default' : 'destructive'} className={d.is_active ? 'bg-green-500' : ''}>
+                                                    {d.is_active ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-1">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditDiscountType(d)}><Pencil className="h-4 w-4" /></Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setDeleteTargetId(d.id); setDeleteTargetType('discount'); }}>
+                                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {discountTypes.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No discount types created yet.</p>}
+                        </div>
+                    </AccordionContent>
+                </div>
+            </AccordionItem>
+        </Accordion>
+      </section>
+      
       <Separator />
       
       {/* Tax Profiles Section */}
@@ -807,6 +970,100 @@ export default function CollectionsPage() {
           </form>
         </DialogContent>
       </Dialog>
+      
+       {/* Discount Modal */}
+      <Dialog open={isDiscountModalOpen} onOpenChange={handleDiscountModalOpenChange}>
+        <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{editingDiscountType ? 'Edit Discount Type' : 'Add New Discount Type'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleDiscountSubmit}>
+            <div className="grid gap-6 py-4">
+               <div className="space-y-2">
+                <Label htmlFor="discount_storeIds">Store (required)</Label>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between">
+                        <span>{getSelectedStoreNames('discount')}</span>
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                        <DropdownMenuItem onSelect={() => setDiscountFormData(prev => ({...prev, storeIds: stores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setDiscountFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {stores.map(store => (
+                            <DropdownMenuCheckboxItem
+                                key={store.id}
+                                checked={discountFormData.storeIds.includes(store.id)}
+                                onSelect={(e) => e.preventDefault()}
+                                onClick={() => handleDiscountStoreIdChange(store.id)}
+                            >
+                                {store.storeName}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="discount_item">Display Name</Label>
+                        <Input id="discount_item" name="item" value={discountFormData.item} onChange={handleDiscountInputChange} required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="discount_code">Code</Label>
+                        <Input id="discount_code" name="code" value={discountFormData.code} onChange={handleDiscountInputChange} required />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="discountMode">Discount Mode</Label>
+                        <Select name="discountMode" value={discountFormData.discountMode} onValueChange={(v) => handleDiscountSelectChange('discountMode', v)}>
+                           <SelectTrigger><SelectValue/></SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="PCT">Percentage</SelectItem>
+                               <SelectItem value="ABS">Absolute</SelectItem>
+                           </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="discountValue">Value</Label>
+                        <Input id="discountValue" name="discountValue" type="number" value={discountFormData.discountValue} onChange={handleDiscountInputChange} required />
+                         <p className="text-xs text-muted-foreground">Enter % (e.g., 20) or ₱ amount</p>
+                    </div>
+                     <div className="space-y-2">
+                        <Label htmlFor="appliesTo">Applies To</Label>
+                        <Select name="appliesTo" value={discountFormData.appliesTo} onValueChange={(v) => handleDiscountSelectChange('appliesTo', v)}>
+                           <SelectTrigger><SelectValue/></SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="bill">Entire Bill</SelectItem>
+                               <SelectItem value="line">Specific Item (Line)</SelectItem>
+                           </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                 <div className="flex items-center space-x-6 pt-4">
+                    <div className="flex items-center space-x-2">
+                        <Switch id="requiresName" checked={discountFormData.requiresName} onCheckedChange={(c) => handleDiscountSwitchChange('requiresName', c)} />
+                        <Label htmlFor="requiresName">Requires Name</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="requiresTin" checked={discountFormData.requiresTin} onCheckedChange={(c) => handleDiscountSwitchChange('requiresTin', c)} />
+                        <Label htmlFor="requiresTin">Requires TIN</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="is_active_discount" checked={discountFormData.is_active} onCheckedChange={(c) => handleDiscountSwitchChange('is_active', c)} />
+                        <Label htmlFor="is_active_discount">Active</Label>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter className="flex-row justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => handleDiscountModalOpenChange(false)}>Cancel</Button>
+              <Button type="submit">{editingDiscountType ? 'Save Changes' : 'Save'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
 
         <AlertDialog
@@ -825,6 +1082,8 @@ export default function CollectionsPage() {
                     ? "Delete schedule?"
                     : deleteTargetType === 'tax'
                     ? "Delete tax profile?"
+                    : deleteTargetType === 'discount'
+                    ? "Delete discount type?"
                     : "Delete list item?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
