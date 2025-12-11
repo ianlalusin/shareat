@@ -128,6 +128,7 @@ export default function MenuPage() {
   const { selectedStoreId } = useStoreSelector();
   const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (firestore && selectedStoreId) {
@@ -317,7 +318,9 @@ export default function MenuPage() {
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setImageFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setImageFile(file);
+      setFormData(prev => ({ ...prev, imageUrl: URL.createObjectURL(file) }));
     }
   };
 
@@ -619,26 +622,39 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-                     <div className="space-y-2 md:col-span-2">
-                        <Label>Image</Label>
-                         <div className="h-24 w-24 flex items-center justify-center rounded-md bg-muted overflow-hidden relative">
-                            {formData.imageUrl ? (
-                                <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
-                            ) : (
-                                <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                            )}
-                        </div>
+                 <div className="grid grid-cols-2 md:grid-cols-4 items-end gap-4 rounded-lg border p-4">
+                    <div className="space-y-2">
+                      <Label>Image</Label>
+                      <input
+                        type="file"
+                        ref={imageInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                        accept="image/*"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => imageInputRef.current?.click()}
+                        className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
+                      >
+                        {formData.imageUrl ? (
+                          <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                        ) : (
+                          <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                        )}
+                      </button>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="barcode">Barcode</Label>
                       <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                    <div className="space-y-2 pt-6">
-                        <div className="flex items-center space-x-2">
-                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
-                            <Label htmlFor="isAvailable">Available</Label>
-                        </div>
+                     <div className="space-y-2">
+                      <Label htmlFor="sortOrder">Sort Order</Label>
+                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
+                    </div>
+                    <div className="flex items-center space-x-2 pb-2">
+                        <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                        <Label htmlFor="isAvailable">Available</Label>
                     </div>
                 </div>
                  
@@ -701,8 +717,7 @@ export default function MenuPage() {
                     </div>
                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="publicDescription">Public Description</Label>
                     <Textarea
                       id="publicDescription"
@@ -710,13 +725,8 @@ export default function MenuPage() {
                       value={formData.publicDescription}
                       onChange={handleInputChange}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="sortOrder">Sort Order</Label>
-                    <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
-                    <p className="text-xs text-muted-foreground">Lower numbers appear first within a category.</p>
-                  </div>
                 </div>
+                 
 
                 {formError && (
                     <Alert variant="destructive" className="p-2">
@@ -869,3 +879,4 @@ export default function MenuPage() {
       </main>
   );
 }
+
