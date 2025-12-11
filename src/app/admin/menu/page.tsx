@@ -103,7 +103,6 @@ export default function MenuPage() {
   const [availabilityOptions, setAvailabilityOptions] = useState<CollectionItem[]>([]);
   const [taxRates, setTaxRates] = useState<CollectionItem[]>([]);
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
-  const [refillOptions, setRefillOptions] = useState<CollectionItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -173,7 +172,6 @@ export default function MenuPage() {
     
       let taxRateUnsubscribe = () => {};
       let storeStationsUnsubscribe = () => {};
-      let refillOptionsUnsubscribe = () => {};
 
       if (selectedStoreId) {
         const taxRateQuery = query(
@@ -198,32 +196,22 @@ export default function MenuPage() {
             setStoreStations(stationData);
         });
         
-        const refillOptionsQuery = query(
-            collection(firestore, 'lists'),
-            where('category', '==', 'refill'),
-            where('is_active', '==', true),
-            where('storeIds', 'array-contains', selectedStoreId)
-        );
-        refillOptionsUnsubscribe = onSnapshot(refillOptionsQuery, (snapshot) => {
-            const refillData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
-            setRefillOptions(refillData);
-        });
-
       } else {
         setTaxRates([]);
         setStoreStations([]);
-        setRefillOptions([]);
       }
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
         storeStationsUnsubscribe();
-        refillOptionsUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
 
+  const refillOptions = useMemo(() => {
+      return items.filter(item => item.category === 'Refill');
+  }, [items]);
 
   const handleModalOpenChange = (open: boolean) => {
     setIsModalOpen(open);
@@ -334,11 +322,11 @@ export default function MenuPage() {
     setFormData(newFormData);
   }
   
-  const handleAllowedRefillsChange = (refillItem: string) => {
+  const handleAllowedRefillsChange = (refillItemName: string) => {
     setFormData((prev) => {
-      const newAllowedRefills = prev.allowed_refills.includes(refillItem)
-        ? prev.allowed_refills.filter(id => id !== refillItem)
-        : [...prev.allowed_refills, refillItem];
+      const newAllowedRefills = prev.allowed_refills.includes(refillItemName)
+        ? prev.allowed_refills.filter(name => name !== refillItemName)
+        : [...prev.allowed_refills, refillItemName];
       return { ...prev, allowed_refills: newAllowedRefills };
     });
   };
@@ -641,22 +629,22 @@ export default function MenuPage() {
                                     </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: refillOptions.map(r => r.item)}))}>Select All</DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: refillOptions.map(r => r.menuName)}))}>Select All</DropdownMenuItem>
                                         <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, allowed_refills: []}))}>Select None</DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         {refillOptions.map(option => (
                                             <DropdownMenuCheckboxItem
                                                 key={option.id}
-                                                checked={formData.allowed_refills.includes(option.item)}
+                                                checked={formData.allowed_refills.includes(option.menuName)}
                                                 onSelect={(e) => e.preventDefault()}
-                                                onClick={() => handleAllowedRefillsChange(option.item)}
+                                                onClick={() => handleAllowedRefillsChange(option.menuName)}
                                             >
-                                                {option.item}
+                                                {option.menuName}
                                             </DropdownMenuCheckboxItem>
                                         ))}
                                     </DropdownMenuContent>
                                 </DropdownMenu>
-                                 <p className="text-xs text-muted-foreground">Select which items from the 'refill' collection can be requested for this menu item.</p>
+                                 <p className="text-xs text-muted-foreground">Select which items from the menu (category: Refill) can be requested for this package.</p>
                             </div>
                         )}
                     </div>
