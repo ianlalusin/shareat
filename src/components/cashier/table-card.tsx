@@ -135,8 +135,8 @@ const TableCardComponent: React.FC<TableCardProps> = ({ table, order, onRefillCl
       <CardFooter className="p-0 pt-2 grid grid-cols-2 gap-2">
         <Button variant="outline" onClick={() => onRefillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>Refill</Button>
         <Button variant="outline" onClick={() => onAddOnClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} disabled={isPending}>Add-ons</Button>
-        <Button variant="secondary" onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} className="col-span-2">View Order</Button>
-        <Button onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'} className="col-span-2">Bill</Button>
+        <Button variant="secondary" onClick={() => onViewOrderClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>View Order</Button>
+        <Button onClick={() => onBillClick(order)} size={cardSize === 'compact' ? 'sm' : 'default'}>Bill</Button>
       </CardFooter>
     </Card>
   );
