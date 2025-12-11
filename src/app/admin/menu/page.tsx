@@ -461,7 +461,6 @@ export default function MenuPage() {
         const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
         newFormData = {...newFormData, category, sortOrder: maxSortOrder + 1};
     } else {
-        // If adding without category, we can't auto-sort, default to 0 or 1
         newFormData.sortOrder = 1;
     }
 
@@ -502,14 +501,23 @@ export default function MenuPage() {
   }, [stores, selectedStoreId]);
 
   const availableInventoryItems = useMemo(() => {
-    if (editingItem) return inventoryItems;
+    if (!selectedStoreId) return [];
     
-    const existingProductIdsOnMenu = items.map(item => item.productId).filter(Boolean);
+    const existingProductIdsOnMenu = items
+      .filter(item => item.storeId === selectedStoreId)
+      .map(item => item.productId)
+      .filter(Boolean);
+      
+    if (editingItem && editingItem.productId) {
+        return inventoryItems.filter(invItem => 
+            invItem.productId && (!existingProductIdsOnMenu.includes(invItem.productId) || invItem.productId === editingItem.productId)
+        );
+    }
     
     return inventoryItems.filter(invItem => 
         invItem.productId && !existingProductIdsOnMenu.includes(invItem.productId)
     );
-  }, [items, inventoryItems, editingItem]);
+  }, [items, inventoryItems, editingItem, selectedStoreId]);
 
   const groupedAvailableInventoryItems = useMemo(() => {
     return availableInventoryItems.reduce((acc, item) => {
@@ -634,7 +642,7 @@ export default function MenuPage() {
                     </div>
                 </div>
                  
-                 <div className="grid grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,auto,auto] items-end gap-4 rounded-lg border p-4">
+                 <div className="grid grid-cols-1 md:grid-cols-3 items-end gap-4 rounded-lg border p-4">
                     <div className="space-y-2">
                         <Label>Image</Label>
                         <input
@@ -656,17 +664,19 @@ export default function MenuPage() {
                           )}
                         </button>
                     </div>
-                    <div className="space-y-2 self-start">
+                    <div className="space-y-2">
                         <Label htmlFor="barcode">Barcode</Label>
                         <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                    <div className="space-y-2 self-start w-20">
-                      <Label htmlFor="sortOrder">Sort</Label>
-                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
-                    </div>
-                    <div className="flex items-center space-x-2 pb-2 self-end">
-                        <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
-                        <Label htmlFor="isAvailable">Available</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="sortOrder">Sort</Label>
+                          <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
+                        </div>
+                        <div className="flex items-center space-x-2 pb-2 self-end justify-end">
+                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                            <Label htmlFor="isAvailable">Available</Label>
+                        </div>
                     </div>
                 </div>
 
