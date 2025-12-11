@@ -25,7 +25,7 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '../ui/textarea';
 
 interface NewOrderModalProps {
     isOpen: boolean;
@@ -61,7 +61,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
 
         const flavorsQuery = query(
             collection(firestore, 'lists'),
-            where('category', '==', 'meat flavor'),
+            where('category', '==', 'flavors'),
             where('is_active', '==', true),
             where('storeIds', 'array-contains', storeId)
         );
@@ -146,9 +146,9 @@ export function NewOrderModal({ isOpen, onClose, table, menu, storeId, onCreateO
 
     return (
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
-                <DialogTitle>New Order for {table?.tableName}</DialogTitle>
+                <DialogTitle>New Order: {table?.tableName}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto px-1">
                 <div className="space-y-2">

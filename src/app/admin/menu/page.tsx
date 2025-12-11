@@ -214,7 +214,7 @@ export default function MenuPage() {
 
         const flavorsQuery = query(
           collection(firestore, 'lists'),
-          where('category', '==', 'meat flavor'),
+          where('category', '==', 'flavors'),
           where('is_active', '==', true),
           where('storeIds', 'array-contains', selectedStoreId)
         );
