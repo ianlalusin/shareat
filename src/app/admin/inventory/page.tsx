@@ -421,11 +421,11 @@ export default function InventoryPage() {
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="category">Category</Label>
-                        <Input id="category" name="category" value={formData.category} onChange={handleInputChange} required readOnly disabled />
+                        <Input id="category" name="category" value={formData.category} readOnly disabled />
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="sku">SKU / Barcode</Label>
-                        <BarcodeInput id="sku" name="sku" value={formData.sku} onChange={handleInputChange} readOnly disabled />
+                        <BarcodeInput id="sku" name="sku" value={formData.sku} readOnly disabled />
                     </div>
                     {/* Row 2 */}
                      <div className="space-y-2">

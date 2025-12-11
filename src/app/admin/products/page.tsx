@@ -53,6 +53,7 @@ import {
   query,
   where,
   getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
@@ -197,6 +198,37 @@ export default function ProductsPage() {
       if (editingItem) {
         const itemRef = doc(firestore, 'products', editingItem.id);
         await updateDoc(itemRef, dataToSave);
+
+        // --- Cascading Update Logic ---
+        const batch = writeBatch(firestore);
+
+        const inventoryQuery = query(collection(firestore, 'inventory'), where('productId', '==', editingItem.id));
+        const inventorySnapshot = await getDocs(inventoryQuery);
+        inventorySnapshot.forEach(doc => {
+            batch.update(doc.ref, {
+                name: finalFormData.productName,
+                category: finalFormData.category,
+                sku: finalFormData.barcode,
+                unit: finalFormData.unit,
+            });
+        });
+
+        const menuQuery = query(collection(firestore, 'menu'), where('productId', '==', editingItem.id));
+        const menuSnapshot = await getDocs(menuQuery);
+        menuSnapshot.forEach(doc => {
+            batch.update(doc.ref, {
+                menuName: finalFormData.productName,
+                category: finalFormData.category,
+                barcode: finalFormData.barcode,
+                unit: finalFormData.unit,
+                imageUrl: finalFormData.imageUrl,
+            });
+        });
+
+        await batch.commit();
+        toast({ title: 'Success!', description: 'Product and all linked items have been updated.' });
+        // --- End Cascading Logic ---
+
       } else {
         const productsRef = collection(firestore, 'products');
         const q = query(productsRef, where('barcode', '==', finalFormData.barcode));
