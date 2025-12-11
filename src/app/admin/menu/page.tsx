@@ -159,19 +159,9 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (firestore) {
-      const availabilityQuery = query(
-        collection(firestore, 'lists'),
-        where('category', '==', 'menu availability'),
-        where('is_active', '==', true)
-      );
-  
-      const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-        const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
-        setAvailabilityOptions(availabilityData);
-      });
-    
       let taxRateUnsubscribe = () => {};
       let storeStationsUnsubscribe = () => {};
+      let availabilityUnsubscribe = () => {};
 
       if (selectedStoreId) {
         const taxRateQuery = query(
@@ -196,9 +186,21 @@ export default function MenuPage() {
             setStoreStations(stationData);
         });
         
+        const availabilityQuery = query(
+          collection(firestore, 'lists'),
+          where('category', '==', 'menu schedules'),
+          where('is_active', '==', true),
+          where('storeIds', 'array-contains', selectedStoreId)
+        );
+        availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
+          const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          setAvailabilityOptions(availabilityData);
+        });
+        
       } else {
         setTaxRates([]);
         setStoreStations([]);
+        setAvailabilityOptions([]);
       }
       
       return () => {
