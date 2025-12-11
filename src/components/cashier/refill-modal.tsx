@@ -64,7 +64,6 @@ interface RefillSelection {
 }
 
 export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder }: RefillModalProps) {
-    const [flavorOptions, setFlavorOptions] = useState<CollectionItem[]>([]);
     const [refillSelections, setRefillSelections] = useState<Record<string, RefillSelection>>({});
     const [refillCart, setRefillCart] = useState<RefillCartItem[]>([]);
     
@@ -86,30 +85,14 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
     
     const meatTypesForPackage = useMemo(() => {
         if (!packageDetails || !packageDetails.allowed_refills) return [];
-        return menu.filter(m => packageDetails.allowed_refills.includes(m.menuName) && m.category === 'Refill');
+        return menu.filter(m => (packageDetails.allowed_refills || []).includes(m.menuName) && m.category === 'Refill');
     }, [packageDetails, menu]);
-
-    useEffect(() => {
-        if (firestore && order.storeId) {
-            const flavorsQuery = query(
-                collection(firestore, 'lists'), 
-                where('category', '==', 'meat flavor'), 
-                where('is_active', '==', true),
-                where('storeIds', 'array-contains', order.storeId)
-            );
-            const flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
-                setFlavorOptions(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as CollectionItem));
-            });
-
-            return () => flavorsUnsubscribe();
-        }
-    }, [firestore, order.storeId]);
 
     useEffect(() => {
         if (isOpen) {
             const initialSelections: Record<string, RefillSelection> = {};
-            meatTypesForPackage.forEach(meatType => {
-                initialSelections[meatType.menuName] = { meatType: meatType.menuName, flavors: [] };
+            meatTypesForPackage.forEach(meatTypeItem => {
+                initialSelections[meatTypeItem.menuName] = { meatType: meatTypeItem.menuName, flavors: [] };
             });
             setRefillSelections(initialSelections);
         } else {
@@ -143,6 +126,11 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
           if (currentFlavors.length < 3) {
             newFlavors = [...currentFlavors, flavor];
           } else {
+            toast({
+                variant: 'destructive',
+                title: 'Max 3 Flavors',
+                description: 'You can select up to 3 flavors per meat type.',
+            });
             return prev;
           }
         }
@@ -153,32 +141,44 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
       });
     };
 
-    const handleAddToRefillCart = (meatType: string) => {
-        const selection = refillSelections[meatType];
-        if (!selection || selection.flavors.length === 0) {
+    const handleAddToRefillCart = (meatTypeItem: MenuItem) => {
+        const selection = refillSelections[meatTypeItem.menuName];
+        const hasFlavors = meatTypeItem.flavors && meatTypeItem.flavors.length > 0;
+
+        if (hasFlavors && (!selection || selection.flavors.length === 0)) {
             toast({
                 variant: 'destructive',
-                title: 'No Flavor Selected',
+                title: 'Flavor Required',
                 description: 'Please select at least one flavor to add to the cart.',
             });
             return;
         }
 
-        const refillMenuItem = menu.find(m => m.menuName === meatType);
-
         setRefillCart(prev => {
             let updatedCart = [...prev];
-            selection.flavors.forEach(flavor => {
-                const existingIndex = updatedCart.findIndex(item => item.meatType === meatType && item.flavor === flavor);
-                if (existingIndex > -1) {
+            if (hasFlavors) {
+                selection.flavors.forEach(flavor => {
+                    const existingIndex = updatedCart.findIndex(item => item.meatType === meatTypeItem.menuName && item.flavor === flavor);
+                    if (existingIndex > -1) {
+                        updatedCart[existingIndex] = {
+                            ...updatedCart[existingIndex],
+                            quantity: updatedCart[existingIndex].quantity + 1
+                        };
+                    } else {
+                        updatedCart.push({ meatType: meatTypeItem.menuName, flavor, quantity: 1, note: '', targetStation: meatTypeItem?.targetStation });
+                    }
+                });
+            } else { // No flavors
+                 const existingIndex = updatedCart.findIndex(item => item.meatType === meatTypeItem.menuName && item.flavor === 'Original');
+                 if (existingIndex > -1) {
                     updatedCart[existingIndex] = {
                         ...updatedCart[existingIndex],
                         quantity: updatedCart[existingIndex].quantity + 1
                     };
                 } else {
-                    updatedCart.push({ meatType, flavor, quantity: 1, note: '', targetStation: refillMenuItem?.targetStation });
+                    updatedCart.push({ meatType: meatTypeItem.menuName, flavor: 'Original', quantity: 1, note: '', targetStation: meatTypeItem?.targetStation });
                 }
-            });
+            }
             return updatedCart;
         });
     };
@@ -278,40 +278,45 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                 <h3 className="font-semibold px-4 md:px-0">Select Meat & Flavor</h3>
                                 <ScrollArea className="flex-1 rounded-md border">
                                     <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {meatTypesForPackage.map(meatTypeItem => (
+                                    {meatTypesForPackage.map(meatTypeItem => {
+                                      const hasFlavors = meatTypeItem.flavors && meatTypeItem.flavors.length > 0;
+                                      return (
                                         <div key={meatTypeItem.id} className="p-3 border rounded-lg">
                                             <p className="capitalize font-semibold text-lg mb-2">{meatTypeItem.menuName}</p>
                                             <div className="flex items-center gap-2">
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="outline" className="w-full justify-between">
-                                                            <span>{getSelectedFlavorText(meatTypeItem.menuName)}</span>
-                                                            <ChevronDown className="h-4 w-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                                                        {flavorOptions.map(f => (
-                                                            <DropdownMenuCheckboxItem
-                                                                key={f.id}
-                                                                checked={refillSelections[meatTypeItem.menuName]?.flavors.includes(f.item)}
-                                                                onSelect={(e) => e.preventDefault()}
-                                                                onClick={() => handleFlavorSelect(meatTypeItem.menuName, f.item)}
-                                                                disabled={
-                                                                    !refillSelections[meatTypeItem.menuName]?.flavors.includes(f.item) &&
-                                                                    (refillSelections[meatTypeItem.menuName]?.flavors.length ?? 0) >= 3
-                                                                }
-                                                            >
-                                                                {f.item}
-                                                            </DropdownMenuCheckboxItem>
-                                                        ))}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                                <Button onClick={() => handleAddToRefillCart(meatTypeItem.menuName)} disabled={!refillSelections[meatTypeItem.menuName]?.flavors.length}>
+                                                {hasFlavors ? (
+                                                  <DropdownMenu>
+                                                      <DropdownMenuTrigger asChild>
+                                                          <Button variant="outline" className="w-full justify-between">
+                                                              <span>{getSelectedFlavorText(meatTypeItem.menuName)}</span>
+                                                              <ChevronDown className="h-4 w-4" />
+                                                          </Button>
+                                                      </DropdownMenuTrigger>
+                                                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                                          {(meatTypeItem.flavors || []).map(f => (
+                                                              <DropdownMenuCheckboxItem
+                                                                  key={f}
+                                                                  checked={refillSelections[meatTypeItem.menuName]?.flavors.includes(f)}
+                                                                  onSelect={(e) => e.preventDefault()}
+                                                                  onClick={() => handleFlavorSelect(meatTypeItem.menuName, f)}
+                                                                  disabled={
+                                                                      !refillSelections[meatTypeItem.menuName]?.flavors.includes(f) &&
+                                                                      (refillSelections[meatTypeItem.menuName]?.flavors.length ?? 0) >= 3
+                                                                  }
+                                                              >
+                                                                  {f}
+                                                              </DropdownMenuCheckboxItem>
+                                                          ))}
+                                                      </DropdownMenuContent>
+                                                  </DropdownMenu>
+                                                ) : <div className="w-full text-sm text-muted-foreground italic">No flavors</div>}
+                                                <Button onClick={() => handleAddToRefillCart(meatTypeItem)} disabled={hasFlavors && !refillSelections[meatTypeItem.menuName]?.flavors.length}>
                                                     <Plus className="h-4 w-4" />
                                                 </Button>
                                             </div>
                                         </div>
-                                    ))}
+                                      )
+                                    })}
                                     {meatTypesForPackage.length === 0 && <p className="text-muted-foreground text-center py-4 col-span-full">This package has no specified meat types for refill.</p>}
                                     </div>
                                 </ScrollArea>
@@ -329,7 +334,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                                 <div key={`${item.meatType}-${item.flavor}`}>
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <p className="font-medium capitalize text-xs">{item.meatType} - {item.flavor}</p>
+                                                            <p className="font-medium capitalize text-xs">{item.meatType}{item.flavor !== 'Original' ? ` - ${item.flavor}`: ''}</p>
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <PopoverTrigger asChild>

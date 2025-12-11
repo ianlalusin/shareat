@@ -149,6 +149,7 @@ export type MenuItem = {
   is_refillable: boolean;
   allowed_refills: string[];
   sortOrder?: number;
+  flavors?: string[];
 };
 
 export type Table = {

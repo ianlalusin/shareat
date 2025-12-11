@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as React from 'react';
@@ -103,6 +104,7 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   is_refillable: false,
   allowed_refills: [],
   sortOrder: 0,
+  flavors: [],
 };
 
 
@@ -114,6 +116,7 @@ export default function MenuPage() {
   const [availabilityOptions, setAvailabilityOptions] = useState<CollectionItem[]>([]);
   const [taxRates, setTaxRates] = useState<CollectionItem[]>([]);
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
+  const [flavorOptions, setFlavorOptions] = useState<CollectionItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
@@ -174,6 +177,7 @@ export default function MenuPage() {
     if (firestore) {
       let taxRateUnsubscribe = () => {};
       let storeStationsUnsubscribe = () => {};
+      let flavorsUnsubscribe = () => {};
       
       const availabilityQuery = query(
           collection(firestore, 'lists'),
@@ -193,7 +197,7 @@ export default function MenuPage() {
           where('storeIds', 'array-contains', selectedStoreId)
         );
         taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
           setTaxRates(taxRateData);
         });
 
@@ -207,16 +211,29 @@ export default function MenuPage() {
             const stationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
             setStoreStations(stationData);
         });
+
+        const flavorsQuery = query(
+          collection(firestore, 'lists'),
+          where('category', '==', 'meat flavor'),
+          where('is_active', '==', true),
+          where('storeIds', 'array-contains', selectedStoreId)
+        );
+        flavorsUnsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
+          const flavorData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
+          setFlavorOptions(flavorData);
+        });
         
       } else {
         setTaxRates([]);
         setStoreStations([]);
+        setFlavorOptions([]);
       }
       
       return () => {
         availabilityUnsubscribe();
         taxRateUnsubscribe();
         storeStationsUnsubscribe();
+        flavorsUnsubscribe();
       };
     }
   }, [firestore, selectedStoreId]);
@@ -343,18 +360,34 @@ export default function MenuPage() {
   
   const handleAllowedRefillsChange = (refillItemName: string) => {
     setFormData((prev) => {
-      const newAllowedRefills = prev.allowed_refills.includes(refillItemName)
-        ? prev.allowed_refills.filter(name => name !== refillItemName)
-        : [...prev.allowed_refills, refillItemName];
+      const newAllowedRefills = (prev.allowed_refills || []).includes(refillItemName)
+        ? (prev.allowed_refills || []).filter(name => name !== refillItemName)
+        : [...(prev.allowed_refills || []), refillItemName];
       return { ...prev, allowed_refills: newAllowedRefills };
     });
   };
 
   const getSelectedRefillNames = () => {
-    if (formData.allowed_refills.length === 0) return "Select allowed refills";
+    if (!formData.allowed_refills || formData.allowed_refills.length === 0) return "Select allowed refills";
     if (formData.allowed_refills.length === refillOptions.length) return "All refills selected";
     if (formData.allowed_refills.length > 2) return `${formData.allowed_refills.length} refills selected`;
     return formData.allowed_refills.join(', ');
+  };
+  
+  const handleFlavorChange = (flavorName: string) => {
+    setFormData((prev) => {
+      const newFlavors = (prev.flavors || []).includes(flavorName)
+        ? (prev.flavors || []).filter(name => name !== flavorName)
+        : [...(prev.flavors || []), flavorName];
+      return { ...prev, flavors: newFlavors };
+    });
+  };
+
+  const getSelectedFlavorNames = () => {
+    if (!formData.flavors || formData.flavors.length === 0) return "Select flavors";
+    if (formData.flavors.length === flavorOptions.length) return "All flavors selected";
+    if (formData.flavors.length > 2) return `${formData.flavors.length} flavors selected`;
+    return formData.flavors.join(', ');
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -427,6 +460,7 @@ export default function MenuPage() {
         ...initialItemState,
         ...item,
         allowed_refills: item.allowed_refills || [],
+        flavors: item.flavors || [],
     });
     setDisplayValues({
         cost: formatCurrency(item.cost),
@@ -669,30 +703,32 @@ export default function MenuPage() {
                 </div>
                  
                  <div className="grid grid-cols-1 md:grid-cols-3 items-end gap-4 rounded-lg border p-4">
-                    <div className="space-y-2">
-                        <Label>Image</Label>
-                        <input
-                          type="file"
-                          ref={imageInputRef}
-                          onChange={handleFileChange}
-                          className="hidden"
-                          accept="image/*"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => imageInputRef.current?.click()}
-                          className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
-                        >
-                          {formData.imageUrl ? (
-                            <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
-                          ) : (
-                            <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                          )}
-                        </button>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="barcode">Barcode</Label>
-                        <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                    <div className="md:col-span-2 grid grid-cols-2 gap-4 items-end">
+                       <div className="space-y-2">
+                           <Label>Image</Label>
+                           <input
+                             type="file"
+                             ref={imageInputRef}
+                             onChange={handleFileChange}
+                             className="hidden"
+                             accept="image/*"
+                           />
+                           <button
+                             type="button"
+                             onClick={() => imageInputRef.current?.click()}
+                             className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
+                           >
+                             {formData.imageUrl ? (
+                               <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                             ) : (
+                               <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                             )}
+                           </button>
+                       </div>
+                       <div className="space-y-2">
+                           <Label htmlFor="barcode">Barcode</Label>
+                           <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                       </div>
                     </div>
                     <div className="flex items-end gap-4">
                          <div className="space-y-2 w-20">
@@ -729,7 +765,7 @@ export default function MenuPage() {
                                         {refillOptions.map(option => (
                                             <DropdownMenuCheckboxItem
                                                 key={option.id}
-                                                checked={formData.allowed_refills.includes(option.menuName)}
+                                                checked={formData.allowed_refills?.includes(option.menuName)}
                                                 onSelect={(e) => e.preventDefault()}
                                                 onClick={() => handleAllowedRefillsChange(option.menuName)}
                                             >
@@ -741,6 +777,33 @@ export default function MenuPage() {
                                  <p className="text-xs text-muted-foreground">Select which items from the menu (category: Refill) can be requested for this package.</p>
                             </div>
                         )}
+                         <div className="space-y-2 pl-2">
+                            <Label htmlFor="flavors">Available Flavors</Label>
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="w-full justify-between">
+                                    <span>{getSelectedFlavorNames()}</span>
+                                    <ChevronDown className="h-4 w-4" />
+                                </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, flavors: flavorOptions.map(f => f.item)}))}>Select All</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, flavors: []}))}>Select None</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {flavorOptions.map(option => (
+                                        <DropdownMenuCheckboxItem
+                                            key={option.id}
+                                            checked={formData.flavors?.includes(option.item)}
+                                            onSelect={(e) => e.preventDefault()}
+                                            onClick={() => handleFlavorChange(option.item)}
+                                        >
+                                            {option.item}
+                                        </DropdownMenuCheckboxItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            <p className="text-xs text-muted-foreground">Tag flavors for this item (applies to both Refills and Unlimited packages).</p>
+                        </div>
                     </div>
                     <div className='space-y-4'>
                          <div className="flex items-center space-x-2">
