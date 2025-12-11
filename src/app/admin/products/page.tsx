@@ -350,14 +350,14 @@ export default function ProductsPage() {
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-2">
                         <Label>Product Image</Label>
                         <ImageUpload
                             imageUrl={formData.imageUrl}
                             onFileChange={handleFileChange}
                         />
                     </div>
-                     <div className="flex items-center space-x-2 self-end pb-2">
+                     <div className="flex items-center space-x-2 self-center pt-6">
                         <Switch id="isActive" name="isActive" checked={formData.isActive} onCheckedChange={handleSwitchChange} />
                         <Label htmlFor="isActive">Active</Label>
                     </div>
@@ -471,5 +471,6 @@ export default function ProductsPage() {
       </main>
   );
 }
+
 
 
