@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useReducer, useMemo } from 'react';
+import { useState, useEffect, useReducer, useMemo, Fragment } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
@@ -110,6 +110,10 @@ export default function OrderDetailPage() {
   
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [lineDiscountType, setLineDiscountType] = useState<'₱' | '%'>('₱');
+  const [lineDiscountValueInput, setLineDiscountValueInput] = useState('');
+
 
   const firestore = useFirestore();
   const { user } = useAuthContext();
@@ -193,29 +197,44 @@ export default function OrderDetailPage() {
   }, [firestore, order?.storeId]);
   
   const billableItems = useMemo(() => {
-    return orderItems.filter(item => {
+    return orderItems.filter((item) => {
       const price = item.priceAtOrder ?? 0;
       const isFree = item.isFree === true || price === 0;
-      return !isFree && item.status === 'Served';
+
+      const statusOk =
+        item.status === 'Served' ||
+        item.status === 'Completed'; // allow completed items too if present
+
+      return !isFree && statusOk;
     });
   }, [orderItems]);
 
-  const subtotal = useMemo(() => 
-      billableItems.reduce((acc, item) => acc + (item.quantity * item.priceAtOrder), 0), 
-      [billableItems]
+  const subtotal = useMemo(
+    () =>
+      billableItems.reduce((acc, item) => {
+        const price = item.priceAtOrder ?? 0;
+        const qty = item.quantity ?? 0;
+        const base = price * qty;
+        const discount = item.lineDiscountAmount ?? 0;
+        const lineTotal = Math.max(0, base - discount);
+        return acc + lineTotal;
+      }, 0),
+    [billableItems]
   );
 
   const grandTotal = useMemo(() => {
-    return transactions.reduce((acc, trans) => {
+    const rawTotal = transactions.reduce((acc, trans) => {
       if (trans.type === 'Discount') {
         return acc - trans.amount;
       }
       if (trans.type === 'Charge') {
         return acc + trans.amount;
       }
-      // 'Payment' types will be handled later
+      // 'Payment' types will be handled separately
       return acc;
     }, subtotal);
+
+    return Math.max(0, rawTotal);
   }, [subtotal, transactions]);
 
   const handleTinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -393,6 +412,121 @@ export default function OrderDetailPage() {
     router.push('/cashier');
   };
 
+  const handleToggleLineFree = async (item: OrderItem) => {
+    if (!firestore || !order) return;
+
+    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+    const newIsFree = !item.isFree;
+
+    try {
+      await updateDoc(itemRef, { isFree: newIsFree });
+      toast({
+        title: 'Updated',
+        description: newIsFree
+          ? `${item.menuName} marked as free.`
+          : `${item.menuName} marked as billable.`,
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update free/gift status.',
+      });
+    }
+  };
+
+  const handleApplyLineDiscount = async (item: OrderItem) => {
+    if (!firestore || !order) return;
+    if (!lineDiscountValueInput) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Value',
+        description: 'Please enter a discount value.',
+      });
+      return;
+    }
+
+    const raw = parseFloat(lineDiscountValueInput);
+    if (isNaN(raw) || raw <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid Value',
+        description: 'Discount must be a positive number.',
+      });
+      return;
+    }
+
+    const price = item.priceAtOrder ?? 0;
+    const qty = item.quantity ?? 0;
+    const base = price * qty;
+
+    let discountAmount = 0;
+    let discountTypeInternal: 'ABS' | 'PCT' = 'ABS';
+
+    if (lineDiscountType === '₱') {
+      discountAmount = raw;
+      discountTypeInternal = 'ABS';
+    } else {
+      if (raw <= 0 || raw > 100) {
+        toast({
+          variant: 'destructive',
+          title: 'Invalid Percentage',
+          description: 'Discount percentage must be between 1 and 100.',
+        });
+        return;
+      }
+      discountAmount = (base * raw) / 100;
+      discountTypeInternal = 'PCT';
+    }
+
+    discountAmount = Math.min(discountAmount, base); // do not exceed line total
+
+    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+
+    try {
+      await updateDoc(itemRef, {
+        lineDiscountType: discountTypeInternal,
+        lineDiscountValue: raw,
+        lineDiscountAmount: discountAmount,
+      });
+      toast({
+        title: 'Line Discount Applied',
+        description: `Discount applied to ${item.menuName}.`,
+      });
+      setEditingLineId(null);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not apply line discount.',
+      });
+    }
+  };
+  
+  const handleClearLineDiscount = async (item: OrderItem) => {
+    if (!firestore || !order) return;
+
+    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+
+    try {
+      await updateDoc(itemRef, {
+        lineDiscountType: null,
+        lineDiscountValue: null,
+        lineDiscountAmount: null,
+      });
+      toast({
+        title: 'Line Discount Removed',
+        description: `Discount removed from ${item.menuName}.`,
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not remove line discount.',
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 lg:p-6">
@@ -445,17 +579,117 @@ export default function OrderDetailPage() {
                                 <TableHead className="text-center">Qty</TableHead>
                                 <TableHead className="text-right">Price</TableHead>
                                 <TableHead className="text-right">Total</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {billableItems.map(item => (
-                                <TableRow key={item.id}>
-                                    <TableCell className="font-medium">{item.menuName}</TableCell>
+                            {billableItems.map((item) => {
+                              const baseTotal = (item.priceAtOrder ?? 0) * (item.quantity ?? 0);
+                              const lineTotal = Math.max(0, baseTotal - (item.lineDiscountAmount ?? 0));
+                              const isEditing = editingLineId === item.id;
+
+                              return (
+                                <Fragment key={item.id}>
+                                  <TableRow>
+                                    <TableCell className="font-medium">
+                                      {item.menuName}
+                                      {item.lineDiscountAmount ? (
+                                        <p className="text-xs text-green-600">
+                                          Discount: -{formatCurrency(item.lineDiscountAmount)}
+                                        </p>
+                                      ) : null}
+                                    </TableCell>
                                     <TableCell className="text-center">{item.quantity}</TableCell>
-                                    <TableCell className="text-right">{formatCurrency(item.priceAtOrder)}</TableCell>
-                                    <TableCell className="text-right">{formatCurrency(item.quantity * item.priceAtOrder)}</TableCell>
-                                </TableRow>
-                            ))}
+                                    <TableCell className="text-right">
+                                      {formatCurrency(item.priceAtOrder ?? 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {formatCurrency(lineTotal)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <Button
+                                        size="xs"
+                                        variant={isEditing ? 'secondary' : 'outline'}
+                                        onClick={() => {
+                                          if (isEditing) {
+                                            setEditingLineId(null);
+                                          } else {
+                                            setEditingLineId(item.id);
+                                            setLineDiscountType('₱');
+                                            setLineDiscountValueInput(
+                                              item.lineDiscountValue ? String(item.lineDiscountValue) : ''
+                                            );
+                                          }
+                                        }}
+                                      >
+                                        {isEditing ? 'Close' : 'Adjust'}
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+
+                                  {isEditing && (
+                                    <TableRow>
+                                      <TableCell colSpan={5}>
+                                        <div className="flex flex-col gap-3 p-3 bg-muted/40 rounded-md">
+                                          {/* Free / gift toggle */}
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium">Give as Free / Gift</span>
+                                            <Button
+                                              size="sm"
+                                              variant={item.isFree ? 'secondary' : 'outline'}
+                                              onClick={() => handleToggleLineFree(item)}
+                                            >
+                                              {item.isFree ? 'Mark as Paid' : 'Mark as Free'}
+                                            </Button>
+                                          </div>
+
+                                          <Separator />
+
+                                          {/* Line discount editor */}
+                                          <div className="flex flex-wrap items-stretch gap-2">
+                                            <div className="flex flex-auto">
+                                              <Input
+                                                type="number"
+                                                value={lineDiscountValueInput}
+                                                onChange={(e) => setLineDiscountValueInput(e.target.value)}
+                                                placeholder="Discount value"
+                                                className="rounded-r-none focus-visible:ring-offset-0"
+                                              />
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="rounded-l-none border-l-0 px-3 font-bold"
+                                                onClick={() =>
+                                                  setLineDiscountType((prev) => (prev === '₱' ? '%' : '₱'))
+                                                }
+                                              >
+                                                {lineDiscountType}
+                                              </Button>
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              onClick={() => handleApplyLineDiscount(item)}
+                                            >
+                                              Apply Line Discount
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="icon"
+                                              variant="ghost"
+                                              onClick={() => handleClearLineDiscount(item)}
+                                            >
+                                              <X className="h-4 w-4" />
+                                              <span className="sr-only">Clear line discount</span>
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                              {billableItems.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={4} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>

@@ -237,6 +237,9 @@ export type OrderItem = {
   taxRate?: number;
   taxProfileCode?: string | null;
   isFree?: boolean;
+  lineDiscountType?: 'ABS' | 'PCT';
+  lineDiscountValue?: number;
+  lineDiscountAmount?: number;
 };
 
 export type RefillItem = {
