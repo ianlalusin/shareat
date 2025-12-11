@@ -13,6 +13,16 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { PlusCircle, MoreHorizontal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -38,9 +48,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function StorePage() {
   const [stores, setStores] = useState<Store[]>([]);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const firestore = useFirestore();
   const router = useRouter();
-  const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -54,12 +64,10 @@ export default function StorePage() {
   }, [firestore]);
 
 
-  const handleDelete = async (storeId: string) => {
-    if (!firestore) return;
-    console.log("Deleting item:", storeId); // DEBUG
-    if (!window.confirm('Are you sure you want to delete this store?')) return;
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-      await deleteDoc(doc(firestore, 'stores', storeId));
+      await deleteDoc(doc(firestore, 'stores', deleteTargetId));
       toast({
         title: "Success!",
         description: "The store has been deleted.",
@@ -71,6 +79,8 @@ export default function StorePage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete the store. Please try again.",
       });
+    } finally {
+        setDeleteTargetId(null);
     }
   };
   
@@ -138,7 +148,7 @@ export default function StorePage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(store.id); }} className="text-destructive">Delete</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setDeleteTargetId(store.id)} className="text-destructive">Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -148,8 +158,24 @@ export default function StorePage() {
           </Table>
         </ScrollArea>
       </div>
+
+       <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Store?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The store will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </main>
   );
 }
-
-    

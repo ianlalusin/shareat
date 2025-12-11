@@ -30,6 +30,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -71,6 +81,7 @@ function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [selectedStaffForAccess, setSelectedStaffForAccess] = useState<Staff | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
@@ -88,11 +99,10 @@ export default function StaffPage() {
     }
   }, [firestore]);
 
-  const handleDelete = async (staffId: string) => {
-    if (!firestore) return;
-    console.log("Deleting item:", staffId); // DEBUG
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-      await deleteDoc(doc(firestore, 'staff', staffId));
+      await deleteDoc(doc(firestore, 'staff', deleteTargetId));
        toast({
         title: "Success!",
         description: "The staff member has been deleted.",
@@ -104,6 +114,8 @@ export default function StaffPage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete staff member. Please try again.",
       });
+    } finally {
+      setDeleteTargetId(null);
     }
   };
 
@@ -185,7 +197,7 @@ export default function StaffPage() {
                             Access
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onSelect={(e) => { e.preventDefault(); handleDelete(member.id); }}
+                            onSelect={() => setDeleteTargetId(member.id)}
                             className="text-destructive"
                           >
                             Delete
@@ -205,8 +217,23 @@ export default function StaffPage() {
         onClose={() => setSelectedStaffForAccess(null)}
         staff={selectedStaffForAccess}
       />
+      <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Staff Member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The staff member's record will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
-
-    

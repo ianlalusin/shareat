@@ -90,6 +90,7 @@ export default function ProductsPage() {
   const [formData, setFormData] = useState<Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'lastUpdatedBy'>>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ defaultCost: string; defaultPrice: string }>({ defaultCost: '', defaultPrice: '' });
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   
   const firestore = useFirestore();
   const auth = useAuth();
@@ -240,10 +241,10 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (itemId: string) => {
-    if (!firestore) return;
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-      await deleteDoc(doc(firestore, 'products', itemId));
+      await deleteDoc(doc(firestore, 'products', deleteTargetId));
       toast({
         title: "Success!",
         description: "The product has been deleted.",
@@ -255,6 +256,8 @@ export default function ProductsPage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete the product. Please try again.",
       });
+    } finally {
+        setDeleteTargetId(null);
     }
   };
 
@@ -452,7 +455,7 @@ export default function ProductsPage() {
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                   <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => handleDelete(item.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => setDeleteTargetId(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -467,10 +470,25 @@ export default function ProductsPage() {
           </AccordionItem>
         ))}
       </Accordion>
+
+      <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The product will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       
       </main>
   );
 }
-
-
-

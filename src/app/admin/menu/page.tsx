@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -11,6 +12,16 @@ import {
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -107,6 +118,7 @@ export default function MenuPage() {
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   
   const [displayValues, setDisplayValues] = useState<{ cost: string, price: string }>({ cost: '', price: '' });
   
@@ -167,7 +179,7 @@ export default function MenuPage() {
           where('is_active', '==', true),
         );
       const availabilityUnsubscribe = onSnapshot(availabilityQuery, (snapshot) => {
-          const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
+          const availabilityData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
           setAvailabilityOptions(availabilityData);
       });
 
@@ -387,12 +399,14 @@ export default function MenuPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (itemId: string) => {
-    if (!firestore) return;
-    console.log("Deleting item:", itemId); // DEBUG
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-      await deleteDoc(doc(firestore, 'menu', itemId));
-      openSuccessModal();
+      await deleteDoc(doc(firestore, 'menu', deleteTargetId));
+      toast({
+        title: "Success!",
+        description: "The menu item has been deleted.",
+      });
     } catch (error) {
        console.error("Delete error:", error);
        toast({
@@ -400,6 +414,8 @@ export default function MenuPage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete the menu item.",
       });
+    } finally {
+        setDeleteTargetId(null);
     }
   };
 
@@ -616,7 +632,7 @@ export default function MenuPage() {
                       <Label htmlFor="barcode">Barcode</Label>
                       <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                    <div className="space-y-2 self-center">
+                    <div className="space-y-2 pt-6">
                         <div className="flex items-center space-x-2">
                             <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                             <Label htmlFor="isAvailable">Available</Label>
@@ -806,7 +822,7 @@ export default function MenuPage() {
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                     <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(item.id); }} className="text-destructive">Delete</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setDeleteTargetId(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -821,10 +837,24 @@ export default function MenuPage() {
           </AccordionItem>
         ))}
       </Accordion>
+
+      <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Menu Item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The menu item will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </main>
   );
 }
-
-
-
-    

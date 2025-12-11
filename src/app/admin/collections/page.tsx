@@ -10,6 +10,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -20,7 +30,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, ChevronDown, Plus, Download, Pencil, Trash2 } from 'lucide-react';
+import { PlusCircle, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -86,6 +96,9 @@ export default function CollectionsPage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<CollectionItem | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState(initialScheduleState);
+  
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetType, setDeleteTargetType] = useState<'item' | 'schedule' | null>(null);
 
   const firestore = useFirestore();
   const { openSuccessModal } = useSuccessModal();
@@ -178,16 +191,25 @@ export default function CollectionsPage() {
     setIsItemModalOpen(true);
   };
   
-  const handleDelete = async (itemId: string) => {
-    if (!firestore) return;
-    console.log("Deleting item:", itemId); // DEBUG
-    if (!window.confirm('Are you sure you want to delete this?')) return;
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId || !deleteTargetType) return;
+
     try {
-      await deleteDoc(doc(firestore, 'lists', itemId));
-      toast({ title: "Success!", description: "The entry has been deleted." });
+        await deleteDoc(doc(firestore, 'lists', deleteTargetId));
+        toast({
+            title: 'Deleted',
+            description: deleteTargetType === 'item' ? 'The list item has been deleted.' : 'The schedule has been deleted.',
+        });
     } catch (error) {
-       console.error("Delete error:", error);
-       toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not delete. Please try again." });
+        console.error('Delete error:', error);
+        toast({
+            variant: 'destructive',
+            title: 'Delete failed',
+            description: 'Could not delete. Please try again.',
+        });
+    } finally {
+        setDeleteTargetId(null);
+        setDeleteTargetType(null);
     }
   };
 
@@ -346,7 +368,9 @@ export default function CollectionsPage() {
                             <TableCell>
                                 <div className="flex items-center gap-1">
                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditItem(item)}><Pencil className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(item.id); setDeleteTargetType('item');}}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
                                 </div>
                             </TableCell>
                             </TableRow>
@@ -401,7 +425,9 @@ export default function CollectionsPage() {
                             <TableCell>
                                 <div className="flex items-center gap-1">
                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditSchedule(schedule)}><Pencil className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(schedule.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(schedule.id); setDeleteTargetType('schedule');}}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
                                 </div>
                             </TableCell>
                          </TableRow>
@@ -522,6 +548,37 @@ export default function CollectionsPage() {
               </form>
             </DialogContent>
         </Dialog>
+
+        <AlertDialog
+            open={!!deleteTargetId}
+            onOpenChange={(open) => {
+                if (!open) {
+                setDeleteTargetId(null);
+                setDeleteTargetType(null);
+                }
+            }}
+        >
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>
+                    {deleteTargetType === 'schedule'
+                    ? "Delete schedule?"
+                    : "Delete list item?"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. The {deleteTargetType === 'schedule'
+                    ? "schedule"
+                    : "list item"} will be permanently removed.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete}>
+                    Delete
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
       </main>
   );
 }

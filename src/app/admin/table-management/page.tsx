@@ -13,6 +13,16 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -60,6 +70,7 @@ export default function TableManagementPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [formData, setFormData] = useState(initialTableState);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
   const { openSuccessModal } = useSuccessModal();
@@ -182,17 +193,22 @@ export default function TableManagementPage() {
     }
   };
   
-  const handleDelete = async (tableId: string) => {
-    if (!firestore) return;
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-      await deleteDoc(doc(firestore, 'tables', tableId));
-      openSuccessModal();
+      await deleteDoc(doc(firestore, 'tables', deleteTargetId));
+      toast({
+          title: "Success!",
+          description: "The table has been deleted.",
+      });
     } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Delete Failed',
         description: 'Could not delete the table.',
       });
+    } finally {
+        setDeleteTargetId(null);
     }
   };
 
@@ -383,7 +399,7 @@ export default function TableManagementPage() {
                         <Edit className="h-4 w-4" />
                         <span className="sr-only">Edit</span>
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(table.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteTargetId(table.id)}>
                         <Trash2 className="h-4 w-4" />
                         <span className="sr-only">Delete</span>
                     </Button>
@@ -392,6 +408,24 @@ export default function TableManagementPage() {
             ))}
         </div>
       )}
+
+      <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Table?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The table will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

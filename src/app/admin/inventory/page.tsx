@@ -12,6 +12,16 @@ import {
   DialogFooter,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -89,6 +99,7 @@ export default function InventoryPage() {
   const [formData, setFormData] = useState<FormData>(initialItemState);
   const [displayValues, setDisplayValues] = useState<{ costPerUnit: string }>({ costPerUnit: ''});
   const [dateError, setDateError] = useState<string | undefined>();
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
@@ -287,12 +298,14 @@ export default function InventoryPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (itemId: string) => {
-    if (!firestore) return;
-    console.log("Deleting item:", itemId); // DEBUG
+  const handleDelete = async () => {
+    if (!firestore || !deleteTargetId) return;
     try {
-        await deleteDoc(doc(firestore, 'inventory', itemId));
-        openSuccessModal();
+        await deleteDoc(doc(firestore, 'inventory', deleteTargetId));
+        toast({
+            title: "Success!",
+            description: "The item has been deleted from inventory.",
+        });
     } catch (error) {
         console.error("Delete error:", error);
         toast({
@@ -300,6 +313,8 @@ export default function InventoryPage() {
             title: "Uh oh! Something went wrong.",
             description: "Could not delete the item.",
         });
+    } finally {
+        setDeleteTargetId(null);
     }
   };
   
@@ -560,7 +575,7 @@ export default function InventoryPage() {
                                           <DropdownMenuContent align="end">
                                               <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                               <DropdownMenuItem onSelect={() => handleEdit(item)}>Edit</DropdownMenuItem>
-                                              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleDelete(item.id); }} className="text-destructive">Delete</DropdownMenuItem>
+                                              <DropdownMenuItem onSelect={() => setDeleteTargetId(item.id)} className="text-destructive">Delete</DropdownMenuItem>
                                           </DropdownMenuContent>
                                       </DropdownMenu>
                                     </TableCell>
@@ -577,8 +592,24 @@ export default function InventoryPage() {
             ))}
           </Accordion>
       )}
+
+      <AlertDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => !open && setDeleteTargetId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Inventory Item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The item will be permanently removed from inventory.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </main>
   );
 }
-
-    

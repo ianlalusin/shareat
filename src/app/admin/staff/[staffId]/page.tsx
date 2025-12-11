@@ -13,6 +13,16 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ArrowLeft, Pencil, Trash2, User, Upload } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { cn, formatCurrency } from '@/lib/utils';
@@ -35,6 +45,7 @@ export default function StaffDetailPage() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
   const firestore = useFirestore();
@@ -62,21 +73,21 @@ export default function StaffDetailPage() {
   
   const handleDelete = async () => {
     if (!firestore || !staffId) return;
-    if (window.confirm('Are you sure you want to delete this staff member?')) {
-        try {
-            await deleteDoc(doc(firestore, 'staff', staffId));
-            toast({
-              title: "Success!",
-              description: "The staff member has been deleted.",
-            });
-            router.push('/admin/staff');
-        } catch (error) {
-            toast({
-              variant: "destructive",
-              title: "Uh oh! Something went wrong.",
-              description: "Could not delete staff member. Please try again.",
-            });
-        }
+    try {
+        await deleteDoc(doc(firestore, 'staff', staffId));
+        toast({
+          title: "Success!",
+          description: "The staff member has been deleted.",
+        });
+        router.push('/admin/staff');
+    } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Uh oh! Something went wrong.",
+          description: "Could not delete staff member. Please try again.",
+        });
+    } finally {
+        setIsDeleteDialogOpen(false);
     }
   };
   
@@ -188,7 +199,7 @@ export default function StaffDetailPage() {
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Link>
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
+          <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
         </div>
@@ -218,6 +229,21 @@ export default function StaffDetailPage() {
           <InfoItem label="Notes" value={staff.notes} className="md:col-span-3" />
         </CardContent>
       </Card>
+      
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete this staff member's record.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete}>Continue</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
     </main>
   );
 }

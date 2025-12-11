@@ -13,6 +13,16 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Store as StoreIcon, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
@@ -23,9 +33,9 @@ export default function StoreDetailPage() {
   const storeId = params.storeId as string;
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const firestore = useFirestore();
   const router = useRouter();
-  const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -47,7 +57,6 @@ export default function StoreDetailPage() {
 
   const handleDelete = async () => {
     if (!firestore || !storeId) return;
-    if (!window.confirm('Are you sure you want to delete this store? This action cannot be undone.')) return;
     try {
       await deleteDoc(doc(firestore, 'stores', storeId));
       toast({
@@ -61,6 +70,8 @@ export default function StoreDetailPage() {
         title: "Uh oh! Something went wrong.",
         description: "Could not delete the store. Please try again.",
       });
+    } finally {
+        setIsDeleteDialogOpen(false);
     }
   };
 
@@ -135,7 +146,7 @@ export default function StoreDetailPage() {
                     <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Link>
             </Button>
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                 <Trash2 className="mr-2 h-4 w-4" /> Delete
             </Button>
         </div>
@@ -218,6 +229,21 @@ export default function StoreDetailPage() {
             </div>
         </CardContent>
       </Card>
+      
+       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the store and all associated data.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>Continue</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
 
     </main>
   );
