@@ -258,9 +258,8 @@ export default function MenuPage() {
   }, [formData.inventoryItemId, inventoryItems]);
 
   useEffect(() => {
-    if (selectedInventoryItem && !editingItem) {
+    if (selectedInventoryItem && !editingItem) { // Only auto-fill for new items
         const product = products.find(p => p.id === selectedInventoryItem.productId);
-        
         const categoryItems = items.filter(i => i.category === selectedInventoryItem.category);
         const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
 
@@ -281,7 +280,7 @@ export default function MenuPage() {
             price: formatCurrency(product?.defaultPrice || 0),
         });
     }
-  }, [selectedInventoryItem, products, editingItem, items]);
+}, [selectedInventoryItem, products, editingItem, items]);
   
   useEffect(() => {
     setFormError(null); // Clear previous errors
@@ -311,7 +310,9 @@ export default function MenuPage() {
     const { type } = e.target as HTMLInputElement;
 
      if (type === 'number') {
-        setFormData((prev) => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
+        const numValue = Number(value);
+        if (name === 'sortOrder' && numValue < 0) return;
+        setFormData((prev) => ({ ...prev, [name]: value === '' ? '' : numValue }));
     } else {
         setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -516,13 +517,11 @@ export default function MenuPage() {
     setEditingItem(null);
     
     let newFormData = {...initialItemState, storeId: selectedStoreId};
-    if (category) {
-        const categoryItems = items.filter(i => i.category === category);
-        const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
-        newFormData = {...newFormData, category, sortOrder: maxSortOrder + 1};
-    } else {
-        newFormData.sortOrder = 1;
-    }
+    
+    const categoryToUse = category || '';
+    const categoryItems = items.filter(i => i.category === categoryToUse);
+    const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
+    newFormData = {...newFormData, category: categoryToUse, sortOrder: maxSortOrder + 1};
 
     setFormData(newFormData);
     setDisplayValues({ cost: '', price: '' });
@@ -702,7 +701,7 @@ export default function MenuPage() {
                     </div>
                 </div>
                  
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end rounded-lg border p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center rounded-lg border p-4">
                   <div className="space-y-2">
                     <Label>Image</Label>
                     <button
@@ -731,7 +730,7 @@ export default function MenuPage() {
                   <div className="flex items-center gap-4">
                     <div className="space-y-2 w-20">
                       <Label htmlFor="sortOrder">Sort</Label>
-                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
+                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} min="0"/>
                     </div>
                     <div className="flex items-center space-x-2 pt-6">
                       <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
