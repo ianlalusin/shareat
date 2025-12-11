@@ -123,7 +123,7 @@ export default function AdminPage() {
 
             const [transSnapshot, orderItemsSnapshot, refillsSnapshot] = await Promise.all([
                 getDocs(transactionsQuery),
-                getDocs(orderItemsSnapshot),
+                getDocs(orderItemsQuery),
                 getDocs(refillsQuery),
             ]);
 
