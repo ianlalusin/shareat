@@ -622,7 +622,7 @@ export default function MenuPage() {
                     </div>
                 </div>
 
-                 <div className="grid grid-cols-2 md:grid-cols-4 items-end gap-4 rounded-lg border p-4">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 items-end gap-4 rounded-lg border p-4">
                     <div className="space-y-2">
                       <Label>Image</Label>
                       <input
@@ -652,7 +652,7 @@ export default function MenuPage() {
                       <Label htmlFor="sortOrder">Sort Order</Label>
                       <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
                     </div>
-                    <div className="flex items-center space-x-2 self-center pb-2">
+                    <div className="flex items-center space-x-2 pb-2">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
                     </div>
