@@ -104,20 +104,24 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
     }, [menu, schedules, storeId]);
     
     useEffect(() => {
-        if(!isOpen || !firestore || !storeId) return;
+      if (!isOpen || !firestore || !storeId) return;
 
-        const flavorsQuery = query(
-            collection(firestore, 'lists'),
-            where('category', '==', 'meat flavor'),
-            where('is_active', '==', true),
-            where('storeIds', 'array-contains', storeId)
+      const flavorsQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'flavors'),
+        where('is_active', '==', true),
+        where('storeIds', 'array-contains', storeId)
+      );
+
+      const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
+        console.log('[NewOrderModal] flavors snapshot size:', snapshot.size);
+        const flavors = snapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() }) as CollectionItem
         );
-        const unsubscribe = onSnapshot(flavorsQuery, (snapshot) => {
-            const flavors = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}) as CollectionItem);
-            setFlavorOptions(flavors);
-        });
-        return () => unsubscribe();
-        
+        setFlavorOptions(flavors);
+      });
+
+      return () => unsubscribe();
     }, [isOpen, firestore, storeId]);
 
     useEffect(() => {
@@ -159,7 +163,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
     };
     
     const getSelectedFlavorText = () => {
-        if (selectedFlavors.length === 0) return 'Select up to 3 flavors';
+        if (selectedFlavors.length === 0) return 'Select 1–3 flavors';
         if (selectedFlavors.length > 2) return `${selectedFlavors.length} flavors selected`;
         return selectedFlavors.join(', ');
     };
@@ -230,7 +234,7 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
                 </div>
                 
                 <div className="space-y-2">
-                    <Label htmlFor="flavor">Flavor</Label>
+                    <Label htmlFor="flavor">Flavor (select 1–3)</Label>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" className="w-full justify-between h-10">
