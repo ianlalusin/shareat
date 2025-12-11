@@ -52,7 +52,7 @@ import {
   query,
 } from 'firebase/firestore';
 import { Switch } from '@/components/ui/switch';
-import { CollectionItem, Store } from '@/lib/types';
+import { CollectionItem, Store, Schedule } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -73,7 +73,7 @@ const initialItemState: Omit<CollectionItem, 'id'> = {
   storeIds: [],
 };
 
-const initialScheduleState: any = {
+const initialScheduleState: Omit<Schedule, 'id'> = {
     item: '',
     category: 'menu schedules',
     is_active: true,
@@ -86,7 +86,7 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function CollectionsPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
-  const [schedules, setSchedules] = useState<CollectionItem[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
@@ -94,7 +94,7 @@ export default function CollectionsPage() {
   const [itemFormData, setItemFormData] = useState<Omit<CollectionItem, 'id'>>(initialItemState);
   
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<CollectionItem | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState(initialScheduleState);
   
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -109,9 +109,13 @@ export default function CollectionsPage() {
 
     const q = query(collection(firestore, 'lists'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CollectionItem[];
-      setItems(allItems.filter(item => item.category !== 'menu schedules').map(item => ({ ...item, storeIds: item.storeIds || [] })));
-      setSchedules(allItems.filter(item => item.category === 'menu schedules').map(item => ({...item, days: (item as any).days || []})));
+      const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const regularItems = allItems.filter(item => item.category !== 'menu schedules').map(item => ({ ...item, storeIds: item.storeIds || [] })) as CollectionItem[];
+      const scheduleItems = allItems.filter(item => item.category === 'menu schedules').map(item => ({...item, days: item.days || []})) as Schedule[];
+      
+      setItems(regularItems);
+      setSchedules(scheduleItems);
     });
 
     const storesUnsubscribe = onSnapshot(collection(firestore, 'stores'), (snapshot) => {
@@ -164,19 +168,18 @@ export default function CollectionsPage() {
         });
         return;
     }
-
-    try {
-      if (editingItem) {
-        await updateDoc(doc(firestore, 'lists', editingItem.id), itemFormData);
-      } else {
-        await addDoc(collection(firestore, 'lists'), itemFormData);
-      }
-      handleItemModalOpenChange(false);
-      openSuccessModal();
-    } catch (error) {
-       console.error("Save error:", error);
-       toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "There was a problem with your request." });
-    }
+    
+    const operation = editingItem
+        ? updateDoc(doc(firestore, 'lists', editingItem.id), itemFormData)
+        : addDoc(collection(firestore, 'lists'), itemFormData);
+        
+    operation.then(() => {
+        handleItemModalOpenChange(false);
+        openSuccessModal();
+    }).catch(error => {
+        console.error("Save error:", error);
+        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "There was a problem with your request." });
+    });
   };
   
   const handleEditItem = (item: CollectionItem) => {
@@ -253,11 +256,11 @@ export default function CollectionsPage() {
 
   const handleScheduleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setScheduleFormData((prev:any) => ({ ...prev, [name]: value }));
+    setScheduleFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleDayChange = (day: string) => {
-    setScheduleFormData((prev:any) => {
+    setScheduleFormData(prev => {
         const newDays = prev.days.includes(day)
             ? prev.days.filter((d:string) => d !== day)
             : [...prev.days, day];
@@ -266,35 +269,35 @@ export default function CollectionsPage() {
   };
 
   const handleScheduleSwitchChange = (checked: boolean) => {
-    setScheduleFormData((prev:any) => ({ ...prev, is_active: checked }));
+    setScheduleFormData(prev => ({ ...prev, is_active: checked }));
   };
 
   const handleScheduleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!firestore) return;
-    try {
-      if (editingSchedule) {
-        await updateDoc(doc(firestore, 'lists', editingSchedule.id), scheduleFormData);
-      } else {
-        await addDoc(collection(firestore, 'lists'), scheduleFormData);
-      }
-      handleScheduleModalOpenChange(false);
-      openSuccessModal();
-    } catch (error) {
+    
+    const operation = editingSchedule
+        ? updateDoc(doc(firestore, 'lists', editingSchedule.id), scheduleFormData)
+        : addDoc(collection(firestore, 'lists'), scheduleFormData);
+
+    operation.then(() => {
+        handleScheduleModalOpenChange(false);
+        openSuccessModal();
+    }).catch((error) => {
        console.error("Save error:", error);
        toast({ variant: "destructive", title: "Uh oh! Something went wrong.", description: "Could not save schedule." });
-    }
+    });
   };
 
-  const handleEditSchedule = (schedule: CollectionItem) => {
+  const handleEditSchedule = (schedule: Schedule) => {
     setEditingSchedule(schedule);
     setScheduleFormData({
         item: schedule.item,
         category: schedule.category,
         is_active: schedule.is_active,
-        startTime: (schedule as any).startTime || '',
-        endTime: (schedule as any).endTime || '',
-        days: (schedule as any).days || [],
+        startTime: schedule.startTime || '',
+        endTime: schedule.endTime || '',
+        days: schedule.days || [],
     });
     setIsScheduleModalOpen(true);
   };
@@ -411,10 +414,10 @@ export default function CollectionsPage() {
                      {schedules.map(schedule => (
                          <TableRow key={schedule.id}>
                              <TableCell>{schedule.item}</TableCell>
-                             <TableCell>{(schedule as any).startTime} - {(schedule as any).endTime}</TableCell>
+                             <TableCell>{schedule.startTime} - {schedule.endTime}</TableCell>
                              <TableCell>
                                  <div className="flex flex-wrap gap-1">
-                                     {((schedule as any).days || []).map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
+                                     {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
                                  </div>
                              </TableCell>
                              <TableCell>

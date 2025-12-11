@@ -28,6 +28,16 @@ export type CollectionItem = {
   storeIds: string[];
 };
 
+export type Schedule = {
+    id: string;
+    item: string; // Schedule Name
+    category: 'menu schedules';
+    is_active: boolean;
+    startTime: string; // "HH:mm"
+    endTime: string;   // "HH:mm"
+    days: string[];    // e.g., ["Mon", "Tue"]
+}
+
 export type Staff = {
   id:string;
   assignedStore: string;
