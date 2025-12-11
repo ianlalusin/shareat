@@ -701,7 +701,7 @@ export default function MenuPage() {
                 </div>
                  
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center rounded-lg border p-4">
-                    <div className="space-y-2 col-span-3">
+                    <div className="space-y-2 col-span-12 md:col-span-2">
                         <Label>Image</Label>
                         <button
                           type="button"
@@ -722,11 +722,11 @@ export default function MenuPage() {
                           )}
                         </button>
                     </div>
-                    <div className="space-y-2 col-span-5">
+                    <div className="space-y-2 col-span-12 md:col-span-4">
                         <Label htmlFor="barcode">Barcode</Label>
                         <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                    <div className="space-y-2 col-span-3">
+                    <div className="space-y-2 col-span-8 md:col-span-3">
                       <Label htmlFor="sortOrder">Sort</Label>
                       <div className="flex items-center gap-1">
                         <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: Math.max(0, (prev.sortOrder || 0) - 1)}))}><Minus className="h-4 w-4"/></Button>
@@ -734,7 +734,7 @@ export default function MenuPage() {
                         <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: (prev.sortOrder || 0) + 1}))}><Plus className="h-4 w-4"/></Button>
                       </div>
                     </div>
-                     <div className="flex items-center space-x-2 pt-6 col-span-1">
+                     <div className="flex items-center space-x-2 pt-6 col-span-4 md:col-span-3">
                       <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                       <Label htmlFor="isAvailable">Available</Label>
                     </div>
