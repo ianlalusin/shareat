@@ -503,12 +503,9 @@ export default function MenuPage() {
 
   const availableInventoryItems = useMemo(() => {
     if (editingItem) return inventoryItems;
-    // Get product IDs of items already on the menu for the current store
+    
     const existingProductIdsOnMenu = items.map(item => item.productId).filter(Boolean);
     
-    // Filter inventory items:
-    // 1. Must have a productId
-    // 2. The productId must NOT be in the list of products already on the menu
     return inventoryItems.filter(invItem => 
         invItem.productId && !existingProductIdsOnMenu.includes(invItem.productId)
     );
@@ -636,43 +633,43 @@ export default function MenuPage() {
                         </Select>
                     </div>
                 </div>
-
-                 <div className="grid grid-cols-[auto,1fr,auto,auto] items-end gap-4 rounded-lg border p-4">
+                 
+                 <div className="grid grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,auto,auto] items-end gap-4 rounded-lg border p-4">
                     <div className="space-y-2">
-                      <Label>Image</Label>
-                      <input
-                        type="file"
-                        ref={imageInputRef}
-                        onChange={handleFileChange}
-                        className="hidden"
-                        accept="image/*"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => imageInputRef.current?.click()}
-                        className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
-                      >
-                        {formData.imageUrl ? (
-                          <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
-                        ) : (
-                          <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                        )}
-                      </button>
+                        <Label>Image</Label>
+                        <input
+                          type="file"
+                          ref={imageInputRef}
+                          onChange={handleFileChange}
+                          className="hidden"
+                          accept="image/*"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
+                        >
+                          {formData.imageUrl ? (
+                            <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                          ) : (
+                            <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                          )}
+                        </button>
                     </div>
                     <div className="space-y-2 self-start">
-                      <Label htmlFor="barcode">Barcode</Label>
-                      <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                        <Label htmlFor="barcode">Barcode</Label>
+                        <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                     </div>
-                     <div className="space-y-2 self-start w-20">
+                    <div className="space-y-2 self-start w-20">
                       <Label htmlFor="sortOrder">Sort</Label>
-                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
+                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
                     </div>
                     <div className="flex items-center space-x-2 pb-2 self-end">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
                     </div>
                 </div>
-                 
+
                  <div className="grid md:grid-cols-2 gap-6 rounded-lg border p-4">
                     <div className='space-y-4'>
                         <div className="flex items-center space-x-2">
