@@ -336,7 +336,16 @@ export default function CollectionsPage() {
 
   const handleTaxInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
-    setTaxFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
+    
+    setTaxFormData(prev => {
+      let newValue: any = value;
+      if (name === 'rate') {
+        newValue = type === 'number' ? (Number(value) / 100) : prev.rate;
+      } else if (type === 'number') {
+        newValue = Number(value);
+      }
+      return { ...prev, [name]: newValue };
+    });
   };
   
   const handleTaxStoreIdChange = (storeId: string) => {
@@ -778,8 +787,8 @@ export default function CollectionsPage() {
                         <Input id="tax_code" name="code" value={taxFormData.code} onChange={handleTaxInputChange} required />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="tax_rate">Rate</Label>
-                        <Input id="tax_rate" name="rate" type="number" step="0.01" value={taxFormData.rate} onChange={handleTaxInputChange} required />
+                        <Label htmlFor="tax_rate">Rate (%)</Label>
+                        <Input id="tax_rate" name="rate" type="number" step="0.01" value={taxFormData.rate * 100} onChange={handleTaxInputChange} required />
                     </div>
                 </div>
                  <div className="flex items-center space-x-2">
