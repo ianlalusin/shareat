@@ -20,7 +20,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PendingUpdateCard } from '@/components/cashier/pending-update-card';
 import { Badge } from '@/components/ui/badge';
 
-const NewOrderModal = dynamic(() => import('@/app/cashier/new-order-modal').then(mod => mod.NewOrderModal), { ssr: false });
 const OrderDetailsModal = dynamic(() => import('@/components/cashier/order-details-modal').then(mod => mod.OrderDetailsModal), { ssr: false });
 
 
@@ -31,11 +30,9 @@ export default function CashierPage() {
     const [schedules, setSchedules] = useState<CollectionItem[]>([]);
     const [pendingUpdates, setPendingUpdates] = useState<(PendingOrderUpdate & {order: Order})[]>([]);
 
-    const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [isAvailableCollapsed, setIsAvailableCollapsed] = useState(false);
 
-    const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     
     const firestore = useFirestore();
@@ -129,75 +126,9 @@ export default function CashierPage() {
         }));
     }, [tables, orders]);
     
-    const handleAvailableTableClick = useCallback((table: TableType) => {
-        setSelectedTable(table);
-        setIsNewOrderModalOpen(true);
-    }, []);
-    
     const handleViewOrderClick = useCallback((order: Order) => {
         router.push(`/cashier/order/${order.id}`);
     }, [router]);
-
-    const handleCreateOrder = useCallback(async (
-        table: TableType,
-        orderData: {
-            customerName: string;
-            guestCount: number;
-            selectedPackage: MenuItem;
-            selectedFlavors: string[];
-            kitchenNote?: string;
-        }
-    ) => {
-        if (!firestore || !user) {
-          throw new Error('Firestore not available');
-        }
-    
-        await runTransaction(firestore, async (transaction) => {
-          const tableRef = doc(firestore, 'tables', table.id);
-          const tableDoc = await transaction.get(tableRef);
-    
-          if (!tableDoc.exists() || tableDoc.data().status !== 'Available') {
-            throw new Error(`Table ${table.tableName} is no longer available.`);
-          }
-    
-          const newOrderRef = doc(collection(firestore, 'orders'));
-          
-          const newOrder: Omit<Order, 'id'> = {
-            storeId: table.storeId,
-            tableId: table.id,
-            tableName: table.tableName,
-            status: 'Active',
-            guestCount: orderData.guestCount,
-            customerName: orderData.customerName,
-            orderTimestamp: serverTimestamp() as any,
-            totalAmount: orderData.selectedPackage.price * orderData.guestCount,
-            packageName: orderData.selectedPackage.menuName,
-            selectedFlavors: orderData.selectedFlavors,
-            kitchenNote: orderData.kitchenNote || '',
-            priority: 'normal',
-            isServerConfirmed: false,
-          };
-          transaction.set(newOrderRef, newOrder);
-          
-          const initialItem: Omit<OrderItem, 'id'> = {
-            orderId: newOrderRef.id,
-            storeId: table.storeId,
-            menuItemId: orderData.selectedPackage.id,
-            menuName: orderData.selectedPackage.menuName,
-            quantity: orderData.guestCount,
-            priceAtOrder: orderData.selectedPackage.price,
-            isRefill: true,
-            timestamp: serverTimestamp() as any,
-            status: 'Pending',
-            targetStation: orderData.selectedPackage.targetStation,
-            sourceTag: 'initial',
-          };
-          const orderItemRef = doc(collection(firestore, 'orders', newOrderRef.id, 'orderItems'));
-          transaction.set(orderItemRef, initialItem);
-    
-          transaction.update(tableRef, { status: 'Occupied', activeOrderId: newOrderRef.id, resetCounter: table.resetCounter + 1 });
-        });
-    }, [firestore, user]);
 
     const handleTogglePriority = useCallback(async (order: Order) => {
         if (!firestore) return;
@@ -261,7 +192,7 @@ export default function CashierPage() {
                       <Card 
                           key={table.id} 
                           className="cursor-pointer hover:shadow-lg transition-shadow h-14 flex items-center justify-center border-2 border-green-500"
-                          onClick={() => handleAvailableTableClick(table)}
+                          onClick={() => alert('New order creation is now handled in the Refill section.')}
                       >
                           <CardContent className="p-1 text-center">
                               <p className="font-bold text-lg md:text-xl lg:text-2xl">{table.tableName}</p>
@@ -321,18 +252,6 @@ export default function CashierPage() {
             </Tabs>
       </div>
       </div>
-
-      {isNewOrderModalOpen && selectedTable && (
-        <NewOrderModal
-            isOpen={isNewOrderModalOpen}
-            onClose={() => setIsNewOrderModalOpen(false)}
-            table={selectedTable}
-            menu={menu}
-            schedules={schedules}
-            storeId={selectedStoreId!}
-            onCreateOrder={handleCreateOrder}
-        />
-      )}
       
       {isDetailsModalOpen && selectedOrder && (
         <OrderDetailsModal
