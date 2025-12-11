@@ -702,47 +702,45 @@ export default function MenuPage() {
                     </div>
                 </div>
                  
-                 <div className="grid grid-cols-1 md:grid-cols-3 items-end gap-4 rounded-lg border p-4">
-                    <div className="md:col-span-2 grid grid-cols-2 gap-4 items-end">
-                       <div className="space-y-2">
-                           <Label>Image</Label>
-                           <input
-                             type="file"
-                             ref={imageInputRef}
-                             onChange={handleFileChange}
-                             className="hidden"
-                             accept="image/*"
-                           />
-                           <button
-                             type="button"
-                             onClick={() => imageInputRef.current?.click()}
-                             className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
-                           >
-                             {formData.imageUrl ? (
-                               <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
-                             ) : (
-                               <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                             )}
-                           </button>
-                       </div>
-                       <div className="space-y-2">
-                           <Label htmlFor="barcode">Barcode</Label>
-                           <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
-                       </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end rounded-lg border p-4">
+                  <div className="space-y-2">
+                    <Label>Image</Label>
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="h-24 w-24 flex items-center justify-center rounded-md bg-muted hover:bg-muted/80 transition-colors overflow-hidden relative cursor-pointer"
+                    >
+                      <input
+                        type="file"
+                        ref={imageInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                        accept="image/*"
+                      />
+                      {formData.imageUrl ? (
+                        <Image src={formData.imageUrl} alt={formData.menuName} layout="fill" objectFit="cover" />
+                      ) : (
+                        <ImageIcon className="h-10 w-10 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="barcode">Barcode</Label>
+                    <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="space-y-2 w-20">
+                      <Label htmlFor="sortOrder">Sort</Label>
+                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
                     </div>
-                    <div className="flex items-end gap-4">
-                         <div className="space-y-2 w-20">
-                          <Label htmlFor="sortOrder">Sort</Label>
-                          <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} />
-                        </div>
-                        <div className="flex items-center space-x-2 pb-2">
-                            <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
-                            <Label htmlFor="isAvailable">Available</Label>
-                        </div>
+                    <div className="flex items-center space-x-2 pt-6">
+                      <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
+                      <Label htmlFor="isAvailable">Available</Label>
                     </div>
+                  </div>
                 </div>
 
-                 <div className="grid md:grid-cols-2 gap-6 rounded-lg border p-4">
+                <div className="grid md:grid-cols-2 gap-6 rounded-lg border p-4">
                     <div className='space-y-4'>
                         <div className="flex items-center space-x-2">
                            <Switch id="is_refillable" name="is_refillable" checked={formData.is_refillable} onCheckedChange={(c) => handleSwitchChange('is_refillable', c)} />
@@ -777,7 +775,9 @@ export default function MenuPage() {
                                  <p className="text-xs text-muted-foreground">Select which items from the menu (category: Refill) can be requested for this package.</p>
                             </div>
                         )}
-                         <div className="space-y-2 pl-2">
+                    </div>
+                    <div className='space-y-4'>
+                        <div className="space-y-2">
                             <Label htmlFor="flavors">Available Flavors</Label>
                              <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -805,28 +805,31 @@ export default function MenuPage() {
                             <p className="text-xs text-muted-foreground">Tag flavors for this item (applies to both Refills and Unlimited packages).</p>
                         </div>
                     </div>
-                    <div className='space-y-4'>
-                         <div className="flex items-center space-x-2">
-                            <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
-                            <Label htmlFor="trackInventory">Track Inventory</Label>
-                        </div>
-                        {formData.trackInventory && (
-                            <div className="space-y-2 pl-2">
+                 </div>
+                 
+                 <div className='space-y-4 rounded-lg border p-4'>
+                    <div className="flex items-center space-x-2">
+                        <Switch id="trackInventory" name="trackInventory" checked={!!formData.trackInventory} onCheckedChange={(c) => handleSwitchChange('trackInventory', c)} disabled={!formData.inventoryItemId} />
+                        <Label htmlFor="trackInventory">Track Inventory</Label>
+                    </div>
+                    {formData.trackInventory && (
+                        <div className="grid md:grid-cols-2 gap-6 pl-2">
+                            <div className="space-y-2">
                                 <Label htmlFor="alertLevel">Low Stock Alert Level</Label>
                                 <Input id="alertLevel" name="alertLevel" type="number" value={formData.alertLevel} onChange={handleInputChange} className="w-full" />
-                                <div className='space-y-1 pt-2'>
-                                  <Label>Linked Inventory Item</Label>
-                                  {linkedInventoryItem && (
-                                    <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
-                                        <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
-                                        <Badge variant="secondary">Auto-linked</Badge>
-                                    </div>
-                                  )}
-                                </div>
                             </div>
-                        )}
-                    </div>
-                 </div>
+                            <div className='space-y-1 pt-2'>
+                              <Label>Linked Inventory Item</Label>
+                              {linkedInventoryItem && (
+                                <div className="flex items-center justify-between rounded-md border bg-muted px-3 py-2 text-sm">
+                                    <span>{linkedInventoryItem.name} ({linkedInventoryItem.sku})</span>
+                                    <Badge variant="secondary">Auto-linked</Badge>
+                                </div>
+                              )}
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div className="space-y-2">
                     <Label htmlFor="publicDescription">Public Description</Label>
