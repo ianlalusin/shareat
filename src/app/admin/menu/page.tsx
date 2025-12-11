@@ -57,7 +57,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Switch } from '@/components/ui/switch';
-import { MenuItem, Store, CollectionItem, Product, InventoryItem } from '@/lib/types';
+import { MenuItem, Store, CollectionItem, Product, InventoryItem, TaxRate } from '@/lib/types';
 import {
   Accordion,
   AccordionContent,
@@ -96,7 +96,8 @@ const initialItemState: Omit<MenuItem, 'id'> = {
   imageUrl: '',
   publicDescription: '',
   targetStation: undefined,
-  taxRate: '',
+  taxRate: 0,
+  taxProfileCode: null,
   trackInventory: false,
   inventoryItemId: null,
   alertLevel: 0,
@@ -114,12 +115,13 @@ export default function MenuPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [availabilityOptions, setAvailabilityOptions] = useState<CollectionItem[]>([]);
-  const [taxRates, setTaxRates] = useState<CollectionItem[]>([]);
+  const [taxProfiles, setTaxProfiles] = useState<TaxRate[]>([]);
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
   const [flavorOptions, setFlavorOptions] = useState<CollectionItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialItemState);
+  const [taxProfileCode, setTaxProfileCode] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -190,16 +192,17 @@ export default function MenuPage() {
       });
 
       if (selectedStoreId) {
-        const taxRateQuery = query(
-          collection(firestore, 'lists'),
-          where('category', '==', 'tax rates'),
-          where('is_active', '==', true),
-          where('storeIds', 'array-contains', selectedStoreId)
+        const taxQuery = query(
+            collection(firestore, 'lists'),
+            where('category', '==', 'tax profile'),
+            where('is_active', '==', true),
+            where('storeIds', 'array-contains', selectedStoreId)
         );
-        taxRateUnsubscribe = onSnapshot(taxRateQuery, (snapshot) => {
-          const taxRateData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem);
-          setTaxRates(taxRateData);
+        taxRateUnsubscribe = onSnapshot(taxQuery, (snapshot) => {
+          const taxData = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TaxRate));
+          setTaxProfiles(taxData);
         });
+
 
         const storeStationsQuery = query(
             collection(firestore, 'lists'),
@@ -224,7 +227,7 @@ export default function MenuPage() {
         });
         
       } else {
-        setTaxRates([]);
+        setTaxProfiles([]);
         setStoreStations([]);
         setFlavorOptions([]);
       }
@@ -238,6 +241,14 @@ export default function MenuPage() {
     }
   }, [firestore, selectedStoreId]);
 
+    useEffect(() => {
+        if (!taxProfileCode && editingItem?.taxRate != null && taxProfiles.length) {
+            const match = taxProfiles.find((p) => p.rate === editingItem.taxRate);
+            if (match) setTaxProfileCode(match.code);
+        }
+    }, [taxProfiles, editingItem?.taxRate, taxProfileCode]);
+
+
   const refillOptions = useMemo(() => {
       return items.filter(item => item.category === 'Refill');
   }, [items]);
@@ -250,6 +261,7 @@ export default function MenuPage() {
         setDisplayValues({ cost: '', price: '' });
         setImageFile(null);
         setFormError(null);
+        setTaxProfileCode(null);
     }
   }
 
@@ -427,9 +439,13 @@ export default function MenuPage() {
     }
     if (!firestore || !storage || !selectedStoreId) return;
     
+    const selectedProfile = taxProfiles.find((p) => p.code === taxProfileCode);
+
     const dataToSave: Partial<MenuItem> = {
       ...formData,
       sortOrder: sortOrderNumber,
+      taxRate: selectedProfile?.rate ?? formData.taxRate ?? 0,
+      taxProfileCode: selectedProfile?.code ?? null,
     };
     
     try {
@@ -460,6 +476,7 @@ export default function MenuPage() {
         allowed_refills: item.allowed_refills || [],
         flavors: item.flavors || [],
     });
+    setTaxProfileCode(item.taxProfileCode ?? null);
     setDisplayValues({
         cost: formatCurrency(item.cost),
         price: formatCurrency(item.price),
@@ -522,6 +539,7 @@ export default function MenuPage() {
     setDisplayValues({ cost: '', price: '' });
     setImageFile(null);
     setFormError(null);
+    setTaxProfileCode(null);
     setIsModalOpen(true);
   }
   
@@ -688,15 +706,37 @@ export default function MenuPage() {
                     </Select>
                   </div>
                     <div className="space-y-2">
-                        <Label htmlFor="taxRate">Tax Rate</Label>
-                        <Select name="taxRate" value={formData.taxRate} onValueChange={(value) => handleSelectChange('taxRate', value)}>
-                        <SelectTrigger><SelectValue placeholder="Select tax rate"/></SelectTrigger>
+                        <Label>Tax</Label>
+                        <Select
+                        value={taxProfileCode ?? undefined}
+                        onValueChange={(code) => {
+                            setTaxProfileCode(code);
+                            const profile = taxProfiles.find((p) => p.code === code);
+                            if (profile) {
+                            setFormData((prev) => ({
+                                ...prev,
+                                taxRate: profile.rate,
+                            }));
+                            }
+                        }}
+                        >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select tax profile" />
+                        </SelectTrigger>
                         <SelectContent>
-                            {taxRates.length > 0 ? taxRates.map(rate => (
-                                <SelectItem key={rate.id} value={rate.item}>{rate.item}</SelectItem>
-                            )) : <SelectItem value="no-rates" disabled>No tax rates for this store</SelectItem>}
+                            {taxProfiles.map((p) => (
+                            <SelectItem key={p.id} value={p.code}>
+                                {p.item}
+                            </SelectItem>
+                            ))}
                         </SelectContent>
                         </Select>
+                        {taxProfileCode && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Rate:{' '}
+                            {((taxProfiles.find((p) => p.code === taxProfileCode)?.rate ?? 0) * 100).toFixed(2)}%
+                        </p>
+                        )}
                     </div>
                 </div>
                  

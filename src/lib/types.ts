@@ -158,7 +158,8 @@ export type MenuItem = {
   imageUrl?: string;
   publicDescription?: string;
   targetStation?: 'Hot' | 'Cold';
-  taxRate?: string;
+  taxRate?: number;
+  taxProfileCode?: string | null;
   trackInventory: boolean;
   inventoryItemId?: string | null;
   alertLevel: number;
