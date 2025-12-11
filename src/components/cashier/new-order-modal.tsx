@@ -87,19 +87,10 @@ export function NewOrderModal({ isOpen, onClose, table, menu, schedules, storeId
       );
     
       return menu.filter((item) => {
-        // 1) Only category = "Package"
         if (item.category !== 'Package') return false;
-    
-        // 2) Must be available
         if (!item.isAvailable) return false;
-    
-        // 3) Must match the active store
         if (item.storeId !== storeId) return false;
-    
-        // 4) Availability label check
         if (item.availability === 'always') return true;
-    
-        // otherwise, menu.availability must match an active schedule name
         return activeScheduleNames.has(item.availability);
       });
     }, [menu, schedules, storeId]);
