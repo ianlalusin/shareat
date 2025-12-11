@@ -392,53 +392,70 @@ export default function CollectionsPage() {
 
       {/* Menu Schedules Section */}
       <section>
-        <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold font-headline">Menu Schedules</h2>
-            <Button size="sm" className="flex items-center gap-2" onClick={() => handleScheduleModalOpenChange(true)}>
-                <PlusCircle className="h-4 w-4" />
-                <span>Add Schedule</span>
-            </Button>
-        </div>
-         <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
-             <Table>
-                 <TableHeader>
-                     <TableRow>
-                         <TableHead>Schedule Name</TableHead>
-                         <TableHead>Time</TableHead>
-                         <TableHead>Days</TableHead>
-                         <TableHead>Status</TableHead>
-                         <TableHead className="w-24">Actions</TableHead>
-                     </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                     {schedules.map(schedule => (
-                         <TableRow key={schedule.id}>
-                             <TableCell>{schedule.item}</TableCell>
-                             <TableCell>{schedule.startTime} - {schedule.endTime}</TableCell>
-                             <TableCell>
-                                 <div className="flex flex-wrap gap-1">
-                                     {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
-                                 </div>
-                             </TableCell>
-                             <TableCell>
-                                 <Badge variant={schedule.is_active ? 'default' : 'destructive'} className={schedule.is_active ? 'bg-green-500' : ''}>
-                                    {schedule.is_active ? 'Active' : 'Inactive'}
-                                </Badge>
-                             </TableCell>
-                            <TableCell>
-                                <div className="flex items-center gap-1">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditSchedule(schedule)}><Pencil className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(schedule.id); setDeleteTargetType('schedule');}}>
-                                      <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                </div>
-                            </TableCell>
-                         </TableRow>
-                     ))}
-                 </TableBody>
-             </Table>
-             {schedules.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No schedules created yet.</p>}
-        </div>
+        <Accordion type="single" collapsible defaultValue="schedules" className="w-full">
+          <AccordionItem value="schedules" className="border-0">
+            <div className="rounded-lg border shadow-sm bg-background overflow-hidden">
+              <div className="flex items-center justify-between p-2 bg-muted/50 hover:bg-muted/80">
+                <AccordionTrigger className="flex-1 p-0 hover:no-underline">
+                  <div className='flex items-center gap-2'>
+                    <h2 className="text-lg font-semibold font-headline">Menu Schedules</h2>
+                    <Badge variant="secondary">{schedules.length}</Badge>
+                  </div>
+                </AccordionTrigger>
+                <Button
+                  size="sm"
+                  className="flex items-center gap-2 mx-4"
+                  onClick={(e) => { e.stopPropagation(); handleScheduleModalOpenChange(true); }}
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  <span>Add Schedule</span>
+                </Button>
+              </div>
+              <AccordionContent className="p-0">
+                <div className="border-t">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Schedule Name</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Days</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-24">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {schedules.map(schedule => (
+                        <TableRow key={schedule.id}>
+                          <TableCell>{schedule.item}</TableCell>
+                          <TableCell>{schedule.startTime} - {schedule.endTime}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={schedule.is_active ? 'default' : 'destructive'} className={schedule.is_active ? 'bg-green-500' : ''}>
+                              {schedule.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditSchedule(schedule)}><Pencil className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(schedule.id); setDeleteTargetType('schedule');}}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {schedules.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No schedules created yet.</p>}
+                </div>
+              </AccordionContent>
+            </div>
+          </AccordionItem>
+        </Accordion>
       </section>
 
       {/* Item Modal */}
