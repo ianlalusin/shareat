@@ -1,7 +1,7 @@
 
-
 'use client';
 
+import * as React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -652,7 +652,7 @@ export default function MenuPage() {
                       <Label htmlFor="sortOrder">Sort Order</Label>
                       <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || 0} onChange={handleInputChange} />
                     </div>
-                    <div className="flex items-center space-x-2 pb-2">
+                    <div className="flex items-center space-x-2 self-center pb-2">
                         <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
                         <Label htmlFor="isAvailable">Available</Label>
                     </div>
@@ -879,4 +879,3 @@ export default function MenuPage() {
       </main>
   );
 }
-
