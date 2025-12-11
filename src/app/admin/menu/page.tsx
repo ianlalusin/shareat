@@ -33,7 +33,7 @@ import {
   TableHead,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, MoreHorizontal, Plus, AlertCircle, Image as ImageIcon, ChevronDown } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Plus, AlertCircle, Image as ImageIcon, ChevronDown, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -260,9 +260,7 @@ export default function MenuPage() {
   useEffect(() => {
     if (selectedInventoryItem && !editingItem) { // Only auto-fill for new items
         const product = products.find(p => p.id === selectedInventoryItem.productId);
-        const categoryItems = items.filter(i => i.category === selectedInventoryItem.category);
-        const maxSortOrder = categoryItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
-
+        
         setFormData(prev => ({
             ...prev,
             menuName: selectedInventoryItem.name,
@@ -273,14 +271,13 @@ export default function MenuPage() {
             price: product?.defaultPrice || 0,
             imageUrl: product?.imageUrl || '',
             productId: selectedInventoryItem.productId,
-            sortOrder: maxSortOrder + 1,
         }));
         setDisplayValues({
             cost: formatCurrency(selectedInventoryItem.costPerUnit || 0),
             price: formatCurrency(product?.defaultPrice || 0),
         });
     }
-}, [selectedInventoryItem, products, editingItem, items]);
+}, [selectedInventoryItem, products, editingItem]);
   
   useEffect(() => {
     setFormError(null); // Clear previous errors
@@ -728,9 +725,13 @@ export default function MenuPage() {
                     <BarcodeInput id="barcode" name="barcode" value={formData.barcode} onChange={handleInputChange} readOnly disabled />
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="space-y-2 w-20">
+                    <div className="space-y-2 w-32">
                       <Label htmlFor="sortOrder">Sort</Label>
-                      <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} min="0"/>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: Math.max(0, (prev.sortOrder || 0) - 1)}))}><Minus className="h-4 w-4"/></Button>
+                        <Input id="sortOrder" name="sortOrder" type="number" value={formData.sortOrder || ''} onChange={handleInputChange} min="0" className="w-16 text-center"/>
+                        <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => setFormData(prev => ({...prev, sortOrder: (prev.sortOrder || 0) + 1}))}><Plus className="h-4 w-4"/></Button>
+                      </div>
                     </div>
                     <div className="flex items-center space-x-2 pt-6">
                       <Switch id="isAvailable" name="isAvailable" checked={formData.isAvailable} onCheckedChange={(c) => handleSwitchChange('isAvailable', c)} />
