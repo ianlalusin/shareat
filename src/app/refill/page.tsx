@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -200,6 +199,8 @@ export default function RefillPage() {
       const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
       cart.forEach(cartItem => {
         const newItemRef = doc(orderItemsRef);
+        const unitPrice = cartItem.price ?? 0;
+        const isFree = unitPrice === 0;
         const rate = cartItem.taxRate ?? 0;
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
@@ -207,7 +208,7 @@ export default function RefillPage() {
           menuItemId: cartItem.id,
           menuName: cartItem.menuName,
           quantity: cartItem.quantity,
-          priceAtOrder: cartItem.price,
+          priceAtOrder: unitPrice,
           isRefill: false,
           timestamp: serverTimestamp() as any,
           status: 'Pending',
@@ -216,7 +217,7 @@ export default function RefillPage() {
           kitchenNote: cartItem.note || '',
           taxRate: rate,
           taxProfileCode: cartItem.taxProfileCode ?? null,
-          isFree: false,
+          isFree: isFree,
         };
         batch.set(newItemRef, orderItemData);
       });

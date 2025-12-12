@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -149,6 +148,8 @@ export default function CashierPage() {
           };
           transaction.set(orderRef, newOrder);
     
+          const unitPrice = selectedPackage.price ?? 0;
+          const isFree = unitPrice === 0;
           const rate = selectedPackage.taxRate ?? 0;
           const initialOrderItem: Omit<OrderItem, 'id'> = {
             orderId: orderRef.id,
@@ -156,7 +157,7 @@ export default function CashierPage() {
             menuItemId: selectedPackage.id,
             menuName: selectedPackage.menuName,
             quantity: guestCount,
-            priceAtOrder: selectedPackage.price,
+            priceAtOrder: unitPrice,
             targetStation: selectedPackage.targetStation,
             timestamp: serverTimestamp() as any,
             status: 'Pending',
@@ -164,7 +165,7 @@ export default function CashierPage() {
             sourceTag: 'initial',
             taxRate: rate,
             taxProfileCode: selectedPackage.taxProfileCode ?? null,
-            isFree: false,
+            isFree: isFree,
           };
           const orderItemRef = doc(collection(firestore, 'orders', orderRef.id, 'orderItems'));
           transaction.set(orderItemRef, initialOrderItem);
@@ -213,6 +214,8 @@ export default function CashierPage() {
       const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
       cart.forEach(cartItem => {
         const newItemRef = doc(orderItemsRef);
+        const unitPrice = cartItem.price ?? 0;
+        const isFree = unitPrice === 0;
         const rate = cartItem.taxRate ?? 0;
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
@@ -220,7 +223,7 @@ export default function CashierPage() {
           menuItemId: cartItem.id,
           menuName: cartItem.menuName,
           quantity: cartItem.quantity,
-          priceAtOrder: cartItem.price,
+          priceAtOrder: unitPrice,
           isRefill: false,
           timestamp: serverTimestamp() as any,
           status: 'Pending',
@@ -229,7 +232,7 @@ export default function CashierPage() {
           kitchenNote: cartItem.note || '',
           taxRate: rate,
           taxProfileCode: cartItem.taxProfileCode ?? null,
-          isFree: false,
+          isFree,
         };
         batch.set(newItemRef, orderItemData);
       });
@@ -407,21 +410,21 @@ export default function CashierPage() {
             onCreateOrder={handleCreateOrder}
         />
        )}
-       {isRefillModalOpen && selectedOrder && (
+       {isRefillModalOpen && selectedOrder && selectedTable && (
             <RefillModal
                 isOpen={isRefillModalOpen}
                 onClose={() => setIsRefillModalOpen(false)}
-                table={tables.find(t => t.id === selectedOrder.tableId)!}
+                table={selectedTable}
                 order={selectedOrder}
                 menu={menu}
                 onPlaceOrder={handlePlaceRefillOrder}
             />
        )}
-        {isAddonsModalOpen && selectedOrder && (
+        {isAddonsModalOpen && selectedOrder && selectedTable && (
             <AddonsModal
                 isOpen={isAddonsModalOpen}
                 onClose={() => setIsAddonsModalOpen(false)}
-                table={tables.find(t => t.id === selectedOrder.tableId)!}
+                table={selectedTable}
                 order={selectedOrder}
                 menu={menu}
                 onPlaceOrder={handlePlaceAddonsOrder}

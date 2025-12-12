@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Plus, Minus, ShoppingCart, Trash2, MessageSquarePlus } from 'lucide-react';
-import { Table as TableType, MenuItem, Order, OrderItem } from '@/lib/types';
+import { Table as TableType, MenuItem, Order } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '../ui/separator';
