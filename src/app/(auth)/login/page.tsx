@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
 import {
@@ -28,7 +28,6 @@ import { Eye, EyeOff } from 'lucide-react';
 declare global {
   interface Window {
     grecaptcha: any;
-    handleRecaptchaChange: (token: string | null) => void;
   }
 }
 
@@ -38,43 +37,69 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  
+  const [loginRecaptchaToken, setLoginRecaptchaToken] = useState<string | null>(null);
+  const [signupRecaptchaToken, setSignupRecaptchaToken] = useState<string | null>(null);
+
+  const loginRecaptchaRef = useRef<HTMLDivElement>(null);
+  const signupRecaptchaRef = useRef<HTMLDivElement>(null);
+  const loginWidgetId = useRef<number | null>(null);
+  const signupWidgetId = useRef<number | null>(null);
+
   const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   const { setDevMode } = useAuthContext();
+  
+  const renderRecaptcha = () => {
+    if (window.grecaptcha && window.grecaptcha.render) {
+        if (loginRecaptchaRef.current && loginWidgetId.current === null) {
+            loginWidgetId.current = window.grecaptcha.render(loginRecaptchaRef.current, {
+                'sitekey': '6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1',
+                'callback': (token: string) => setLoginRecaptchaToken(token),
+            });
+        }
+        if (signupRecaptchaRef.current && signupWidgetId.current === null) {
+            signupWidgetId.current = window.grecaptcha.render(signupRecaptchaRef.current, {
+                'sitekey': '6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1',
+                'callback': (token: string) => setSignupRecaptchaToken(token)
+            });
+        }
+    }
+  };
 
   useEffect(() => {
-    window.handleRecaptchaChange = (token: string | null) => {
-      setRecaptchaToken(token);
-    };
+    const script = document.createElement('script');
+    script.src = 'https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit';
+    script.async = true;
+    script.defer = true;
+    (window as any).onloadCallback = renderRecaptcha;
+    document.body.appendChild(script);
 
     return () => {
-      delete window.handleRecaptchaChange;
-    };
+      document.body.removeChild(script);
+      delete (window as any).onloadCallback;
+    }
   }, []);
 
-  const resetRecaptcha = () => {
-    if (window.grecaptcha) {
-      const widgetId = document.querySelector('.g-recaptcha')?.getAttribute('data-widget-id');
-      if (widgetId) {
-        window.grecaptcha.reset(parseInt(widgetId, 10));
-      } else {
-        // Fallback for multiple recaptchas if needed
-         const recaptchas = document.querySelectorAll('.g-recaptcha');
-         recaptchas.forEach((rc) => {
-             const id = rc.getAttribute('data-widget-id');
-             if(id) window.grecaptcha.reset(parseInt(id, 10));
-         });
-      }
+  const handleTabChange = (value: string) => {
+    // Reset tokens when switching tabs
+    setLoginRecaptchaToken(null);
+    setSignupRecaptchaToken(null);
+    if(window.grecaptcha) {
+        if (value === 'login' && loginWidgetId.current !== null) {
+            window.grecaptcha.reset(loginWidgetId.current);
+        } else if (value === 'signup' && signupWidgetId.current !== null) {
+            window.grecaptcha.reset(signupWidgetId.current);
+        }
     }
-    setRecaptchaToken(null);
   };
+
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!auth) return;
-    if (!recaptchaToken) {
+    if (!loginRecaptchaToken) {
       toast({
         variant: 'destructive',
         title: 'Login Failed',
@@ -93,14 +118,17 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
-      resetRecaptcha();
+      if(window.grecaptcha && loginWidgetId.current !== null) {
+        window.grecaptcha.reset(loginWidgetId.current);
+      }
+      setLoginRecaptchaToken(null);
     }
   };
 
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!auth) return;
-    if (!recaptchaToken) {
+    if (!signupRecaptchaToken) {
         toast({
           variant: 'destructive',
           title: 'Sign Up Failed',
@@ -128,7 +156,10 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
-      resetRecaptcha();
+      if(window.grecaptcha && signupWidgetId.current !== null) {
+        window.grecaptcha.reset(signupWidgetId.current);
+      }
+      setSignupRecaptchaToken(null);
     }
   };
   
@@ -138,7 +169,7 @@ export default function LoginPage() {
   }
 
   return (
-    <Tabs defaultValue="login" className="w-full max-w-md">
+    <Tabs defaultValue="login" className="w-full max-w-md" onValueChange={handleTabChange}>
       <div className="flex justify-center mb-4">
         <div className="bg-primary text-primary-foreground p-3 rounded-full">
             <Logo className="h-8 w-8" />
@@ -191,13 +222,9 @@ export default function LoginPage() {
                 </div>
               </div>
                <div className="flex justify-center">
-                 <div
-                    className="g-recaptcha"
-                    data-sitekey="6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1"
-                    data-callback="handleRecaptchaChange"
-                  ></div>
+                 <div ref={loginRecaptchaRef}></div>
                </div>
-              <Button type="submit" className="w-full" disabled={loading || !recaptchaToken}>
+              <Button type="submit" className="w-full" disabled={loading || !loginRecaptchaToken}>
                 {loading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
@@ -258,13 +285,9 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="flex justify-center">
-                 <div
-                    className="g-recaptcha"
-                    data-sitekey="6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1"
-                    data-callback="handleRecaptchaChange"
-                  ></div>
+                 <div ref={signupRecaptchaRef}></div>
                </div>
-              <Button type="submit" className="w-full" disabled={loading || !recaptchaToken}>
+              <Button type="submit" className="w-full" disabled={loading || !signupRecaptchaToken}>
                 {loading ? 'Creating Account...' : 'Sign Up'}
               </Button>
             </form>
