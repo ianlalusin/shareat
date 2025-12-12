@@ -10,6 +10,7 @@ import { SuccessConfirm } from "@/components/ui/success-confirm";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
 import { RoleGate } from "@/components/auth/role-gate";
 import { ConnectivityBanner } from "@/components/ui/connectivity-banner";
+import { SyncStatusBadge } from "@/components/layout/sync-status-badge";
 
 export default function AdminLayout({
   children,
@@ -26,7 +27,10 @@ export default function AdminLayout({
           <SidebarInset>
             <AdminHeader />
             <ConnectivityBanner />
-            {children}
+            <div className="flex-1 flex flex-col">
+              {children}
+            </div>
+            <SyncStatusBadge />
             <SuccessConfirm />
           </SidebarInset>
         </SidebarProvider>
