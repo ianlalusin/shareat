@@ -11,12 +11,14 @@ import {
   Timestamp,
   collectionGroup,
   limit,
+  getDoc,
+  doc,
 } from 'firebase/firestore';
 
 import { useFirestore } from '@/firebase';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { DateRangePicker } from '@/components/admin/date-range-picker';
-import { Order, OrderItem, MenuItem, RefillItem, InventoryItem, OrderUpdateLog } from '@/lib/types';
+import { Order, OrderItem, MenuItem, RefillItem, InventoryItem, OrderUpdateLog, Store } from '@/lib/types';
 import { StatCard } from '@/components/admin/dashboard/stat-card';
 import { TopItemsCard, TopItem } from '@/components/admin/dashboard/top-items-card';
 import { Button } from '@/components/ui/button';
@@ -33,11 +35,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { ShiftStats } from '@/ai/flows/shift-summary-flow';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TopCategoriesAccordion, CategorySalesData } from '@/components/admin/reports/top-categories-accordion';
 
-interface TopCategory {
-    name: string;
-    quantity: number;
-}
 
 export default function AdminPage() {
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({ from: startOfDay(new Date()), to: endOfDay(new Date()) });
@@ -47,7 +47,7 @@ export default function AdminPage() {
   const [totalSales, setTotalSales] = React.useState(0);
   const [totalReceipts, setTotalReceipts] = React.useState(0);
   const [avgServingTime, setAvgServingTime] = React.useState(0);
-  const [topCategories, setTopCategories] = React.useState<TopCategory[]>([]);
+  const [topCategories, setTopCategories] = React.useState<CategorySalesData[]>([]);
   const [lowStockItems, setLowStockItems] = React.useState<TopItem[]>([]);
   const [updateLogCount, setUpdateLogCount] = React.useState(0);
   
@@ -103,7 +103,7 @@ export default function AdminPage() {
         const [ordersSnapshot, menuSnapshot, auditLogsSnapshot] = await Promise.all([
           getDocs(ordersQuery),
           getDocs(menuQuery),
-          getDocs(auditLogsQuery),
+          getDocs(auditLogsSnapshot),
         ]);
         
         const menuItems = menuSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MenuItem));
@@ -116,6 +116,7 @@ export default function AdminPage() {
 
         if (completedOrders.length > 0) {
             const orderIds = completedOrders.map(o => o.id);
+            const completedOrderMap = new Map(completedOrders.map(o => [o.id, o]));
 
             const transactionsQuery = query(
                 collectionGroup(firestore, 'transactions'),
@@ -144,25 +145,46 @@ export default function AdminPage() {
 
             const allOrderItems = orderItemsSnapshot.docs.map(doc => doc.data() as OrderItem);
             
-            const categorySales: Record<string, { name: string, quantity: number }> = {};
-            allOrderItems.forEach(item => {
-                if(item.sourceTag === 'initial') return;
-                
+            const itemSales: Record<string, { menuItemId: string; menuName: string; category: string; quantity: number; orderIds: Set<string> }> = {};
+      
+            for (const item of allOrderItems) {
+                if(item.isFree || item.sourceTag === 'initial') continue;
                 const menuItem = menuMap.get(item.menuItemId);
                 const category = menuItem?.category || 'Uncategorized';
                 
-                if (!categorySales[category]) {
-                    categorySales[category] = { name: category, quantity: 0 };
+                if (!itemSales[item.menuItemId]) {
+                itemSales[item.menuItemId] = {
+                    menuItemId: item.menuItemId,
+                    menuName: item.menuName,
+                    category: category,
+                    quantity: 0,
+                    orderIds: new Set(),
+                };
                 }
-                
-                categorySales[category].quantity += item.quantity;
+                itemSales[item.menuItemId].quantity += item.quantity;
+                itemSales[item.menuItemId].orderIds.add(item.orderId);
+            }
+            
+            const categoryMap: Record<string, CategorySalesData> = {};
+            for (const item of Object.values(itemSales)) {
+                if(!categoryMap[item.category]) {
+                    categoryMap[item.category] = { categoryName: item.category, totalQuantity: 0, items: [] };
+                }
+                categoryMap[item.category].totalQuantity += item.quantity;
+                categoryMap[item.category].items.push({
+                    itemName: item.menuName,
+                    quantity: item.quantity,
+                    receipts: Array.from(item.orderIds).map(oid => completedOrderMap.get(oid)?.receiptDetails?.receiptNumber || 'N/A')
+                });
+            }
+
+            Object.values(categoryMap).forEach(cat => {
+                cat.items.sort((a,b) => b.quantity - a.quantity);
             });
 
-            const sortedCategories = Object.values(categorySales)
-                .sort((a, b) => b.quantity - a.quantity)
-                .slice(0, 5);
-            setTopCategories(sortedCategories);
-            
+            const finalCategorySales = Object.values(categoryMap).sort((a,b) => b.totalQuantity - a.totalQuantity);
+            setTopCategories(finalCategorySales);
+
             const allRefills = refillsSnapshot.docs.map(doc => doc.data() as RefillItem);
             const servedItems = [...allOrderItems, ...allRefills].filter(
                 item => item.status === 'Served' && item.timestamp && item.servedTimestamp
@@ -307,47 +329,80 @@ export default function AdminPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          <StatCard
-            title="Total Sales"
-            value={totalSales}
-            format="currency"
-            icon={<TrendingUp />}
-            linkTo="/admin/reports/sales"
-          />
-          <StatCard
-            title="Total Receipts"
-            value={totalReceipts}
-            icon={<Hash />}
-            linkTo="/admin/reports/sales"
-          />
-          <StatCard
-            title="Avg. Serving Time"
-            value={avgServingTime}
-            format="custom"
-            customFormatter={formatServingTime}
-            icon={<Timer />}
-            linkTo="/admin/reports/kitchen"
-          />
-           <div onClick={() => setIsUpdateLogModalOpen(true)} className="cursor-pointer">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
+          <div className="xl:col-span-2">
+             <StatCard
+                title="Total Sales"
+                value={totalSales}
+                format="currency"
+                icon={<TrendingUp />}
+                linkTo="/admin/reports/sales"
+            />
+          </div>
+           <div className="xl:col-span-1">
+             <StatCard
+                title="Total Receipts"
+                value={totalReceipts}
+                icon={<Hash />}
+                linkTo="/admin/reports/sales"
+            />
+           </div>
+          <div className="xl:col-span-1">
+            <StatCard
+                title="Avg. Serving Time"
+                value={avgServingTime}
+                format="custom"
+                customFormatter={formatServingTime}
+                icon={<Timer />}
+                linkTo="/admin/reports/kitchen"
+            />
+          </div>
+           <div className="cursor-pointer xl:col-span-1" onClick={() => setIsUpdateLogModalOpen(true)}>
               <StatCard
                 title="Order Updates"
                 value={updateLogCount}
                 icon={<History />}
               />
            </div>
-          <TopItemsCard
-            title="Low Stocks Inventory"
-            items={lowStockItems}
-            icon={<PackageX />}
-            linkTo="/admin/inventory"
-          />
-           <TopItemsCard
-            title="Top Selling Categories"
-            items={topCategories}
-            icon={<Layers />}
-            linkTo="/admin/reports/sales"
-          />
+          <div className="sm:col-span-1 xl:col-span-2">
+            <TopItemsCard
+                title="Low Stocks Inventory"
+                items={lowStockItems}
+                icon={<PackageX />}
+                linkTo="/admin/inventory"
+            />
+          </div>
+          <Card className="sm:col-span-full xl:col-span-5">
+             <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Layers />
+                    Top Selling Categories
+                </CardTitle>
+                 <CardDescription>
+                    Top selling à la carte items grouped by category. Click to expand.
+                </CardDescription>
+            </CardHeader>
+             <CardContent>
+                {loading ? (
+                    <div className="flex items-center justify-center h-64">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                ) : topCategories.length > 0 ? (
+                    <TopCategoriesAccordion data={topCategories} />
+                ): (
+                    <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm bg-background/50 h-64">
+                        <div className="flex flex-col items-center gap-1 text-center">
+                             <h3 className="text-xl font-bold tracking-tight font-headline">
+                                No sales data
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                                No items were sold in this period.
+                            </p>
+                        </div>
+                    </div>
+                )}
+             </CardContent>
+        </Card>
         </div>
       )}
     </main>
@@ -387,3 +442,5 @@ export default function AdminPage() {
     </>
   );
 }
+
+    
