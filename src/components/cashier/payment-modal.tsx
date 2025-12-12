@@ -22,6 +22,7 @@ import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction
 import { useToast } from '@/hooks/use-toast';
 import { computeTaxFromGross } from '@/lib/tax';
 import { useOnlineStatus } from '@/hooks/use-online-status';
+import { useSyncStatus } from '@/hooks/use-sync-status';
 
 interface Payment {
   id: number;
@@ -54,6 +55,7 @@ export function PaymentModal({
   const auth = useAuth();
   const { toast } = useToast();
   const online = useOnlineStatus();
+  const { hasPendingWrites } = useSyncStatus();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
   const balance = totalAmount - totalPaid;
@@ -111,7 +113,7 @@ export function PaymentModal({
   }
   
   const finalizeBill = async () => {
-    if (!firestore || balance > 0.01 || !online) return;
+    if (!firestore || balance > 0.01 || !online || hasPendingWrites) return;
     setIsProcessing(true);
     setErrorMessage(null);
     const user = auth?.currentUser;
@@ -341,7 +343,7 @@ export function PaymentModal({
           <Button
             type="button"
             onClick={finalizeBill}
-            disabled={balance > 0.01 || isProcessing || !online}
+            disabled={balance > 0.01 || isProcessing || !online || hasPendingWrites}
           >
             {isProcessing ? <Loader2 className="animate-spin" /> : 'Charge'}
           </Button>
