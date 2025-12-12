@@ -27,17 +27,17 @@ type OnboardingStatus =
   | "pendingApproval"; // Applied, waiting for admin
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
-  const { user, loading, isOnboarded, devMode } = useAuthContext();
+  const { user, isInitialAuthLoading, isOnboarded, devMode } = useAuthContext();
   const router = useRouter();
   const firestore = useFirestore();
 
   useEffect(() => {
-    if (!loading && !user && !devMode) {
+    if (!isInitialAuthLoading && !user && !devMode) {
       router.push("/login");
     }
-  }, [loading, user, devMode, router]);
+  }, [isInitialAuthLoading, user, devMode, router]);
   
-  if (loading) {
+  if (isInitialAuthLoading) {
     return (
         <div className="flex h-svh w-full items-center justify-center">
             <div className="w-full max-w-md space-y-4 p-4">

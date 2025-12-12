@@ -11,7 +11,7 @@ interface AuthContextType {
   user: FirebaseAuthUser | null;
   appUser: AppUser | null;
   staff: Staff | null;
-  loading: boolean;
+  isInitialAuthLoading: boolean;
   isOnboarded: boolean;
   devMode: boolean;
   setDevMode: (isDev: boolean) => void;
@@ -23,7 +23,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<FirebaseAuthUser | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [staff, setStaff] = useState<Staff | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isInitialAuthLoading, setIsInitialAuthLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [devMode, setDevModeState] = useState(false);
   const auth = useAuth();
@@ -60,7 +60,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setAppUser(null);
         setStaff(null);
       }
-      setLoading(false);
+      setIsInitialAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -75,7 +75,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, appUser, staff, loading, isOnboarded, devMode, setDevMode }}>
+    <AuthContext.Provider value={{ user, appUser, staff, isInitialAuthLoading, isOnboarded, devMode, setDevMode }}>
       {children}
     </AuthContext.Provider>
   );

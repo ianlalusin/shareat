@@ -11,16 +11,16 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, devMode } = useAuthContext();
+  const { user, isInitialAuthLoading, devMode } = useAuthContext();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && (user || devMode)) {
+    if (!isInitialAuthLoading && (user || devMode)) {
       router.push('/admin');
     }
-  }, [user, loading, devMode, router]);
+  }, [user, isInitialAuthLoading, devMode, router]);
 
-  if(loading || user || devMode) {
+  if(isInitialAuthLoading || user || devMode) {
     return (
         <div className="flex h-svh w-full items-center justify-center">
             <div className="w-full max-w-md space-y-4 p-4">
