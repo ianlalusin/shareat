@@ -1,7 +1,14 @@
+
 'use client';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager, 
+  Firestore 
+} from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { firebaseConfig } from './config';
 import {
@@ -21,17 +28,29 @@ let firestore: Firestore;
 let storage: FirebaseStorage;
 
 function initializeFirebase() {
-  if (!getApps().length) {
+  if (getApps().length === 0) {
     firebaseApp = initializeApp(firebaseConfig);
-    auth = getAuth(firebaseApp);
-    firestore = getFirestore(firebaseApp);
-    storage = getStorage(firebaseApp);
   } else {
     firebaseApp = getApp();
-    auth = getAuth(firebaseApp);
-    firestore = getFirestore(firebaseApp);
-    storage = getStorage(firebaseApp);
   }
+
+  // Use initializeFirestore for offline persistence on the client
+  if (typeof window !== 'undefined') {
+    if (!(firestore as any)?._initialized) {
+        firestore = initializeFirestore(firebaseApp, {
+            localCache: persistentLocalCache({
+                tabManager: persistentMultipleTabManager()
+            })
+        });
+    }
+  } else {
+    // For SSR, use the standard getFirestore
+    firestore = getFirestore(firebaseApp);
+  }
+
+  auth = getAuth(firebaseApp);
+  storage = getStorage(firebaseApp);
+
   return { firebaseApp, auth, firestore, storage };
 }
 
