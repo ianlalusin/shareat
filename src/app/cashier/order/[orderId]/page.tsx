@@ -245,20 +245,18 @@ export default function OrderDetailPage() {
       const qty = item.quantity ?? 0;
       const grossLine = price * qty;
   
-      // If you already store taxRate per item (e.g. 0.12 for 12%)
       const taxRate =
-        typeof (item as any).taxRate === 'number'
-          ? (item as any).taxRate
+        typeof item.taxRate === 'number'
+          ? item.taxRate
           : 0;
   
-      // Assume inclusive by default if not specified
       const isTaxInclusive =
-        (item as any).isTaxInclusive !== false;
+        item.isTaxInclusive !== false; // default true if not specified
   
       const netLine =
         taxRate > 0 && isTaxInclusive
-          ? grossLine / (1 + taxRate)
-          : grossLine;
+          ? grossLine / (1 + taxRate) // back out VAT
+          : grossLine;                // non-vatable or tax-exclusive
   
       return acc + netLine;
     }, 0);
