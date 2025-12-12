@@ -25,20 +25,45 @@ import { Logo } from '@/components/admin/logo';
 import { useAuthContext } from '@/context/auth-context';
 import { Eye, EyeOff } from 'lucide-react';
 
+declare global {
+  interface Window {
+    grecaptcha: any;
+  }
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   const { setDevMode } = useAuthContext();
 
+  const handleRecaptchaChange = (token: string | null) => {
+    setRecaptchaToken(token);
+  };
+
+  const resetRecaptcha = () => {
+    if (window.grecaptcha) {
+      window.grecaptcha.reset();
+    }
+    setRecaptchaToken(null);
+  };
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!auth) return;
+    if (!auth || !recaptchaToken) {
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description: 'Please complete the reCAPTCHA challenge.',
+      });
+      return;
+    };
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -50,12 +75,20 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
+      resetRecaptcha();
     }
   };
 
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!auth) return;
+    if (!auth || !recaptchaToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Sign Up Failed',
+          description: 'Please complete the reCAPTCHA challenge.',
+        });
+        return;
+      }
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(
@@ -76,6 +109,7 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
+      resetRecaptcha();
     }
   };
   
@@ -137,7 +171,14 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+               <div className="flex justify-center">
+                 <div
+                    className="g-recaptcha"
+                    data-sitekey="6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1"
+                    data-callback="handleRecaptchaChange"
+                  ></div>
+               </div>
+              <Button type="submit" className="w-full" disabled={loading || !recaptchaToken}>
                 {loading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
@@ -197,7 +238,14 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <div className="flex justify-center">
+                 <div
+                    className="g-recaptcha"
+                    data-sitekey="6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1"
+                    data-callback={(token: string | null) => handleRecaptchaChange(token)}
+                  ></div>
+               </div>
+              <Button type="submit" className="w-full" disabled={loading || !recaptchaToken}>
                 {loading ? 'Creating Account...' : 'Sign Up'}
               </Button>
             </form>

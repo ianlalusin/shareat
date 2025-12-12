@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Metadata } from "next";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { AuthContextProvider } from "@/context/auth-context";
 import { SettingsProvider } from "@/context/settings-context";
 import { useRegisterServiceWorker } from "./_sw-client";
+import Script from "next/script";
 
 const fontBody = Poppins({
   subsets: ['latin'],
@@ -41,6 +43,7 @@ export default function RootLayout({
         <meta name="description" content="POS KDS app for SharEat" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
+        <Script src="https://www.google.com/recaptcha/api.js" async defer />
       </head>
       <body className={cn("font-body antialiased", fontBody.variable, fontHeadline.variable)}>
         <FirebaseClientProvider>
