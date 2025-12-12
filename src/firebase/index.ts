@@ -27,6 +27,8 @@ let auth: Auth;
 let firestore: Firestore;
 let storage: FirebaseStorage;
 
+let firestoreInitialized = false;
+
 function initializeFirebase() {
   if (getApps().length === 0) {
     firebaseApp = initializeApp(firebaseConfig);
@@ -34,17 +36,14 @@ function initializeFirebase() {
     firebaseApp = getApp();
   }
 
-  // Use initializeFirestore for offline persistence on the client
-  if (typeof window !== 'undefined') {
-    if (!(firestore as any)?._initialized) {
-        firestore = initializeFirestore(firebaseApp, {
-            localCache: persistentLocalCache({
-                tabManager: persistentMultipleTabManager()
-            })
-        });
-    }
-  } else {
-    // For SSR, use the standard getFirestore
+  if (typeof window !== 'undefined' && !firestoreInitialized) {
+    firestore = initializeFirestore(firebaseApp, {
+        localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager()
+        })
+    });
+    firestoreInitialized = true;
+  } else if (!firestore) {
     firestore = getFirestore(firebaseApp);
   }
 
