@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -49,8 +50,6 @@ const mockReceiptData = {
 
 function ReceiptPreview({ settings, store }: { settings: Omit<ReceiptSettings, 'id'>, store: Store | null }) {
     const subtotal = mockReceiptData.items.reduce((acc, item) => acc + (item.qty * item.price), 0);
-    const vat = subtotal * 0.12;
-    const total = subtotal;
     const receiptNumber = `${settings.receiptNumberPrefix}${String(settings.nextReceiptNumber).padStart(6, '0')}`;
 
     return (
@@ -109,12 +108,26 @@ function ReceiptPreview({ settings, store }: { settings: Omit<ReceiptSettings, '
                 </table>
                 
                 <div className="border-t border-dashed border-black my-2"></div>
-
+                
                 <div className="space-y-1">
-                    <div className="flex justify-between"><p>Subtotal:</p><p>{formatCurrency(subtotal)}</p></div>
-                    <div className="flex justify-between"><p>VAT (12%):</p><p>{formatCurrency(vat)}</p></div>
-                    <div className="flex justify-between font-bold text-sm"><p>TOTAL:</p><p>{formatCurrency(total)}</p></div>
+                    <div className="flex justify-between font-bold text-sm"><p>TOTAL:</p><p>{formatCurrency(subtotal)}</p></div>
                 </div>
+
+                <div className="mt-2 border-t pt-2 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span>VATable Sales</span>
+                    <span>₱1,000.00</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>VAT Amount (12%)</span>
+                    <span>₱120.00</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>VAT-Exempt Sales</span>
+                    <span>₱0.00</span>
+                  </div>
+                </div>
+
                 
                 {settings.footerNotes && (
                     <>

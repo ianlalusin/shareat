@@ -30,12 +30,21 @@ interface Payment {
   method: string;
 }
 
+type OrderTaxSummary = {
+  vatableNet: number;
+  vatAmount: number;
+  vatableGross: number;
+  exemptSales: number;
+  totalSalesBeforeCharges: number;
+};
+
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   order: Order;
   store: Store;
   totalAmount: number;
+  taxSummary?: OrderTaxSummary;
   onFinalizeSuccess: () => void;
 }
 
@@ -45,6 +54,7 @@ export function PaymentModal({
   order,
   store,
   totalAmount,
+  taxSummary,
   onFinalizeSuccess,
 }: PaymentModalProps) {
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -136,47 +146,26 @@ export function PaymentModal({
             if (!settingsSnap.exists()) throw new Error("Receipt settings for this store not found!");
             const settings = settingsSnap.data() as ReceiptSettings;
             
-            const orderItemsQuery = query(collection(firestore, 'orders', order.id, 'orderItems'));
-            const orderItemsSnap = await getDocs(orderItemsQuery);
-            const allItems = orderItemsSnap.docs.map(d => d.data() as OrderItem);
+            const receiptRef = doc(collection(firestore, 'receipts'));
 
-            const billableItems = allItems.filter(item => {
-                const price = item.priceAtOrder ?? 0;
-                const isFree = item.isFree === true || price === 0;
-                return !isFree && item.status === 'Served';
-            });
-
-            let subtotalGross = 0;
-            let subtotalNet = 0;
-            let subtotalTax = 0;
-
-            for (const item of billableItems) {
-                const gross = item.priceAtOrder * item.quantity;
-                const { net, tax } = computeTaxFromGross(gross, item.taxRate);
-                subtotalGross += gross;
-                subtotalNet += net;
-                subtotalTax += tax;
-            }
-
+            // Use the passed taxSummary if available, otherwise compute it (fallback)
+            const finalTaxSummary = taxSummary || { vatableNet: 0, vatAmount: 0, vatableGross: 0, exemptSales: 0, totalSalesBeforeCharges: 0 };
+            
             const adjustments = (await getDocs(collection(firestore, 'orders', order.id, 'transactions'))).docs
                 .map(d => d.data() as OrderTransaction)
                 .filter(t => t.type === 'Discount' || t.type === 'Charge');
-                
             const discountAmount = adjustments.filter(t => t.type === 'Discount').reduce((sum, t) => sum + t.amount, 0);
 
-            const grandTotalGross = subtotalGross - discountAmount;
-            
-            const receiptRef = doc(collection(firestore, 'receipts'));
             const receiptData: Omit<Receipt, 'id'> = {
                 orderId: order.id,
                 storeId: order.storeId,
-                subtotalGross,
-                subtotalNet,
-                subtotalTax,
+                subtotalGross: finalTaxSummary.vatableGross + finalTaxSummary.exemptSales,
+                subtotalNet: finalTaxSummary.vatableNet + finalTaxSummary.exemptSales,
+                subtotalTax: finalTaxSummary.vatAmount,
                 discountAmount,
-                grandTotalGross,
-                grandTotalNet: subtotalNet - discountAmount,
-                grandTotalTax: subtotalTax,
+                grandTotalGross: totalAmount,
+                grandTotalNet: (finalTaxSummary.vatableNet + finalTaxSummary.exemptSales) - discountAmount,
+                grandTotalTax: finalTaxSummary.vatAmount,
                 createdAt: serverTimestamp(),
                 createdByUid: user?.uid || 'unknown',
                 createdByName: user?.displayName || user?.email || 'Unknown',
@@ -192,7 +181,7 @@ export function PaymentModal({
                 cashierName: user?.displayName || user?.email || 'System',
                 cashierUid: user?.uid || null,
                 printedAt: serverTimestamp(),
-                totalAmount: grandTotalGross,
+                totalAmount: totalAmount,
                 totalPaid: totalPaid,
                 change: change,
             };
@@ -224,7 +213,7 @@ export function PaymentModal({
                 status: 'Completed',
                 receiptId: receiptRef.id,
                 completedTimestamp: serverTimestamp(),
-                totalAmount: grandTotalGross,
+                totalAmount: totalAmount,
                 totalPaid,
                 change,
                 paymentSummary,

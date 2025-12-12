@@ -79,6 +79,14 @@ const unformatTIN = (value: string) => {
     return value.replace(/-/g, '');
 }
 
+type OrderTaxSummary = {
+  vatableNet: number;        // Net of VAT and discounts
+  vatAmount: number;         // VAT portion
+  vatableGross: number;      // Net + VAT
+  exemptSales: number;       // Non-VAT / exempt
+  totalSalesBeforeCharges: number; // For cross-checking vs grand total
+};
+
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -261,6 +269,74 @@ export default function OrderDetailPage() {
       return acc + netLine;
     }, 0);
   }, [billableItems]);
+
+  const taxSummary: OrderTaxSummary = useMemo(() => {
+    if (!billableItems.length) {
+      return {
+        vatableNet: 0,
+        vatAmount: 0,
+        vatableGross: 0,
+        exemptSales: 0,
+        totalSalesBeforeCharges: 0,
+      };
+    }
+  
+    // Split VATable vs Exempt based on taxRate
+    const vatableItems = billableItems.filter(
+      (item) => typeof item.taxRate === 'number' && (item.taxRate ?? 0) > 0
+    );
+    const exemptItems = billableItems.filter(
+      (item) => !item.taxRate || (item.taxRate ?? 0) === 0
+    );
+  
+    const grossVatable = vatableItems.reduce((acc, item) => {
+      const price = item.priceAtOrder ?? 0;
+      const qty = item.quantity ?? 0;
+      return acc + price * qty;
+    }, 0);
+  
+    const grossExempt = exemptItems.reduce((acc, item) => {
+      const price = item.priceAtOrder ?? 0;
+      const qty = item.quantity ?? 0;
+      return acc + price * qty;
+    }, 0);
+  
+    if (vatableItems.length === 0) {
+      // No VATable items, everything is exempt
+      return {
+        vatableNet: 0,
+        vatAmount: 0,
+        vatableGross: 0,
+        exemptSales: grossExempt,
+        totalSalesBeforeCharges: grossExempt,
+      };
+    }
+  
+    // Assume same VAT rate across all VATable items (e.g. 0.12)
+    const vatRate = vatableItems[0].taxRate ?? 0;
+  
+    // Prices are VAT-inclusive → back out VAT to get net
+    const vatableNetBeforeDiscount = grossVatable / (1 + vatRate);
+  
+    // Sum all discounts (order-level) as reducing VATable net first
+    const totalDiscount = transactions
+      .filter((t) => t.type === 'Discount')
+      .reduce((acc, t) => acc + (t.amount ?? 0), 0);
+  
+    const vatableNet = Math.max(0, vatableNetBeforeDiscount - totalDiscount);
+    const vatAmount = vatableNet * vatRate;
+    const vatableGross = vatableNet + vatAmount;
+  
+    const totalSalesBeforeCharges = vatableGross + grossExempt;
+  
+    return {
+      vatableNet,
+      vatAmount,
+      vatableGross,
+      exemptSales: grossExempt,
+      totalSalesBeforeCharges,
+    };
+  }, [billableItems, transactions]);
 
   const grandTotal = useMemo(() => {
     const rawTotal = transactions.reduce((acc, trans) => {
@@ -831,6 +907,29 @@ export default function OrderDetailPage() {
                             <span className="text-muted-foreground">Subtotal</span>
                             <span className="font-medium">{formatCurrency(subtotal)}</span>
                         </div>
+                        {/* BIR-style Tax Summary */}
+                        {taxSummary.totalSalesBeforeCharges > 0 && (
+                          <div className="mt-3 space-y-1 w-full max-w-sm self-end text-sm">
+                            {taxSummary.vatableNet > 0 && (
+                              <>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">VATable Sales</span>
+                                  <span>{formatCurrency(taxSummary.vatableNet)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">VAT Amount (12%)</span>
+                                  <span>{formatCurrency(taxSummary.vatAmount)}</span>
+                                </div>
+                              </>
+                            )}
+                            {taxSummary.exemptSales > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">VAT-Exempt Sales</span>
+                                <span>{formatCurrency(taxSummary.exemptSales)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                     </div>
 
                     <div className="space-y-2 py-2 w-full">
@@ -970,6 +1069,7 @@ export default function OrderDetailPage() {
           order={order}
           store={store}
           totalAmount={grandTotal}
+          taxSummary={taxSummary}
           onFinalizeSuccess={handleFinalizeSuccess}
         />
     )}
