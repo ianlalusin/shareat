@@ -9,6 +9,7 @@ import {
 import { SuccessConfirm } from "@/components/ui/success-confirm";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
 import { RoleGate } from "@/components/auth/role-gate";
+import { ConnectivityBanner } from "@/components/ui/connectivity-banner";
 
 export default function AdminLayout({
   children,
@@ -24,6 +25,7 @@ export default function AdminLayout({
           </Sidebar>
           <SidebarInset>
             <AdminHeader />
+            <ConnectivityBanner />
             {children}
             <SuccessConfirm />
           </SidebarInset>

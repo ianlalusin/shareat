@@ -1,6 +1,7 @@
 
 import { CashierHeader } from "@/components/cashier/header";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
+import { ConnectivityBanner } from "@/components/ui/connectivity-banner";
 
 export default function CashierLayout({
   children,
@@ -11,6 +12,7 @@ export default function CashierLayout({
     <FirstLoginGuard>
       <div className="flex min-h-svh w-full flex-col bg-background">
         <CashierHeader />
+        <ConnectivityBanner />
         {children}
       </div>
     </FirstLoginGuard>

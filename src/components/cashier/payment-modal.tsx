@@ -14,13 +14,14 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { X, Plus, Loader2 } from 'lucide-react';
+import { X, Plus, Loader2, WifiOff } from 'lucide-react';
 import { formatCurrency, parseCurrency } from '@/lib/utils';
 import { Order, Store, OrderTransaction, ReceiptSettings, OrderItem, Receipt } from '@/lib/types';
 import { useFirestore, useAuth } from '@/firebase';
 import { collection, serverTimestamp, doc, getDocs, query, where, runTransaction, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { computeTaxFromGross } from '@/lib/tax';
+import { useOnlineStatus } from '@/hooks/use-online-status';
 
 interface Payment {
   id: number;
@@ -52,6 +53,7 @@ export function PaymentModal({
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
+  const online = useOnlineStatus();
 
   const totalPaid = payments.reduce((acc, p) => acc + parseCurrency(p.amount), 0);
   const balance = totalAmount - totalPaid;
@@ -109,7 +111,7 @@ export function PaymentModal({
   }
   
   const finalizeBill = async () => {
-    if (!firestore || balance > 0.01) return;
+    if (!firestore || balance > 0.01 || !online) return;
     setIsProcessing(true);
     setErrorMessage(null);
     const user = auth?.currentUser;
@@ -315,6 +317,16 @@ export function PaymentModal({
                 </div>
             )}
             
+            {!online && (
+                 <Alert variant="warning">
+                  <WifiOff className="h-4 w-4" />
+                  <AlertTitle>You are offline</AlertTitle>
+                  <AlertDescription>
+                    You cannot finalize a bill while offline. Please reconnect to continue.
+                  </AlertDescription>
+                </Alert>
+            )}
+
             {errorMessage && (
               <Alert variant="destructive" className="mt-4">
                 <AlertTitle>Payment Error</AlertTitle>
@@ -329,7 +341,7 @@ export function PaymentModal({
           <Button
             type="button"
             onClick={finalizeBill}
-            disabled={balance > 0.01 || isProcessing}
+            disabled={balance > 0.01 || isProcessing || !online}
           >
             {isProcessing ? <Loader2 className="animate-spin" /> : 'Charge'}
           </Button>

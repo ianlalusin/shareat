@@ -41,6 +41,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PaymentModal } from '@/components/cashier/payment-modal';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useOnlineStatus } from '@/hooks/use-online-status';
 
 
 // Reducer for complex state management of TIN input
@@ -119,6 +120,7 @@ export default function OrderDetailPage() {
   const firestore = useFirestore();
   const { user } = useAuthContext();
   const { toast } = useToast();
+  const online = useOnlineStatus();
 
   useEffect(() => {
     if (!firestore || !orderId) return;
@@ -929,7 +931,7 @@ export default function OrderDetailPage() {
                 </div>
               </CardContent>
               <CardFooter>
-                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)} disabled={billableItems.length === 0}>Finalize Bill</Button>
+                 <Button className="w-full" size="lg" onClick={() => setIsPaymentModalOpen(true)} disabled={billableItems.length === 0 || !online}>Finalize Bill</Button>
               </CardFooter>
             </Card>
           </div>
