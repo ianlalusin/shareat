@@ -215,10 +215,12 @@ export default function OrderDetailPage() {
   }, [discountTypes]);
 
   const lineDiscountTypes = useMemo(
-    () =>
-      discountTypes.filter((d) =>
-        !d.appliesTo || d.appliesTo === 'line' || d.appliesTo === 'both'
-      ),
+    () => discountTypes.filter((d) => !d.appliesTo || d.appliesTo === 'line' || d.appliesTo === 'both'),
+    [discountTypes]
+  );
+
+  const orderDiscountTypes = useMemo(
+    () => discountTypes.filter((d) => d.appliesTo !== 'line'),
     [discountTypes]
   );
   
@@ -235,15 +237,47 @@ export default function OrderDetailPage() {
     });
   }, [orderItems]);
 
+  const computeLineTotals = (item: OrderItem) => {
+    const qty = item.quantity ?? 0;
+    const price = item.priceAtOrder ?? 0;
+    const gross = qty * price; // VAT-inclusive line total before line-discount
+  
+    const taxRate = item.taxRate ?? 0;
+    const hasVat = taxRate > 0;
+  
+    // Step 1: get net-of-VAT
+    const netBeforeDisc = hasVat ? gross / (1 + taxRate) : gross;
+  
+    // Step 2: line-level discount on net-of-VAT
+    const mode = item.lineDiscountType;
+    const value = item.lineDiscountValue ?? 0;
+  
+    let discountNet = 0;
+    if (mode === 'PCT') {
+      discountNet = netBeforeDisc * (value / 100);
+    } else if (mode === 'ABS') {
+      discountNet = Math.min(value, netBeforeDisc);
+    }
+  
+    const netAfterDisc = Math.max(0, netBeforeDisc - discountNet);
+    const vatAfterDisc = hasVat ? netAfterDisc * taxRate : 0;
+    const grossAfterDisc = netAfterDisc + vatAfterDisc;
+  
+    return {
+      grossBefore: gross,
+      netBeforeDisc,
+      discountNet,
+      netAfterDisc,
+      vatAfterDisc,
+      grossAfterDisc,
+    };
+  };
+
   const subtotal = useMemo(
     () =>
       billableItems.reduce((acc, item) => {
-        const price = item.priceAtOrder ?? 0;
-        const qty = item.quantity ?? 0;
-        const base = price * qty;
-        const discount = item.lineDiscountAmount ?? 0;
-        const lineTotal = Math.max(0, base - discount);
-        return acc + lineTotal;
+        const { grossAfterDisc } = computeLineTotals(item);
+        return acc + grossAfterDisc;
       }, 0),
     [billableItems]
   );
@@ -760,8 +794,7 @@ export default function OrderDetailPage() {
                         </TableHeader>
                         <TableBody>
                             {billableItems.map((item) => {
-                              const baseTotal = (item.priceAtOrder ?? 0) * (item.quantity ?? 0);
-                              const lineTotal = Math.max(0, baseTotal - (item.lineDiscountAmount ?? 0));
+                              const { grossAfterDisc } = computeLineTotals(item);
                               const isEditing = editingLineId === item.id;
 
                               return (
@@ -780,7 +813,7 @@ export default function OrderDetailPage() {
                                       {formatCurrency(item.priceAtOrder ?? 0)}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      {formatCurrency(lineTotal)}
+                                      {formatCurrency(grossAfterDisc)}
                                     </TableCell>
                                     <TableCell className="text-right">
                                       <Button
@@ -1016,7 +1049,7 @@ export default function OrderDetailPage() {
                                         <SelectValue placeholder="Type" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {discountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
+                                        {orderDiscountTypes.map(d => <SelectItem key={d.id} value={d.item}>{d.item}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                                 <Button type="button" size="sm" className="flex-none" onClick={handleApplyDiscount}>Apply</Button>
@@ -1121,5 +1154,3 @@ export default function OrderDetailPage() {
     </>
   );
 }
-
-    

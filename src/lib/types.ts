@@ -279,9 +279,9 @@ export type OrderItem = {
   isTaxInclusive?: boolean | null;
   taxProfileCode?: string | null;
   isFree?: boolean;
-  lineDiscountType?: 'ABS' | 'PCT';
-  lineDiscountValue?: number;
-  lineDiscountAmount?: number;
+  lineDiscountType?: 'ABS' | 'PCT' | null;
+  lineDiscountValue?: number | null;
+  lineDiscountAmount?: number | null;
   lineDiscountCode?: string | null;
   lineDiscountLabel?: string | null;
 };
