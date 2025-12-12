@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
+import { useState, FormEvent, useEffect, useMemo } from "react";
 import {
   doc,
   setDoc,
@@ -28,21 +28,13 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Store, User, PendingAccount, Staff } from "@/lib/types";
+import { Store, AppUser, PendingAccount, Staff } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 
 type StaffDoc = Staff & { id: string };
-
-const ROLE_OPTIONS = [
-  { value: "cashier", label: "Cashier" },
-  { value: "kitchen", label: "Kitchen Staff" },
-  { value: "refill", label: "Refill Staff" },
-  { value: "manager", label: "Store Manager" },
-  { value: "admin", label: "Admin" },
-];
 
 interface Props {
   open: boolean;
@@ -60,32 +52,27 @@ export function ApprovePendingAccountDialog({
   firestore,
 }: Props) {
   const { user, devMode } = useAuthContext();
-  const [mode, setMode] = useState<"attach" | "create">("attach");
-  const [selectedStaffId, setSelectedStaffId] = useState<string | "">("");
-  const [role, setRole] = useState<string>("cashier");
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [stores, setStores] = useState<Store[]>([]);
   const { toast } = useToast();
 
-  // For create mode
-  const [fullName, setFullName] = useState(pending.fullName);
-  const [phone, setPhone] = useState(pending.phone ?? "");
-  const [birthday, setBirthday] = useState(pending.birthday ?? "");
-  const [address, setAddress] = useState(pending.address ?? "");
-  const [position, setPosition] = useState("Cashier");
-  const [assignedStore, setAssignedStore] = useState("");
-  const [employmentStatus, setEmploymentStatus] = useState("Active");
   const [saving, setSaving] = useState(false);
   const [originalStaffData, setOriginalStaffData] = useState<Staff | null>(null);
 
+  const selectedStaff = useMemo(
+    () => staffList.find(s => s.id === selectedStaffId) ?? null,
+    [staffList, selectedStaffId]
+  );
+  
+  const unlinkedStaff = useMemo(
+    () => staffList.filter(s => !s.authUid && s.employmentStatus === 'Active'),
+    [staffList]
+  );
+
   useEffect(() => {
     // Reset state when pending user changes
-    setFullName(pending.fullName);
-    setPhone(pending.phone ?? "");
-    setBirthday(pending.birthday ?? "");
-    setAddress(pending.address ?? "");
     setSaving(false);
     setSelectedStaffId("");
-    setRole("cashier");
     if(pending.type === 'profile_update') {
         const fetchOriginal = async () => {
             if(pending.staffId) {
@@ -107,6 +94,7 @@ export function ApprovePendingAccountDialog({
     });
     return () => unsub();
   }, [firestore]);
+  
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -122,62 +110,35 @@ export function ApprovePendingAccountDialog({
       return;
     }
 
+    if (!selectedStaff) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please select a staff member to link.' });
+      return;
+    }
+
     setSaving(true);
     const editorName = user.displayName || (devMode ? 'Dev User' : 'System');
 
+    const storeForStaff = stores.find(s => s.storeName === selectedStaff.assignedStore);
+
     try {
-      let staffIdToUse: string;
-      let staffName: string = pending.fullName;
-
-      if (mode === "attach") {
-        const id = selectedStaffId;
-        if (!id) {
-          toast({ variant: 'destructive', title: 'Error', description: 'Select a staff record to attach this account to.' });
-          setSaving(false);
-          return;
-        }
-
-        staffIdToUse = id;
-        const attachedStaff = staffList.find(s => s.id === id);
-        staffName = attachedStaff?.fullName || pending.fullName;
-
-        const staffRef = doc(firestore, "staff", staffIdToUse);
-        await updateDoc(staffRef, {
-          authUid: pending.uid,
-          lastLoginAt: serverTimestamp(),
-          encoder: editorName,
-        });
-      } else {
-        const staffRef = doc(collection(firestore, "staff"));
-        staffIdToUse = staffRef.id;
-        const birthdayDate = birthday ? parse(birthday, 'MMMM dd, yyyy', new Date()) : null;
-
-        await setDoc(staffRef, {
-          fullName,
-          email: pending.email,
-          contactNo: phone,
-          address,
-          birthday: birthdayDate,
-          position,
-          assignedStore,
-          employmentStatus,
-          dateHired: serverTimestamp(),
-          authUid: pending.uid,
-          encoder: 'System (Self-registered)',
-        });
-        staffName = fullName;
-      }
-
       const userRef = doc(firestore, "users", pending.uid);
       await setDoc(userRef, {
-        staffId: staffIdToUse,
-        email: pending.email,
-        displayName: staffName,
-        role,
+        staffId: selectedStaff.id,
+        email: selectedStaff.email,
+        displayName: selectedStaff.fullName,
+        role: selectedStaff.position,
+        storeID: storeForStaff?.id || '',
         status: "active",
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
-      } as Omit<User, 'id'>);
+      } as Omit<AppUser, 'id'>);
+
+      const staffRef = doc(firestore, "staff", selectedStaff.id);
+      await updateDoc(staffRef, {
+        authUid: pending.uid,
+        lastLoginAt: serverTimestamp(),
+        encoder: editorName,
+      });
 
       const pendingRef = doc(firestore, "pendingAccounts", pending.id);
       await updateDoc(pendingRef, {
@@ -188,7 +149,7 @@ export function ApprovePendingAccountDialog({
 
       toast({
         title: "Account Approved",
-        description: `${staffName}'s account is now active.`
+        description: `${selectedStaff.fullName}'s account is now active and linked.`
       });
       onOpenChange(false);
     } catch (err) {
@@ -278,12 +239,12 @@ export function ApprovePendingAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh]" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh]" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Review request from {pending.fullName}</DialogTitle>
           <DialogDescription>
             {pending.type === 'new_account' 
-                ? "Approve this request by attaching it to an existing staff profile or creating a new one." 
+                ? "Approve this request by linking it to an existing, unlinked staff profile."
                 : "Review the requested profile changes and approve them."}
           </DialogDescription>
         </DialogHeader>
@@ -291,248 +252,69 @@ export function ApprovePendingAccountDialog({
         {pending.type === 'profile_update' ? renderUpdateContent() : (
             <form onSubmit={handleSubmit} className="space-y-4">
                 <ScrollArea className="max-h-[calc(80vh-10rem)] pr-4">
-                <div className="space-y-4">
-                <Card className="p-4 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <p className="text-sm font-medium">{pending.fullName}</p>
-                        <p className="text-xs text-muted-foreground">
-                        {pending.email}
-                        </p>
-                    </div>
-                    <div className="flex gap-2 items-center justify-end">
-                        <Badge variant="outline">Pending</Badge>
-                    </div>
-                    </div>
-                    <div className="grid gap-3 text-xs text-muted-foreground md:grid-cols-3">
-                    <div>
-                        <span className="block font-medium text-foreground text-xs">
-                        Phone
-                        </span>
-                        <span>{pending.phone || "—"}</span>
-                    </div>
-                    <div>
-                        <span className="block font-medium text-foreground text-xs">
-                        Birthday
-                        </span>
-                        <span>{pending.birthday || "—"}</span>
-                    </div>
-                    <div className="md:col-span-1">
-                        <span className="block font-medium text-foreground text-xs">
-                        Notes
-                        </span>
-                        <span className="line-clamp-2">
-                        {pending.notes || "—"}
-                        </span>
-                    </div>
-                    </div>
-                </Card>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                    <button
-                    type="button"
-                    onClick={() => setMode("attach")}
-                    className={`flex flex-col items-start rounded-md border p-3 text-left text-sm transition hover:bg-muted ${
-                        mode === "attach" ? "border-primary bg-muted" : ""
-                    }`}
-                    >
-                    <span className="font-medium">Attach to existing staff</span>
-                    <span className="text-xs text-muted-foreground">
-                        Use an existing staff profile already configured in the system.
-                    </span>
-                    </button>
-
-                    <button
-                    type="button"
-                    onClick={() => setMode("create")}
-                    className={`flex flex-col items-start rounded-md border p-3 text-left text-sm transition hover:bg-muted ${
-                        mode === "create" ? "border-primary bg-muted" : ""
-                    }`}
-                    >
-                    <span className="font-medium">Create new staff record</span>
-                    <span className="text-xs text-muted-foreground">
-                        Add this person as a new staff member and link their account.
-                    </span>
-                    </button>
-                </div>
-
-                {mode === "attach" && (
-                    <Card className="p-4 space-y-3">
-                    <p className="text-sm font-medium">Select staff profile</p>
-                    <p className="text-xs text-muted-foreground">
-                        We’ll link this login to the chosen staff record.
-                    </p>
-
-                    <ScrollArea className="max-h-40 rounded-md border">
-                        <div className="divide-y">
-                        {staffList.length === 0 && (
-                            <div className="p-3 text-xs text-muted-foreground">
-                            No active staff records found. Switch to{" "}
-                            <span className="font-medium">Create new staff</span>.
-                            </div>
-                        )}
-
-                        {staffList.map((s) => (
-                            <label
-                            key={s.id}
-                            className={`flex cursor-pointer items-start gap-3 p-3 text-xs hover:bg-muted ${
-                                selectedStaffId === s.id
-                                ? "bg-muted/70 border-l-2 border-l-primary"
-                                : ""
-                            }`}
-                            >
-                            <input
-                                type="radio"
-                                name="staffChoice"
-                                value={s.id}
-                                checked={selectedStaffId === s.id}
-                                onChange={() => setSelectedStaffId(s.id)}
-                                className="mt-1"
-                            />
-                            <div className="space-y-1">
-                                <p className="font-medium text-sm">{s.fullName}</p>
-                                <p className="text-muted-foreground">
-                                {s.position || "No position"} ·{" "}
-                                {s.assignedStore || "No store"}
-                                </p>
-                                <p className="text-muted-foreground">
-                                {s.email}
+                    <div className="space-y-4">
+                        <Card className="p-4 space-y-3">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p className="text-sm font-medium">{pending.fullName}</p>
+                                <p className="text-xs text-muted-foreground">
+                                {pending.email}
                                 </p>
                             </div>
-                            </label>
-                        ))}
-                        </div>
-                    </ScrollArea>
-                    </Card>
-                )}
+                            <div className="flex gap-2 items-center justify-end">
+                                <Badge variant="outline">Pending</Badge>
+                            </div>
+                            </div>
+                        </Card>
 
-                {mode === "create" && (
-                    <Card className="p-4 space-y-4">
-                    <p className="text-sm font-medium">New staff details</p>
-
-                    <div className="space-y-2">
-                        <Label htmlFor="fullName">Full name</Label>
-                        <Input
-                        id="fullName"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        required={mode === "create"}
-                        />
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input value={pending.email} disabled />
-                        </div>
-                        <div className="space-y-2">
-                        <Label htmlFor="phone">Phone</Label>
-                        <Input
-                            id="phone"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                        />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="address">Address</Label>
-                        <Input
-                            id="address"
-                            value={address}
-                            onChange={(e) => setAddress(e.target.value)}
-                        />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                        <Label htmlFor="birthday">Birthday</Label>
-                        <Input
-                            id="birthday"
-                            value={birthday}
-                            onChange={(e) => setBirthday(e.target.value)}
-                            placeholder="MM/DD/YYYY"
-                        />
-                        </div>
-                        <div className="space-y-2">
-                        <Label htmlFor="position">Position</Label>
-                        <Input
-                            id="position"
-                            value={position}
-                            onChange={(e) => setPosition(e.target.value)}
-                            placeholder="e.g. Cashier, Kitchen Staff"
-                            required={mode === "create"}
-                        />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="storeId">Assigned store</Label>
-                            <Select value={assignedStore} onValueChange={setAssignedStore} required={mode === 'create'}>
+                        <Card className="p-4 space-y-3">
+                            <p className="text-sm font-medium">Select Staff Profile to Link</p>
+                            <p className="text-xs text-muted-foreground">
+                                Choose the active staff record that corresponds to this user account.
+                            </p>
+                            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Select a store" />
+                                    <SelectValue placeholder="Select an active, unlinked staff member..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {stores.map(store => (
-                                        <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>
+                                    {unlinkedStaff.map(s => (
+                                        <SelectItem key={s.id} value={s.id}>{s.fullName} ({s.position})</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="employmentStatus">Employment Status</Label>
-                            <Select value={employmentStatus} onValueChange={setEmploymentStatus} required={mode === 'create'}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                <SelectItem value="Active">Active</SelectItem>
-                                <SelectItem value="Probation">Probation</SelectItem>
-                                <SelectItem value="Inactive">Inactive</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                            
+                            {selectedStaff && (
+                                <div className="p-3 border bg-muted/50 rounded-lg text-sm space-y-2">
+                                    <div>
+                                        <Label className="text-xs">Role</Label>
+                                        <Input value={selectedStaff.position} readOnly className="h-8 bg-background"/>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs">Store</Label>
+                                        <Input value={selectedStaff.assignedStore} readOnly className="h-8 bg-background"/>
+                                    </div>
+                                </div>
+                            )}
+                        </Card>
                     </div>
-                    </Card>
-                )}
-                </div>
                 </ScrollArea>
 
-                <div className="grid gap-4 md:grid-cols-[1.2fr_1fr] pt-4 border-t">
-                    <div className="space-y-2">
-                    <Label htmlFor="role">System role</Label>
-                    <Select value={role} onValueChange={setRole}>
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                        {ROLE_OPTIONS.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>
-                            {r.label}
-                        </SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                        Controls which sections of the app this account can access.
-                    </p>
-                    </div>
-
-                    <div className="flex items-end justify-end gap-2">
+                <div className="flex items-end justify-end gap-2 pt-4 border-t">
                     <Button
                         type="button"
                         variant="outline"
                         onClick={() => onOpenChange(false)}
+                        disabled={saving}
                     >
                         Cancel
                     </Button>
                     <Button
                         type="submit"
-                        disabled={saving || (mode === "attach" && !selectedStaffId)}
+                        disabled={saving || !selectedStaffId}
                     >
-                        {saving ? <Loader2 className="animate-spin" /> : null}
-                        {saving ? "Saving…" : "Approve & link"}
+                        {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                        {saving ? "Linking…" : "Approve & Link"}
                     </Button>
-                    </div>
                 </div>
             </form>
         )}

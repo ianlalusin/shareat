@@ -10,7 +10,10 @@ import {
   getDoc,
   updateDoc,
   collection,
-  onSnapshot
+  onSnapshot,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useFirestore, useStorage } from '@/firebase';
@@ -28,13 +31,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Staff, Store } from '@/lib/types';
+import { Staff, Store, StaffPosition } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useAuthContext } from '@/context/auth-context';
 import { Timestamp } from 'firebase/firestore';
+
+const positionOptions: StaffPosition[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
 
 export default function EditStaffPage() {
   const params = useParams();
@@ -177,6 +182,14 @@ export default function EditStaffPage() {
     try {
       const staffRef = doc(firestore, 'staff', staffId);
       await updateDoc(staffRef, dataToSave as Partial<Staff>);
+
+      // Sync role to user doc
+      const userQuery = query(collection(firestore, 'users'), where('staffId', '==', staffId));
+      const userSnap = await getDocs(userQuery);
+      for (const userDoc of userSnap.docs) {
+        await updateDoc(userDoc.ref, { role: dataToSave.position });
+      }
+
       openSuccessModal();
       router.push(`/admin/staff/${staffId}`);
     } catch (error) {
@@ -249,7 +262,14 @@ export default function EditStaffPage() {
               </div>
                <div className="space-y-2">
                 <Label htmlFor="position">Position (Role)</Label>
-                <Input id="position" name="position" value={formData.position} onChange={handleInputChange} required />
+                 <Select name="position" value={formData.position} onValueChange={(value) => handleSelectChange('position', value as StaffPosition)} required>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select a position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                    </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>

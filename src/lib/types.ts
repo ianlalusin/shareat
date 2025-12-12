@@ -18,6 +18,9 @@ export type Store = {
   tinNumber?: string;
 };
 
+export type DiscountMode = 'ABS' | 'PCT';
+export type DiscountAppliesTo = 'bill' | 'line' | 'both';
+
 export type CollectionItem = {
   id: string;
   item: string;
@@ -25,6 +28,12 @@ export type CollectionItem = {
   subCategory?: string;
   is_active: boolean;
   storeIds: string[];
+  code?: string;
+  discountMode?: DiscountMode;
+  discountValue?: number;
+  appliesTo?: DiscountAppliesTo;
+  requiresTin?: boolean;
+  requiresName?: boolean;
 };
 
 export type Schedule = {
@@ -47,15 +56,17 @@ export type TaxRate = CollectionItem & TaxProfile;
 
 export type DiscountProperties = {
     code: string;
-    discountMode: 'ABS' | 'PCT';
+    discountMode: DiscountMode;
     discountValue: number;
-    appliesTo: 'bill' | 'line' | 'both';
+    appliesTo: DiscountAppliesTo;
     requiresTin: boolean;
     requiresName: boolean;
 }
 
 export type DiscountType = CollectionItem & DiscountProperties;
 
+
+export type StaffPosition = 'admin' | 'manager' | 'cashier' | 'server' | 'kitchen';
 
 export type Staff = {
   id:string;
@@ -66,7 +77,7 @@ export type Staff = {
   contactNo: string;
   birthday: string | Timestamp;
   dateHired: string | Timestamp;
-  position: string;
+  position: StaffPosition;
   rate: number;
   employmentStatus: 'Active' | 'Inactive' | 'Resigned' | 'AWOL' | 'Probation';
   notes: string;
@@ -77,15 +88,16 @@ export type Staff = {
   lastLoginAt?: Timestamp;
 };
 
-export type User = {
-    id: string; // authUid
-    staffId?: string | null;
-    email: string;
-    displayName: string;
-    role: "cashier" | "kitchen" | "refill" | "manager" | "admin" | "owner" | "staff";
-    status: "active" | "disabled" | "pending";
-    createdAt: Timestamp;
-    lastLoginAt: Timestamp;
+export type AppUser = {
+  id: string; // Same as authUid
+  staffId: string;
+  email: string;
+  displayName: string;
+  role: StaffPosition;
+  storeID: string;
+  status: 'active' | 'disabled';
+  createdAt: Timestamp;
+  lastLoginAt: Timestamp;
 }
 
 export type PendingAccount = {

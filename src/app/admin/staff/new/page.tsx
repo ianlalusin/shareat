@@ -25,7 +25,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
-import { Staff, Store } from '@/lib/types';
+import { Staff, Store, StaffPosition } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
@@ -33,6 +33,7 @@ import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/context/auth-context';
 
+const positionOptions: StaffPosition[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
 
 const initialStaffState: Omit<Staff, 'id'> = {
   assignedStore: '',
@@ -42,7 +43,7 @@ const initialStaffState: Omit<Staff, 'id'> = {
   contactNo: '',
   birthday: '',
   dateHired: '',
-  position: '',
+  position: 'cashier',
   rate: 0,
   employmentStatus: 'Active',
   notes: '',
@@ -213,7 +214,14 @@ export default function NewStaffPage() {
               </div>
                <div className="space-y-2">
                 <Label htmlFor="position">Position (Role)</Label>
-                <Input id="position" name="position" value={formData.position} onChange={handleInputChange} required />
+                 <Select name="position" value={formData.position} onValueChange={(value) => handleSelectChange('position', value as StaffPosition)} required>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select a position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                    </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
