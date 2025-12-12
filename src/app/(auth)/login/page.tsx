@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
 import {
@@ -25,88 +25,21 @@ import { Logo } from '@/components/admin/logo';
 import { useAuthContext } from '@/context/auth-context';
 import { Eye, EyeOff } from 'lucide-react';
 
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
-
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  
-  const [loginRecaptchaToken, setLoginRecaptchaToken] = useState<string | null>(null);
-  const [signupRecaptchaToken, setSignupRecaptchaToken] = useState<string | null>(null);
-
-  const loginRecaptchaRef = useRef<HTMLDivElement>(null);
-  const signupRecaptchaRef = useRef<HTMLDivElement>(null);
-  const loginWidgetId = useRef<number | null>(null);
-  const signupWidgetId = useRef<number | null>(null);
 
   const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   const { setDevMode } = useAuthContext();
-  
-  const renderRecaptcha = () => {
-    if (window.grecaptcha && window.grecaptcha.render) {
-        if (loginRecaptchaRef.current && loginWidgetId.current === null) {
-            loginWidgetId.current = window.grecaptcha.render(loginRecaptchaRef.current, {
-                'sitekey': '6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1',
-                'callback': (token: string) => setLoginRecaptchaToken(token),
-            });
-        }
-        if (signupRecaptchaRef.current && signupWidgetId.current === null) {
-            signupWidgetId.current = window.grecaptcha.render(signupRecaptchaRef.current, {
-                'sitekey': '6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1',
-                'callback': (token: string) => setSignupRecaptchaToken(token)
-            });
-        }
-    }
-  };
-
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit';
-    script.async = true;
-    script.defer = true;
-    (window as any).onloadCallback = renderRecaptcha;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-      delete (window as any).onloadCallback;
-    }
-  }, []);
-
-  const handleTabChange = (value: string) => {
-    // Reset tokens when switching tabs
-    setLoginRecaptchaToken(null);
-    setSignupRecaptchaToken(null);
-    if(window.grecaptcha) {
-        if (value === 'login' && loginWidgetId.current !== null) {
-            window.grecaptcha.reset(loginWidgetId.current);
-        } else if (value === 'signup' && signupWidgetId.current !== null) {
-            window.grecaptcha.reset(signupWidgetId.current);
-        }
-    }
-  };
-
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!auth) return;
-    if (!loginRecaptchaToken) {
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: 'Please complete the reCAPTCHA challenge.',
-      });
-      return;
-    };
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -118,24 +51,12 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
-      if(window.grecaptcha && loginWidgetId.current !== null) {
-        window.grecaptcha.reset(loginWidgetId.current);
-      }
-      setLoginRecaptchaToken(null);
     }
   };
 
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!auth) return;
-    if (!signupRecaptchaToken) {
-        toast({
-          variant: 'destructive',
-          title: 'Sign Up Failed',
-          description: 'Please complete the reCAPTCHA challenge.',
-        });
-        return;
-      }
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(
@@ -156,10 +77,6 @@ export default function LoginPage() {
         description: error.message,
       });
       setLoading(false);
-      if(window.grecaptcha && signupWidgetId.current !== null) {
-        window.grecaptcha.reset(signupWidgetId.current);
-      }
-      setSignupRecaptchaToken(null);
     }
   };
   
@@ -169,7 +86,7 @@ export default function LoginPage() {
   }
 
   return (
-    <Tabs defaultValue="login" className="w-full max-w-md" onValueChange={handleTabChange}>
+    <Tabs defaultValue="login" className="w-full max-w-md">
       <div className="flex justify-center mb-4">
         <div className="bg-primary text-primary-foreground p-3 rounded-full">
             <Logo className="h-8 w-8" />
@@ -221,10 +138,7 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </div>
-               <div className="flex justify-center">
-                 <div ref={loginRecaptchaRef}></div>
-               </div>
-              <Button type="submit" className="w-full" disabled={loading || !loginRecaptchaToken}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
@@ -284,10 +198,7 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </div>
-              <div className="flex justify-center">
-                 <div ref={signupRecaptchaRef}></div>
-               </div>
-              <Button type="submit" className="w-full" disabled={loading || !signupRecaptchaToken}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Creating Account...' : 'Sign Up'}
               </Button>
             </form>
