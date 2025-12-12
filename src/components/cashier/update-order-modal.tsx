@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,12 +15,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Order, MenuItem, PendingOrderUpdate } from '@/lib/types';
+import { Order, MenuItem, PendingOrderUpdate, Schedule } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
 import { doc, serverTimestamp, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { useStoreSelector } from '@/store/use-store-selector';
 
 interface UpdateOrderModalProps {
   isOpen: boolean;
@@ -37,12 +38,65 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
   );
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
 
   const firestore = useFirestore();
   const { user } = useAuthContext();
   const { toast } = useToast();
+  const { selectedStoreId } = useStoreSelector();
 
-  const unlimitedPackages = menu.filter(item => item.category === 'Unlimited');
+  useEffect(() => {
+    if (!firestore || !selectedStoreId) return;
+
+    const schedulesQuery = query(
+        collection(firestore, 'lists'),
+        where('category', '==', 'menu schedules'),
+        where('is_active', '==', true)
+      );
+      const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
+          const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Schedule);
+          setSchedules(schedulesData);
+      });
+
+      return () => schedulesUnsubscribe();
+  }, [firestore, selectedStoreId]);
+
+  const unlimitedPackages = useMemo(() => {
+    if (!menu || menu.length === 0) return [];
+  
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(
+      now.getMinutes()
+    ).padStart(2, '0')}`;
+    const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+  
+    const activeScheduleNames = new Set(
+      schedules
+        .filter((schedule) => {
+          if(!schedule.days || !schedule.startTime || !schedule.endTime) return false;
+          const dayMatch = schedule.days.includes(currentDay);
+  
+          const start = schedule.startTime; // "HH:MM"
+          const end = schedule.endTime;     // "HH:MM"
+          const nowT = currentTime;
+  
+          const timeMatch =
+            start <= end
+              ? nowT >= start && nowT <= end
+              : nowT >= start || nowT <= end;
+  
+          return schedule.is_active && dayMatch && timeMatch;
+        })
+        .map((s) => s.item)
+    );
+  
+    return menu.filter((item) => {
+      if (item.category !== 'Package') return false;
+      if (!item.isAvailable) return false;
+      if (item.availability === 'always') return true;
+      return activeScheduleNames.has(item.availability);
+    });
+  }, [menu, schedules]);
 
   useEffect(() => {
     if (isOpen) {
@@ -67,7 +121,6 @@ export function UpdateOrderModal({ isOpen, onClose, order, menu, updateType }: U
     
     try {
       const pendingUpdateRef = collection(firestore, 'orders', order.id, 'pendingUpdates');
-      // Check if there's already a pending update
       const q = query(pendingUpdateRef);
       const existingUpdates = await getDocs(q);
       if (!existingUpdates.empty) {
