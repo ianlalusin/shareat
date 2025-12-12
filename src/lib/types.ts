@@ -324,7 +324,7 @@ export type OrderUpdateLog = {
     updatedByName: string;
     reason: string;
     changes: {
-        field: 'guestCount' | 'packageName' | 'totalAmount';
+        field: 'guestCount' | 'packageName';
         oldValue: string | number;
         newValue: string | number;
     }[];

@@ -258,8 +258,7 @@ function RefillPageContent() {
           updates.totalAmount = newTotalAmount;
 
           auditChanges.push({ field: 'guestCount', oldValue: cashierGuestCount, newValue: finalGuestCount });
-          auditChanges.push({ field: 'totalAmount', oldValue: currentOrderData.totalAmount, newValue: newTotalAmount });
-
+          
           // Update the initial package order item's quantity
           const itemsQuery = query(collection(firestore, 'orders', order.id, 'orderItems'), where('sourceTag', '==', 'initial'), limit(1));
           const itemsSnap = await getDocs(itemsQuery); // Use getDocs inside transaction
