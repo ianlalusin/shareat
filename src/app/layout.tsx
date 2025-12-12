@@ -25,6 +25,8 @@ const fontHeadline = Baloo_2({
 export const metadata: Metadata = {
   title: "SharEat Hub",
   description: "POS KDS app for SharEat",
+  manifest: "/manifest.json",
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
