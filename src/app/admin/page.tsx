@@ -34,7 +34,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { ShiftStats } from '@/ai/flows/shift-summary-flow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TopCategoriesAccordion, CategorySalesData } from '@/components/admin/reports/top-categories-accordion';
 
@@ -52,10 +51,6 @@ export default function AdminPage() {
   const [updateLogCount, setUpdateLogCount] = React.useState(0);
   
   const [isUpdateLogModalOpen, setIsUpdateLogModalOpen] = React.useState(false);
-  const [isAiSummaryModalOpen, setIsAiSummaryModalOpen] = React.useState(false);
-  const [aiSummary, setAiSummary] = React.useState('');
-  const [rawStats, setRawStats] = React.useState<ShiftStats | null>(null);
-  const [isGeneratingSummary, setIsGeneratingSummary] = React.useState(false);
 
   const firestore = useFirestore();
   const { selectedStoreId } = useStoreSelector();
@@ -103,7 +98,7 @@ export default function AdminPage() {
         const [ordersSnapshot, menuSnapshot, auditLogsSnapshot] = await Promise.all([
           getDocs(ordersQuery),
           getDocs(menuQuery),
-          getDocs(auditLogsQuery),
+          getDocs(auditLogsSnapshot),
         ]);
         
         const menuItems = menuSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MenuItem));
@@ -253,43 +248,6 @@ export default function AdminPage() {
     }
   }, [selectedStoreId, fetchData]);
   
-  const handleGenerateSummary = async () => {
-    if (!selectedStoreId || !dateRange?.from || !dateRange?.to) {
-        alert("Please select a store and a valid date range first.");
-        return;
-    }
-    
-    setIsGeneratingSummary(true);
-    setAiSummary('');
-    setRawStats(null);
-    setIsAiSummaryModalOpen(true);
-
-    try {
-        const response = await fetch('/api/ai/summarize-shift', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                storeId: selectedStoreId,
-                startTimestamp: dateRange.from.toISOString(),
-                endTimestamp: dateRange.to.toISOString(),
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`API Error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        setAiSummary(data.aiSummary);
-        setRawStats(data.rawStats);
-    } catch (error) {
-        console.error(error);
-        setAiSummary("Sorry, I couldn't generate the summary. Please try again.");
-    } finally {
-        setIsGeneratingSummary(false);
-    }
-  };
-  
   const formatServingTime = (seconds: number) => {
       if (seconds < 60) return `${Math.round(seconds)}s`;
       const minutes = Math.floor(seconds / 60);
@@ -308,10 +266,6 @@ export default function AdminPage() {
             <DateRangePicker value={dateRange} onUpdate={setDateRange} />
             <Button onClick={fetchData} className="w-auto" disabled={loading}>
                 {loading ? 'Generating...' : 'Generate'}
-            </Button>
-            <Button onClick={handleGenerateSummary} variant="outline" className="w-auto" disabled={loading}>
-                 <Sparkles className="mr-2 h-4 w-4" />
-                AI Summary
             </Button>
         </div>
       </div>
@@ -415,30 +369,6 @@ export default function AdminPage() {
             dateRange={dateRange as { from: Date; to: Date; }}
         />
      )}
-
-     <Dialog open={isAiSummaryModalOpen} onOpenChange={setIsAiSummaryModalOpen}>
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                    <Sparkles className="text-primary h-5 w-5" />
-                    AI Shift Summary
-                </DialogTitle>
-                <DialogDescription>
-                    An AI-generated analysis of the selected period.
-                </DialogDescription>
-            </DialogHeader>
-            {isGeneratingSummary ? (
-                <div className="py-8 flex flex-col items-center justify-center gap-2">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">Analyzing shift data...</p>
-                </div>
-            ) : (
-                <div className="text-sm text-foreground leading-relaxed bg-muted/50 p-4 rounded-md border">
-                    {aiSummary}
-                </div>
-            )}
-        </DialogContent>
-    </Dialog>
     </>
   );
 }
