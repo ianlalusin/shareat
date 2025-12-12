@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Order, MenuItem, PendingOrderUpdate, Schedule } from '@/lib/types';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
-import { doc, serverTimestamp, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { doc, serverTimestamp, collection, addDoc, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { useStoreSelector } from '@/store/use-store-selector';
