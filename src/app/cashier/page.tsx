@@ -152,6 +152,10 @@ function CashierPageContent() {
           const unitPrice = selectedPackage.price ?? 0;
           const isFree = unitPrice === 0;
           const rate = selectedPackage.taxRate ?? 0;
+          const taxProfile = menu.find(
+            (m) => m.taxProfileCode === selectedPackage.taxProfileCode
+          );
+
           const initialOrderItem: Omit<OrderItem, 'id'> = {
             orderId: orderRef.id,
             storeId: selectedStoreId,
@@ -166,6 +170,7 @@ function CashierPageContent() {
             sourceTag: 'initial',
             taxRate: rate,
             taxProfileCode: selectedPackage.taxProfileCode ?? null,
+            isTaxInclusive: (taxProfile as any)?.isInclusive !== false,
             isFree: isFree,
           };
           const orderItemRef = doc(collection(firestore, 'orders', orderRef.id, 'orderItems'));
@@ -218,6 +223,10 @@ function CashierPageContent() {
         const unitPrice = cartItem.price ?? 0;
         const isFree = unitPrice === 0;
         const rate = cartItem.taxRate ?? 0;
+        const taxProfile = menu.find(
+          (m) => m.taxProfileCode === cartItem.taxProfileCode
+        );
+
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
           storeId: order.storeId,
@@ -233,6 +242,7 @@ function CashierPageContent() {
           kitchenNote: cartItem.note || '',
           taxRate: rate,
           taxProfileCode: cartItem.taxProfileCode ?? null,
+          isTaxInclusive: (taxProfile as any)?.isInclusive !== false,
           isFree,
         };
         batch.set(newItemRef, orderItemData);

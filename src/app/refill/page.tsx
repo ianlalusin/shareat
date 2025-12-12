@@ -213,6 +213,9 @@ function RefillPageContent() {
         const unitPrice = cartItem.price ?? 0;
         const isFree = unitPrice === 0;
         const rate = cartItem.taxRate ?? 0;
+        const taxProfile = menu.find(
+            (m) => m.taxProfileCode === cartItem.taxProfileCode
+          );
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
           storeId: order.storeId,
@@ -228,6 +231,7 @@ function RefillPageContent() {
           kitchenNote: cartItem.note || '',
           taxRate: rate,
           taxProfileCode: cartItem.taxProfileCode ?? null,
+          isTaxInclusive: (taxProfile as any)?.isInclusive !== false,
           isFree: isFree,
         };
         batch.set(newItemRef, orderItemData);

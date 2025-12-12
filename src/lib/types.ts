@@ -275,7 +275,8 @@ export type OrderItem = {
   priority?: 'normal' | 'rush';
   servedAt?: Timestamp;
   servedBy?: string;
-  taxRate?: number;
+  taxRate?: number | null;
+  isTaxInclusive?: boolean | null;
   taxProfileCode?: string | null;
   isFree?: boolean;
   lineDiscountType?: 'ABS' | 'PCT';

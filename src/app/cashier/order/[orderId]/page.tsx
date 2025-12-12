@@ -239,6 +239,31 @@ export default function OrderDetailPage() {
     [billableItems]
   );
 
+  const netSubtotalForDiscount = useMemo(() => {
+    return billableItems.reduce((acc, item) => {
+      const price = item.priceAtOrder ?? 0;
+      const qty = item.quantity ?? 0;
+      const grossLine = price * qty;
+  
+      // If you already store taxRate per item (e.g. 0.12 for 12%)
+      const taxRate =
+        typeof (item as any).taxRate === 'number'
+          ? (item as any).taxRate
+          : 0;
+  
+      // Assume inclusive by default if not specified
+      const isTaxInclusive =
+        (item as any).isTaxInclusive !== false;
+  
+      const netLine =
+        taxRate > 0 && isTaxInclusive
+          ? grossLine / (1 + taxRate)
+          : grossLine;
+  
+      return acc + netLine;
+    }, 0);
+  }, [billableItems]);
+
   const grandTotal = useMemo(() => {
     const rawTotal = transactions.reduce((acc, trans) => {
       if (trans.type === 'Discount') {
@@ -347,7 +372,7 @@ export default function OrderDetailPage() {
             });
             return;
         }
-        amount = (subtotal * value) / 100;
+        amount = (netSubtotalForDiscount * value) / 100;
     }
 
     if (amount <= 0) {
