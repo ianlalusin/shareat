@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
 import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
-import type { StaffProfile, StaffRole } from '@/lib/types';
+import type { Staff, StaffRole } from '@/lib/types';
 
 // Helper: normalize Firestore position → StaffRole | null
 function normalizeRole(position?: string | null): StaffRole | null {
@@ -20,7 +20,7 @@ function normalizeRole(position?: string | null): StaffRole | null {
 }
 
 export interface StaffState {
-  staff: StaffProfile | null;
+  staff: Staff | null;
   role: StaffRole | null;
   loading: boolean;
 }
@@ -29,7 +29,7 @@ export function useStaffProfile(): StaffState {
   const firestore = useFirestore();
   const { user } = useAuthContext();
 
-  const [staff, setStaff] = useState<StaffProfile | null>(null);
+  const [staff, setStaff] = useState<Staff | null>(null);
   const [role, setRole] = useState<StaffRole | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,7 +69,7 @@ export function useStaffProfile(): StaffState {
                 setRole(null);
               } else {
                 const d = snap2.docs[0];
-                const data = { id: d.id, ...d.data() } as StaffProfile;
+                const data = { id: d.id, ...d.data() } as Staff;
                 setStaff(data);
                 setRole(normalizeRole(data.position));
               }
@@ -85,7 +85,7 @@ export function useStaffProfile(): StaffState {
           return () => unsubFallback();
         } else {
           const d = snap.docs[0];
-          const data = { id: d.id, ...d.data() } as StaffProfile;
+          const data = { id: d.id, ...d.data() } as Staff;
           setStaff(data);
           setRole(normalizeRole(data.position));
           setLoading(false);

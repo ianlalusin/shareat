@@ -4,21 +4,6 @@ import type { Timestamp } from 'firebase/firestore';
 // Role set for RBAC
 export type StaffRole = 'admin' | 'manager' | 'cashier' | 'server' | 'kitchen';
 
-// Staff doc from "staff" collection
-export interface StaffProfile {
-  id: string;
-  authUid?: string;          // Firebase Auth uid
-  uid?: string;              // legacy field, keep for fallback
-  fullName: string;
-  email: string;
-  position: string;          // store raw value from Firestore
-  employmentStatus: string;  // e.g. "Active", "Inactive"
-  assignedStore?: string;
-  lastLoginAt?: any;
-  // keep other existing staff fields as-is
-}
-
-
 export type Store = {
   id: string;
   storeName: string;
@@ -112,7 +97,7 @@ export type AppUser = {
   email: string;
   displayName: string;
   role: StaffPosition;
-  storeID: string;
+  storeId: string;
   status: 'active' | 'disabled';
   createdAt: Timestamp;
   lastLoginAt: Timestamp;
@@ -333,8 +318,6 @@ export type OrderUpdateLog = {
 
 export type PendingOrderUpdate = {
     id: string;
-    orderId: string;
-    storeId: string;
     initiatedByUid: string;
     initiatedByName: string;
     initiatedAt: Timestamp;

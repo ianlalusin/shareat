@@ -127,7 +127,7 @@ export function ApprovePendingAccountDialog({
         email: selectedStaff.email,
         displayName: selectedStaff.fullName,
         role: selectedStaff.position,
-        storeID: storeForStaff?.id || '',
+        storeId: storeForStaff?.id || '',
         status: "active",
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),

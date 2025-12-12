@@ -27,7 +27,7 @@ export function DashboardSkeleton() {
                         <Skeleton className="h-8 w-32" />
                     </CardContent>
                 </Card>
-             <Card className="sm:col-span-full xl:col-span-7">
+             <Card className="sm:col-span-full xl:col-span-5">
                 <CardHeader>
                     <Skeleton className="h-6 w-48" />
                     <Skeleton className="h-4 w-full mt-2" />
