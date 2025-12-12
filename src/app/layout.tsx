@@ -50,9 +50,9 @@ export default function RootLayout({
           <AuthContextProvider>
             <SettingsProvider>
               {children}
+              <Toaster />
             </SettingsProvider>
           </AuthContextProvider>
-          <Toaster />
         </FirebaseClientProvider>
       </body>
     </html>

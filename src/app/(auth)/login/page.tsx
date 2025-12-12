@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
 import {
@@ -28,6 +28,7 @@ import { Eye, EyeOff } from 'lucide-react';
 declare global {
   interface Window {
     grecaptcha: any;
+    handleRecaptchaChange: (token: string | null) => void;
   }
 }
 
@@ -43,20 +44,37 @@ export default function LoginPage() {
   const { toast } = useToast();
   const { setDevMode } = useAuthContext();
 
-  const handleRecaptchaChange = (token: string | null) => {
-    setRecaptchaToken(token);
-  };
+  useEffect(() => {
+    window.handleRecaptchaChange = (token: string | null) => {
+      setRecaptchaToken(token);
+    };
+
+    return () => {
+      delete window.handleRecaptchaChange;
+    };
+  }, []);
 
   const resetRecaptcha = () => {
     if (window.grecaptcha) {
-      window.grecaptcha.reset();
+      const widgetId = document.querySelector('.g-recaptcha')?.getAttribute('data-widget-id');
+      if (widgetId) {
+        window.grecaptcha.reset(parseInt(widgetId, 10));
+      } else {
+        // Fallback for multiple recaptchas if needed
+         const recaptchas = document.querySelectorAll('.g-recaptcha');
+         recaptchas.forEach((rc) => {
+             const id = rc.getAttribute('data-widget-id');
+             if(id) window.grecaptcha.reset(parseInt(id, 10));
+         });
+      }
     }
     setRecaptchaToken(null);
   };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!auth || !recaptchaToken) {
+    if (!auth) return;
+    if (!recaptchaToken) {
       toast({
         variant: 'destructive',
         title: 'Login Failed',
@@ -81,7 +99,8 @@ export default function LoginPage() {
 
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!auth || !recaptchaToken) {
+    if (!auth) return;
+    if (!recaptchaToken) {
         toast({
           variant: 'destructive',
           title: 'Sign Up Failed',
@@ -242,7 +261,7 @@ export default function LoginPage() {
                  <div
                     className="g-recaptcha"
                     data-sitekey="6LcUdyksAAAAAE28riY6RM7zxVfULa9sqQRqJi_1"
-                    data-callback={(token: string | null) => handleRecaptchaChange(token)}
+                    data-callback="handleRecaptchaChange"
                   ></div>
                </div>
               <Button type="submit" className="w-full" disabled={loading || !recaptchaToken}>
