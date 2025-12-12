@@ -204,11 +204,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       </TabsContent>
-      <div className="mt-4 text-center">
-          <Button variant="link" onClick={handleDevMode}>
-            Continue in Developer Mode
-          </Button>
-        </div>
     </Tabs>
   );
 }

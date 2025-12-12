@@ -7,9 +7,6 @@ import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { useAuth, useFirestore } from '@/firebase';
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import type { AppUser, Staff } from '@/lib/types';
-import { buildDevStaffContext } from '@/lib/dev-access';
-import { DEV_ACCESS_CODE, DEV_LOCALSTORAGE_KEY } from '@/config/dev';
-
 
 interface AuthContextType {
   user: FirebaseAuthUser | null;
@@ -34,49 +31,9 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const firestore = useFirestore();
 
   useEffect(() => {
-    let devAccess = false;
-    try {
-      devAccess = localStorage.getItem(DEV_LOCALSTORAGE_KEY) === DEV_ACCESS_CODE;
-      if (devAccess) {
-        setDevModeState(true);
-      }
-    } catch (e) {
-      // localStorage not available
-    }
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
-      const devStaffContext = buildDevStaffContext(currentUser);
-      if (devStaffContext) {
-        setStaff(devStaffContext as Staff); // Treat dev context as full staff for simplicity here
-        setAppUser({
-          id: currentUser!.uid,
-          staffId: 'dev-staff',
-          email: currentUser!.email!,
-          displayName: 'Dev User',
-          role: 'admin',
-          storeID: 'dev-store',
-          status: 'active',
-          createdAt: serverTimestamp() as any,
-          lastLoginAt: serverTimestamp() as any,
-        });
-        setIsOnboarded(true);
-        setLoading(false);
-        return;
-      }
-
-      if (devMode && !devStaffContext) {
-        // Is in devMode via sessionStorage but not whitelisted/flagged
-        // Continue with normal auth flow but treat as onboarded
-         setIsOnboarded(true);
-         setAppUser(null);
-         setStaff(null);
-         setLoading(false);
-         return;
-      }
-
-
       if (currentUser) {
         const userDocRef = doc(firestore, 'users', currentUser.uid);
         const userDocSnap = await getDoc(userDocRef);
@@ -108,14 +65,10 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  }, [auth, firestore, devMode]);
+  }, [auth, firestore]);
 
   const setDevMode = (isDev: boolean) => {
-    try {
-      sessionStorage.setItem('shareat-hub-dev-mode', String(isDev));
-    } catch (e) {
-      // sessionStorage not available
-    }
+    // This is now a simplified stub. You can enhance it later if needed.
     setDevModeState(isDev);
     if(isDev) {
         setIsOnboarded(true);

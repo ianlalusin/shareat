@@ -29,15 +29,15 @@ export function NavButtonGroup() {
 
   return (
     <div className="hidden md:flex items-center gap-1 rounded-lg bg-primary-foreground/10 p-1">
-      {navLinks.map(({ href, label, disabled }) => (
+      {navLinks.map(({ href, label }) => (
         <Button
           key={href}
           asChild
           variant={getVariant(href)}
           size="sm"
-          className={cn(getClassName(href), disabled && 'pointer-events-none opacity-50')}
+          className={cn(getClassName(href))}
         >
-          <Link href={disabled ? '#' : href}>{label}</Link>
+          <Link href={href}>{label}</Link>
         </Button>
       ))}
     </div>
@@ -49,14 +49,13 @@ export function NavButtonGroupMobile() {
 
   return (
     <>
-      {navLinks.map(({ href, label, disabled }) => (
+      {navLinks.map(({ href, label }) => (
         <DropdownMenuItem
           key={href}
           asChild
-          disabled={disabled}
           className={cn(pathname.startsWith(href) && 'bg-accent')}
         >
-          <Link href={disabled ? '#' : href}>{label}</Link>
+          <Link href={href}>{label}</Link>
         </DropdownMenuItem>
       ))}
     </>

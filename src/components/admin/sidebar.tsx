@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuthContext } from "@/context/auth-context";
 
 const menuItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -46,18 +45,12 @@ const menuItems = [
 ];
 
 const bottomMenuItems = [
-  { href: "/admin/settings", label: "Settings", icon: Settings, roles: ["manager", "admin", "owner"] },
-  { href: "/admin/settings/account", label: "Account", icon: CircleUser, roles: [] },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
+  { href: "/admin/settings/account", label: "Account", icon: CircleUser },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const { appUser, devMode } = useAuthContext();
-  
-  const hasAccess = (roles: string[]) => {
-    if (devMode || roles.length === 0) return true;
-    return appUser && roles.includes(appUser.role);
-  };
 
   const isActive = (href: string) => {
     if (href.startsWith('#')) return false;
@@ -97,16 +90,14 @@ export function AdminSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           {bottomMenuItems.map((item) => (
-            hasAccess(item.roles) && (
-              <SidebarMenuItem key={item.label}>
-                <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                  <Link href={item.href}>
-                    <item.icon />
-                    <span>{item.label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )
+            <SidebarMenuItem key={item.label}>
+              <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                <Link href={item.href}>
+                  <item.icon />
+                  <span>{item.label}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           ))}
         </SidebarMenu>
       </SidebarFooter>
