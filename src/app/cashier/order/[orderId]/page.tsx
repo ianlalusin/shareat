@@ -224,19 +224,6 @@ export default function OrderDetailPage() {
     [discountTypes]
   );
   
-  const billableItems = useMemo(() => {
-    return orderItems.filter((item) => {
-      const price = item.priceAtOrder ?? 0;
-      const isFree = item.isFree === true || price === 0;
-
-      const statusOk =
-        item.status === 'Served' ||
-        item.status === 'Completed'; // allow completed items too if present
-
-      return !isFree && statusOk;
-    });
-  }, [orderItems]);
-
   const computeLineTotals = (item: OrderItem) => {
     const qty = item.quantity ?? 0;
     const price = item.priceAtOrder ?? 0;
@@ -273,6 +260,19 @@ export default function OrderDetailPage() {
     };
   };
 
+  const billableItems = useMemo(() => {
+    return orderItems.filter((item) => {
+      const price = item.priceAtOrder ?? 0;
+      const isFree = item.isFree === true || price === 0;
+
+      const statusOk =
+        item.status === 'Served' ||
+        item.status === 'Completed'; // allow completed items too if present
+
+      return !isFree && statusOk;
+    });
+  }, [orderItems]);
+
   const subtotal = useMemo(
     () =>
       billableItems.reduce((acc, item) => {
@@ -306,72 +306,64 @@ export default function OrderDetailPage() {
   }, [billableItems]);
 
   const taxSummary: OrderTaxSummary = useMemo(() => {
-    if (!billableItems.length) {
-      return {
-        vatableNet: 0,
-        vatAmount: 0,
-        vatableGross: 0,
-        exemptSales: 0,
-        totalSalesBeforeCharges: 0,
-      };
-    }
-  
-    // Split VATable vs Exempt based on taxRate
-    const vatableItems = billableItems.filter(
-      (item) => typeof item.taxRate === 'number' && (item.taxRate ?? 0) > 0
-    );
-    const exemptItems = billableItems.filter(
-      (item) => !item.taxRate || (item.taxRate ?? 0) === 0
-    );
-  
-    const grossVatable = vatableItems.reduce((acc, item) => {
-      const price = item.priceAtOrder ?? 0;
-      const qty = item.quantity ?? 0;
-      return acc + price * qty;
-    }, 0);
-  
-    const grossExempt = exemptItems.reduce((acc, item) => {
-      const price = item.priceAtOrder ?? 0;
-      const qty = item.quantity ?? 0;
-      return acc + price * qty;
-    }, 0);
-  
-    if (vatableItems.length === 0) {
-      // No VATable items, everything is exempt
-      return {
-        vatableNet: 0,
-        vatAmount: 0,
-        vatableGross: 0,
-        exemptSales: grossExempt,
-        totalSalesBeforeCharges: grossExempt,
-      };
-    }
-  
-    // Assume same VAT rate across all VATable items (e.g. 0.12)
-    const vatRate = vatableItems[0].taxRate ?? 0;
-  
-    // Prices are VAT-inclusive → back out VAT to get net
-    const vatableNetBeforeDiscount = grossVatable / (1 + vatRate);
-  
-    // Sum all discounts (order-level) as reducing VATable net first
-    const totalDiscount = transactions
-      .filter((t) => t.type === 'Discount')
-      .reduce((acc, t) => acc + (t.amount ?? 0), 0);
-  
-    const vatableNet = Math.max(0, vatableNetBeforeDiscount - totalDiscount);
-    const vatAmount = vatableNet * vatRate;
-    const vatableGross = vatableNet + vatAmount;
-  
-    const totalSalesBeforeCharges = vatableGross + grossExempt;
-  
+  if (!billableItems.length) {
     return {
-      vatableNet,
-      vatAmount,
-      vatableGross,
-      exemptSales: grossExempt,
-      totalSalesBeforeCharges,
+      vatableNet: 0,
+      vatAmount: 0,
+      vatableGross: 0,
+      exemptSales: 0,
+      totalSalesBeforeCharges: 0,
     };
-  }, [billableItems, transactions]);
+  }
+
+  let vatableNet = 0;
+  let vatAmount = 0;
+  let exemptSales = 0;
+
+  // Line-level: already includes line discounts
+  for (const item of billableItems) {
+    const taxRate = item.taxRate ?? 0;
+    const hasVat = taxRate > 0;
+    const lineTotals = computeLineTotals(item);
+
+    if (hasVat) {
+      vatableNet += lineTotals.netAfterDisc;
+      vatAmount += lineTotals.vatAfterDisc;
+    } else {
+      exemptSales += lineTotals.grossAfterDisc;
+    }
+  }
+
+  // Order-level discounts still need to reduce VATable net (exclusive of VAT)
+  const orderLevelDiscount = transactions
+    .filter((t) => t.type === 'Discount')
+    .reduce((acc, t) => acc + (t.amount ?? 0), 0);
+
+  if (orderLevelDiscount > 0 && vatableNet > 0) {
+    // Take discounts as net-of-VAT too
+    // Convert order discount gross → net using average VAT rate (approx based on 12%)
+    const effectiveVatRate = vatableNet > 0 ? vatAmount / vatableNet : 0; // ~0.12
+    const discountNet = effectiveVatRate > 0
+      ? orderLevelDiscount / (1 + effectiveVatRate)
+      : orderLevelDiscount;
+
+    const newVatableNet = Math.max(0, vatableNet - discountNet);
+    vatableNet = newVatableNet;
+    vatAmount = newVatableNet * effectiveVatRate;
+  }
+
+  const vatableGross = vatableNet + vatAmount;
+  const totalSalesBeforeCharges = vatableGross + exemptSales;
+
+  return {
+    vatableNet,
+    vatAmount,
+    vatableGross,
+    exemptSales,
+    totalSalesBeforeCharges,
+  };
+}, [billableItems, transactions]);
+
 
   const grandTotal = useMemo(() => {
     const rawTotal = transactions.reduce((acc, trans) => {
@@ -863,7 +855,8 @@ export default function OrderDetailPage() {
                                                 onValueChange={(code) => {
                                                     setSelectedLineDiscountCode(code);
                                                     const selected = lineDiscountTypes.find(
-                                                    (d) => d.code === code || d.item === code
+                                                    (d) =>
+                                                        d.code === code || d.item === code
                                                     );
                                                     if (selected) {
                                                     if (selected.discountMode === 'PCT') {
@@ -1154,3 +1147,5 @@ export default function OrderDetailPage() {
     </>
   );
 }
+
+    
