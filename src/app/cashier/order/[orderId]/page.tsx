@@ -121,10 +121,10 @@ export default function OrderDetailPage() {
   
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
-  const [editingLineId, setEditingLineId] = useState<string | null>(null);
-  const [lineDiscountType, setLineDiscountType] = useState<'₱' | '%'>('₱');
-  const [lineDiscountValueInput, setLineDiscountValueInput] = useState('');
-  const [selectedLineDiscountCode, setSelectedLineDiscountCode] = useState<string>('');
+  const [editingLineDiscountId, setEditingLineDiscountId] = useState<string | null>(null);
+  const [lineDiscountMode, setLineDiscountMode] = useState<'PCT' | 'ABS'>('PCT');
+  const [lineDiscountInputValue, setLineDiscountInputValue] = useState('');
+  const [lineSelectedDiscountCode, setLineSelectedDiscountCode] = useState<string>('');
 
 
   const firestore = useFirestore();
@@ -236,7 +236,7 @@ export default function OrderDetailPage() {
     const netBeforeDisc = hasVat ? gross / (1 + taxRate) : gross;
   
     // Step 2: line-level discount on net-of-VAT
-    const mode = item.lineDiscountType;
+    const mode = item.lineDiscountMode;
     const value = item.lineDiscountValue ?? 0;
   
     let discountNet = 0;
@@ -306,63 +306,63 @@ export default function OrderDetailPage() {
   }, [billableItems]);
 
   const taxSummary: OrderTaxSummary = useMemo(() => {
-  if (!billableItems.length) {
-    return {
-      vatableNet: 0,
-      vatAmount: 0,
-      vatableGross: 0,
-      exemptSales: 0,
-      totalSalesBeforeCharges: 0,
-    };
-  }
-
-  let vatableNet = 0;
-  let vatAmount = 0;
-  let exemptSales = 0;
-
-  // Line-level: already includes line discounts
-  for (const item of billableItems) {
-    const taxRate = item.taxRate ?? 0;
-    const hasVat = taxRate > 0;
-    const lineTotals = computeLineTotals(item);
-
-    if (hasVat) {
-      vatableNet += lineTotals.netAfterDisc;
-      vatAmount += lineTotals.vatAfterDisc;
-    } else {
-      exemptSales += lineTotals.grossAfterDisc;
+    if (!billableItems.length) {
+      return {
+        vatableNet: 0,
+        vatAmount: 0,
+        vatableGross: 0,
+        exemptSales: 0,
+        totalSalesBeforeCharges: 0,
+      };
     }
-  }
-
-  // Order-level discounts still need to reduce VATable net (exclusive of VAT)
-  const orderLevelDiscount = transactions
-    .filter((t) => t.type === 'Discount')
-    .reduce((acc, t) => acc + (t.amount ?? 0), 0);
-
-  if (orderLevelDiscount > 0 && vatableNet > 0) {
-    // Take discounts as net-of-VAT too
-    // Convert order discount gross → net using average VAT rate (approx based on 12%)
-    const effectiveVatRate = vatableNet > 0 ? vatAmount / vatableNet : 0; // ~0.12
-    const discountNet = effectiveVatRate > 0
-      ? orderLevelDiscount / (1 + effectiveVatRate)
-      : orderLevelDiscount;
-
-    const newVatableNet = Math.max(0, vatableNet - discountNet);
-    vatableNet = newVatableNet;
-    vatAmount = newVatableNet * effectiveVatRate;
-  }
-
-  const vatableGross = vatableNet + vatAmount;
-  const totalSalesBeforeCharges = vatableGross + exemptSales;
-
-  return {
-    vatableNet,
-    vatAmount,
-    vatableGross,
-    exemptSales,
-    totalSalesBeforeCharges,
-  };
-}, [billableItems, transactions]);
+  
+    let vatableNet = 0;
+    let vatAmount = 0;
+    let exemptSales = 0;
+  
+    // Line-level: already includes line discounts
+    for (const item of billableItems) {
+      const taxRate = item.taxRate ?? 0;
+      const hasVat = taxRate > 0;
+      const lineTotals = computeLineTotals(item);
+  
+      if (hasVat) {
+        vatableNet += lineTotals.netAfterDisc;
+        vatAmount += lineTotals.vatAfterDisc;
+      } else {
+        exemptSales += lineTotals.grossAfterDisc;
+      }
+    }
+  
+    // Order-level discounts still need to reduce VATable net (exclusive of VAT)
+    const orderLevelDiscount = transactions
+      .filter((t) => t.type === 'Discount')
+      .reduce((acc, t) => acc + (t.amount ?? 0), 0);
+  
+    if (orderLevelDiscount > 0 && vatableNet > 0) {
+      // Take discounts as net-of-VAT too
+      // Convert order discount gross → net using average VAT rate (approx based on 12%)
+      const effectiveVatRate = vatableNet > 0 ? vatAmount / vatableNet : 0; // ~0.12
+      const discountNet = effectiveVatRate > 0
+        ? orderLevelDiscount / (1 + effectiveVatRate)
+        : orderLevelDiscount;
+  
+      const newVatableNet = Math.max(0, vatableNet - discountNet);
+      vatableNet = newVatableNet;
+      vatAmount = newVatableNet * effectiveVatRate;
+    }
+  
+    const vatableGross = vatableNet + vatAmount;
+    const totalSalesBeforeCharges = vatableGross + exemptSales;
+  
+    return {
+      vatableNet,
+      vatAmount,
+      vatableGross,
+      exemptSales,
+      totalSalesBeforeCharges,
+    };
+  }, [billableItems, transactions]);
 
 
   const grandTotal = useMemo(() => {
@@ -600,110 +600,81 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleOpenLineDiscount = (item: OrderItem) => {
+    setEditingLineDiscountId(item.id);
+    setLineDiscountMode(item.lineDiscountMode ?? 'PCT');
+    setLineSelectedDiscountCode(item.lineDiscountCode ?? '');
+    setLineDiscountInputValue(
+      item.lineDiscountValue != null ? String(item.lineDiscountValue) : ''
+    );
+  };
+  
+  const handleCancelLineDiscount = () => {
+    setEditingLineDiscountId(null);
+    setLineDiscountInputValue('');
+    setLineSelectedDiscountCode('');
+  };
+  
   const handleApplyLineDiscount = async (item: OrderItem) => {
     if (!firestore || !order) return;
-    if (!lineDiscountValueInput) {
+  
+    const value = parseFloat(lineDiscountInputValue || '0');
+    if (!lineSelectedDiscountCode || isNaN(value) || value <= 0) {
       toast({
         variant: 'destructive',
-        title: 'Missing Value',
-        description: 'Please enter a discount value.',
+        title: 'Invalid Discount',
+        description: 'Please select a discount and enter a positive value.',
       });
       return;
     }
   
-    const raw = parseFloat(lineDiscountValueInput);
-    if (isNaN(raw) || raw <= 0) {
+    const discountDef = lineDiscountTypes.find(
+      (d) => d.item === lineSelectedDiscountCode
+    );
+    if (!discountDef) {
       toast({
         variant: 'destructive',
-        title: 'Invalid Value',
-        description: 'Discount must be a positive number.',
+        title: 'Unknown Discount',
+        description: 'Selected discount type was not found.',
       });
       return;
     }
   
-    const price = item.priceAtOrder ?? 0;
-    const qty = item.quantity ?? 0;
-    const base = price * qty;
+    const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
+    await updateDoc(itemRef, {
+      lineDiscountCode: discountDef.code ?? discountDef.item,
+      lineDiscountLabel: discountDef.item,
+      lineDiscountMode: discountDef.discountMode ?? lineDiscountMode,
+      lineDiscountValue: value,
+    });
   
-    let discountAmount = 0;
-    let discountTypeInternal: 'ABS' | 'PCT' = 'ABS';
+    toast({
+      title: 'Line Discount Applied',
+      description: `${discountDef.item} applied to ${item.menuName}.`,
+    });
   
-    if (lineDiscountType === '₱') {
-      discountAmount = raw;
-      discountTypeInternal = 'ABS';
-    } else {
-      if (raw <= 0 || raw > 100) {
-        toast({
-          variant: 'destructive',
-          title: 'Invalid Percentage',
-          description: 'Discount percentage must be between 1 and 100.',
-        });
-        return;
-      }
-      discountAmount = (base * raw) / 100;
-      discountTypeInternal = 'PCT';
-    }
-  
-    discountAmount = Math.min(discountAmount, base);
-  
-    const selected = lineDiscountTypes.find(
-      (d) =>
-        d.code === selectedLineDiscountCode || d.item === selectedLineDiscountCode
-    );
-  
-    const itemRef = doc(
-      firestore,
-      'orders',
-      order.id,
-      'orderItems',
-      item.id
-    );
-  
-    try {
-      await updateDoc(itemRef, {
-        lineDiscountType: discountTypeInternal,
-        lineDiscountValue: raw,
-        lineDiscountAmount: discountAmount,
-        lineDiscountCode: selected?.code ?? null,
-        lineDiscountLabel: selected?.item ?? null,
-      });
-      toast({
-        title: 'Line Discount Applied',
-        description: `Discount applied to ${item.menuName}.`,
-      });
-      setEditingLineId(null);
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Update Failed',
-        description: 'Could not apply line discount.',
-      });
-    }
+    handleCancelLineDiscount();
   };
   
   const handleClearLineDiscount = async (item: OrderItem) => {
     if (!firestore || !order) return;
-
+  
     const itemRef = doc(firestore, 'orders', order.id, 'orderItems', item.id);
-
-    try {
-      await updateDoc(itemRef, {
-        lineDiscountType: null,
-        lineDiscountValue: null,
-        lineDiscountAmount: null,
-        lineDiscountCode: null,
-        lineDiscountLabel: null,
-      });
-      toast({
-        title: 'Line Discount Removed',
-        description: `Discount removed from ${item.menuName}.`,
-      });
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Update Failed',
-        description: 'Could not remove line discount.',
-      });
+    await updateDoc(itemRef, {
+      lineDiscountCode: null,
+      lineDiscountLabel: null,
+      lineDiscountMode: null,
+      lineDiscountValue: null,
+      lineDiscountAmount: null,
+    });
+  
+    toast({
+      title: 'Line Discount Removed',
+      description: `Discount removed from ${item.menuName}.`,
+    });
+  
+    if (editingLineDiscountId === item.id) {
+      handleCancelLineDiscount();
     }
   };
 
@@ -787,7 +758,7 @@ export default function OrderDetailPage() {
                         <TableBody>
                             {billableItems.map((item) => {
                               const { grossAfterDisc } = computeLineTotals(item);
-                              const isEditing = editingLineId === item.id;
+                              const isEditing = editingLineDiscountId === item.id;
 
                               return (
                                 <Fragment key={item.id}>
@@ -813,14 +784,9 @@ export default function OrderDetailPage() {
                                         variant={isEditing ? 'secondary' : 'outline'}
                                         onClick={() => {
                                           if (isEditing) {
-                                            setEditingLineId(null);
+                                            handleCancelLineDiscount();
                                           } else {
-                                            setEditingLineId(item.id);
-                                            setSelectedLineDiscountCode('');
-                                            setLineDiscountType(item.lineDiscountType === 'PCT' ? '%' : '₱');
-                                            setLineDiscountValueInput(
-                                              item.lineDiscountValue ? String(item.lineDiscountValue) : ''
-                                            );
+                                            handleOpenLineDiscount(item);
                                           }
                                         }}
                                       >
@@ -851,21 +817,21 @@ export default function OrderDetailPage() {
                                             <div className="flex flex-wrap items-stretch gap-2">
                                                 {/* Discount type dropdown */}
                                                 <Select
-                                                value={selectedLineDiscountCode}
+                                                value={lineSelectedDiscountCode}
                                                 onValueChange={(code) => {
-                                                    setSelectedLineDiscountCode(code);
+                                                    setLineSelectedDiscountCode(code);
                                                     const selected = lineDiscountTypes.find(
                                                     (d) =>
                                                         d.code === code || d.item === code
                                                     );
                                                     if (selected) {
                                                     if (selected.discountMode === 'PCT') {
-                                                        setLineDiscountType('%');
+                                                        setLineDiscountMode('PCT');
                                                     } else if (selected.discountMode === 'ABS') {
-                                                        setLineDiscountType('₱');
+                                                        setLineDiscountMode('ABS');
                                                     }
                                                     if (typeof selected.discountValue === 'number') {
-                                                        setLineDiscountValueInput(String(selected.discountValue));
+                                                        setLineDiscountInputValue(String(selected.discountValue));
                                                     } else {
                                                         // leave as-is if discountValue is not defined
                                                     }
@@ -893,8 +859,8 @@ export default function OrderDetailPage() {
                                                 <div className="flex flex-auto">
                                                 <Input
                                                     type="number"
-                                                    value={lineDiscountValueInput}
-                                                    onChange={(e) => setLineDiscountValueInput(e.target.value)}
+                                                    value={lineDiscountInputValue}
+                                                    onChange={(e) => setLineDiscountInputValue(e.target.value)}
                                                     placeholder="Discount value"
                                                     className="rounded-r-none focus-visible:ring-offset-0"
                                                 />
@@ -903,10 +869,10 @@ export default function OrderDetailPage() {
                                                     variant="outline"
                                                     className="rounded-l-none border-l-0 px-3 font-bold"
                                                     onClick={() =>
-                                                    setLineDiscountType((prev) => (prev === '₱' ? '%' : '₱'))
+                                                    setLineDiscountMode((prev) => (prev === 'ABS' ? 'PCT' : 'ABS'))
                                                     }
                                                 >
-                                                    {lineDiscountType}
+                                                    {lineDiscountMode === 'PCT' ? '%' : '₱'}
                                                 </Button>
                                                 </div>
                                                 <Button
@@ -1147,5 +1113,3 @@ export default function OrderDetailPage() {
     </>
   );
 }
-
-    

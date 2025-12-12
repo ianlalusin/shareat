@@ -279,11 +279,11 @@ export type OrderItem = {
   isTaxInclusive?: boolean | null;
   taxProfileCode?: string | null;
   isFree?: boolean;
-  lineDiscountType?: 'ABS' | 'PCT' | null;
-  lineDiscountValue?: number | null;
-  lineDiscountAmount?: number | null;
   lineDiscountCode?: string | null;
   lineDiscountLabel?: string | null;
+  lineDiscountMode?: "PCT" | "ABS" | null;
+  lineDiscountValue?: number | null;
+  lineDiscountAmount?: number | null;
 };
 
 export type RefillItem = {
