@@ -20,6 +20,7 @@ import { useAuthContext } from '@/context/auth-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddonsModal } from '@/components/cashier/addons-modal';
 import { RoleGate } from '@/components/auth/role-gate';
+import { UpdateOrderModal } from '@/components/cashier/update-order-modal';
 
 const getStatusColor = (status: TableType['status']) => {
     switch (status) {
@@ -41,6 +42,9 @@ function RefillPageContent() {
     const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
     const [isAddonsModalOpen, setIsAddonsModalOpen] = useState(false);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+    const [isUpdateOrderModalOpen, setIsUpdateOrderModalOpen] = useState(false);
+    const [updateType, setUpdateType] = useState<'guestCount' | 'package' | null>(null);
+
     const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     const [activeTab, setActiveTab] = useState('active');
@@ -164,6 +168,12 @@ function RefillPageContent() {
             setIsConfirmModalOpen(true);
         }
     }
+    
+    const handleOpenUpdateModal = (order: Order, type: 'guestCount' | 'package') => {
+        setSelectedOrder(order);
+        setUpdateType(type);
+        setIsUpdateOrderModalOpen(true);
+    };
 
     const handlePlaceRefillOrder = async (order: Order, refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[]) => {
       if (!firestore || refillCart.length === 0) return;
@@ -416,6 +426,8 @@ function RefillPageContent() {
                              <CardFooter className="p-2 border-t grid grid-cols-2 gap-2">
                                 <Button variant="secondary" onClick={() => handleRefillClick(table)}>Refill</Button>
                                 <Button variant="outline" onClick={() => handleAddOnClick(table)}>Add-ons</Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleOpenUpdateModal(order, 'guestCount')}>Update Guests</Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleOpenUpdateModal(order, 'package')}>Update Package</Button>
                             </CardFooter>
                         </Card>
                     )
@@ -455,6 +467,16 @@ function RefillPageContent() {
           onConfirm={handleConfirmGuests}
         />
       )}
+
+      {isUpdateOrderModalOpen && selectedOrder && updateType && (
+        <UpdateOrderModal
+            isOpen={isUpdateOrderModalOpen}
+            onClose={() => setIsUpdateOrderModalOpen(false)}
+            order={selectedOrder}
+            menu={menu}
+            updateType={updateType}
+        />
+      )}
     </>
   );
 }
@@ -466,3 +488,5 @@ export default function RefillPage() {
         </RoleGate>
     )
 }
+
+    
