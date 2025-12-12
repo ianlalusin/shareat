@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useReducer, useMemo, Fragment } from 'react';
@@ -680,6 +681,25 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleDeleteTransaction = async (transactionId: string) => {
+    if (!firestore || !order) return;
+    if (window.confirm('Are you sure you want to remove this item from the bill?')) {
+        try {
+            await deleteDoc(doc(firestore, 'orders', order.id, 'transactions', transactionId));
+            toast({
+                title: "Success!",
+                description: "The item has been removed from the bill.",
+            });
+        } catch (error) {
+            toast({
+                variant: 'destructive',
+                title: 'Delete Failed',
+                description: 'Could not remove the item.',
+            });
+        }
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4 lg:p-6">
@@ -896,11 +916,21 @@ export default function OrderDetailPage() {
                 <CardFooter className="flex flex-col items-stretch gap-2">
                      <div className="flex flex-col items-end gap-2 w-full max-w-sm self-end">
                        {transactions.filter(t => t.type !== 'Payment').map(trans => (
-                         <div key={trans.id} className="flex justify-between w-full text-sm">
+                         <div key={trans.id} className="flex justify-between items-center w-full text-sm group">
                            <span className="text-muted-foreground">{trans.type}: {trans.notes}</span>
-                           <span className={trans.type === 'Discount' ? 'text-green-600' : 'text-destructive'}>
-                             {trans.type === 'Discount' ? '-' : ''}{formatCurrency(trans.amount)}
-                           </span>
+                           <div className="flex items-center gap-1">
+                                <span className={trans.type === 'Discount' ? 'text-green-600' : 'text-destructive'}>
+                                    {trans.type === 'Discount' ? '-' : ''}{formatCurrency(trans.amount)}
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
+                                    onClick={() => handleDeleteTransaction(trans.id)}
+                                >
+                                    <X className="h-3 w-3" />
+                                </Button>
+                            </div>
                          </div>
                        ))}
                         <div className="flex justify-between w-full">
