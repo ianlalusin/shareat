@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SuccessConfirm } from "@/components/ui/success-confirm";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
+import { RoleGate } from "@/components/auth/role-gate";
 
 export default function AdminLayout({
   children,
@@ -15,17 +16,19 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <FirstLoginGuard>
-      <SidebarProvider>
-        <Sidebar collapsible="icon">
-          <AdminSidebar />
-        </Sidebar>
-        <SidebarInset>
-          <AdminHeader />
-          {children}
-          <SuccessConfirm />
-        </SidebarInset>
-      </SidebarProvider>
-    </FirstLoginGuard>
+    <RoleGate allow={['admin', 'manager']}>
+      <FirstLoginGuard>
+        <SidebarProvider>
+          <Sidebar collapsible="icon">
+            <AdminSidebar />
+          </Sidebar>
+          <SidebarInset>
+            <AdminHeader />
+            {children}
+            <SuccessConfirm />
+          </SidebarInset>
+        </SidebarProvider>
+      </FirstLoginGuard>
+    </RoleGate>
   );
 }

@@ -21,9 +21,10 @@ import { NewOrderModal } from '@/components/cashier/new-order-modal';
 import { RefillModal } from '@/components/cashier/refill-modal';
 import { AddonsModal } from '@/components/cashier/addons-modal';
 import { OrderDetailsModal } from '@/components/cashier/order-details-modal';
+import { RoleGate } from '@/components/auth/role-gate';
 
 
-export default function CashierPage() {
+function CashierPageContent() {
     const [tables, setTables] = useState<TableType[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menu, setMenu] = useState<MenuItem[]>([]);
@@ -440,4 +441,12 @@ export default function CashierPage() {
        )}
     </>
   );
+}
+
+export default function CashierPage() {
+    return (
+        <RoleGate allow={['admin', 'manager', 'cashier']}>
+            <CashierPageContent />
+        </RoleGate>
+    )
 }

@@ -19,6 +19,7 @@ import { GuestConfirmationModal } from '@/components/refill/guest-confirmation-m
 import { useAuthContext } from '@/context/auth-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddonsModal } from '@/components/cashier/addons-modal';
+import { RoleGate } from '@/components/auth/role-gate';
 
 const getStatusColor = (status: TableType['status']) => {
     switch (status) {
@@ -30,7 +31,7 @@ const getStatusColor = (status: TableType['status']) => {
     }
 };
 
-export default function RefillPage() {
+function RefillPageContent() {
     const [tables, setTables] = useState<TableType[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menu, setMenu] = useState<MenuItem[]>([]);
@@ -457,4 +458,12 @@ export default function RefillPage() {
       )}
     </>
   );
+}
+
+export default function RefillPage() {
+    return (
+        <RoleGate allow={['admin', 'manager', 'server']}>
+            <RefillPageContent />
+        </RoleGate>
+    )
 }

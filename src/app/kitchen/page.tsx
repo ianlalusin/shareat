@@ -30,8 +30,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow, startOfDay, endOfDay } from 'date-fns';
 import { useSettings } from '@/context/settings-context';
 import { ServingTimeStats } from '@/components/kitchen/serving-time-stats';
+import { RoleGate } from '@/components/auth/role-gate';
 
-export default function KitchenPage() {
+function KitchenPageContent() {
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [kitchenItemsByOrder, setKitchenItemsByOrder] = useState<Record<string, KitchenItem[]>>({});
   const [storeStations, setStoreStations] = useState<CollectionItem[]>([]);
@@ -392,4 +393,12 @@ export default function KitchenPage() {
         </aside>
     </div>
   );
+}
+
+export default function KitchenPage() {
+    return (
+        <RoleGate allow={['admin', 'manager', 'kitchen']}>
+            <KitchenPageContent />
+        </RoleGate>
+    )
 }
