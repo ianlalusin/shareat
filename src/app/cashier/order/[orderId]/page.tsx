@@ -306,63 +306,63 @@ export default function OrderDetailPage() {
   }, [billableItems]);
 
   const taxSummary: OrderTaxSummary = useMemo(() => {
-    if (!billableItems.length) {
-      return {
-        vatableNet: 0,
-        vatAmount: 0,
-        vatableGross: 0,
-        exemptSales: 0,
-        totalSalesBeforeCharges: 0,
-      };
-    }
-  
-    let vatableNet = 0;
-    let vatAmount = 0;
-    let exemptSales = 0;
-  
-    // Line-level: already includes line discounts
-    for (const item of billableItems) {
-      const taxRate = item.taxRate ?? 0;
-      const hasVat = taxRate > 0;
-      const lineTotals = computeLineTotals(item);
-  
-      if (hasVat) {
-        vatableNet += lineTotals.netAfterDisc;
-        vatAmount += lineTotals.vatAfterDisc;
-      } else {
-        exemptSales += lineTotals.grossAfterDisc;
-      }
-    }
-  
-    // Order-level discounts still need to reduce VATable net (exclusive of VAT)
-    const orderLevelDiscount = transactions
-      .filter((t) => t.type === 'Discount')
-      .reduce((acc, t) => acc + (t.amount ?? 0), 0);
-  
-    if (orderLevelDiscount > 0 && vatableNet > 0) {
-      // Take discounts as net-of-VAT too
-      // Convert order discount gross → net using average VAT rate (approx based on 12%)
-      const effectiveVatRate = vatableNet > 0 ? vatAmount / vatableNet : 0; // ~0.12
-      const discountNet = effectiveVatRate > 0
-        ? orderLevelDiscount / (1 + effectiveVatRate)
-        : orderLevelDiscount;
-  
-      const newVatableNet = Math.max(0, vatableNet - discountNet);
-      vatableNet = newVatableNet;
-      vatAmount = newVatableNet * effectiveVatRate;
-    }
-  
-    const vatableGross = vatableNet + vatAmount;
-    const totalSalesBeforeCharges = vatableGross + exemptSales;
-  
+  if (!billableItems.length) {
     return {
-      vatableNet,
-      vatAmount,
-      vatableGross,
-      exemptSales,
-      totalSalesBeforeCharges,
+      vatableNet: 0,
+      vatAmount: 0,
+      vatableGross: 0,
+      exemptSales: 0,
+      totalSalesBeforeCharges: 0,
     };
-  }, [billableItems, transactions]);
+  }
+
+  let vatableNet = 0;
+  let vatAmount = 0;
+  let exemptSales = 0;
+
+  // Line-level: already includes line discounts
+  for (const item of billableItems) {
+    const taxRate = item.taxRate ?? 0;
+    const hasVat = taxRate > 0;
+    const lineTotals = computeLineTotals(item);
+
+    if (hasVat) {
+      vatableNet += lineTotals.netAfterDisc;
+      vatAmount += lineTotals.vatAfterDisc;
+    } else {
+      exemptSales += lineTotals.grossAfterDisc;
+    }
+  }
+
+  // Order-level discounts still need to reduce VATable net (exclusive of VAT)
+  const orderLevelDiscount = transactions
+    .filter((t) => t.type === 'Discount')
+    .reduce((acc, t) => acc + (t.amount ?? 0), 0);
+
+  if (orderLevelDiscount > 0 && vatableNet > 0) {
+    // Take discounts as net-of-VAT too
+    // Convert order discount gross → net using average VAT rate (approx based on 12%)
+    const effectiveVatRate = vatableNet > 0 ? vatAmount / vatableNet : 0; // ~0.12
+    const discountNet = effectiveVatRate > 0
+      ? orderLevelDiscount / (1 + effectiveVatRate)
+      : orderLevelDiscount;
+
+    const newVatableNet = Math.max(0, vatableNet - discountNet);
+    vatableNet = newVatableNet;
+    vatAmount = newVatableNet * effectiveVatRate;
+  }
+
+  const vatableGross = vatableNet + vatAmount;
+  const totalSalesBeforeCharges = vatableGross + exemptSales;
+
+  return {
+    vatableNet,
+    vatAmount,
+    vatableGross,
+    exemptSales,
+    totalSalesBeforeCharges,
+  };
+}, [billableItems, transactions]);
 
 
   const grandTotal = useMemo(() => {
@@ -757,154 +757,126 @@ export default function OrderDetailPage() {
                         </TableHeader>
                         <TableBody>
                             {billableItems.map((item) => {
-                              const { grossAfterDisc } = computeLineTotals(item);
-                              const isEditing = editingLineDiscountId === item.id;
+    const lineTotals = computeLineTotals(item);
+    const hasLineDiscount =
+      !!item.lineDiscountMode && !!item.lineDiscountValue && item.lineDiscountValue > 0;
 
-                              return (
-                                <Fragment key={item.id}>
-                                  <TableRow>
-                                    <TableCell className="font-medium">
-                                      {item.menuName}
-                                      {item.lineDiscountAmount ? (
-                                        <p className="text-xs text-green-600">
-                                          Discount: -{formatCurrency(item.lineDiscountAmount)}
-                                        </p>
-                                      ) : null}
-                                    </TableCell>
-                                    <TableCell className="text-center">{item.quantity}</TableCell>
-                                    <TableCell className="text-right">
-                                      {formatCurrency(item.priceAtOrder ?? 0)}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      {formatCurrency(grossAfterDisc)}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      <Button
-                                        size="sm"
-                                        variant={isEditing ? 'secondary' : 'outline'}
-                                        onClick={() => {
-                                          if (isEditing) {
-                                            handleCancelLineDiscount();
-                                          } else {
-                                            handleOpenLineDiscount(item);
-                                          }
-                                        }}
-                                      >
-                                        {isEditing ? 'Close' : 'Adjust'}
-                                      </Button>
-                                    </TableCell>
-                                  </TableRow>
+    const isEditing = editingLineDiscountId === item.id;
 
-                                  {isEditing && (
-                                    <TableRow>
-                                      <TableCell colSpan={5}>
-                                        <div className="flex flex-col gap-3 p-3 bg-muted/40 rounded-md">
-                                          {/* Free / gift toggle */}
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium">Give as Free / Gift</span>
-                                            <Button
-                                              size="sm"
-                                              variant={item.isFree ? 'secondary' : 'outline'}
-                                              onClick={() => handleToggleLineFree(item)}
-                                            >
-                                              {item.isFree ? 'Mark as Paid' : 'Mark as Free'}
-                                            </Button>
-                                          </div>
+    return (
+      <React.Fragment key={item.id}>
+        <TableRow>
+          <TableCell className="font-medium">
+            {item.menuName}
+            {hasLineDiscount && item.lineDiscountLabel && (
+              <div className="text-xs text-green-700">
+                Less: {item.lineDiscountLabel} ({item.lineDiscountMode === 'PCT'
+                  ? `${item.lineDiscountValue}%`
+                  : formatCurrency(item.lineDiscountValue || 0)
+                })
+              </div>
+            )}
+          </TableCell>
+          <TableCell className="text-center">{item.quantity}</TableCell>
+          <TableCell className="text-right">
+            {formatCurrency(item.priceAtOrder)}
+          </TableCell>
+          <TableCell className="text-right">
+            {formatCurrency(lineTotals.grossAfterDisc)}
+          </TableCell>
+          <TableCell className="text-right">
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenLineDiscount(item)}
+              >
+                Discount
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!hasLineDiscount}
+                onClick={() => handleClearLineDiscount(item)}
+              >
+                Free
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
 
-                                          <Separator />
+        {isEditing && (
+          <TableRow>
+            <TableCell colSpan={5}>
+              <div className="flex flex-wrap items-center gap-2 border rounded-md p-2 text-xs">
+                <div className="flex items-stretch gap-1">
+                  <Input
+                    type="number"
+                    value={lineDiscountInputValue}
+                    onChange={(e) => setLineDiscountInputValue(e.target.value)}
+                    placeholder="Value"
+                    className="h-7 w-24"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() =>
+                      setLineDiscountMode((prev) => (prev === 'PCT' ? 'ABS' : 'PCT'))
+                    }
+                  >
+                    {lineDiscountMode === 'PCT' ? '%' : '₱'}
+                  </Button>
+                </div>
 
-                                          <div className="flex flex-col gap-2">
-                                            <div className="flex flex-wrap items-stretch gap-2">
-                                                {/* Discount type dropdown */}
-                                                <Select
-                                                value={lineSelectedDiscountCode}
-                                                onValueChange={(code) => {
-                                                    setLineSelectedDiscountCode(code);
-                                                    const selected = lineDiscountTypes.find(
-                                                    (d) =>
-                                                        d.code === code || d.item === code
-                                                    );
-                                                    if (selected) {
-                                                    if (selected.discountMode === 'PCT') {
-                                                        setLineDiscountMode('PCT');
-                                                    } else if (selected.discountMode === 'ABS') {
-                                                        setLineDiscountMode('ABS');
-                                                    }
-                                                    if (typeof selected.discountValue === 'number') {
-                                                        setLineDiscountInputValue(String(selected.discountValue));
-                                                    } else {
-                                                        // leave as-is if discountValue is not defined
-                                                    }
-                                                    }
-                                                }}
-                                                >
-                                                <SelectTrigger className="w-full sm:w-56">
-                                                    <SelectValue placeholder="Select discount type (optional)" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {lineDiscountTypes.map((d) => (
-                                                    <SelectItem
-                                                        key={d.id}
-                                                        value={d.code || d.item}
-                                                    >
-                                                        {d.item}
-                                                    </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                                </Select>
-                                            </div>
+                <Select
+                  value={lineSelectedDiscountCode}
+                  onValueChange={setLineSelectedDiscountCode}
+                >
+                  <SelectTrigger className="h-7 w-44 text-xs">
+                    <SelectValue placeholder="Discount type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lineDiscountTypes.map((d) => (
+                      <SelectItem key={d.id} value={d.item}>
+                        {d.item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-                                            {/* Value + ₱/% toggle + buttons */}
-                                            <div className="flex flex-wrap items-stretch gap-2">
-                                                <div className="flex flex-auto">
-                                                <Input
-                                                    type="number"
-                                                    value={lineDiscountInputValue}
-                                                    onChange={(e) => setLineDiscountInputValue(e.target.value)}
-                                                    placeholder="Discount value"
-                                                    className="rounded-r-none focus-visible:ring-offset-0"
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    className="rounded-l-none border-l-0 px-3 font-bold"
-                                                    onClick={() =>
-                                                    setLineDiscountMode((prev) => (prev === 'ABS' ? 'PCT' : 'ABS'))
-                                                    }
-                                                >
-                                                    {lineDiscountMode === 'PCT' ? '%' : '₱'}
-                                                </Button>
-                                                </div>
-                                                <Button
-                                                type="button"
-                                                size="sm"
-                                                onClick={() => handleApplyLineDiscount(item)}
-                                                >
-                                                Apply Line Discount
-                                                </Button>
-                                                <Button
-                                                type="button"
-                                                size="icon"
-                                                variant="ghost"
-                                                onClick={() => handleClearLineDiscount(item)}
-                                                >
-                                                <X className="h-4 w-4" />
-                                                <span className="sr-only">Clear line discount</span>
-                                                </Button>
-                                            </div>
-                                            </div>
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  )}
-                                </Fragment>
-                              );
-                            })}
-                             {billableItems.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={5} className="text-center text-muted-foreground">No served items to bill yet.</TableCell>
-                                </TableRow>
-                            )}
+                <div className="ml-auto flex gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleApplyLineDiscount(item)}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCancelLineDiscount}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+      </React.Fragment>
+    );
+  })}
+
+  {billableItems.length === 0 && (
+    <TableRow>
+      <TableCell colSpan={5} className="text-center text-muted-foreground">
+        No served items to bill yet.
+      </TableCell>
+    </TableRow>
+  )}
                         </TableBody>
                     </Table>
                 </CardContent>
