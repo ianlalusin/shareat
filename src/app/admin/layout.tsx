@@ -7,7 +7,6 @@ import {
   SidebarInset,
 } from "@/components/ui/sidebar";
 import { SuccessConfirm } from "@/components/ui/success-confirm";
-import { PinLock } from "@/components/admin/pin-lock";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
 
 export default function AdminLayout({
@@ -17,18 +16,16 @@ export default function AdminLayout({
 }) {
   return (
     <FirstLoginGuard>
-      <PinLock>
-        <SidebarProvider>
-          <Sidebar collapsible="icon">
-            <AdminSidebar />
-          </Sidebar>
-          <SidebarInset>
-            <AdminHeader />
-            {children}
-            <SuccessConfirm />
-          </SidebarInset>
-        </SidebarProvider>
-      </PinLock>
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <AdminSidebar />
+        </Sidebar>
+        <SidebarInset>
+          <AdminHeader />
+          {children}
+          <SuccessConfirm />
+        </SidebarInset>
+      </SidebarProvider>
     </FirstLoginGuard>
   );
 }
