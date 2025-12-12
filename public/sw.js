@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shareat-pos-v1';
+const CACHE_NAME = 'shareat-pos-v2'; // bump version to force update
 
 // Update this list when you add key routes/assets
 const URLS_TO_PRECACHE = [
@@ -8,6 +8,7 @@ const URLS_TO_PRECACHE = [
   '/refill',
   '/kitchen',
   '/admin',
+  '/admin/settings',
   '/favicon.ico',
   '/manifest.json'
 ];
@@ -16,7 +17,12 @@ const URLS_TO_PRECACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(URLS_TO_PRECACHE);
+      console.log('Opened cache');
+      return cache.addAll(URLS_TO_PRECACHE).catch(err => {
+        console.error('Failed to cache all:', err);
+        // Even if one fails, we want the SW to install.
+        // You might want more robust error handling here.
+      });
     })
   );
   self.skipWaiting();
@@ -54,8 +60,8 @@ self.addEventListener('fetch', (event) => {
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
-          // Don't cache firestore requests
-          if (request.url.includes('firestore.googleapis.com')) {
+          // Do not cache error responses
+          if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
           const copy = response.clone();
