@@ -1,459 +1,248 @@
+
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useFirestore, useAuth } from '@/firebase';
-import { collection, onSnapshot, query, where, writeBatch, serverTimestamp, doc, runTransaction, limit, getDocs, collectionGroup } from 'firebase/firestore';
-import { useStoreSelector } from '@/store/use-store-selector';
-import { Table as TableType, Order, MenuItem, RefillItem, OrderUpdateLog, CollectionItem, OrderItem } from '@/lib/types';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { OrderTimer } from '@/components/cashier/order-timer';
-import { RefillModal } from '@/components/cashier/refill-modal';
-import { LastRefillTimer } from '@/components/cashier/last-refill-timer';
-import { useToast } from '@/hooks/use-toast';
-import { GuestConfirmationModal } from '@/components/refill/guest-confirmation-modal';
-import { useAuthContext } from '@/context/auth-context';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AddonsModal } from '@/components/cashier/addons-modal';
+import { Input } from '@/components/ui/input';
+import { Search, Plus, Minus, ShoppingCart, Trash2, MessageSquarePlus } from 'lucide-react';
+import { Table as TableType, MenuItem, Order } from '@/lib/types';
+import { ScrollArea } from '../ui/scroll-area';
+import { formatCurrency } from '@/lib/utils';
+import { Separator } from '../ui/separator';
+import Image from 'next/image';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Textarea } from '../ui/textarea';
 
-const getStatusColor = (status: TableType['status']) => {
-    switch (status) {
-      case 'Available': return 'bg-green-500';
-      case 'Occupied': return 'bg-red-500';
-      case 'Reserved': return 'bg-yellow-500';
-      case 'Inactive': return 'bg-gray-500';
-      default: return 'bg-gray-300';
-    }
-};
+interface CartItem extends MenuItem {
+    quantity: number;
+    note?: string;
+}
 
-export default function RefillPage() {
-    const [tables, setTables] = useState<TableType[]>([]);
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [menu, setMenu] = useState<MenuItem[]>([]);
-    const [schedules, setSchedules] = useState<CollectionItem[]>([]);
-    const [refills, setRefills] = useState<Record<string, RefillItem[]>>({});
-    
-    const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
-    const [isAddonsModalOpen, setIsAddonsModalOpen] = useState(false);
-    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-    const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
-    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-    const [activeTab, setActiveTab] = useState('active');
+interface AddonsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  table: TableType;
+  order: Order;
+  menu: MenuItem[];
+  onPlaceOrder: (order: Order, cart: CartItem[]) => void;
+}
 
-    const firestore = useFirestore();
-    const { user } = useAuthContext();
-    const { selectedStoreId } = useStoreSelector();
-    const { toast } = useToast();
-    
-    useEffect(() => {
-        if (firestore && selectedStoreId) {
-            const tablesQuery = query(collection(firestore, 'tables'), where('storeId', '==', selectedStoreId), where('status', '==', 'Occupied'));
-            const tablesUnsubscribe = onSnapshot(tablesQuery, (snapshot) => {
-                const tablesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as TableType[];
-                setTables(tablesData.sort((a,b) => a.tableName.localeCompare(b.tableName, undefined, { numeric: true })));
-            });
+export function AddonsModal({ isOpen, onClose, table, order, menu, onPlaceOrder }: AddonsModalProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [noteInput, setNoteInput] = useState('');
+  const [editingNoteItem, setEditingNoteItem] = useState<{ key: string } | null>(null);
 
-            const ordersQuery = query(collection(firestore, 'orders'), where('storeId', '==', selectedStoreId), where('status', '==', 'Active'));
-            const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
-                const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Order);
-                setOrders([...ordersData]);
-                
-                // For each active order, listen to its refills
-                ordersData.forEach(order => {
-                    if (!refills[order.id]) { // Avoid re-subscribing
-                        const refillsQuery = query(collectionGroup(firestore, 'refills'), where('orderId', '==', order.id));
-                        onSnapshot(refillsQuery, refillSnapshot => {
-                            const refillData = refillSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data()}) as RefillItem);
-                            setRefills(prev => ({ ...prev, [order.id]: refillData }));
-                        });
-                    }
-                });
-            });
-            
-            const menuQuery = query(
-              collection(firestore, 'menu'),
-              where('storeId', '==', selectedStoreId),
-              where('isAvailable', '==', true)
-            );
-            const menuUnsubscribe = onSnapshot(menuQuery, (snapshot) => {
-              const menuData = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-              })) as MenuItem[];
-              setMenu(menuData);
-            });
-            
-            const schedulesQuery = query(
-              collection(firestore, 'lists'),
-              where('category', '==', 'menu schedules'),
-              where('is_active', '==', true),
-              where('storeIds', 'array-contains', selectedStoreId)
-            );
-            const schedulesUnsubscribe = onSnapshot(schedulesQuery, (snapshot) => {
-                const schedulesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CollectionItem[]);
-                setSchedules(schedulesData);
-            });
+  const availableMenuForAddons = useMemo(() => 
+    menu.filter(item => {
+        const price = item.price ?? 0;
+        return item.category !== 'Package' &&
+            item.isAvailable &&
+            price > 0 &&
+            (item.menuName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             item.category.toLowerCase().includes(searchTerm.toLowerCase()))
+    }), [menu, searchTerm]
+  );
+  
+  const cartSubtotal = useMemo(() => 
+    cart.reduce((total, item) => total + (item.price * item.quantity), 0),
+    [cart]
+  );
 
-            return () => {
-                tablesUnsubscribe();
-                ordersUnsubscribe();
-                menuUnsubscribe();
-                schedulesUnsubscribe();
-            };
-        } else {
-            setTables([]);
-            setOrders([]);
-            setMenu([]);
-            setSchedules([]);
-            setRefills({});
-        }
-    }, [firestore, selectedStoreId]);
-    
-    const filteredMenu = useMemo(() => {
-        if (schedules.length === 0) return menu;
-
-        const now = new Date();
-        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-
-        const activeSchedules = new Set(schedules
-            .filter(schedule => 
-                (schedule as any).days.includes(currentDay) &&
-                (schedule as any).startTime <= currentTime &&
-                (schedule as any).endTime >= currentTime
-            )
-            .map(schedule => schedule.item)
+  const handleAddToCart = (item: MenuItem) => {
+    setCart(prevCart => {
+      const existingItem = prevCart.find(cartItem => cartItem.id === item.id);
+      if (existingItem) {
+        return prevCart.map(cartItem =>
+          cartItem.id === item.id
+            ? { ...cartItem, quantity: cartItem.quantity + 1 }
+            : cartItem
         );
-
-        return menu.filter(menuItem => {
-            if (menuItem.availability === 'always') {
-                return true;
-            }
-            return activeSchedules.has(menuItem.availability);
-        });
-    }, [menu, schedules]);
-
-    const handleRefillClick = (table: TableType) => {
-        const order = orders.find(o => o.id === table.activeOrderId);
-        if(order) {
-            setSelectedOrder(order);
-            setSelectedTable(table);
-            setIsRefillModalOpen(true);
-        }
-    }
-    
-    const handleAddOnClick = (table: TableType) => {
-        const order = orders.find(o => o.id === table.activeOrderId);
-        if(order) {
-            setSelectedOrder(order);
-            setSelectedTable(table);
-            setIsAddonsModalOpen(true);
-        }
-    }
-
-    const handleConfirmClick = (table: TableType) => {
-        const order = orders.find(o => o.id === table.activeOrderId);
-        if (order) {
-            setSelectedTable(table);
-            setSelectedOrder(order);
-            setIsConfirmModalOpen(true);
-        }
-    }
-
-    const handlePlaceRefillOrder = async (order: Order, refillCart: { meatType: string; flavor: string; quantity: number; note?: string, targetStation?: string; }[]) => {
-      if (!firestore || refillCart.length === 0) return;
-      const batch = writeBatch(firestore);
-      const refillsRef = collection(firestore, 'orders', order.id, 'refills');
-      refillCart.forEach(refill => {
-        const newRefillRef = doc(refillsRef);
-        const refillData: Omit<RefillItem, 'id'> = {
-          orderId: order.id,
-          storeId: order.storeId,
-          menuItemId: refill.meatType.toLowerCase(),
-          menuName: `${refill.meatType} - ${refill.flavor}`,
-          quantity: refill.quantity,
-          targetStation: refill.targetStation as 'Hot' | 'Cold',
-          timestamp: serverTimestamp() as any,
-          status: 'Pending',
-          kitchenNote: refill.note || '',
-        };
-        batch.set(newRefillRef, refillData);
-      });
-      try {
-        await batch.commit();
-        toast({ title: 'Refill Sent!', description: 'Refill order has been sent to the kitchen.' });
-        setIsRefillModalOpen(false);
-      } catch (error) {
-        console.error("Error placing refill:", error);
-        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place refill order.' });
       }
-    };
-    
-    const handlePlaceAddonsOrder = async (order: Order, cart: (MenuItem & { quantity: number; note?: string; })[]) => {
-      if (!firestore || cart.length === 0) return;
-      const batch = writeBatch(firestore);
-      const orderItemsRef = collection(firestore, 'orders', order.id, 'orderItems');
-      cart.forEach(cartItem => {
-        const newItemRef = doc(orderItemsRef);
-        const unitPrice = cartItem.price ?? 0;
-        const isFree = unitPrice === 0;
-        const rate = cartItem.taxRate ?? 0;
-        const orderItemData: Omit<OrderItem, 'id'> = {
-          orderId: order.id,
-          storeId: order.storeId,
-          menuItemId: cartItem.id,
-          menuName: cartItem.menuName,
-          quantity: cartItem.quantity,
-          priceAtOrder: unitPrice,
-          isRefill: false,
-          timestamp: serverTimestamp() as any,
-          status: 'Pending',
-          targetStation: cartItem.targetStation,
-          sourceTag: 'refill', // Indicates it came from the refill station staff
-          kitchenNote: cartItem.note || '',
-          taxRate: rate,
-          taxProfileCode: cartItem.taxProfileCode ?? null,
-          isFree: isFree,
-        };
-        batch.set(newItemRef, orderItemData);
-      });
-      try {
-        await batch.commit();
-        toast({ title: 'Add-ons Sent!', description: 'Add-on items have been sent to the kitchen.' });
-        setIsAddonsModalOpen(false);
-      } catch (error) {
-        console.error("Error placing add-ons:", error);
-        toast({ variant: 'destructive', title: 'Order Failed', description: 'Failed to place add-on order.' });
-      }
-    };
-
-    const handleConfirmGuests = async (order: Order, serverGuestCount: number) => {
-      if (!firestore || !user) {
-        throw new Error("Firestore not available");
-      }
-
-      await runTransaction(firestore, async (transaction) => {
-        const orderRef = doc(firestore, 'orders', order.id);
-        const orderDoc = await transaction.get(orderRef);
-        if(!orderDoc.exists()) throw new Error("Order not found.");
-        
-        const currentOrderData = orderDoc.data() as Order;
-        const cashierGuestCount = currentOrderData.guestCount;
-        const finalGuestCount = Math.max(cashierGuestCount, serverGuestCount);
-
-        const updates: Partial<Order> = { isServerConfirmed: true };
-        const auditChanges: OrderUpdateLog['changes'] = [];
-
-        if (finalGuestCount !== cashierGuestCount) {
-          const unlimitedPackage = menu.find(m => m.menuName === order.packageName);
-          if (!unlimitedPackage) throw new Error("Package details could not be found.");
-
-          const newTotalAmount = unlimitedPackage.price * finalGuestCount;
-          updates.guestCount = finalGuestCount;
-          updates.totalAmount = newTotalAmount;
-
-          auditChanges.push({ field: 'guestCount', oldValue: cashierGuestCount, newValue: finalGuestCount });
-          auditChanges.push({ field: 'totalAmount', oldValue: currentOrderData.totalAmount, newValue: newTotalAmount });
-
-          // Update the initial package order item's quantity
-          const itemsQuery = query(collection(firestore, 'orders', order.id, 'orderItems'), where('sourceTag', '==', 'initial'), limit(1));
-          const itemsSnap = await getDocs(itemsQuery); // Use getDocs inside transaction
-          if (!itemsSnap.empty) {
-            const initialItemDoc = itemsSnap.docs[0];
-            transaction.update(initialItemDoc.ref, { quantity: finalGuestCount });
-          }
-        }
-        
-        transaction.update(orderRef, updates);
-
-        if (auditChanges.length > 0) {
-            const auditLogRef = doc(collection(orderRef, 'orderAudits'));
-            const auditLog: Omit<OrderUpdateLog, 'id'> = {
-                orderId: order.id,
-                storeId: order.storeId,
-                timestamp: serverTimestamp() as any,
-                updatedByUid: user.uid,
-                updatedByName: user.displayName || user.email!,
-                reason: `Server confirmed guest count. Cashier: ${cashierGuestCount}, Server: ${serverGuestCount}.`,
-                changes: auditChanges,
-            };
-            transaction.set(auditLogRef, auditLog);
-        }
-      });
-      
-      toast({
-        title: 'Guests Confirmed!',
-        description: `Table ${order.tableName} is now ready for refills.`
-      });
-      setIsConfirmModalOpen(false);
-    };
-
-    const pendingConfirmationOrders = useMemo(() => {
-      const ordersMap = new Map(orders.filter(o => !o.isServerConfirmed).map(order => [order.id, order]));
-      return tables
-        .filter(t => t.activeOrderId && ordersMap.has(t.activeOrderId))
-        .map(table => ({
-          table,
-          order: ordersMap.get(table.activeOrderId!),
-        }));
-    }, [tables, orders]);
-
-    const activeOrders = useMemo(() => {
-       const ordersMap = new Map(orders.filter(o => o.isServerConfirmed).map(order => [order.id, order]));
-       return tables
-        .filter(t => t.activeOrderId && ordersMap.has(t.activeOrderId))
-        .map(table => ({
-          table,
-          order: ordersMap.get(table.activeOrderId!),
-        }));
-    }, [tables, orders]);
-    
-    // Effect to auto-switch tabs
-    const prevPendingCountRef = useRef(pendingConfirmationOrders.length);
-    useEffect(() => {
-        const currentPendingCount = pendingConfirmationOrders.length;
-        if (currentPendingCount > prevPendingCountRef.current) {
-            if (!isRefillModalOpen && !isConfirmModalOpen && !isAddonsModalOpen) {
-                setActiveTab('waiting');
-            }
-        }
-        prevPendingCountRef.current = currentPendingCount;
-    }, [pendingConfirmationOrders.length, isRefillModalOpen, isConfirmModalOpen, isAddonsModalOpen]);
-
-    if (!selectedStoreId) {
-        return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-4">
-                 <Alert variant="info" size="sm" className="max-w-md">
-                    <AlertTitle>No Store Selected</AlertTitle>
-                    <AlertDescription>Please select a store from the header to manage refills and add-ons.</AlertDescription>
-                </Alert>
-            </div>
+      return [...cart, { ...item, quantity: 1, note: '' }];
+    });
+  };
+  
+  const updateQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      setCart(prevCart => prevCart.filter(item => item.id !== itemId));
+    } else {
+      setCart(prevCart =>
+        prevCart.map(item =>
+          item.id === itemId ? { ...item, quantity: newQuantity } : item
         )
+      );
     }
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+  }
+
+  const handlePlaceOrderClick = () => {
+    onPlaceOrder(order, cart);
+  };
+  
+  const handleSaveNote = () => {
+    if (!editingNoteItem) return;
+    setCart(prev => prev.map(item => 
+        item.id === editingNoteItem.key ? {...item, note: noteInput} : item
+    ));
+    setEditingNoteItem(null);
+    setNoteInput('');
+  }
+
+  const openNotePopover = (key: string, currentNote?: string) => {
+    setEditingNoteItem({ key });
+    setNoteInput(currentNote || '');
+  };
+
+  useEffect(() => {
+      if(!isOpen) {
+        setCart([]);
+        setSearchTerm('');
+        setEditingNoteItem(null);
+        setNoteInput('');
+      }
+  }, [isOpen]);
 
   return (
-    <>
-      <main className="flex-1 p-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1">
-            <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="waiting">Waiting for Confirmation ({pendingConfirmationOrders.length})</TabsTrigger>
-                <TabsTrigger value="active">Active Tables ({activeOrders.length})</TabsTrigger>
-            </TabsList>
-            <TabsContent value="waiting" className="flex-1 mt-6">
-                {pendingConfirmationOrders.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center pt-8">No new orders waiting for confirmation.</p>
-            ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {pendingConfirmationOrders.map(({ table, order }) => {
-                    if (!order) return null;
-                    return (
-                        <Card 
-                            key={table.id} 
-                            className="bg-yellow-100 dark:bg-yellow-900/40 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow flex flex-col"
-                            onClick={() => handleConfirmClick(table)}
-                        >
-                            <CardHeader className="p-4">
-                                <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                                <p className="text-sm text-muted-foreground font-medium">{order.packageName}</p>
-                            </CardHeader>
-                            <CardContent className="p-4 pt-0 flex-grow">
-                                <p className="text-sm font-semibold">Customer: {order.customerName || 'N/A'}</p>
-                            </CardContent>
-                            <CardFooter className="p-2 border-t">
-                                <Button className="w-full" variant="secondary">Confirm Guests</Button>
-                            </CardFooter>
-                        </Card>
-                    )
-                    })}
-                </div>
-            )}
-            </TabsContent>
-            <TabsContent value="active" className="flex-1 mt-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {activeOrders.map(({table, order}) => {
-                    if (!order) return null;
-                    const orderRefills = refills[order.id] || [];
-                    const lastRefill = orderRefills.length > 0 
-                        ? orderRefills.reduce((latest, current) => {
-                            if (!latest?.timestamp) return current;
-                            if (!current?.timestamp) return latest;
-                            return (latest.timestamp.toMillis() > current.timestamp.toMillis()) ? latest : current
-                        }) : null;
-                    
-                    return (
-                        <Card 
-                            key={table.id} 
-                            className="bg-muted/30 hover:shadow-lg transition-shadow flex flex-col"
-                        >
-                            <CardHeader className="p-4 flex-row items-start justify-between space-y-0">
-                                <div>
-                                    <CardTitle className="text-xl font-bold">{table.tableName}</CardTitle>
-                                    <p className="text-xs text-muted-foreground font-medium">{order.packageName}</p>
-                                </div>
-                                <Badge className={cn("text-white", getStatusColor(table.status))}>
-                                    {table.status}
-                                </Badge>
-                            </CardHeader>
-                            <CardContent className="p-4 pt-0 flex-grow">
-                                <div className="text-sm space-y-1">
-                                    <p><span className="font-semibold">Guests:</span> {order.guestCount}</p>
-                                    <OrderTimer startTime={order.orderTimestamp} />
-                                    {lastRefill ? (
-                                        <div className="pt-2">
-                                            <p className="font-semibold text-xs text-muted-foreground">Last Refill:</p>
-                                            <p>{lastRefill.quantity}x {lastRefill.menuName}</p>
-                                            <LastRefillTimer refillTime={lastRefill.timestamp} />
-                                        </div>
-                                    ) : (
-                                        <p className="pt-2 text-sm text-muted-foreground">No refills yet.</p>
-                                    )}
-                                </div>
-                            </CardContent>
-                             <CardFooter className="p-2 border-t grid grid-cols-2 gap-2">
-                                <Button variant="secondary" onClick={() => handleRefillClick(table)}>Refill</Button>
-                                <Button variant="outline" onClick={() => handleAddOnClick(table)}>Add-ons</Button>
-                            </CardFooter>
-                        </Card>
-                    )
-                })}
-                </div>
-            </TabsContent>
-        </Tabs>
-      </main>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-full md:max-w-7xl h-full md:h-[90vh] flex flex-col p-2 sm:p-4">
+        <DialogHeader className='p-4 pb-0 sm:p-0'>
+          <DialogTitle>Add Items to Order: {table.tableName}</DialogTitle>
+          <DialogDescription>
+            Customer: {order.customerName} | Package: {order.packageName}
+          </DialogDescription>
+        </DialogHeader>
 
-      {isRefillModalOpen && selectedOrder && selectedTable && (
-        <RefillModal
-            isOpen={isRefillModalOpen}
-            onClose={() => setIsRefillModalOpen(false)}
-            table={selectedTable}
-            order={selectedOrder}
-            menu={filteredMenu}
-            onPlaceOrder={handlePlaceRefillOrder}
-        />
-      )}
-      
-      {isAddonsModalOpen && selectedOrder && selectedTable && (
-        <AddonsModal
-            isOpen={isAddonsModalOpen}
-            onClose={() => setIsAddonsModalOpen(false)}
-            table={selectedTable}
-            order={selectedOrder}
-            menu={filteredMenu}
-            onPlaceOrder={handlePlaceAddonsOrder}
-        />
-      )}
+        <Popover onOpenChange={(open) => !open && setEditingNoteItem(null)}>
+        <div className="grid md:grid-cols-[3fr_2fr] gap-6 flex-1 overflow-hidden p-2 sm:p-0">
+            {/* Left: Menu */}
+            <div className="flex flex-col gap-4">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search menu..."
+                        className="pl-9"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <ScrollArea className="flex-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pr-4">
+                        {availableMenuForAddons.map(item => (
+                            <div key={item.id} className="flex flex-col items-center justify-between p-2 rounded-lg border text-center aspect-square">
+                                <div className="h-16 w-16 flex-shrink-0 bg-muted rounded-md overflow-hidden relative mb-2">
+                                    {item.imageUrl && <Image src={item.imageUrl} alt={item.menuName} layout='fill' objectFit='cover'/>}
+                                </div>
+                                <div className='flex-grow flex flex-col justify-center'>
+                                    <p className="font-semibold text-xs leading-tight">{item.menuName}</p>
+                                    <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
+                                </div>
+                                <Button size="sm" className="mt-2 w-full h-8 text-xs" onClick={() => handleAddToCart(item)}>
+                                    <Plus className="h-4 w-4 mr-1" /> Add
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                </ScrollArea>
+            </div>
 
-      {selectedOrder && selectedTable && (
-        <GuestConfirmationModal
-          isOpen={isConfirmModalOpen}
-          onClose={() => setIsConfirmModalOpen(false)}
-          order={selectedOrder}
-          onConfirm={handleConfirmGuests}
-        />
-      )}
-    </>
+            {/* Right: Cart */}
+            <div className="flex flex-col border-l pl-6">
+                <h3 className="text-lg font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Current Cart</h3>
+                <Separator className="my-3" />
+                <ScrollArea className="flex-1">
+                   {cart.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-16">
+                        <p>Your cart is empty.</p>
+                        <p className="text-sm">Add items from the menu.</p>
+                    </div>
+                   ) : (
+                    <div className="space-y-3 pr-4">
+                        {cart.map(item => (
+                            <div key={item.id}>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="font-medium">{item.menuName}</p>
+                                        <p className="text-sm text-muted-foreground">{formatCurrency(item.price)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <PopoverTrigger asChild>
+                                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNotePopover(item.id, item.note)}>
+                                              <MessageSquarePlus className="h-4 w-4" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
+                                            <Minus className="h-4 w-4" />
+                                        </Button>
+                                        <span className="w-6 text-center font-bold">{item.quantity}</span>
+                                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.id, item.quantity + 1)}>
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                                {item.note && <p className="text-xs text-red-500 italic pl-1">Note: {item.note}</p>}
+                            </div>
+                        ))}
+                    </div>
+                   )}
+                </ScrollArea>
+                {cart.length > 0 && (
+                    <>
+                        <Separator className="my-3" />
+                        <div className="flex justify-between items-center font-semibold text-lg">
+                            <span>Subtotal</span>
+                            <span>{formatCurrency(cartSubtotal)}</span>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+
+        <PopoverContent className="w-80">
+            <div className="grid gap-4">
+                <div className="space-y-2">
+                    <h4 className="font-medium leading-none">Add Kitchen Note</h4>
+                    <p className="text-sm text-muted-foreground">
+                        Add a special instruction for this item.
+                    </p>
+                </div>
+                <div className="grid gap-2">
+                    <Textarea
+                        value={noteInput}
+                        onChange={(e) => setNoteInput(e.target.value)}
+                        placeholder="e.g., extra crispy"
+                    />
+                    <Button onClick={handleSaveNote}>Save Note</Button>
+                </div>
+            </div>
+        </PopoverContent>
+        </Popover>
+
+        <DialogFooter className="mt-4 flex-row justify-between">
+            <Button variant="destructive" onClick={handleClearCart} disabled={cart.length === 0}>
+                <Trash2 className="mr-2 h-4 w-4" /> Clear
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handlePlaceOrderClick} disabled={cart.length === 0}>
+                Add to Order ({cart.reduce((acc, item) => acc + item.quantity, 0)})
+              </Button>
+            </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
