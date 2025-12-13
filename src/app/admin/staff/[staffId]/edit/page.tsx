@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -53,7 +53,14 @@ export default function EditStaffPage() {
   const storage = useStorage();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
-  const { user, devMode } = useAuthContext();
+  const { user: authUser, appUser, devMode } = useAuthContext();
+
+  const filteredPositionOptions = useMemo(() => {
+    if (appUser?.role === 'manager') {
+      return positionOptions.filter(p => p !== 'admin' && p !== 'manager');
+    }
+    return positionOptions;
+  }, [appUser]);
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -176,7 +183,7 @@ export default function EditStaffPage() {
       picture: pictureUrl,
       birthday: isValid(birthdayDate) ? birthdayDate : null,
       dateHired: isValid(dateHiredDate) ? dateHiredDate : null,
-      encoder: user?.displayName || (devMode ? 'Dev User' : 'Unknown'),
+      encoder: authUser?.displayName || (devMode ? 'Dev User' : 'Unknown'),
     };
 
     try {
@@ -267,7 +274,7 @@ export default function EditStaffPage() {
                         <SelectValue placeholder="Select a position" />
                     </SelectTrigger>
                     <SelectContent>
-                        {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                        {filteredPositionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
                     </SelectContent>
                 </Select>
               </div>
@@ -325,7 +332,7 @@ export default function EditStaffPage() {
                     name="authUid" 
                     value={formData.authUid || ''} 
                     onChange={handleInputChange}
-                    disabled={!devMode && !user} 
+                    disabled={!devMode && !authUser} 
                   />
                 </div>
                 <div className="space-y-2">

@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -59,10 +59,17 @@ export default function NewStaffPage() {
   const [dateErrors, setDateErrors] = useState<{ birthday?: string; dateHired?: string }>({});
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, devMode } = useAuthContext();
+  const { user: authUser, appUser, devMode } = useAuthContext();
   const router = useRouter();
   const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
+
+  const filteredPositionOptions = useMemo(() => {
+    if (appUser?.role === 'manager') {
+      return positionOptions.filter(p => p !== 'admin' && p !== 'manager');
+    }
+    return positionOptions;
+  }, [appUser]);
 
   useEffect(() => {
     if (firestore) {
@@ -75,9 +82,9 @@ export default function NewStaffPage() {
   }, [firestore]);
   
   useEffect(() => {
-    const editorName = user?.displayName || (devMode ? 'Dev User' : 'Unknown');
+    const editorName = authUser?.displayName || (devMode ? 'Dev User' : 'Unknown');
     setFormData(prev => ({...prev, encoder: editorName}));
-  }, [user, devMode]);
+  }, [authUser, devMode]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -219,7 +226,7 @@ export default function NewStaffPage() {
                         <SelectValue placeholder="Select a position" />
                     </SelectTrigger>
                     <SelectContent>
-                        {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                        {filteredPositionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
                     </SelectContent>
                 </Select>
               </div>
@@ -280,7 +287,7 @@ export default function NewStaffPage() {
                       value={formData.authUid || ''} 
                       onChange={handleInputChange}
                       placeholder="Enter Firebase Auth UID manually"
-                      disabled={!devMode && !user}
+                      disabled={!devMode && !authUser}
                     />
                 </div>
                 <div className="space-y-2">

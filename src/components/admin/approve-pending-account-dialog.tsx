@@ -63,7 +63,7 @@ export function ApprovePendingAccountDialog({
   staffList,
   firestore,
 }: Props) {
-  const { user, devMode } = useAuthContext();
+  const { user: authUser, appUser, devMode } = useAuthContext();
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [stores, setStores] = useState<Store[]>([]);
   const { toast } = useToast();
@@ -73,6 +73,13 @@ export function ApprovePendingAccountDialog({
 
   const [saving, setSaving] = useState(false);
   const [originalStaffData, setOriginalStaffData] = useState<Staff | null>(null);
+
+  const filteredPositionOptions = useMemo(() => {
+    if (appUser?.role === 'manager') {
+      return positionOptions.filter(p => p !== 'admin' && p !== 'manager');
+    }
+    return positionOptions;
+  }, [appUser]);
 
   const selectedStaff = useMemo(
     () => staffList.find(s => s.id === selectedStaffId) ?? null,
@@ -126,12 +133,12 @@ export function ApprovePendingAccountDialog({
   
 
   const handleLinkAndApprove = async () => {
-    if (!firestore || !user || !pending.uid || !pending.email || !selectedStaff) {
+    if (!firestore || !authUser || !pending.uid || !pending.email || !selectedStaff) {
       toast({ variant: 'destructive', title: 'Error', description: 'Invalid pending account data or staff selection.' });
       return;
     }
     setSaving(true);
-    const editorName = user.displayName || (devMode ? 'Dev User' : 'System');
+    const editorName = authUser.displayName || (devMode ? 'Dev User' : 'System');
     const storeForStaff = stores.find(s => s.storeName === selectedStaff.assignedStore);
 
     try {
@@ -178,7 +185,7 @@ export function ApprovePendingAccountDialog({
   };
   
   const handleCreateAndApprove = async () => {
-    if (!firestore || !user || !pending.uid || !pending.email) {
+    if (!firestore || !authUser || !pending.uid || !pending.email) {
       toast({ variant: 'destructive', title: 'Error', description: 'Invalid pending account data.' });
       return;
     }
@@ -188,7 +195,7 @@ export function ApprovePendingAccountDialog({
     }
 
     setSaving(true);
-    const editorName = user.displayName || (devMode ? 'Dev User' : 'System');
+    const editorName = authUser.displayName || (devMode ? 'Dev User' : 'System');
     const storeForStaff = stores.find(s => s.storeName === newStaffData.assignedStore);
 
     try {
@@ -237,7 +244,7 @@ export function ApprovePendingAccountDialog({
 
 
   const handleApproveUpdate = async () => {
-    if (!firestore || !user || !pending.staffId || !pending.updates) {
+    if (!firestore || !authUser || !pending.staffId || !pending.updates) {
       toast({ variant: 'destructive', title: 'Error', description: 'Invalid update request data.' });
       return;
     }
@@ -252,14 +259,14 @@ export function ApprovePendingAccountDialog({
 
         await updateDoc(staffRef, {
             ...updatesToApply,
-            encoder: user.displayName || user.email,
+            encoder: authUser.displayName || authUser.email,
         });
 
         const pendingRef = doc(firestore, "pendingAccounts", pending.id);
         await updateDoc(pendingRef, {
             status: "approved",
             approvedAt: serverTimestamp(),
-            approvedBy: user.displayName || user.email,
+            approvedBy: authUser.displayName || authUser.email,
         });
 
         toast({ title: 'Update Approved', description: `Profile for ${pending.fullName} has been updated.` });
@@ -343,7 +350,7 @@ export function ApprovePendingAccountDialog({
                         <Select name="position" value={newStaffData.position} onValueChange={(v) => setNewStaffData(prev => ({...prev, position: v as StaffPosition}))} required>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                                {filteredPositionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
