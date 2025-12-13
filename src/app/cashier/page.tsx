@@ -225,8 +225,8 @@ function CashierPageContent() {
         const isFree = unitPrice === 0;
         const rate = cartItem.taxRate ?? 0;
         const taxProfile = menu.find(
-          (m) => m.taxProfileCode === cartItem.taxProfileCode
-        );
+            (m) => m.taxProfileCode === cartItem.taxProfileCode
+          );
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
           storeId: order.storeId,
