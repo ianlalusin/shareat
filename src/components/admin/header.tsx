@@ -6,16 +6,35 @@ import { StoreSelector } from "./store-selector";
 import { NavButtonGroup, NavButtonGroupMobile } from "./nav-button-group";
 import { Logo } from "./logo";
 import { cn } from "@/lib/utils";
-import { MoreVertical } from "lucide-react";
+import { MoreVertical, CircleUser } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { useAuthContext } from "@/context/auth-context";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/firebase";
+import { signOut } from "firebase/auth";
+import Link from 'next/link';
 
 export function AdminHeader() {
   const { state } = useSidebar();
+  const { devMode, setDevMode } = useAuthContext();
+  const router = useRouter();
+  const auth = useAuth();
+
+  const handleLogout = async () => {
+    if (devMode) {
+      setDevMode(false);
+    }
+    await signOut(auth);
+    router.push('/login');
+  };
 
   return (
     <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-4 border-b bg-primary px-4 md:px-6">

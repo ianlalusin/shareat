@@ -16,8 +16,24 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '../ui/button';
 import { LiveDateTime } from '@/components/cashier/live-date-time';
+import { useAuthContext } from '@/context/auth-context';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/firebase';
+import { signOut } from 'firebase/auth';
 
 export function KitchenHeader() {
+  const { devMode, setDevMode } = useAuthContext();
+  const router = useRouter();
+  const auth = useAuth();
+
+  const handleLogout = async () => {
+    if (devMode) {
+      setDevMode(false);
+    }
+    await signOut(auth);
+    router.push('/login');
+  };
+
   return (
     <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-4 border-b bg-primary px-4 md:px-6">
       <div className="flex items-center gap-4">
@@ -35,10 +51,9 @@ export function KitchenHeader() {
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuItem>Support</DropdownMenuItem>
+            <DropdownMenuItem asChild><Link href="/admin/settings/account">Settings</Link></DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Logout</DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleLogout}>Logout</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
