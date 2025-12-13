@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { doc, setDoc, updateDoc, serverTimestamp, Firestore, Timestamp } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Staff, User } from "@/lib/types";
@@ -15,27 +15,44 @@ import { parse, isValid } from 'date-fns';
 import { useAuthContext } from "@/context/auth-context";
 import { useFirestore } from "@/firebase";
 
-// This component used to be ExistingStaffVerification, it is now a standalone page.
-// The `staff` data will be passed via router state if this page is ever needed.
-// For now, it's a placeholder to complete the routing structure.
 export default function VerifyStaffPage() {
     const { user } = useAuthContext();
     const firestore = useFirestore();
 
-    // In a real implementation, staff would be fetched or passed via state
     const [staff, setStaff] = useState<(Staff & { id: string }) | null>(null);
-
-    const [fullName, setFullName] = useState(staff?.fullName ?? user?.displayName ?? "");
-    const [phone, setPhone] = useState(staff?.contactNo ?? "");
-    const [birthday, setBirthday] = useState(() => {
-        if (!staff?.birthday) return '';
-        if (staff.birthday instanceof Timestamp) {
-            return formatAndValidateDate(staff.birthday.toDate()).formatted;
-        }
-        return staff.birthday as string;
-    });
+    const [fullName, setFullName] = useState("");
+    const [phone, setPhone] = useState("");
+    const [birthday, setBirthday] = useState("");
     const [dateError, setDateError] = useState<string | undefined>();
     const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        // Retrieve data from localStorage on component mount
+        const storedStaff = localStorage.getItem('onboarding_staff_data');
+        if (storedStaff) {
+            const staffData = JSON.parse(storedStaff);
+            setStaff(staffData);
+            
+            setFullName(staffData.fullName || user?.displayName || "");
+            setPhone(staffData.contactNo || "");
+            
+            let birthdayStr = '';
+            if (staffData.birthday) {
+                // Firestore Timestamps get serialized in localStorage, need to reconstruct
+                if (typeof staffData.birthday === 'object' && staffData.birthday.seconds) {
+                    birthdayStr = formatAndValidateDate(new Timestamp(staffData.birthday.seconds, staffData.birthday.nanoseconds).toDate()).formatted;
+                } else {
+                    birthdayStr = formatAndValidateDate(staffData.birthday).formatted;
+                }
+            }
+            setBirthday(birthdayStr);
+            
+            // Optional: Clean up localStorage after use
+            localStorage.removeItem('onboarding_staff_data');
+        } else {
+            console.warn('No staff data found for verification.');
+        }
+    }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +86,7 @@ export default function VerifyStaffPage() {
       });
       
       // Force a reload to re-evaluate the auth context and guard
-      window.location.reload();
+      window.location.href = '/';
 
     } catch (err) {
       console.error("Error completing existing staff onboarding", err);
@@ -165,7 +182,7 @@ export default function VerifyStaffPage() {
                 </CardFooter>
                 </form>
             ) : (
-                <p className="text-muted-foreground text-center">No staff record found to verify.</p>
+                <p className="text-muted-foreground text-center">Loading your record...</p>
             )}
         </CardContent>
       </Card>

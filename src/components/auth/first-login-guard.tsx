@@ -1,7 +1,7 @@
 
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
@@ -23,25 +23,40 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (isInitialAuthLoading) return;
-
-    if (!user && !devMode) {
-      router.push("/login");
+    // If auth is still loading, wait.
+    if (isInitialAuthLoading) {
       return;
     }
 
+    // If user is not logged in (and not in dev mode), push to login page.
+    if (!user && !devMode) {
+      // Don't redirect if we are already on a public/auth path
+      if (!pathname.startsWith('/login') && !pathname.startsWith('/onboarding')) {
+         router.replace("/login");
+      }
+      return;
+    }
+
+    // If the user IS logged in but NOT onboarded yet, let the OnboardingFlowManager handle it.
+    // The OnboardingFlowManager will be rendered instead of `children` and perform the necessary redirect.
+    if (user && !isOnboarded) {
+        // We don't need to do anything here, the component will render the manager.
+        return;
+    }
+
+    // If we get here, the user is logged in AND onboarded.
+    // Let's redirect them to their correct role-based dashboard if they land on a generic page.
     if (isOnboarded && appUser?.role) {
       const intendedPath = ROLE_REDIRECTS[appUser.role];
-      const isBasePath = pathname === intendedPath;
-      const isAdminOnAnotherAdminPage = (appUser.role === 'admin' || appUser.role === 'manager') && pathname.startsWith('/admin');
-
-      // Redirect only if they are at the root or another top-level page
-      // but allow them to navigate within their own area (e.g. admin can go to /admin/settings)
-      if (pathname === '/' || (pathname === '/admin' && !isAdminOnAnotherAdminPage) ) {
-         router.replace(intendedPath);
+      const currentBasePath = `/${pathname.split('/')[1]}`;
+      
+      // If user is on a generic page like '/' or on a page not meant for their role, redirect them.
+      if (pathname === '/' || pathname === '/login' || currentBasePath !== intendedPath) {
+        router.replace(intendedPath);
       }
     }
-  }, [isInitialAuthLoading, user, devMode, isOnboarded, appUser, router, pathname]);
+
+  }, [isInitialAuthLoading, user, isOnboarded, appUser, devMode, router, pathname]);
 
   if (isInitialAuthLoading) {
     return (
@@ -56,15 +71,15 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     );
   }
 
+  // If user is logged in but not onboarded, render the OnboardingFlowManager.
+  // This manager will handle redirecting to the correct /onboarding/... page.
+  if (user && !isOnboarded) {
+    return <OnboardingFlowManager />;
+  }
+
   // If user is fully onboarded, show the main application content.
   if (isOnboarded) {
     return <>{children}</>;
-  }
-
-  // If we are still here, the user is logged in but not onboarded.
-  // The OnboardingFlowManager will figure out where to send them.
-  if (user) {
-    return <OnboardingFlowManager />;
   }
 
   // Fallback, should not be reached in normal flow.
@@ -78,8 +93,10 @@ function OnboardingFlowManager() {
 
   useEffect(() => {
     if (devMode) {
-      // Dev mode bypasses onboarding logic, reload to get into main app.
-      window.location.reload();
+      // Dev mode bypasses onboarding logic.
+      // A simple reload might be too aggressive if context isn't ready.
+      // Let's try redirecting to /admin, which is the dev default.
+      router.replace('/admin');
       return;
     }
     if (!user || !firestore) return;
@@ -111,14 +128,14 @@ function OnboardingFlowManager() {
 
         if (staffList.length === 1) {
           // Pass staff data via state to the verification page
-          // Note: This is a simple approach. For complex data, consider a state manager.
-          router.replace("/onboarding/verify", {
-            state: { staffData: staffList[0] },
-          } as any);
+          // This is a client-side navigation feature, not a standard URL parameter.
+          // Note: This approach might not persist on page refresh. A more robust solution might use URL params if needed.
+          localStorage.setItem('onboarding_staff_data', JSON.stringify(staffList[0]));
+          router.replace("/onboarding/verify");
+
         } else if (staffList.length > 1) {
-          router.replace("/onboarding/resolve", {
-            state: { staffList },
-          } as any);
+          localStorage.setItem('onboarding_staff_list', JSON.stringify(staffList));
+          router.replace("/onboarding/resolve");
         } else {
           router.replace("/onboarding/apply");
         }
@@ -133,7 +150,7 @@ function OnboardingFlowManager() {
   // Render a loading state while the check is in progress
   return (
     <div className="flex h-svh w-full items-center justify-center">
-      <p className="text-center text-muted-foreground">Redirecting to onboarding...</p>
+      <p className="text-center text-muted-foreground">Finalizing setup...</p>
     </div>
   );
 }

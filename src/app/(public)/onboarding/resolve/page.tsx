@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   doc,
@@ -20,18 +20,27 @@ import { Loader2 } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { useFirestore } from "@/firebase";
 
-// This component used to be DuplicateStaffResolution, it is now a standalone page.
-// The `staffList` will be passed via router state if this page is ever needed.
-// For now, it's a placeholder to complete the routing structure.
 export default function ResolveStaffPage() {
   const { user } = useAuthContext();
   const firestore = useFirestore();
   const router = useRouter();
 
-  // In a real implementation, staffList would be fetched or passed via state
   const [staffList, setStaffList] = useState<(Staff & { id: string })[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // Retrieve data from localStorage on component mount
+    const storedList = localStorage.getItem('onboarding_staff_list');
+    if (storedList) {
+      setStaffList(JSON.parse(storedList));
+      // Optional: Clean up localStorage after use
+      localStorage.removeItem('onboarding_staff_list');
+    } else {
+      // If no data, maybe redirect or show an error
+      console.warn('No staff list found for resolution.');
+    }
+  }, []);
 
   const handleConfirm = async () => {
     if (!selectedId || !user || !firestore) return;
@@ -67,8 +76,8 @@ export default function ResolveStaffPage() {
         )
       );
 
-      // Force a reload to re-evaluate auth state
-      window.location.reload();
+      // Force a reload to re-evaluate auth state and trigger FirstLoginGuard
+      window.location.href = '/';
 
     } catch (err) {
       console.error("Error resolving duplicate staff", err);
@@ -91,7 +100,7 @@ export default function ResolveStaffPage() {
         </CardHeader>
         <CardContent>
             {staffList.length === 0 ? (
-                <p className="text-muted-foreground text-center">No staff profiles to resolve.</p>
+                <p className="text-muted-foreground text-center">Loading staff profiles...</p>
             ) : (
                 <RadioGroup
                     value={selectedId ?? undefined}
