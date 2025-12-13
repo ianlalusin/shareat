@@ -12,6 +12,8 @@ import {
   onSnapshot,
   getDoc,
   Timestamp,
+  addDoc,
+  runTransaction,
 } from "firebase/firestore";
 import { parse } from 'date-fns';
 
@@ -22,13 +24,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Store, AppUser, PendingAccount, Staff } from "@/lib/types";
+import { Store, AppUser, PendingAccount, Staff, StaffPosition } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
@@ -44,6 +47,15 @@ interface Props {
   firestore: Firestore;
 }
 
+const positionOptions: StaffPosition[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
+
+const initialNewStaffState: Partial<Staff> = {
+  position: 'cashier',
+  employmentStatus: 'Active',
+  rate: 0,
+  assignedStore: '',
+};
+
 export function ApprovePendingAccountDialog({
   open,
   onOpenChange,
@@ -55,6 +67,9 @@ export function ApprovePendingAccountDialog({
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [stores, setStores] = useState<Store[]>([]);
   const { toast } = useToast();
+
+  const [newStaffData, setNewStaffData] = useState(initialNewStaffState);
+  const [activeTab, setActiveTab] = useState("link");
 
   const [saving, setSaving] = useState(false);
   const [originalStaffData, setOriginalStaffData] = useState<Staff | null>(null);
@@ -73,7 +88,8 @@ export function ApprovePendingAccountDialog({
     // Reset state when pending user changes
     setSaving(false);
     setSelectedStaffId("");
-    if(pending.type === 'profile_update') {
+    if (pending.type === 'profile_update') {
+      setActiveTab('update');
         const fetchOriginal = async () => {
             if(pending.staffId) {
                 const staffDoc = await getDoc(doc(firestore, 'staff', pending.staffId));
@@ -83,6 +99,15 @@ export function ApprovePendingAccountDialog({
         fetchOriginal();
     } else {
         setOriginalStaffData(null);
+        setActiveTab('link');
+        setNewStaffData({
+          ...initialNewStaffState,
+          fullName: pending.fullName,
+          email: pending.email,
+          contactNo: pending.phone || '',
+          address: pending.address || '',
+          birthday: pending.birthday || '',
+        });
     }
   }, [pending, firestore]);
   
@@ -91,65 +116,53 @@ export function ApprovePendingAccountDialog({
     const unsub = onSnapshot(collection(firestore, "stores"), (snap) => {
         const storesData = snap.docs.map(d => ({id: d.id, ...d.data()}) as Store);
         setStores(storesData);
+        // Pre-select store if there's only one
+        if (storesData.length === 1) {
+          setNewStaffData(prev => ({...prev, assignedStore: storesData[0].storeName}));
+        }
     });
     return () => unsub();
   }, [firestore]);
   
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!firestore || !user) return;
-
-    if (pending.type === 'profile_update') {
-        await handleApproveUpdate();
-        return;
-    }
-
-    if (!pending.uid || !pending.email) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Invalid pending account data.' });
+  const handleLinkAndApprove = async () => {
+    if (!firestore || !user || !pending.uid || !pending.email || !selectedStaff) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Invalid pending account data or staff selection.' });
       return;
     }
-
-    if (!selectedStaff) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Please select a staff member to link.' });
-      return;
-    }
-
     setSaving(true);
     const editorName = user.displayName || (devMode ? 'Dev User' : 'System');
-
     const storeForStaff = stores.find(s => s.storeName === selectedStaff.assignedStore);
 
     try {
-      const userRef = doc(firestore, "users", pending.uid);
-      await setDoc(userRef, {
-        staffId: selectedStaff.id,
-        email: selectedStaff.email,
-        displayName: selectedStaff.fullName,
-        role: selectedStaff.position,
-        storeId: storeForStaff?.id || '',
-        status: "active",
-        createdAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp(),
-      } as Omit<AppUser, 'id'>);
+      await runTransaction(firestore, async (transaction) => {
+        const staffRef = doc(firestore, "staff", selectedStaff.id);
+        const staffDoc = await transaction.get(staffRef);
+        if (staffDoc.data()?.authUid) {
+          throw new Error("This staff profile has already been linked.");
+        }
+        
+        const userRef = doc(firestore, "users", pending.uid);
+        transaction.set(userRef, {
+          staffId: selectedStaff.id,
+          email: selectedStaff.email,
+          displayName: selectedStaff.fullName,
+          role: selectedStaff.position,
+          storeId: storeForStaff?.id || '',
+          status: "active",
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+        } as Omit<AppUser, 'id'>);
 
-      const staffRef = doc(firestore, "staff", selectedStaff.id);
-      await updateDoc(staffRef, {
-        authUid: pending.uid,
-        lastLoginAt: serverTimestamp(),
-        encoder: editorName,
-      });
+        transaction.update(staffRef, { authUid: pending.uid, lastLoginAt: serverTimestamp(), encoder: editorName });
 
-      const pendingRef = doc(firestore, "pendingAccounts", pending.id);
-      await updateDoc(pendingRef, {
-        status: "approved",
-        approvedAt: serverTimestamp(),
-        approvedBy: editorName,
+        const pendingRef = doc(firestore, "pendingAccounts", pending.id);
+        transaction.update(pendingRef, { status: "approved", approvedAt: serverTimestamp(), approvedBy: editorName });
       });
 
       toast({
-        title: "Account Approved",
-        description: `${selectedStaff.fullName}'s account is now active and linked.`
+        title: "Account Approved & Linked",
+        description: `${selectedStaff.fullName}'s account is now active.`
       });
       onOpenChange(false);
     } catch (err) {
@@ -157,12 +170,71 @@ export function ApprovePendingAccountDialog({
       toast({
         variant: 'destructive',
         title: 'Approval Failed',
-        description: 'Failed to approve request. Please try again.',
+        description: err instanceof Error ? err.message : 'Failed to approve request. Please try again.',
       });
     } finally {
       setSaving(false);
     }
   };
+  
+  const handleCreateAndApprove = async () => {
+    if (!firestore || !user || !pending.uid || !pending.email) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Invalid pending account data.' });
+      return;
+    }
+    if (!newStaffData.position || !newStaffData.assignedStore) {
+      toast({ variant: 'destructive', title: 'Missing Fields', description: 'Please select a Position and Assigned Store.' });
+      return;
+    }
+
+    setSaving(true);
+    const editorName = user.displayName || (devMode ? 'Dev User' : 'System');
+    const storeForStaff = stores.find(s => s.storeName === newStaffData.assignedStore);
+
+    try {
+        const newStaffRef = doc(collection(firestore, 'staff'));
+
+        await runTransaction(firestore, async (transaction) => {
+            const birthdayDate = newStaffData.birthday ? parse(newStaffData.birthday as string, 'MMMM dd, yyyy', new Date()) : null;
+            const staffPayload: Omit<Staff, 'id'> = {
+                ...initialNewStaffState,
+                ...newStaffData,
+                authUid: pending.uid,
+                encoder: editorName,
+                birthday: isValid(birthdayDate) ? Timestamp.fromDate(birthdayDate) : null,
+                dateHired: serverTimestamp(), // Default hire date to now
+            };
+            transaction.set(newStaffRef, staffPayload);
+
+            const userRef = doc(firestore, "users", pending.uid);
+            transaction.set(userRef, {
+                staffId: newStaffRef.id,
+                email: pending.email,
+                displayName: pending.fullName,
+                role: newStaffData.position,
+                storeId: storeForStaff?.id || '',
+                status: "active",
+                createdAt: serverTimestamp(),
+                lastLoginAt: serverTimestamp(),
+            } as Omit<AppUser, 'id'>);
+
+            const pendingRef = doc(firestore, "pendingAccounts", pending.id);
+            transaction.update(pendingRef, { status: "approved", approvedAt: serverTimestamp(), approvedBy: editorName });
+        });
+
+        toast({
+            title: "Account & Staff Created",
+            description: `${pending.fullName}'s staff profile has been created and their account is active.`
+        });
+        onOpenChange(false);
+    } catch (err) {
+        console.error("Error creating and approving account:", err);
+        toast({ variant: 'destructive', title: 'Creation Failed', description: 'Could not create staff profile.' });
+    } finally {
+        setSaving(false);
+    }
+  };
+
 
   const handleApproveUpdate = async () => {
     if (!firestore || !user || !pending.staffId || !pending.updates) {
@@ -207,6 +279,96 @@ export function ApprovePendingAccountDialog({
     return value || 'Not set';
   }
 
+  const renderNewAccountContent = () => (
+     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col">
+        <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="link">Link to Existing</TabsTrigger>
+            <TabsTrigger value="create">Create New Staff</TabsTrigger>
+        </TabsList>
+        <TabsContent value="link" className="flex-grow">
+             <div className="space-y-4 pt-4">
+                <Card className="p-4 space-y-3">
+                    <p className="text-sm font-medium">Select Staff Profile to Link</p>
+                    <p className="text-xs text-muted-foreground">
+                        Choose the active staff record that corresponds to this user account.
+                    </p>
+                    <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select an active, unlinked staff member..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {unlinkedStaff.map(s => (
+                                <SelectItem key={s.id} value={s.id}>{s.fullName} ({s.position})</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    
+                    {selectedStaff && (
+                        <div className="p-3 border bg-muted/50 rounded-lg text-sm space-y-2">
+                            <div>
+                                <Label className="text-xs">Role</Label>
+                                <Input value={selectedStaff.position} readOnly className="h-8 bg-background"/>
+                            </div>
+                            <div>
+                                <Label className="text-xs">Store</Label>
+                                <Input value={selectedStaff.assignedStore} readOnly className="h-8 bg-background"/>
+                            </div>
+                        </div>
+                    )}
+                </Card>
+            </div>
+             <div className="flex items-end justify-end gap-2 pt-4 border-t mt-4">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+                <Button onClick={handleLinkAndApprove} disabled={saving || !selectedStaffId}>
+                    {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                    {saving ? "Linking…" : "Approve & Link"}
+                </Button>
+            </div>
+        </TabsContent>
+        <TabsContent value="create" className="flex-grow">
+            <div className="space-y-4 pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label>Full Name</Label>
+                        <Input value={newStaffData.fullName} readOnly disabled />
+                    </div>
+                     <div className="space-y-1">
+                        <Label>Email</Label>
+                        <Input value={newStaffData.email} readOnly disabled />
+                    </div>
+                </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="position">Position</Label>
+                        <Select name="position" value={newStaffData.position} onValueChange={(v) => setNewStaffData(prev => ({...prev, position: v as StaffPosition}))} required>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {positionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                     <div className="space-y-1">
+                        <Label htmlFor="assignedStore">Assigned Store</Label>
+                        <Select name="assignedStore" value={newStaffData.assignedStore} onValueChange={(v) => setNewStaffData(prev => ({...prev, assignedStore: v}))} required>
+                            <SelectTrigger><SelectValue placeholder="Select a store"/></SelectTrigger>
+                            <SelectContent>
+                                {stores.map(store => <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+            </div>
+            <div className="flex items-end justify-end gap-2 pt-4 border-t mt-4">
+                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+                <Button onClick={handleCreateAndApprove} disabled={saving || !newStaffData.assignedStore}>
+                    {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                    {saving ? "Creating…" : "Create & Approve"}
+                </Button>
+            </div>
+        </TabsContent>
+    </Tabs>
+  );
+
   const renderUpdateContent = () => (
     <Card className="p-4 space-y-3">
         <p className="text-sm font-medium">Proposed Changes</p>
@@ -244,80 +406,13 @@ export function ApprovePendingAccountDialog({
           <DialogTitle>Review request from {pending.fullName}</DialogTitle>
           <DialogDescription>
             {pending.type === 'new_account' 
-                ? "Approve this request by linking it to an existing, unlinked staff profile."
+                ? "Approve this request by linking it to an existing staff profile or creating a new one."
                 : "Review the requested profile changes and approve them."}
           </DialogDescription>
         </DialogHeader>
 
-        {pending.type === 'profile_update' ? renderUpdateContent() : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <ScrollArea className="max-h-[calc(80vh-10rem)] pr-4">
-                    <div className="space-y-4">
-                        <Card className="p-4 space-y-3">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p className="text-sm font-medium">{pending.fullName}</p>
-                                <p className="text-xs text-muted-foreground">
-                                {pending.email}
-                                </p>
-                            </div>
-                            <div className="flex gap-2 items-center justify-end">
-                                <Badge variant="outline">Pending</Badge>
-                            </div>
-                            </div>
-                        </Card>
+        {pending.type === 'profile_update' ? renderUpdateContent() : renderNewAccountContent()}
 
-                        <Card className="p-4 space-y-3">
-                            <p className="text-sm font-medium">Select Staff Profile to Link</p>
-                            <p className="text-xs text-muted-foreground">
-                                Choose the active staff record that corresponds to this user account.
-                            </p>
-                            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select an active, unlinked staff member..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {unlinkedStaff.map(s => (
-                                        <SelectItem key={s.id} value={s.id}>{s.fullName} ({s.position})</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            
-                            {selectedStaff && (
-                                <div className="p-3 border bg-muted/50 rounded-lg text-sm space-y-2">
-                                    <div>
-                                        <Label className="text-xs">Role</Label>
-                                        <Input value={selectedStaff.position} readOnly className="h-8 bg-background"/>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs">Store</Label>
-                                        <Input value={selectedStaff.assignedStore} readOnly className="h-8 bg-background"/>
-                                    </div>
-                                </div>
-                            )}
-                        </Card>
-                    </div>
-                </ScrollArea>
-
-                <div className="flex items-end justify-end gap-2 pt-4 border-t">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => onOpenChange(false)}
-                        disabled={saving}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        type="submit"
-                        disabled={saving || !selectedStaffId}
-                    >
-                        {saving ? <Loader2 className="animate-spin mr-2" /> : null}
-                        {saving ? "Linking…" : "Approve & Link"}
-                    </Button>
-                </div>
-            </form>
-        )}
       </DialogContent>
     </Dialog>
   );
