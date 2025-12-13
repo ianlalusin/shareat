@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { PlusCircle, MoreHorizontal } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Store as StoreIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -45,6 +45,8 @@ import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuthContext } from '@/context/auth-context';
+import { Card } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 
 export default function StorePage() {
@@ -106,7 +108,8 @@ export default function StorePage() {
         </Button>
       </div>
       
-      <div className="rounded-lg border shadow-sm bg-background">
+      {/* Desktop Table View */}
+      <div className="rounded-lg border shadow-sm bg-background hidden md:block">
         <ScrollArea className="w-full max-w-full">
           <Table>
             <TableHeader>
@@ -164,6 +167,54 @@ export default function StorePage() {
         </ScrollArea>
       </div>
 
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-3">
+        {stores.map((store) => (
+           <Card key={store.id} onClick={() => handleRowClick(store.id)} className="p-4">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                   <Avatar className="h-10 w-10 border">
+                      <AvatarImage src={store.logo} alt={store.storeName} />
+                      <AvatarFallback><StoreIcon className="h-5 w-5" /></AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-semibold">{store.storeName}</div>
+                      <div className="text-xs text-muted-foreground">{store.type}</div>
+                    </div>
+                </div>
+                 <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-haspopup="true" size="icon" variant="ghost" onClick={(e) => e.stopPropagation()}>
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Toggle menu</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                       <DropdownMenuItem onSelect={() => router.push(`/admin/store/${store.id}/edit`)}>Edit</DropdownMenuItem>
+                        {canDelete && (
+                           <DropdownMenuItem onSelect={() => setDeleteTargetId(store.id)} className="text-destructive">Delete</DropdownMenuItem>
+                        )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+              </div>
+              <div className="mt-3 pt-3 border-t text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Contact:</span>
+                  <span>{store.contactNo}</span>
+                </div>
+                 <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Status:</span>
+                   <Badge variant={store.status === 'Active' ? 'default' : 'destructive'} className={store.status === 'Active' ? 'bg-green-500' : ''}>
+                    {store.status}
+                  </Badge>
+                </div>
+              </div>
+            </Card>
+        ))}
+      </div>
+
+
        <AlertDialog
         open={!!deleteTargetId}
         onOpenChange={(open) => !open && setDeleteTargetId(null)}
@@ -184,3 +235,5 @@ export default function StorePage() {
       </main>
   );
 }
+
+    

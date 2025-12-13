@@ -52,6 +52,7 @@ import { Staff } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/context/auth-context';
+import { Card } from '@/components/ui/card';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
   if (!staff) return null;
@@ -140,7 +141,9 @@ export default function StaffPage() {
             </Link>
           </Button>
         </div>
-        <div className="rounded-lg border shadow-sm bg-background">
+        
+        {/* Desktop Table View */}
+        <div className="rounded-lg border shadow-sm bg-background hidden md:block">
           <ScrollArea className="w-full max-w-full">
             <Table>
               <TableHeader>
@@ -216,6 +219,54 @@ export default function StaffPage() {
             </Table>
           </ScrollArea>
         </div>
+        
+        {/* Mobile Card View */}
+        <div className="md:hidden space-y-3">
+          {staff.map((member) => (
+            <Card key={member.id} onClick={() => handleRowClick(member.id)} className="p-4">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                   <Avatar className="h-10 w-10">
+                      <AvatarImage src={member.picture} alt={member.fullName} />
+                      <AvatarFallback><User /></AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-semibold">{member.fullName}</div>
+                      <div className="text-xs text-muted-foreground">{member.position}</div>
+                    </div>
+                </div>
+                 <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-haspopup="true" size="icon" variant="ghost" onClick={(e) => e.stopPropagation()}>
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Toggle menu</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                       <DropdownMenuItem onSelect={() => router.push(`/admin/staff/${member.id}/edit`)}>Edit</DropdownMenuItem>
+                       <DropdownMenuItem onSelect={() => setSelectedStaffForAccess(member)}>Access</DropdownMenuItem>
+                       {canDelete && (
+                        <DropdownMenuItem onSelect={() => setDeleteTargetId(member.id)} className="text-destructive">Delete</DropdownMenuItem>
+                       )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+              </div>
+              <div className="mt-3 pt-3 border-t text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Store:</span>
+                  <span>{member.assignedStore}</span>
+                </div>
+                 <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Status:</span>
+                  <Badge variant={member.employmentStatus === 'Active' ? 'default' : 'secondary'} className={member.employmentStatus === 'Active' ? 'bg-green-500' : ''}>
+                    {member.employmentStatus}
+                  </Badge>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       </main>
       <AccessModal 
         isOpen={!!selectedStaffForAccess}
@@ -242,3 +293,5 @@ export default function StaffPage() {
     </>
   );
 }
+
+    

@@ -539,8 +539,8 @@ export default function CollectionsPage() {
                             <TableHeader>
                             <TableRow>
                                 <TableHead>Item</TableHead>
-                                <TableHead>Sub-category</TableHead>
-                                <TableHead>Assigned Stores</TableHead>
+                                <TableHead className="hidden sm:table-cell">Sub-category</TableHead>
+                                <TableHead className="hidden md:table-cell">Assigned Stores</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="w-24">Actions</TableHead>
                             </TableRow>
@@ -549,8 +549,8 @@ export default function CollectionsPage() {
                             {groupedItems[category].map((item) => (
                                 <TableRow key={item.id}>
                                 <TableCell>{item.item}</TableCell>
-                                <TableCell>{item.subCategory}</TableCell>
-                                <TableCell>
+                                <TableCell className="hidden sm:table-cell">{item.subCategory}</TableCell>
+                                <TableCell className="hidden md:table-cell">
                                     <div className="flex flex-wrap gap-1">
                                     {item.storeIds?.map(id => (
                                         <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
@@ -613,8 +613,8 @@ export default function CollectionsPage() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Display Name</TableHead>
-                                            <TableHead>Code</TableHead>
-                                            <TableHead>Type</TableHead>
+                                            <TableHead className="hidden sm:table-cell">Code</TableHead>
+                                            <TableHead className="hidden md:table-cell">Type</TableHead>
                                             <TableHead>Value</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead className="w-24">Actions</TableHead>
@@ -624,8 +624,8 @@ export default function CollectionsPage() {
                                         {discountTypes.map(d => (
                                             <TableRow key={d.id}>
                                                 <TableCell>{d.item}</TableCell>
-                                                <TableCell>{d.code}</TableCell>
-                                                <TableCell>{d.discountMode}</TableCell>
+                                                <TableCell className="hidden sm:table-cell">{d.code}</TableCell>
+                                                <TableCell className="hidden md:table-cell">{d.discountMode}</TableCell>
                                                 <TableCell>{d.discountMode === 'PCT' ? `${d.discountValue}%` : `₱${d.discountValue}`}</TableCell>
                                                 <TableCell>
                                                     <Badge variant={d.is_active ? 'default' : 'destructive'} className={d.is_active ? 'bg-green-500' : ''}>
@@ -683,10 +683,10 @@ export default function CollectionsPage() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Display Name</TableHead>
-                                        <TableHead>Code</TableHead>
+                                        <TableHead className="hidden sm:table-cell">Code</TableHead>
                                         <TableHead>Rate</TableHead>
-                                        <TableHead>Inclusive</TableHead>
-                                        <TableHead>Assigned Stores</TableHead>
+                                        <TableHead className="hidden md:table-cell">Inclusive</TableHead>
+                                        <TableHead className="hidden lg:table-cell">Assigned Stores</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead className="w-24">Actions</TableHead>
                                     </TableRow>
@@ -695,10 +695,10 @@ export default function CollectionsPage() {
                                     {taxRates.map(rate => (
                                         <TableRow key={rate.id}>
                                             <TableCell>{rate.item}</TableCell>
-                                            <TableCell>{rate.code}</TableCell>
+                                            <TableCell className="hidden sm:table-cell">{rate.code}</TableCell>
                                             <TableCell>{(rate.rate * 100).toFixed(2)}%</TableCell>
-                                            <TableCell>{rate.isInclusive ? 'Yes' : 'No'}</TableCell>
-                                            <TableCell>
+                                            <TableCell className="hidden md:table-cell">{rate.isInclusive ? 'Yes' : 'No'}</TableCell>
+                                            <TableCell className="hidden lg:table-cell">
                                                 <div className="flex flex-wrap gap-1">
                                                     {rate.storeIds?.map(id => (
                                                         <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
@@ -761,7 +761,7 @@ export default function CollectionsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Schedule Name</TableHead>
-                            <TableHead>Time</TableHead>
+                            <TableHead className="hidden sm:table-cell">Time</TableHead>
                             <TableHead>Days</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="w-24">Actions</TableHead>
@@ -771,7 +771,7 @@ export default function CollectionsPage() {
                           {schedules.map(schedule => (
                             <TableRow key={schedule.id}>
                               <TableCell>{schedule.item}</TableCell>
-                              <TableCell>{schedule.startTime} - {schedule.endTime}</TableCell>
+                              <TableCell className="hidden sm:table-cell">{schedule.startTime} - {schedule.endTime}</TableCell>
                               <TableCell>
                                 <div className="flex flex-wrap gap-1">
                                   {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
@@ -1109,5 +1109,7 @@ export default function CollectionsPage() {
       </main>
   );
 }
+
+    
 
     
