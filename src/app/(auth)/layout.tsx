@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FirstLoginGuard } from "@/components/auth/first-login-guard";
+import PublicLayout from "../(public)/layout";
 
 export default function AuthLayout({
   children,
@@ -16,13 +17,15 @@ export default function AuthLayout({
   
   if (isInitialAuthLoading) {
     return (
-        <div className="flex h-svh w-full items-center justify-center">
+      <PublicLayout>
+        <div className="flex h-svh w-full items-center justify-center bg-muted/40 p-4">
             <div className="w-full max-w-md space-y-4 p-4">
                 <Skeleton className="h-16 w-16 mx-auto rounded-full" />
                 <Skeleton className="h-8 w-48 mx-auto" />
                 <Skeleton className="h-40 w-full" />
             </div>
         </div>
+      </PublicLayout>
     );
   }
   
@@ -32,10 +35,12 @@ export default function AuthLayout({
     return <FirstLoginGuard>{children}</FirstLoginGuard>
   }
 
-  // If we are here, the user is not logged in. Show the login/signup forms.
+  // If we are here, the user is not logged in. Show the login/signup forms within the public layout.
   return (
-    <main className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
-      {children}
-    </main>
+    <PublicLayout>
+        <div className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
+            {children}
+        </div>
+    </PublicLayout>
   );
 }
