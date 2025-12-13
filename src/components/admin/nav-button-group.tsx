@@ -6,16 +6,19 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { DropdownMenuItem } from '../ui/dropdown-menu';
+import { useAuthContext } from '@/context/auth-context';
 
 const navLinks = [
-  { href: '/cashier', label: 'Cashier' },
-  { href: '/kitchen', label: 'Kitchen' },
-  { href: '/refill', label: 'Refill' },
-  { href: '/admin', label: 'Admin' },
+  { href: '/cashier', label: 'Cashier', roles: ['admin', 'manager', 'cashier'] },
+  { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
+  { href: '/refill', label: 'Refill', roles: ['admin', 'manager', 'server'] },
+  { href: '/admin', label: 'Admin', roles: ['admin', 'manager'] },
 ];
 
 export function NavButtonGroup() {
   const pathname = usePathname();
+  const { appUser } = useAuthContext();
+  const userRole = appUser?.role;
 
   const getVariant = (href: string) => {
     return pathname.startsWith(href) ? 'secondary' : 'ghost';
@@ -27,9 +30,11 @@ export function NavButtonGroup() {
       : 'text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground';
   }
 
+  const allowedLinks = navLinks.filter(link => userRole && link.roles.includes(userRole));
+
   return (
     <div className="hidden md:flex items-center gap-1 rounded-lg bg-primary-foreground/10 p-1">
-      {navLinks.map(({ href, label }) => (
+      {allowedLinks.map(({ href, label }) => (
         <Button
           key={href}
           asChild
@@ -46,10 +51,14 @@ export function NavButtonGroup() {
 
 export function NavButtonGroupMobile() {
   const pathname = usePathname();
+  const { appUser } = useAuthContext();
+  const userRole = appUser?.role;
+
+  const allowedLinks = navLinks.filter(link => userRole && link.roles.includes(userRole));
 
   return (
     <>
-      {navLinks.map(({ href, label }) => (
+      {allowedLinks.map(({ href, label }) => (
         <DropdownMenuItem
           key={href}
           asChild
