@@ -24,8 +24,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Logo } from '@/components/admin/logo';
 import { useAuthContext } from '@/context/auth-context';
 import { Eye, EyeOff } from 'lucide-react';
+import { PasskeyGate } from '@/components/auth/passkey-gate';
 
-export default function LoginPage() {
+function LoginAndSignupForms() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -206,5 +207,13 @@ export default function LoginPage() {
         </Card>
       </TabsContent>
     </Tabs>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <PasskeyGate>
+      <LoginAndSignupForms />
+    </PasskeyGate>
   );
 }

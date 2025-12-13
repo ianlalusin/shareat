@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useFirestore } from '@/firebase';
-import { doc, setDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { useStoreSelector } from '@/store/use-store-selector';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,13 +24,12 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import Image from 'next/image';
-import { Receipt, Ban } from 'lucide-react';
+import { Receipt, Ban, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
-import type { ReceiptSettings, Store } from '@/lib/types';
+import type { ReceiptSettings, Store, CollectionItem } from '@/lib/types';
 import { useAuthContext } from '@/context/auth-context';
-
 
 const mockReceiptData = {
     items: [
@@ -155,6 +153,11 @@ const initialReceiptSettingsState: Omit<ReceiptSettings, 'id'> = {
     paperWidth: '58mm',
 };
 
+type AuthGateState = {
+  isEnabled: boolean;
+  passkey: string;
+};
+
 function ManagerGuard({ children }: { children: React.ReactNode }) {
     const { appUser, loading, devMode } = useAuthContext();
     const canAccess = devMode || appUser?.role === 'manager' || appUser?.role === 'admin' || appUser?.role === 'owner';
@@ -197,6 +200,10 @@ export default function SettingsPage() {
     const [store, setStore] = useState<Store | null>(null);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+
+    const [authGate, setAuthGate] = useState<AuthGateState>({ isEnabled: false, passkey: "" });
+    const [authGateLoading, setAuthGateLoading] = useState(true);
+    const [authGateSaving, setAuthGateSaving] = useState(false);
 
     const { selectedStoreId, setSelectedStoreId } = useStoreSelector();
     const firestore = useFirestore();
@@ -269,6 +276,21 @@ export default function SettingsPage() {
         fetchSettings();
     }, [fetchSettings]);
 
+    useEffect(() => {
+      if (!firestore) return;
+      const ref = doc(firestore, "appSettings", "authGate");
+      getDoc(ref).then((snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<AuthGateState>;
+          setAuthGate({
+            isEnabled: !!data.isEnabled,
+            passkey: data.passkey || "",
+          });
+        }
+        setAuthGateLoading(false);
+      });
+    }, [firestore]);
+
     const handleSettingsChange = (category: keyof StoreSettings, newValues: any) => {
         setSettings(prev => ({
             ...prev,
@@ -338,6 +360,27 @@ export default function SettingsPage() {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleSaveAuthGate = async () => {
+      if (!firestore) return;
+      if (authGate.isEnabled && !/^\d{6}$/.test(authGate.passkey)) {
+        toast({ variant: "destructive", title: "Invalid code", description: "Passkey must be exactly 6 digits." });
+        return;
+      }
+    
+      setAuthGateSaving(true);
+      try {
+        const ref = doc(firestore, "appSettings", "authGate");
+        await setDoc(ref, {
+          isEnabled: authGate.isEnabled,
+          passkey: authGate.passkey,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        toast({ title: "Saved", description: "Access code settings updated." });
+      } finally {
+        setAuthGateSaving(false);
+      }
     };
 
     if (!selectedStoreId) {
@@ -844,6 +887,55 @@ export default function SettingsPage() {
                                 </CardContent>
                             </AccordionContent>
                         </Card>
+                    </AccordionItem>
+                    <AccordionItem value="item-8" className="border-0">
+                      <Card>
+                        <AccordionTrigger className="p-6 hover:no-underline">
+                          <div className="flex-1 text-left">
+                              <CardTitle>Access Passkey</CardTitle>
+                              <CardDescription className="mt-1">
+                                Require a 6-digit code before staff can see the login / sign-up page.
+                              </CardDescription>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <CardContent className="space-y-4">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id="authGateEnabled"
+                                checked={authGate.isEnabled}
+                                onCheckedChange={(c) => setAuthGate((prev) => ({ ...prev, isEnabled: c }))}
+                              />
+                              <Label htmlFor="authGateEnabled">Enable access passkey</Label>
+                            </div>
+
+                            <div className="space-y-2 max-w-xs">
+                              <Label htmlFor="authPasskey">6-digit code</Label>
+                              <Input
+                                id="authPasskey"
+                                type="password"
+                                inputMode="numeric"
+                                disabled={!authGate.isEnabled}
+                                value={authGate.passkey}
+                                onChange={(e) =>
+                                  setAuthGate((prev) => ({
+                                    ...prev,
+                                    passkey: e.target.value.replace(/\D/g, "").slice(0, 6),
+                                  }))
+                                }
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Share this code only with staff you want to allow into the system.
+                              </p>
+                            </div>
+
+                            <Button onClick={handleSaveAuthGate} disabled={authGateSaving || authGateLoading}>
+                              {authGateSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                              Save access settings
+                            </Button>
+                          </CardContent>
+                        </AccordionContent>
+                      </Card>
                     </AccordionItem>
                 </Accordion>
             </main>

@@ -61,6 +61,7 @@ export function AccountApplicationScreen({
         birthday: birthday || null,
         notes,
         status: "pending",
+        type: "new_account",
         createdAt: serverTimestamp(),
         expiresAt,
       });
