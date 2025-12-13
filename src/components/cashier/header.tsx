@@ -51,7 +51,9 @@ export function CashierHeader() {
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild><Link href="/admin/settings/account">Settings</Link></DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/admin/settings/account">Settings</Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleLogout}>Logout</DropdownMenuItem>
           </DropdownMenuContent>
