@@ -227,7 +227,6 @@ function CashierPageContent() {
         const taxProfile = menu.find(
           (m) => m.taxProfileCode === cartItem.taxProfileCode
         );
-
         const orderItemData: Omit<OrderItem, 'id'> = {
           orderId: order.id,
           storeId: order.storeId,
