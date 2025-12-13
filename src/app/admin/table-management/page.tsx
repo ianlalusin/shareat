@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -382,30 +381,7 @@ export default function TableManagementPage() {
             </div>
           </div>
       ) : (
-        <>
-        {/* Mobile View: List */}
-        <div className="sm:hidden space-y-2">
-            {tables.map(table => (
-                 <Card key={table.id} className="flex items-center p-3 gap-3">
-                     <div className="flex-1">
-                        <p className="font-bold text-lg">{table.tableName}</p>
-                        {table.location && <Badge variant="outline" className="text-xs">{table.location}</Badge>}
-                         <p className="text-xs text-muted-foreground">Counter: {table.resetCounter}</p>
-                     </div>
-                      <Badge className={cn("text-white justify-center w-20", getStatusColor(table.status))}>{table.status}</Badge>
-                      <div className="flex flex-col gap-1">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenModal(table)}>
-                              <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => setDeleteTargetId(table.id)}>
-                              <Trash2 className="h-4 w-4" />
-                          </Button>
-                      </div>
-                 </Card>
-            ))}
-        </div>
-        {/* Desktop View: Grid */}
-        <div className="hidden sm:grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
             {tables.map((table) => (
             <Card key={table.id} className="flex flex-col">
                 <CardHeader className="flex-grow pb-2">
@@ -430,7 +406,6 @@ export default function TableManagementPage() {
             </Card>
             ))}
         </div>
-        </>
       )}
 
       <AlertDialog
@@ -453,3 +428,5 @@ export default function TableManagementPage() {
     </main>
   );
 }
+
+    

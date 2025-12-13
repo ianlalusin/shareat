@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -192,7 +191,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-full md:max-w-6xl h-full md:h-[90vh] flex flex-col p-2 sm:p-6">
+            <DialogContent className="max-w-full md:max-w-4xl h-full md:h-auto md:max-h-[90vh] flex flex-col p-2 sm:p-6">
                 <DialogHeader className='p-4 pb-0 sm:p-0'>
                     <DialogTitle>Refill Order: {table.tableName}</DialogTitle>
                     <DialogDescription>
@@ -201,8 +200,8 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                 </DialogHeader>
                 
                 <Popover onOpenChange={(open) => !open && setEditingNoteItem(null)}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden pt-2">
-                        <div className="md:col-span-2 flex flex-col gap-4 h-full">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 overflow-hidden pt-2">
+                        <div className="flex flex-col gap-4 h-full">
                             <h3 className="font-semibold px-4 md:px-0">Select Meat & Flavor</h3>
                             <ScrollArea className="flex-1 rounded-md border">
                                 <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -249,7 +248,7 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
                                 </div>
                             </ScrollArea>
                         </div>
-                        <div className="md:col-span-1 flex flex-col border rounded-lg">
+                        <div className="flex flex-col border rounded-lg">
                             <div className="p-4 border-b">
                                 <h3 className="text-base font-semibold flex items-center gap-2"><ShoppingCart className="h-5 w-5"/> Refill Cart</h3>
                             </div>
@@ -319,3 +318,5 @@ export function RefillModal({ isOpen, onClose, table, order, menu, onPlaceOrder 
         </Dialog>
     );
 }
+
+    
