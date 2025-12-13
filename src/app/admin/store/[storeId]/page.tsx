@@ -26,6 +26,7 @@ import {
 import { Store } from '@/lib/types';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthContext } from '@/context/auth-context';
 
 
 export default function StoreDetailPage() {
@@ -37,6 +38,8 @@ export default function StoreDetailPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const { appUser, devMode } = useAuthContext();
+  const canDelete = devMode || appUser?.role === 'admin';
 
   useEffect(() => {
     if (!firestore || !storeId) return;
@@ -146,9 +149,11 @@ export default function StoreDetailPage() {
                     <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Link>
             </Button>
-            <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
-                <Trash2 className="mr-2 h-4 w-4" /> Delete
-            </Button>
+            {canDelete && (
+              <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </Button>
+            )}
         </div>
       </div>
       

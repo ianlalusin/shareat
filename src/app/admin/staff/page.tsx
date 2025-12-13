@@ -51,6 +51,7 @@ import { PlusCircle, MoreHorizontal, User, Lock } from 'lucide-react';
 import { Staff } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthContext } from '@/context/auth-context';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
   if (!staff) return null;
@@ -85,6 +86,8 @@ export default function StaffPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const { appUser, devMode } = useAuthContext();
+  const canDelete = devMode || appUser?.role === 'admin';
 
   useEffect(() => {
     if (firestore) {
@@ -196,12 +199,14 @@ export default function StaffPage() {
                           <DropdownMenuItem onSelect={() => setSelectedStaffForAccess(member)}>
                             Access
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => setDeleteTargetId(member.id)}
-                            className="text-destructive"
-                          >
-                            Delete
-                          </DropdownMenuItem>
+                          {canDelete && (
+                            <DropdownMenuItem
+                              onSelect={() => setDeleteTargetId(member.id)}
+                              className="text-destructive"
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

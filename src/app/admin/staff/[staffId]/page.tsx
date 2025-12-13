@@ -38,6 +38,7 @@ import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthContext } from '@/context/auth-context';
 
 export default function StaffDetailPage() {
   const params = useParams();
@@ -54,6 +55,8 @@ export default function StaffDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { openSuccessModal } = useSuccessModal();
   const { toast } = useToast();
+  const { appUser, devMode } = useAuthContext();
+  const canDelete = devMode || appUser?.role === 'admin';
 
   useEffect(() => {
     if (!firestore || !staffId) return;
@@ -199,9 +202,11 @@ export default function StaffDetailPage() {
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Link>
           </Button>
-          <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
-            <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
+          {canDelete && (
+            <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
