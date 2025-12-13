@@ -10,13 +10,13 @@ export default function PendingApprovalPage() {
         <CardHeader>
             <CardTitle>Account pending approval</CardTitle>
             <CardDescription className="space-y-3 pt-2">
-                <p>
+                <span>
                 Your access request has been submitted. Please inform your manager so
                 they can approve it in the admin panel.
-                </p>
-                <p className="text-xs">
+                </span>
+                <span className="block text-xs">
                 Once approved, you’ll be able to sign in normally using this email.
-                </p>
+                </span>
             </CardDescription>
         </CardHeader>
       </Card>
