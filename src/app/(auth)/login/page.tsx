@@ -44,7 +44,8 @@ function LoginAndSignupForms() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push('/admin');
+      // The FirstLoginGuard will handle the redirect now.
+      // router.push('/admin');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -70,7 +71,8 @@ function LoginAndSignupForms() {
           displayName: fullName,
         });
       }
-      router.push('/admin');
+      // The FirstLoginGuard will handle the redirect now.
+      // router.push('/admin');
     } catch (error: any) {
       toast({
         variant: 'destructive',
