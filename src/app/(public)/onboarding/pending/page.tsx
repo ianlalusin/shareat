@@ -3,7 +3,7 @@
 
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-export function PendingApprovalScreen() {
+export default function PendingApprovalPage() {
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-md p-6 text-center">

@@ -4,16 +4,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
-import { ExistingStaffVerification } from "./onboarding/existing-staff-verification";
-import { DuplicateStaffResolution } from "./onboarding/duplicate-staff-resolution";
-import { AccountApplicationScreen } from "./onboarding/account-application";
-import { PendingApprovalScreen } from "./onboarding/pending-approval";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import type { Staff } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
 import { Skeleton } from "../ui/skeleton";
@@ -29,7 +20,6 @@ type OnboardingStatus =
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const { user, isInitialAuthLoading, isOnboarded, devMode } = useAuthContext();
   const router = useRouter();
-  const firestore = useFirestore();
 
   useEffect(() => {
     if (!isInitialAuthLoading && !user && !devMode) {
@@ -50,22 +40,18 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     );
   }
 
+  // If user is fully onboarded, show the main application content.
   if (isOnboarded) {
     return <>{children}</>;
   }
 
-  // If not onboarded and not loading, determine which onboarding screen to show.
-  // This part now requires a separate component or a more complex state within the guard
-  // to avoid re-running the checks constantly. For now, we will redirect to a generic
-  // onboarding start page if one existed, or directly to the application. A full implementation
-  // requires a more sophisticated state machine now that the primary check is in the context.
-  if (user && firestore) {
-     // A simplified check for the purpose of showing the correct initial screen
-     // This could be further optimized into its own state machine if onboarding becomes more complex
+  // If we are still here, the user is logged in but not onboarded.
+  // The OnboardingFlowManager will figure out where to send them.
+  if (user) {
     return <OnboardingFlowManager />;
   }
 
-  // Fallback for when user is null but somehow we got here
+  // Fallback, should not be reached in normal flow.
   return null;
 }
 
@@ -73,22 +59,22 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
 function OnboardingFlowManager() {
     const { user, devMode } = useAuthContext();
     const firestore = useFirestore();
-    const [status, setStatus] = useState<OnboardingStatus>("loading");
-    const [staffData, setStaffData] = useState<any>(null);
+    const router = useRouter();
 
     useEffect(() => {
         if (devMode) {
-            setStatus("ready");
+            // Dev mode bypasses onboarding logic, reload to get into main app.
+             window.location.reload();
             return;
         }
         if (!user || !firestore) return;
 
-        const checkStatus = async () => {
+        const checkStatusAndRedirect = async () => {
             // Has this user already applied and is pending?
             const pendingQ = query(collection(firestore, "pendingAccounts"), where("uid", "==", user.uid), where("status", "==", "pending"));
             const pendingSnap = await getDocs(pendingQ);
             if (!pendingSnap.empty) {
-                setStatus("pendingApproval");
+                router.replace("/onboarding/pending");
                 return;
             }
 
@@ -99,47 +85,27 @@ function OnboardingFlowManager() {
                 const staffList = staffSnap.docs.map(d => ({ id: d.id, ...(d.data() as Staff) }));
 
                 if (staffList.length === 1) {
-                    setStaffData(staffList[0]);
-                    setStatus("existingStaff");
+                    // Pass staff data via state to the verification page
+                    // Note: This is a simple approach. For complex data, consider a state manager.
+                    router.replace('/onboarding/verify', { state: { staffData: staffList[0] } } as any);
                 } else if (staffList.length > 1) {
-                    setStaffData(staffList);
-                    setStatus("duplicateStaff");
+                    router.replace('/onboarding/resolve', { state: { staffList } } as any);
                 } else {
-                    setStatus("applicant");
+                    router.replace("/onboarding/apply");
                 }
             } else {
-                 setStatus("applicant");
+                 router.replace("/onboarding/apply");
             }
         };
 
-        checkStatus();
+        checkStatusAndRedirect();
 
-    }, [user, firestore, devMode]);
+    }, [user, firestore, devMode, router]);
     
-    if (status === "loading") {
-        return (
-             <div className="flex h-svh w-full items-center justify-center">
-                <p className="text-center text-muted-foreground">Determining next step...</p>
-             </div>
-        );
-    }
-    
-    if (status === "existingStaff" && user && firestore) {
-        return <ExistingStaffVerification staff={staffData} firebaseUser={user} firestore={firestore} onComplete={() => window.location.reload()} />;
-    }
-
-    if (status === "duplicateStaff" && user && firestore) {
-        return <DuplicateStaffResolution staffList={staffData} firebaseUser={user} firestore={firestore} onComplete={() => window.location.reload()} />;
-    }
-
-    if (status === "applicant" && user && firestore) {
-        return <AccountApplicationScreen firebaseUser={user} firestore={firestore} onSubmitted={() => setStatus("pendingApproval")} />;
-    }
-
-    if (status === "pendingApproval") {
-        return <PendingApprovalScreen />;
-    }
-
-    // Should not be reached
-    return null;
+    // Render a loading state while the check is in progress
+    return (
+         <div className="flex h-svh w-full items-center justify-center">
+            <p className="text-center text-muted-foreground">Redirecting to onboarding...</p>
+         </div>
+    );
 }

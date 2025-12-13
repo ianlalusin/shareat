@@ -2,76 +2,73 @@
 "use client";
 
 import { useState } from "react";
-import { doc, setDoc, updateDoc, serverTimestamp, Firestore, Timestamp } from "firebase/firestore";
-import type { User as FirebaseUser } from "firebase/auth";
-import type { Staff, User } from "@/lib/types";
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  Firestore,
+} from "firebase/firestore";
+import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
-import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
-import { parse, isValid } from 'date-fns';
+import { autoformatDate, formatAndValidateDate, revertToInputFormat } from "@/lib/utils";
+import { useAuthContext } from "@/context/auth-context";
+import { useFirestore } from "@/firebase";
 
-interface Props {
-  staff: Staff & { id: string };
-  firebaseUser: FirebaseUser;
-  firestore: Firestore;
-  onComplete: () => void;
-}
+// This component is now a standalone page for the application flow.
+export default function AccountApplicationPage() {
+  const { user } = useAuthContext();
+  const firestore = useFirestore();
+  const router = useRouter();
 
-export function ExistingStaffVerification({
-  staff,
-  firebaseUser,
-  firestore,
-  onComplete,
-}: Props) {
-  const [fullName, setFullName] = useState(staff.fullName ?? "");
-  const [phone, setPhone] = useState(staff.contactNo ?? "");
-  const [birthday, setBirthday] = useState(() => {
-      if (!staff.birthday) return '';
-      if (staff.birthday instanceof Timestamp) {
-          return formatAndValidateDate(staff.birthday.toDate()).formatted;
-      }
-      return staff.birthday as string;
-  });
-  const [dateError, setDateError] = useState<string | undefined>();
+  const [fullName, setFullName] = useState(user?.displayName ?? "");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [birthday, setBirthday] = useState("");
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dateError, setDateError] = useState<string | undefined>();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(dateError){
+    if (dateError) {
       alert('Please fix the birthday format.');
+      return;
+    }
+    if (!user || !user.email) {
+      alert("Your account has no email. Please contact the admin.");
       return;
     }
     setSaving(true);
     try {
-      const birthdayDate = birthday ? parse(birthday as string, 'MMMM dd, yyyy', new Date()) : null;
+      const expiresAt = new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000
+      ); // 30 days
 
-      const userRef = doc(firestore, "users", firebaseUser.uid);
-      await setDoc(userRef, {
-        staffId: staff.id,
-        email: firebaseUser.email,
-        displayName: fullName || firebaseUser.displayName || staff.fullName,
-        role: (staff.position || "staff").toLowerCase(),
-        status: "active",
-        createdAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp(),
-      } as Omit<User, 'id'>);
-
-      const staffRef = doc(firestore, "staff", staff.id);
-      await updateDoc(staffRef, {
-        authUid: firebaseUser.uid,
+      await addDoc(collection(firestore, "pendingAccounts"), {
+        uid: user.uid,
+        email: user.email,
         fullName,
-        contactNo: phone,
-        birthday: isValid(birthdayDate) ? Timestamp.fromDate(birthdayDate) : null,
-        lastLoginAt: serverTimestamp(),
+        phone,
+        address,
+        birthday: birthday || null,
+        notes,
+        status: "pending",
+        type: "new_account",
+        createdAt: serverTimestamp(),
+        expiresAt,
       });
 
-      onComplete();
+      // Redirect to the pending page after submission
+      router.push('/onboarding/pending');
+
     } catch (err) {
-      console.error("Error completing existing staff onboarding", err);
-      alert("Something went wrong. Please contact your manager.");
+      console.error("Error submitting account application", err);
+      alert("Something went wrong. Please inform your manager.");
     } finally {
       setSaving(false);
     }
@@ -101,15 +98,23 @@ export function ExistingStaffVerification({
     setBirthday(formattedValue);
   }
 
+  if (!user || !firestore) {
+    // This case should be handled by the guard, but as a fallback:
+    return (
+      <div className="flex min-h-svh w-full items-center justify-center">
+        <p>Loading user data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-            <CardTitle>Verify your staff details</CardTitle>
+            <CardTitle>Request access</CardTitle>
             <CardDescription>
-            We found your staff record in the system. Please confirm your personal
-            information. Operational details are managed by your manager.
+            We couldn't find your staff profile. Please submit your
+            basic information so your manager can approve your account.
             </CardDescription>
         </CardHeader>
         <CardContent>
@@ -126,7 +131,16 @@ export function ExistingStaffVerification({
 
             <div className="space-y-2">
                 <Label>Email</Label>
-                <Input value={firebaseUser.email ?? ""} disabled />
+                <Input value={user.email ?? ""} disabled />
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                    id="address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -155,10 +169,20 @@ export function ExistingStaffVerification({
                 </div>
             </div>
 
-            <CardFooter className="p-0 pt-2 flex justify-end">
+            <div className="space-y-2">
+                <Label htmlFor="notes">Notes (optional)</Label>
+                <Textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g., Applying as cashier at Lipa branch"
+                />
+            </div>
+
+             <CardFooter className="p-0 pt-2 flex justify-end">
                 <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                {saving ? "Saving…" : "Confirm & continue"}
+                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                    {saving ? "Submitting…" : "Submit request"}
                 </Button>
             </CardFooter>
             </form>
