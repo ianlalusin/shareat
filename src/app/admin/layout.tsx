@@ -18,23 +18,21 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RoleGate allow={['admin', 'manager']}>
-      <FirstLoginGuard>
-        <SidebarProvider>
-          <Sidebar collapsible="icon">
-            <AdminSidebar />
-          </Sidebar>
-          <SidebarInset>
-            <AdminHeader />
-            <ConnectivityBanner />
-            <div className="flex-1 flex flex-col">
-              {children}
-            </div>
-            <SyncStatusBadge />
-            <SuccessConfirm />
-          </SidebarInset>
-        </SidebarProvider>
-      </FirstLoginGuard>
-    </RoleGate>
+    <FirstLoginGuard>
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <AdminSidebar />
+        </Sidebar>
+        <SidebarInset>
+          <AdminHeader />
+          <ConnectivityBanner />
+          <div className="flex-1 flex flex-col">
+            {children}
+          </div>
+          <SyncStatusBadge />
+          <SuccessConfirm />
+        </SidebarInset>
+      </SidebarProvider>
+    </FirstLoginGuard>
   );
 }
