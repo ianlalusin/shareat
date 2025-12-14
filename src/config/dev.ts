@@ -6,7 +6,7 @@
 export const DEV_ACCESS_CODE = '0405';
 
 export const DEV_EMAIL_WHITELIST: string[] = [
-  'YOUR_EMAIL_HERE@example.com', // <-- Replace with your real owner email
+  'ianlalusin@gmail.com', // <-- Replace with your real owner email
 ];
 
 export const DEV_LOCALSTORAGE_KEY = 'shareat-hub-dev-mode';
