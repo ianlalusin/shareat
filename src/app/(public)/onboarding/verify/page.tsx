@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { doc, setDoc, updateDoc, serverTimestamp, Firestore, Timestamp } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Staff, User } from "@/lib/types";
@@ -14,12 +15,16 @@ import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/li
 import { parse, isValid } from 'date-fns';
 import { useAuthContext } from "@/context/auth-context";
 import { useFirestore } from "@/firebase";
+import { useOnboardingStore } from "@/store/use-onboarding-store";
+import { useRouter } from "next/navigation";
 
+// This component used to be ExistingStaffVerification, it is now a standalone page.
 export default function VerifyStaffPage() {
     const { user } = useAuthContext();
     const firestore = useFirestore();
+    const router = useRouter();
+    const staff = useOnboardingStore((state) => state.staffToVerify);
 
-    const [staff, setStaff] = useState<(Staff & { id: string }) | null>(null);
     const [fullName, setFullName] = useState("");
     const [phone, setPhone] = useState("");
     const [birthday, setBirthday] = useState("");
@@ -27,32 +32,17 @@ export default function VerifyStaffPage() {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        // Retrieve data from localStorage on component mount
-        const storedStaff = localStorage.getItem('onboarding_staff_data');
-        if (storedStaff) {
-            const staffData = JSON.parse(storedStaff);
-            setStaff(staffData);
-            
-            setFullName(staffData.fullName || user?.displayName || "");
-            setPhone(staffData.contactNo || "");
-            
-            let birthdayStr = '';
-            if (staffData.birthday) {
-                // Firestore Timestamps get serialized in localStorage, need to reconstruct
-                if (typeof staffData.birthday === 'object' && staffData.birthday.seconds) {
-                    birthdayStr = formatAndValidateDate(new Timestamp(staffData.birthday.seconds, staffData.birthday.nanoseconds).toDate()).formatted;
-                } else {
-                    birthdayStr = formatAndValidateDate(staffData.birthday).formatted;
-                }
-            }
-            setBirthday(birthdayStr);
-            
-            // Optional: Clean up localStorage after use
-            localStorage.removeItem('onboarding_staff_data');
-        } else {
-            console.warn('No staff data found for verification.');
-        }
-    }, [user]);
+      if (!staff) {
+        // If there's no staff data (e.g., page refresh), maybe redirect
+        // For now, it will just show the "not found" message.
+        // A more robust solution might redirect to the start of the flow.
+        return;
+      }
+      setFullName(staff.fullName || user?.displayName || "");
+      setPhone(staff.contactNo || "");
+      const bday = staff.birthday instanceof Timestamp ? formatAndValidateDate(staff.birthday.toDate()).formatted : staff.birthday as string;
+      setBirthday(bday || '');
+    }, [staff, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -8,14 +8,15 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import type { Staff, StaffRole } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
 import { Skeleton } from "../ui/skeleton";
+import { useOnboardingStore } from "@/store/use-onboarding-store";
 
-const ROLE_REDIRECTS: Record<StaffRole, string> = {
-  admin: "/admin",
-  manager: "/admin",
-  cashier: "/cashier",
-  server: "/refill",
-  kitchen: "/kitchen",
-};
+type OnboardingStatus =
+  | "loading"
+  | "ready" // Fully onboarded
+  | "existingStaff" // Found one matching staff record
+  | "duplicateStaff" // Found multiple matching staff records
+  | "applicant" // No staff record, application needed
+  | "pendingApproval"; // Applied, waiting for admin
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const { user, isInitialAuthLoading, isOnboarded, appUser, devMode } = useAuthContext();
@@ -87,9 +88,10 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
 }
 
 function OnboardingFlowManager() {
-  const { user, devMode } = useAuthContext();
-  const firestore = useFirestore();
-  const router = useRouter();
+    const { user, devMode } = useAuthContext();
+    const firestore = useFirestore();
+    const router = useRouter();
+    const { setStaffToVerify, setStaffListToResolve } = useOnboardingStore();
 
   useEffect(() => {
     if (devMode) {
@@ -126,31 +128,28 @@ function OnboardingFlowManager() {
           (d) => ({ id: d.id, ...(d.data() as Staff) })
         );
 
-        if (staffList.length === 1) {
-          // Pass staff data via state to the verification page
-          // This is a client-side navigation feature, not a standard URL parameter.
-          // Note: This approach might not persist on page refresh. A more robust solution might use URL params if needed.
-          localStorage.setItem('onboarding_staff_data', JSON.stringify(staffList[0]));
-          router.replace("/onboarding/verify");
+                if (staffList.length === 1) {
+                    setStaffToVerify(staffList[0]);
+                    router.replace('/onboarding/verify');
+                } else if (staffList.length > 1) {
+                    setStaffListToResolve(staffList);
+                    router.replace('/onboarding/resolve');
+                } else {
+                    router.replace("/onboarding/apply");
+                }
+            } else {
+                 router.replace("/onboarding/apply");
+            }
+        };
 
-        } else if (staffList.length > 1) {
-          localStorage.setItem('onboarding_staff_list', JSON.stringify(staffList));
-          router.replace("/onboarding/resolve");
-        } else {
-          router.replace("/onboarding/apply");
-        }
-      } else {
-        router.replace("/onboarding/apply");
-      }
-    };
+        checkStatusAndRedirect();
 
-    checkStatusAndRedirect();
-  }, [user, firestore, devMode, router]);
-
-  // Render a loading state while the check is in progress
-  return (
-    <div className="flex h-svh w-full items-center justify-center">
-      <p className="text-center text-muted-foreground">Finalizing setup...</p>
-    </div>
-  );
+    }, [user, firestore, devMode, router, setStaffToVerify, setStaffListToResolve]);
+    
+    // Render a loading state while the check is in progress
+    return (
+         <div className="flex h-svh w-full items-center justify-center">
+            <p className="text-center text-muted-foreground">Redirecting to onboarding...</p>
+         </div>
+    );
 }

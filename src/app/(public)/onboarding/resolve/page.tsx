@@ -1,6 +1,7 @@
 
 "use client";
 
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -19,13 +20,15 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { useFirestore } from "@/firebase";
+import { useOnboardingStore } from "@/store/use-onboarding-store";
 
+// This component used to be DuplicateStaffResolution, it is now a standalone page.
 export default function ResolveStaffPage() {
   const { user } = useAuthContext();
   const firestore = useFirestore();
   const router = useRouter();
+  const staffList = useOnboardingStore((state) => state.staffListToResolve);
 
-  const [staffList, setStaffList] = useState<(Staff & { id: string })[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
