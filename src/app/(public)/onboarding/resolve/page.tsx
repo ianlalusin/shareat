@@ -76,8 +76,9 @@ export default function ResolveStaffPage() {
         )
       );
 
-      // Force a reload to re-evaluate auth state and trigger FirstLoginGuard
-      window.location.href = '/';
+      // Re-evaluate auth state and trigger FirstLoginGuard without a full page reload
+      router.replace('/');
+      router.refresh();
 
     } catch (err) {
       console.error("Error resolving duplicate staff", err);

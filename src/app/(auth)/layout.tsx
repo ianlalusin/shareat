@@ -13,14 +13,17 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isInitialAuthLoading, user, devMode } = useAuthContext();
+  const { isInitialAuthLoading, user, isOnboarded } = useAuthContext();
   
-  if (isInitialAuthLoading) {
+  const showLoadingState = isInitialAuthLoading || (user && !isOnboarded);
+
+  if (showLoadingState) {
     return (
       <PublicLayout>
         <div className="flex h-svh w-full items-center justify-center bg-muted/40 p-4">
-            <div className="w-full max-w-md space-y-4 p-4">
+            <div className="w-full max-w-md space-y-4 p-4 text-center">
                 <Skeleton className="h-16 w-16 mx-auto rounded-full" />
+                <p className="text-muted-foreground animate-pulse">Verifying account...</p>
                 <Skeleton className="h-8 w-48 mx-auto" />
                 <Skeleton className="h-40 w-full" />
             </div>
@@ -29,10 +32,18 @@ export default function AuthLayout({
     );
   }
   
-  // If the user is logged in and onboarded, FirstLoginGuard will handle redirecting to the main app.
-  // We don't want to show the login form again.
+  // If the user is logged in, FirstLoginGuard will handle redirecting to the main app.
+  // We render the guard and a loading state instead of the login form children.
   if (user) {
-    return <FirstLoginGuard>{children}</FirstLoginGuard>
+    return <FirstLoginGuard>
+       <PublicLayout>
+        <div className="flex h-svh w-full items-center justify-center bg-muted/40 p-4">
+             <div className="w-full max-w-md space-y-4 p-4 text-center">
+                <p className="text-muted-foreground">Redirecting...</p>
+            </div>
+        </div>
+      </PublicLayout>
+    </FirstLoginGuard>
   }
 
   // If we are here, the user is not logged in. Show the login/signup forms within the public layout.

@@ -80,8 +80,9 @@ export default function VerifyStaffPage() {
         lastLoginAt: serverTimestamp(),
       });
       
-      // Force a reload to re-evaluate the auth context and guard
-      window.location.href = '/';
+      // Re-evaluate auth state and guard without a full page reload
+      router.replace('/');
+      router.refresh();
 
     } catch (err) {
       console.error("Error completing existing staff onboarding", err);
