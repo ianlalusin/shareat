@@ -22,6 +22,7 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
       return; 
     }
 
+    // Not logged in
     if (!user && !devMode) {
       const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/onboarding');
       if (!isPublicPath) {
@@ -31,9 +32,10 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Logged in AND fully onboarded
     if (isOnboarded && appUser?.role) {
-      const isPublicAuthPage = pathname === '/login' || pathname.startsWith('/onboarding') || pathname === '/';
-      if (isPublicAuthPage) {
+      const isGenericPublicPage = pathname === '/login' || pathname.startsWith('/onboarding') || pathname === '/';
+      if (isGenericPublicPage) {
         const defaultRoute = getDefaultRouteForRole(appUser.role);
         router.replace(defaultRoute);
         setHasRedirected(true);
@@ -55,10 +57,14 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     );
   }
 
+  // User is authenticated, but not onboarded yet. Show the onboarding flow.
   if (user && !isOnboarded && !devMode) {
-    return <OnboardingFlowManager />;
+    // Only render the onboarding manager if we are not already on an onboarding page.
+    const isOnboardingPath = pathname.startsWith('/onboarding');
+    return isOnboardingPath ? children : <OnboardingFlowManager />;
   }
 
+  // User is onboarded, show the protected content.
   if (isOnboarded) {
     return <>{children}</>;
   }
@@ -73,7 +79,7 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  return null;
+  return null; // Should not be reached in most cases
 }
 
 function OnboardingFlowManager() {
@@ -102,7 +108,7 @@ function OnboardingFlowManager() {
         return;
       }
 
-      // Does this user's email match an existing staff record?
+      // Does this user's email match an existing staff record that isn't linked?
       if (user.email) {
         const staffQ = query(
           collection(firestore, "staff"),
@@ -112,25 +118,27 @@ function OnboardingFlowManager() {
         const staffSnap = await getDocs(staffQ);
         const staffList = staffSnap.docs.map(
           (d) => ({ id: d.id, ...(d.data() as Staff) })
-        );
+        ).filter(s => !s.authUid); // Critically, only consider unlinked staff
 
-                if (staffList.length === 1) {
-                    setStaffToVerify(staffList[0]);
-                    router.replace('/onboarding/verify');
-                } else if (staffList.length > 1) {
-                    setStaffListToResolve(staffList);
-                    router.replace('/onboarding/resolve');
-                } else {
-                    router.replace("/onboarding/apply");
-                }
-            } else {
-                 router.replace("/onboarding/apply");
-            }
-        };
+        if (staffList.length === 1) {
+            setStaffToVerify(staffList[0]);
+            router.replace('/onboarding/verify');
+        } else if (staffList.length > 1) {
+            setStaffListToResolve(staffList);
+            router.replace('/onboarding/resolve');
+        } else {
+            // No unlinked staff found by email, user must apply.
+            router.replace("/onboarding/apply");
+        }
+      } else {
+           // User has no email, they must apply.
+           router.replace("/onboarding/apply");
+      }
+    };
 
-        checkStatusAndRedirect();
+    checkStatusAndRedirect();
 
-    }, [user, firestore, devMode, router, setStaffToVerify, setStaffListToResolve]);
+  }, [user, firestore, devMode, router, setStaffToVerify, setStaffListToResolve]);
     
     return (
          <div className="flex h-svh w-full items-center justify-center">
