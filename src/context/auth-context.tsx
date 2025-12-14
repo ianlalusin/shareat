@@ -34,8 +34,10 @@ const ALLOWED_ROLES: StaffRole[] = ['admin', 'manager', 'cashier', 'server', 'ki
 
 function isValidRole(role?: string): role is StaffRole {
     if (!role) return false;
-    return ALLOWED_ROLES.includes(role.toLowerCase() as StaffRole);
+    const lowerCaseRole = role.toLowerCase();
+    return ALLOWED_ROLES.some(allowedRole => allowedRole === lowerCaseRole);
 }
+
 
 export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<FirebaseAuthUser | null>(null);
@@ -86,6 +88,9 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
             let derivedStoreIds: string[] = [];
             if (Array.isArray(staffData.storeIds) && staffData.storeIds.length > 0) {
               derivedStoreIds = staffData.storeIds;
+            } else if ((staffData as any).storeId) {
+                // Fallback to legacy single storeId
+                derivedStoreIds = [(staffData as any).storeId];
             } else if (staffData.assignedStore) {
               const storeQ = query(collection(firestore, 'stores'), where('storeName', '==', staffData.assignedStore), limit(1));
               const storeSnap = await getDocs(storeQ);
@@ -106,12 +111,12 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
             
             const activeStoreDoc = activeStoreId ? await getDoc(doc(firestore, 'stores', activeStoreId)) : null;
 
-            const userPayload: Omit<AppUser, 'id' | 'createdAt' | 'lastLoginAt'> = {
+            const userPayload = {
                 staffId: staffData.id,
                 email: currentUser.email!,
                 displayName: staffData.fullName,
                 role: staffData.position.toLowerCase() as StaffRole,
-                storeId: activeStoreId || '',
+                storeId: activeStoreId || '', // legacy field
                 storeName: activeStoreDoc?.data()?.storeName || '',
                 storeIds: derivedStoreIds,
                 activeStoreId: activeStoreId,
@@ -119,17 +124,16 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
             };
             
             const needsUpdate = !currentAppUser ||
-                                JSON.stringify(userPayload) !== JSON.stringify({
-                                    staffId: currentAppUser.staffId,
-                                    email: currentAppUser.email,
-                                    displayName: currentAppUser.displayName,
-                                    role: currentAppUser.role,
-                                    storeId: currentAppUser.storeId,
-                                    storeName: currentAppUser.storeName,
-                                    storeIds: currentAppUser.storeIds,
-                                    activeStoreId: currentAppUser.activeStoreId,
-                                    status: currentAppUser.status,
-                                });
+                                JSON.stringify(userPayload.staffId) !== JSON.stringify(currentAppUser.staffId) ||
+                                JSON.stringify(userPayload.email) !== JSON.stringify(currentAppUser.email) ||
+                                JSON.stringify(userPayload.displayName) !== JSON.stringify(currentAppUser.displayName) ||
+                                JSON.stringify(userPayload.role) !== JSON.stringify(currentAppUser.role) ||
+                                JSON.stringify(userPayload.storeId) !== JSON.stringify(currentAppUser.storeId) ||
+                                JSON.stringify(userPayload.storeName) !== JSON.stringify(currentAppUser.storeName) ||
+                                JSON.stringify(userPayload.storeIds) !== JSON.stringify(currentAppUser.storeIds) ||
+                                JSON.stringify(userPayload.activeStoreId) !== JSON.stringify(currentAppUser.activeStoreId) ||
+                                JSON.stringify(userPayload.status) !== JSON.stringify(currentAppUser.status);
+
 
             if (needsUpdate) {
                  await setDoc(userDocRef, { 
@@ -147,7 +151,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 
             userDocUnsubscribe = onSnapshot(userDocRef, (snap) => {
               if (snap.exists()) {
-                const updatedAppUser = snap.data() as AppUser;
+                const updatedAppUser = {id: snap.id, ...snap.data()} as AppUser;
                 setAppUser(updatedAppUser);
                 setSelectedStoreId(updatedAppUser.activeStoreId || null);
               }
@@ -200,9 +204,12 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const userRef = doc(firestore, 'users', user.uid);
+    const newStoreDoc = await getDoc(doc(firestore, 'stores', storeId));
+
     await updateDoc(userRef, {
       activeStoreId: storeId,
       storeId: storeId,
+      storeName: newStoreDoc.data()?.storeName || '',
     });
   };
 

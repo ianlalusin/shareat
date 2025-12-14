@@ -69,7 +69,7 @@ export default function NewStaffPage() {
 
   const filteredPositionOptions = useMemo(() => {
     if (appUser?.role === 'manager') {
-      return positionOptions.filter(p => p !== 'admin' && p !== 'manager');
+      return positionOptions.filter(p => p !== 'admin');
     }
     return positionOptions;
   }, [appUser]);

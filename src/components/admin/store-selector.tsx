@@ -54,19 +54,17 @@ export function StoreSelector() {
   }, [allStores, appUser, devMode]);
   
   useEffect(() => {
-    // Auto-select a store if none is selected, respecting user's scope
     if (availableStores.length > 0 && !selectedStoreId) {
-        // Find if the default store is available
         const defaultStore = appUser?.activeStoreId && availableStores.find(s => s.id === appUser.activeStoreId);
-        if(defaultStore) {
+        if (defaultStore) {
             setSelectedStoreId(defaultStore.id);
-        } else {
-            // Fallback to the first available store in the user's list
+        } else if (availableStores.length > 0) {
             setSelectedStoreId(availableStores[0].id);
         }
     } else if (availableStores.length > 0 && selectedStoreId && !availableStores.some(s => s.id === selectedStoreId)) {
-        // If the selected store is no longer in the user's list, switch them to the first available one
         setSelectedStoreId(availableStores[0].id);
+    } else if (availableStores.length === 0) {
+        setSelectedStoreId(null);
     }
   }, [availableStores, selectedStoreId, setSelectedStoreId, appUser?.activeStoreId]);
 

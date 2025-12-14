@@ -68,7 +68,7 @@ export default function EditStaffPage() {
 
   const filteredPositionOptions = useMemo(() => {
     if (appUser?.role === 'manager') {
-      return positionOptions.filter(p => p !== 'admin' && p !== 'manager');
+      return positionOptions.filter(p => p !== 'admin');
     }
     return positionOptions;
   }, [appUser]);
@@ -87,8 +87,8 @@ export default function EditStaffPage() {
              const formattedData = {
               ...staffData,
               storeIds: staffData.storeIds || [],
-              birthday: staffData.birthday ? formatAndValidateDate(staffData.birthday).formatted : '',
-              dateHired: staffData.dateHired ? formatAndValidateDate(staffData.dateHired).formatted : ''
+              birthday: staffData.birthday instanceof Timestamp ? formatAndValidateDate(staffData.birthday.toDate()).formatted : staffData.birthday || '',
+              dateHired: staffData.dateHired instanceof Timestamp ? formatAndValidateDate(staffData.dateHired.toDate()).formatted : staffData.dateHired || ''
             }
             setFormData(formattedData);
         } else {
@@ -153,7 +153,20 @@ export default function EditStaffPage() {
   
   const handleSelectChange = (name: string, value: string) => {
     if (!formData) return;
-    setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
+    const newPosition = value as StaffPosition;
+    setFormData((prev) => {
+        if (!prev) return null;
+        let newRole = newPosition;
+        if (appUser?.role === 'manager' && newPosition === 'manager') {
+            newRole = prev.position || 'cashier';
+            toast({
+                variant: 'destructive',
+                title: "Permission Denied",
+                description: "Managers cannot create other managers.",
+            });
+        }
+        return { ...prev, [name]: newRole };
+    });
   };
   
   const handleStoreIdChange = (storeId: string) => {
@@ -175,6 +188,22 @@ export default function EditStaffPage() {
       return { ...prev, storeIds: newStoreIds, defaultStoreId: newDefaultId };
     });
   };
+
+  const handleSelectAllStores = () => {
+    setFormData(prev => {
+      if (!prev) return null;
+      const allStoreIds = managerAllowedStores.map(s => s.id);
+      let newDefaultId = prev.defaultStoreId;
+      if (!newDefaultId || !allStoreIds.includes(newDefaultId)) {
+        newDefaultId = allStoreIds[0] || null;
+      }
+      return { ...prev, storeIds: allStoreIds, defaultStoreId: newDefaultId };
+    });
+  }
+  
+  const handleSelectNoneStores = () => {
+    setFormData(prev => prev ? { ...prev, storeIds: [], defaultStoreId: null } : null);
+  }
 
   const handleFileChange = (file: File | null) => {
     setPictureFile(file);
@@ -246,7 +275,6 @@ export default function EditStaffPage() {
       await updateDoc(staffRef, dataToSave as any);
 
       if (auditChanges.length > 0) {
-        const auditLogRef = doc(collection(firestore, 'auditLogs'));
         const auditData = {
           action: 'staff_store_assignment_update',
           actorUid: authUser?.uid,
@@ -263,7 +291,7 @@ export default function EditStaffPage() {
       const userQuery = query(collection(firestore, 'users'), where('staffId', '==', staffId));
       const userSnap = await getDocs(userQuery);
       for (const userDoc of userSnap.docs) {
-        await updateDoc(userDoc.ref, { role: dataToSave.position });
+        await updateDoc(userDoc.ref, { role: dataToSave.position?.toLowerCase() });
       }
 
       openSuccessModal();
@@ -370,8 +398,8 @@ export default function EditStaffPage() {
                       </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: managerAllowedStores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={handleSelectAllStores}>Select All</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={handleSelectNoneStores}>Select None</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {managerAllowedStores.map(store => (
                               <DropdownMenuCheckboxItem
