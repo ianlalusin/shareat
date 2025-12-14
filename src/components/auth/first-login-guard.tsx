@@ -54,15 +54,9 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     }
 
     // If we get here, the user is logged in AND onboarded.
-    // Let's redirect them to their correct role-based dashboard if they land on a generic page.
-    if (isOnboarded && appUser?.role) {
-      const intendedPath = ROLE_REDIRECTS[appUser.role];
-      const currentBasePath = `/${pathname.split('/')[1]}`;
-      
-      // If user is on a generic page like '/' or on a page not meant for their role, redirect them.
-      if (pathname === '/' || pathname === '/login' || currentBasePath !== intendedPath) {
-        router.replace(intendedPath);
-      }
+    // If they land on the login or root page, send them to the main admin dashboard.
+    if (isOnboarded && (pathname === '/' || pathname === '/login')) {
+        router.replace('/admin');
     }
 
   }, [isInitialAuthLoading, user, isOnboarded, appUser, devMode, router, pathname]);
@@ -103,9 +97,6 @@ function OnboardingFlowManager() {
 
   useEffect(() => {
     if (devMode) {
-      // Dev mode bypasses onboarding logic.
-      // A simple reload might be too aggressive if context isn't ready.
-      // Let's try redirecting to /admin, which is the dev default.
       router.replace('/admin');
       return;
     }
