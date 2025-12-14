@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Select,
   SelectContent,
@@ -13,19 +14,18 @@ import { useFirestore } from "@/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { useStoreSelector } from "@/store/use-store-selector";
 import { useAuthContext } from "@/context/auth-context";
-
-type Store = {
-  id: string;
-  storeName: string;
-};
+import { Store } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
 
 export function StoreSelector() {
-  const [stores, setStores] = useState<Store[]>([]);
+  const [allStores, setAllStores] = useState<Store[]>([]);
+  const [isSwitching, setIsSwitching] = useState(false);
   const firestore = useFirestore();
   const { selectedStoreId, setSelectedStoreId } = useStoreSelector();
-  const { appUser, staff, devMode } = useAuthContext();
+  const { appUser, devMode, setActiveStoreId } = useAuthContext();
+  const { toast } = useToast();
 
-  const isUserAdmin = devMode || appUser?.role === 'admin';
+  const isMultiStoreUser = devMode || appUser?.role === 'admin' || (appUser?.storeIds && appUser.storeIds.length > 1);
 
   useEffect(() => {
     if (firestore) {
@@ -35,43 +35,77 @@ export function StoreSelector() {
           const storesData = snapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() } as Store)
           );
-          setStores(storesData);
-          
-          if (isUserAdmin) {
-             if (!selectedStoreId && storesData.length > 0) {
-                const lipaStore = storesData.find(store => store.storeName === 'SharEat Lipa');
-                if (lipaStore) {
-                  setSelectedStoreId(lipaStore.id);
-                } else {
-                  setSelectedStoreId(storesData[0].id);
-                }
-             }
-          } else if (staff?.assignedStore) {
-              const assignedStore = storesData.find(s => s.storeName === staff.assignedStore);
-              if (assignedStore && selectedStoreId !== assignedStore.id) {
-                setSelectedStoreId(assignedStore.id);
-              }
-          }
+          setAllStores(storesData);
         }
       );
       return () => unsubscribe();
     }
-  }, [firestore, selectedStoreId, setSelectedStoreId, isUserAdmin, staff]);
+  }, [firestore]);
+
+  const availableStores = useMemo(() => {
+    if (devMode || appUser?.role === 'admin') {
+      return allStores;
+    }
+    if (appUser?.storeIds) {
+      const userStoreIds = new Set(appUser.storeIds);
+      return allStores.filter(store => userStoreIds.has(store.id));
+    }
+    return [];
+  }, [allStores, appUser, devMode]);
+  
+  useEffect(() => {
+    // Auto-select a store if none is selected, respecting user's scope
+    if (availableStores.length > 0 && !selectedStoreId) {
+        // Find if the default store is available
+        const defaultStore = appUser?.activeStoreId && availableStores.find(s => s.id === appUser.activeStoreId);
+        if(defaultStore) {
+            setSelectedStoreId(defaultStore.id);
+        } else {
+            // Fallback to the first available store in the user's list
+            setSelectedStoreId(availableStores[0].id);
+        }
+    } else if (availableStores.length > 0 && selectedStoreId && !availableStores.some(s => s.id === selectedStoreId)) {
+        // If the selected store is no longer in the user's list, switch them to the first available one
+        setSelectedStoreId(availableStores[0].id);
+    }
+  }, [availableStores, selectedStoreId, setSelectedStoreId, appUser?.activeStoreId]);
+
+
+  const handleStoreChange = async (newStoreId: string) => {
+    if (newStoreId === selectedStoreId) return;
+    setIsSwitching(true);
+    try {
+      await setActiveStoreId(newStoreId);
+      setSelectedStoreId(newStoreId); // This syncs Zustand/localStorage
+      toast({
+        title: "Store Switched",
+        description: `You are now managing ${allStores.find(s => s.id === newStoreId)?.storeName}.`,
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Switch Failed",
+        description: error instanceof Error ? error.message : "Could not switch stores.",
+      });
+    } finally {
+      setIsSwitching(false);
+    }
+  }
 
   return (
     <Select 
       value={selectedStoreId || ''} 
-      onValueChange={setSelectedStoreId}
-      disabled={!isUserAdmin}
+      onValueChange={handleStoreChange}
+      disabled={!isMultiStoreUser || isSwitching}
     >
       <SelectTrigger className="w-full md:w-[200px] lg:w-[240px] bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 focus:ring-accent data-[state=open]:bg-primary-foreground/10">
         <div className="flex items-center gap-2">
           <StoreIcon className="h-4 w-4" />
-          <SelectValue placeholder="Select a store" />
+          <SelectValue placeholder={isSwitching ? "Switching..." : "Select a store"} />
         </div>
       </SelectTrigger>
       <SelectContent>
-        {stores.map((store) => (
+        {availableStores.map((store) => (
           <SelectItem key={store.id} value={store.id}>
             {store.storeName}
           </SelectItem>
