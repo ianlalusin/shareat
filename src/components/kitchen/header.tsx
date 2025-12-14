@@ -16,22 +16,22 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '../ui/button';
 import { LiveDateTime } from '@/components/cashier/live-date-time';
-import { useAuthContext } from '@/context/auth-context';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
+import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 
 export function KitchenHeader() {
-  const { devMode, setDevMode } = useAuthContext();
-  const router = useRouter();
   const auth = useAuth();
+  const router = useRouter();
 
   const handleLogout = async () => {
-    if (devMode) {
-      setDevMode(false);
+    try {
+      if (!auth) return; // safety: prevents crash if provider isn't mounted
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error('Logout failed', error);
     }
-    await signOut(auth);
-    router.push('/login');
   };
 
   return (
@@ -48,14 +48,18 @@ export function KitchenHeader() {
               <span className="sr-only">Toggle user menu</span>
             </Button>
           </DropdownMenuTrigger>
+
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
+
             <DropdownMenuItem asChild>
               <Link href="/admin/settings/account">Settings</Link>
             </DropdownMenuItem>
+
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleLogout}>Logout</DropdownMenuItem>
+
+            <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -72,9 +76,11 @@ export function KitchenHeader() {
 
       <div className="flex w-full items-center justify-end gap-4 md:gap-2 lg:gap-4">
         <StoreSelector />
-        <div className='hidden md:flex'>
+
+        <div className="hidden md:flex">
           <NavButtonGroup />
         </div>
+
         <LiveDateTime className="hidden md:flex" />
 
         {/* Mobile-only menu */}
@@ -90,6 +96,7 @@ export function KitchenHeader() {
                 <span className="sr-only">More options</span>
               </Button>
             </DropdownMenuTrigger>
+
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>
                 <LiveDateTime />
