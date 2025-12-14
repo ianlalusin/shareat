@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, setDoc, updateDoc, serverTimestamp, Firestore, Timestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, serverTimestamp, Firestore, Timestamp, getDocs, collection, query, where } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import type { Staff, User } from "@/lib/types";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -22,7 +22,7 @@ export default function VerifyStaffPage() {
     const { user } = useAuthContext();
     const firestore = useFirestore();
     const router = useRouter();
-    const staff = useOnboardingStore((state) => state.staffToVerify);
+    const { staffToVerify } = useOnboardingStore();
 
     const [fullName, setFullName] = useState("");
     const [phone, setPhone] = useState("");
@@ -31,17 +31,17 @@ export default function VerifyStaffPage() {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-      if (!staff) {
+      if (!staffToVerify) {
         // If there's no staff data (e.g., page refresh), maybe redirect
         // For now, it will just show the "not found" message.
         // A more robust solution might redirect to the start of the flow.
         return;
       }
-      setFullName(staff.fullName || user?.displayName || "");
-      setPhone(staff.contactNo || "");
-      const bday = staff.birthday instanceof Timestamp ? formatAndValidateDate(staff.birthday.toDate()).formatted : staff.birthday as string;
+      setFullName(staffToVerify.fullName || user?.displayName || "");
+      setPhone(staffToVerify.contactNo || "");
+      const bday = staffToVerify.birthday instanceof Timestamp ? formatAndValidateDate(staffToVerify.birthday.toDate()).formatted : staffToVerify.birthday as string;
       setBirthday(bday || '');
-    }, [staff, user]);
+    }, [staffToVerify, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,23 +49,29 @@ export default function VerifyStaffPage() {
       alert('Please fix the birthday format.');
       return;
     }
-    if (!staff || !user || !firestore) return;
+    if (!staffToVerify || !user || !firestore) return;
     setSaving(true);
     try {
       const birthdayDate = birthday ? parse(birthday as string, 'MMMM dd, yyyy', new Date()) : null;
 
       const userRef = doc(firestore, "users", user.uid);
+      
+      const storeQuery = query(collection(firestore, 'stores'), where('storeName', '==', staffToVerify.assignedStore));
+      const storeSnap = await getDocs(storeQuery);
+      const storeId = storeSnap.empty ? '' : storeSnap.docs[0].id;
+      
       await setDoc(userRef, {
-        staffId: staff.id,
+        staffId: staffToVerify.id,
         email: user.email,
-        displayName: fullName || user.displayName || staff.fullName,
-        role: (staff.position || "staff").toLowerCase(),
+        displayName: fullName || user.displayName || staffToVerify.fullName,
+        role: (staffToVerify.position || "staff").toLowerCase(),
+        storeId,
         status: "active",
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
       } as Omit<User, 'id'>);
 
-      const staffRef = doc(firestore, "staff", staff.id);
+      const staffRef = doc(firestore, "staff", staffToVerify.id);
       await updateDoc(staffRef, {
         authUid: user.uid,
         fullName,
@@ -120,7 +126,7 @@ export default function VerifyStaffPage() {
             </CardDescription>
         </CardHeader>
         <CardContent>
-            {staff ? (
+            {staffToVerify ? (
                 <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                     <Label htmlFor="fullName">Full name</Label>
@@ -171,7 +177,7 @@ export default function VerifyStaffPage() {
                 </CardFooter>
                 </form>
             ) : (
-                <p className="text-muted-foreground text-center">Loading your record...</p>
+                <p className="text-muted-foreground text-center">No staff record found to verify. You may have refreshed the page. Please sign out and sign back in.</p>
             )}
         </CardContent>
       </Card>

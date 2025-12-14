@@ -4,8 +4,8 @@
 import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
-import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from "firebase/firestore";
-import type { Staff } from "@/lib/types";
+import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import type { Staff, User as AppUser } from "@/lib/types";
 import { useAuthContext, isStaffActive } from "@/context/auth-context";
 import { Skeleton } from "../ui/skeleton";
 import { useOnboardingStore } from "@/store/use-onboarding-store";
@@ -89,6 +89,16 @@ function OnboardingFlowManager() {
     if (!user || !firestore) return;
 
     const checkStatusAndRedirect = async () => {
+      // Safety check: if user has a linked staff record, force main app context to handle it.
+      const staffByAuthUidQuery = query(collection(firestore, "staff"), where("authUid", "==", user.uid));
+      const staffByAuthUidSnap = await getDocs(staffByAuthUidQuery);
+      const linkedStaff = staffByAuthUidSnap.docs.map(d => ({ id: d.id, ...(d.data() as Staff) })).filter(isStaffActive);
+      if (linkedStaff.length > 0) {
+        // AuthContext should handle this, but as a failsafe, reload to trigger it.
+        window.location.href = '/';
+        return;
+      }
+      
       const pendingQ = query(
         collection(firestore, "pendingAccounts"),
         where("uid", "==", user.uid),
@@ -100,26 +110,33 @@ function OnboardingFlowManager() {
         return;
       }
       
-      // Look for staff by email to link them on first login
+      // Fallback to email for first-time linking
       if (user.email) {
-        const staffByEmailQuery = query(
-          collection(firestore, "staff"),
-          where("email", "==", user.email)
-        );
+        const staffByEmailQuery = query(collection(firestore, "staff"), where("email", "==", user.email));
         const staffSnap = await getDocs(staffByEmailQuery);
         
-        const matchingStaff = staffSnap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as Staff) }))
-          .filter(s => !s.authUid); // Critically, only consider unlinked staff
-
+        const matchingStaff = staffSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Staff) }));
         const activeStaffList = matchingStaff.filter(s => isStaffActive(s));
 
         if (activeStaffList.length === 1) {
-            setStaffToVerify(activeStaffList[0]);
-            router.replace('/onboarding/verify');
+            // Check if this single active match is already linked to someone else.
+            if (activeStaffList[0].authUid) {
+               router.replace("/onboarding/apply"); // Go to new application if their email is on a taken profile
+            } else {
+               setStaffToVerify(activeStaffList[0]);
+               router.replace('/onboarding/verify');
+            }
         } else if (activeStaffList.length > 1) {
-            setStaffListToResolve(activeStaffList);
-            router.replace('/onboarding/resolve');
+            const unlinkedActiveStaff = activeStaffList.filter(s => !s.authUid);
+            if (unlinkedActiveStaff.length === 1) {
+              setStaffToVerify(unlinkedActiveStaff[0]);
+              router.replace('/onboarding/verify');
+            } else if (unlinkedActiveStaff.length > 1) {
+              setStaffListToResolve(unlinkedActiveStaff);
+              router.replace('/onboarding/resolve');
+            } else {
+              router.replace("/onboarding/apply");
+            }
         } else {
             router.replace("/onboarding/apply");
         }

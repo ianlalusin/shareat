@@ -10,9 +10,13 @@ import {
   updateDoc,
   serverTimestamp,
   Firestore,
+  query,
+  collection,
+  where,
+  getDocs,
 } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
-import type { Staff, User } from "@/lib/types";
+import type { Staff, User, Store } from "@/lib/types";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -27,38 +31,31 @@ export default function ResolveStaffPage() {
   const { user } = useAuthContext();
   const firestore = useFirestore();
   const router = useRouter();
-  const staffList = useOnboardingStore((state) => state.staffListToResolve);
+  const { staffListToResolve, setStaffListToResolve } = useOnboardingStore();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    // Retrieve data from localStorage on component mount
-    const storedList = localStorage.getItem('onboarding_staff_list');
-    if (storedList) {
-      setStaffList(JSON.parse(storedList));
-      // Optional: Clean up localStorage after use
-      localStorage.removeItem('onboarding_staff_list');
-    } else {
-      // If no data, maybe redirect or show an error
-      console.warn('No staff list found for resolution.');
-    }
-  }, []);
 
   const handleConfirm = async () => {
     if (!selectedId || !user || !firestore) return;
     setSaving(true);
     try {
-      const chosen = staffList.find((s) => s.id === selectedId);
+      const chosen = staffListToResolve.find((s) => s.id === selectedId);
       if (!chosen) return;
 
       const userRef = doc(firestore, "users", user.uid);
+      
+      const storeQuery = query(collection(firestore, 'stores'), where('storeName', '==', chosen.assignedStore));
+      const storeSnap = await getDocs(storeQuery);
+      const storeId = storeSnap.empty ? '' : storeSnap.docs[0].id;
+      
       await setDoc(userRef, {
         staffId: chosen.id,
         email: user.email,
         displayName: chosen.fullName,
         role: (chosen.position || "staff").toLowerCase(),
         status: "active",
+        storeId,
         createdAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
       } as Omit<User, 'id'>);
@@ -69,7 +66,7 @@ export default function ResolveStaffPage() {
         lastLoginAt: serverTimestamp(),
       });
 
-      const others = staffList.filter((s) => s.id !== chosen.id);
+      const others = staffListToResolve.filter((s) => s.id !== chosen.id);
       await Promise.all(
         others.map((s) =>
           updateDoc(doc(firestore, "staff", s.id), {
@@ -102,7 +99,7 @@ export default function ResolveStaffPage() {
             </CardDescription>
         </CardHeader>
         <CardContent>
-            {staffList.length === 0 ? (
+            {staffListToResolve.length === 0 ? (
                 <p className="text-muted-foreground text-center">Loading staff profiles...</p>
             ) : (
                 <RadioGroup
@@ -110,7 +107,7 @@ export default function ResolveStaffPage() {
                     onValueChange={(val) => setSelectedId(val)}
                     className="space-y-3"
                 >
-                {staffList.map((s) => (
+                {staffListToResolve.map((s) => (
                     <Label
                     key={s.id}
                     htmlFor={s.id}
