@@ -291,7 +291,7 @@ export default function EditStaffPage() {
       const userQuery = query(collection(firestore, 'users'), where('staffId', '==', staffId));
       const userSnap = await getDocs(userQuery);
       for (const userDoc of userSnap.docs) {
-        await updateDoc(userDoc.ref, { role: dataToSave.position?.toLowerCase() });
+        await updateDoc(userDoc.ref, { role: String(dataToSave.position).toLowerCase() });
       }
 
       openSuccessModal();

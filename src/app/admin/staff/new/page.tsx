@@ -158,6 +158,21 @@ export default function NewStaffPage() {
       return { ...prev, storeIds: newStoreIds, defaultStoreId: newDefaultId };
     });
   };
+  
+   const handleSelectAllStores = () => {
+    setFormData(prev => {
+      const allStoreIds = managerAllowedStores.map(s => s.id);
+      let newDefaultId = prev.defaultStoreId;
+      if (!newDefaultId || !allStoreIds.includes(newDefaultId)) {
+        newDefaultId = allStoreIds[0] || null;
+      }
+      return { ...prev, storeIds: allStoreIds, defaultStoreId: newDefaultId };
+    });
+  }
+  
+  const handleSelectNoneStores = () => {
+    setFormData(prev => ({ ...prev, storeIds: [], defaultStoreId: null }));
+  }
 
   const getSelectedStoreNames = () => {
     if (!formData?.storeIds || formData.storeIds.length === 0) return "Select stores";
@@ -266,8 +281,8 @@ export default function NewStaffPage() {
                       </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
-                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: managerAllowedStores.map(s => s.id)}))}>Select All</DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={handleSelectAllStores}>Select All</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={handleSelectNoneStores}>Select None</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {managerAllowedStores.map(store => (
                               <DropdownMenuCheckboxItem

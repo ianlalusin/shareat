@@ -88,8 +88,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
             let derivedStoreIds: string[] = [];
             if (Array.isArray(staffData.storeIds) && staffData.storeIds.length > 0) {
               derivedStoreIds = staffData.storeIds;
-            } else if ((staffData as any).storeId) {
-                // Fallback to legacy single storeId
+            } else if ((staffData as any).storeId) { // Legacy single storeId on staff
                 derivedStoreIds = [(staffData as any).storeId];
             } else if (staffData.assignedStore) {
               const storeQ = query(collection(firestore, 'stores'), where('storeName', '==', staffData.assignedStore), limit(1));
