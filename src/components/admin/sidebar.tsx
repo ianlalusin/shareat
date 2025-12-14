@@ -26,6 +26,7 @@ import {
   Receipt,
   MailCheck,
   List,
+  GitBranch,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -43,6 +44,7 @@ const menuItems = [
   { href: "/admin/menu", label: "Menu", icon: BookMarked, roles: ['admin', 'manager'] },
   { href: "/admin/reports/sales", label: "Sales Report", icon: AreaChart, roles: ['admin', 'manager'] },
   { href: "/admin/collections", label: "Collections", icon: ListChecks, roles: ['admin', 'manager'] },
+  { href: "/admin/migrations/store-scope", label: "Migrations", icon: GitBranch, roles: ['admin'] },
   { href: "#maintenance", label: "Maintenance", icon: Wrench, roles: ['admin'] },
 ];
 
