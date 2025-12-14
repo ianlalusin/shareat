@@ -1,8 +1,7 @@
 
-
 'use client';
 
-import { useState, useEffect, useReducer, useMemo, Fragment } from 'react';
+import React, { useState, useEffect, useReducer, useMemo, Fragment } from 'react';
 import { useParams, notFound, useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
 import { useAuthContext } from '@/context/auth-context';
