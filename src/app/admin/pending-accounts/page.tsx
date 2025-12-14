@@ -1,7 +1,8 @@
 
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   collection,
   onSnapshot,
@@ -27,20 +28,19 @@ import {
 import type { Timestamp, Firestore } from "firebase/firestore";
 import { ApprovePendingAccountDialog } from "@/components/admin/approve-pending-account-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { PendingAccount, Staff, User } from "@/lib/types";
+import { PendingAccount, Staff, User, Store } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User as UserIcon } from 'lucide-react';
 import { useAuthContext } from "@/context/auth-context";
+import { isAdmin } from "@/lib/scope";
 
 type StaffDoc = Staff & { id: string };
 
 export default function PendingAccountsPage() {
   const firestore = useFirestore();
-  const auth = useAuth();
-  const { user } = useAuthContext();
-  const [newAccounts, setNewAccounts] = useState<PendingAccount[]>([]);
-  const [profileUpdates, setProfileUpdates] = useState<PendingAccount[]>([]);
+  const { user, appUser } = useAuthContext();
+  const [allPending, setAllPending] = useState<PendingAccount[]>([]);
   const [staff, setStaff] = useState<StaffDoc[]>([]);
   const [selected, setSelected] = useState<PendingAccount | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -49,40 +49,45 @@ export default function PendingAccountsPage() {
   useEffect(() => {
     if (!firestore) return;
 
-    const newAccountsQuery = query(
+    const pendingAccountsQuery = query(
       collection(firestore, "pendingAccounts"),
       where("status", "==", "pending"),
-      where("type", "==", "new_account"),
       orderBy("createdAt", "desc")
     );
-    const unsubNew = onSnapshot(newAccountsQuery, (snap) => {
-      setNewAccounts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PendingAccount)));
+    const unsubPending = onSnapshot(pendingAccountsQuery, (snap) => {
+      setAllPending(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PendingAccount)));
     });
 
-    const updatesQuery = query(
-      collection(firestore, "pendingAccounts"),
-      where("status", "==", "pending"),
-      where("type", "==", "profile_update"),
-      orderBy("createdAt", "desc")
-    );
-    const unsubUpdates = onSnapshot(updatesQuery, (snap) => {
-      setProfileUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PendingAccount)));
-    });
-    
-    const staffQ = query(
-      collection(firestore, "staff"),
-      where("employmentStatus", "==", "Active")
-    );
-    const unsubStaff = onSnapshot(staffQ, (snap) => {
+    const staffQuery = query(collection(firestore, "staff"));
+    const unsubStaff = onSnapshot(staffQuery, (snap) => {
       setStaff(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StaffDoc)));
     });
 
     return () => {
-      unsubNew();
-      unsubUpdates();
+      unsubPending();
       unsubStaff();
     };
   }, [firestore]);
+  
+  const filteredPending = useMemo(() => {
+    if (isAdmin(appUser)) {
+      return allPending;
+    }
+    if (appUser?.role === 'manager' && appUser.storeIds) {
+      const managerStoreIds = new Set(appUser.storeIds);
+      const staffInManagedStores = staff
+        .filter(s => s.storeIds?.some(id => managerStoreIds.has(id)))
+        .map(s => s.id);
+      
+      const staffIdSet = new Set(staffInManagedStores);
+      
+      return allPending.filter(p => p.type === 'profile_update' && p.staffId && staffIdSet.has(p.staffId));
+    }
+    return [];
+  }, [allPending, staff, appUser]);
+
+  const newAccounts = useMemo(() => filteredPending.filter(p => p.type === 'new_account'), [filteredPending]);
+  const profileUpdates = useMemo(() => filteredPending.filter(p => p.type === 'profile_update'), [filteredPending]);
 
   const handleReject = async (pa: PendingAccount) => {
     if (!firestore || !user) return;

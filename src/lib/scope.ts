@@ -44,6 +44,7 @@ export function applyStoreFilter(originalConstraints: QueryConstraint[], scope: 
 }
 
 /**
+ * @deprecated Use applyStoreFilter with `storeIds` array-contains filter instead for staff.
  * Adds a `where('assignedStore', '==', storeName)` constraint to a Firestore query if the user is not an admin.
  * @param originalConstraints The existing query constraints.
  * @param scope The user's scope object.

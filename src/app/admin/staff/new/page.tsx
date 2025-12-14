@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronDown } from 'lucide-react';
 import { Staff, Store, StaffPosition } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid } from 'date-fns';
@@ -32,6 +32,7 @@ import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/context/auth-context';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 const positionOptions: StaffPosition[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
 
@@ -50,6 +51,8 @@ const initialStaffState: Omit<Staff, 'id'> = {
   picture: '',
   encoder: '',
   authUid: '',
+  storeIds: [],
+  defaultStoreId: null,
 };
 
 export default function NewStaffPage() {
@@ -137,6 +140,35 @@ export default function NewStaffPage() {
     }
   };
 
+  const handleStoreIdChange = (storeId: string) => {
+    setFormData((prev) => {
+      const currentIds = prev.storeIds || [];
+      const newStoreIds = currentIds.includes(storeId)
+        ? currentIds.filter(id => id !== storeId)
+        : [...currentIds, storeId];
+      
+      let newDefaultId = prev.defaultStoreId;
+      if (!newStoreIds.includes(newDefaultId || '')) {
+        newDefaultId = newStoreIds[0] || null;
+      }
+      if (newStoreIds.length === 1) {
+        newDefaultId = newStoreIds[0];
+      }
+
+      return { ...prev, storeIds: newStoreIds, defaultStoreId: newDefaultId };
+    });
+  };
+
+  const getSelectedStoreNames = () => {
+    if (!formData?.storeIds || formData.storeIds.length === 0) return "Select stores";
+    if (formData.storeIds.length === stores.length) return "All stores selected";
+    if (formData.storeIds.length > 2) return `${formData.storeIds.length} stores selected`;
+    return stores
+        .filter(s => formData.storeIds?.includes(s.id))
+        .map(s => s.storeName)
+        .join(', ');
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!firestore || !storage || Object.values(dateErrors).some(e => e)) {
@@ -147,6 +179,11 @@ export default function NewStaffPage() {
           description: "Please correct the date format (MM/DD/YYYY).",
         });
       }
+      return;
+    }
+    
+    if (!formData.storeIds || formData.storeIds.length === 0) {
+      toast({ variant: 'destructive', title: 'Store required', description: 'Please assign at least one store.' });
       return;
     }
 
@@ -170,6 +207,7 @@ export default function NewStaffPage() {
       picture: pictureUrl,
       birthday: formData.birthday ? parse(formData.birthday as string, 'MMMM dd, yyyy', new Date()) : null,
       dateHired: formData.dateHired ? parse(formData.dateHired as string, 'MMMM dd, yyyy', new Date()) : null,
+      assignedStore: stores.find(s => s.id === formData.defaultStoreId)?.storeName || '',
     };
 
     try {
@@ -184,6 +222,15 @@ export default function NewStaffPage() {
       });
     }
   };
+
+  const managerAllowedStores = useMemo(() => {
+    if (appUser?.role === 'admin') return stores;
+    if (appUser?.role === 'manager' && appUser.storeIds) {
+      const managerStoreIds = new Set(appUser.storeIds);
+      return stores.filter(s => managerStoreIds.has(s.id));
+    }
+    return [];
+  }, [appUser, stores]);
 
 
   return (
@@ -208,16 +255,46 @@ export default function NewStaffPage() {
                 <Label htmlFor="fullName">Full Name</Label>
                 <Input id="fullName" name="fullName" value={formData.fullName} onChange={handleInputChange} required />
               </div>
-               <div className="space-y-2">
-                <Label htmlFor="assignedStore">Assigned Store</Label>
-                <Select name="assignedStore" onValueChange={(value) => handleSelectChange('assignedStore', value)} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a store" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {stores.map(store => <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="storeIds">Assigned Stores</Label>
+                  <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                          <span>{getSelectedStoreNames()}</span>
+                          <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: managerAllowedStores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {managerAllowedStores.map(store => (
+                              <DropdownMenuCheckboxItem
+                                  key={store.id}
+                                  checked={formData.storeIds?.includes(store.id)}
+                                  onSelect={(e) => e.preventDefault()}
+                                  onClick={() => handleStoreIdChange(store.id)}
+                              >
+                                  {store.storeName}
+                              </DropdownMenuCheckboxItem>
+                          ))}
+                      </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="defaultStoreId">Default Store</Label>
+                    <Select name="defaultStoreId" value={formData.defaultStoreId || ''} onValueChange={(value) => handleSelectChange('defaultStoreId', value)} required disabled={!formData.storeIds || formData.storeIds.length === 0}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select default store"/>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {stores.filter(s => formData.storeIds?.includes(s.id)).map(s => (
+                                <SelectItem key={s.id} value={s.id}>{s.storeName}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                 </div>
               </div>
                <div className="space-y-2">
                 <Label htmlFor="position">Position (Role)</Label>

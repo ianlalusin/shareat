@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -10,6 +10,8 @@ import {
   onSnapshot,
   doc,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import {
@@ -53,6 +55,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/context/auth-context';
 import { Card } from '@/components/ui/card';
+import { isAdmin } from '@/lib/scope';
 
 function AccessModal({ staff, isOpen, onClose }: { staff: Staff | null; isOpen: boolean; onClose: () => void; }) {
   if (!staff) return null;
@@ -91,17 +94,29 @@ export default function StaffPage() {
   const canDelete = devMode || appUser?.role === 'admin';
 
   useEffect(() => {
-    if (firestore) {
-      const unsubscribe = onSnapshot(collection(firestore, 'staff'), (snapshot) => {
-        const staffData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Staff[];
-        setStaff(staffData);
-      });
-      return () => unsubscribe();
+    if (!firestore || !appUser) return;
+    
+    let staffQuery;
+    const staffCollection = collection(firestore, 'staff');
+    
+    if (isAdmin(appUser)) {
+      staffQuery = query(staffCollection);
+    } else if (appUser.activeStoreId) {
+      staffQuery = query(staffCollection, where('storeIds', 'array-contains', appUser.activeStoreId));
+    } else {
+      setStaff([]);
+      return;
     }
-  }, [firestore]);
+
+    const unsubscribe = onSnapshot(staffQuery, (snapshot) => {
+      const staffData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Staff[];
+      setStaff(staffData);
+    });
+    return () => unsubscribe();
+  }, [firestore, appUser]);
 
   const handleDelete = async () => {
     if (!firestore || !deleteTargetId) return;
@@ -149,7 +164,7 @@ export default function StaffPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Full Name</TableHead>
-                  <TableHead>Assigned Store</TableHead>
+                  <TableHead>Default Store</TableHead>
                   <TableHead>Position</TableHead>
                   <TableHead>Employment Status</TableHead>
                   <TableHead>
@@ -293,5 +308,3 @@ export default function StaffPage() {
     </>
   );
 }
-
-    
