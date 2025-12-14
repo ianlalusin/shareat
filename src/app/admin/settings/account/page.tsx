@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthContext } from '@/context/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,19 +9,21 @@ import { useRouter } from 'next/navigation';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { LogOut, Loader2 } from 'lucide-react';
-import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, Timestamp, query, where } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, addDoc, collection, serverTimestamp, Timestamp, query, where, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Staff, User, PendingAccount } from '@/lib/types';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ImageUpload } from '@/components/ui/image-upload';
-import { formatAndValidateDate, autoformatDate } from '@/lib/utils';
+import { formatAndValidateDate, autoformatDate, revertToInputFormat } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { requiresApprovalForProfileUpdate } from '@/lib/permissions';
+import { parse } from 'date-fns';
 
 export default function AccountPage() {
-  const { user, devMode, setDevMode, loading: authLoading } = useAuthContext();
+  const { user, appUser, devMode, setDevMode, loading: authLoading } = useAuthContext();
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -34,6 +36,8 @@ export default function AccountPage() {
   const [pictureFile, setPictureFile] = useState<File | null>(null);
   const [dateError, setDateError] = useState<string | undefined>();
   const [pendingUpdate, setPendingUpdate] = useState<PendingAccount | null>(null);
+
+  const needsApproval = requiresApprovalForProfileUpdate(appUser?.role);
 
   useEffect(() => {
     if (authLoading || !firestore) return;
@@ -118,13 +122,34 @@ export default function AccountPage() {
     setDateError(error);
   };
   
+  const handleDateFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { value } = e.target;
+    if (!value) return;
+    const formattedValue = revertToInputFormat(value);
+    setFormData((prev) => ({ ...prev, birthday: formattedValue }));
+  };
+  
   const handleFileChange = (file: File | null) => {
     setPictureFile(file);
     if(file){
         setFormData(prev => ({ ...prev, picture: URL.createObjectURL(file) }));
     }
   };
-
+  
+  const getChangedFields = (originalData: Staff, currentData: Partial<Staff>, pictureUrl?: string) => {
+    const changedFields: Partial<Staff> = {};
+    if (currentData.fullName !== originalData.fullName) changedFields.fullName = currentData.fullName;
+    if (currentData.contactNo !== originalData.contactNo) changedFields.contactNo = currentData.contactNo;
+    if (currentData.address !== originalData.address) changedFields.address = currentData.address;
+    
+    const originalBirthdayStr = originalData.birthday instanceof Timestamp ? formatAndValidateDate(originalData.birthday.toDate()).formatted : originalData.birthday;
+    if (currentData.birthday !== originalBirthdayStr) changedFields.birthday = currentData.birthday as string;
+    
+    if (pictureUrl && pictureUrl !== originalData.picture) changedFields.picture = pictureUrl;
+    
+    return changedFields;
+  };
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firestore || !user || !staffData) return;
@@ -148,40 +173,59 @@ export default function AccountPage() {
         }
     }
     
-    const updatedFields: PendingAccount['updates'] = {};
-    if (formData.fullName !== staffData.fullName) updatedFields.fullName = formData.fullName;
-    if (formData.contactNo !== staffData.contactNo) updatedFields.contactNo = formData.contactNo;
-    if (formData.address !== staffData.address) updatedFields.address = formData.address;
-    if (formData.birthday !== (staffData.birthday instanceof Timestamp ? formatAndValidateDate(staffData.birthday.toDate()).formatted : staffData.birthday)) updatedFields.birthday = formData.birthday as string;
-    if (pictureUrl && pictureUrl !== staffData.picture) updatedFields.picture = pictureUrl;
-
-    if(Object.keys(updatedFields).length === 0){
+    const changedFields = getChangedFields(staffData, formData, pictureUrl);
+    
+    if(Object.keys(changedFields).length === 0){
         toast({ title: "No changes detected."});
         setSaving(false);
         return;
     }
-    
-    const pendingData: Omit<PendingAccount, 'id'> = {
-        uid: user.uid,
-        staffId: staffData.id,
-        type: 'profile_update',
-        email: user.email!,
-        fullName: staffData.fullName,
-        status: 'pending',
-        createdAt: serverTimestamp() as Timestamp,
-        expiresAt: new Timestamp(Date.now() / 1000 + 30 * 24 * 60 * 60, 0),
-        updates: updatedFields
-    };
 
-    try {
-        await addDoc(collection(firestore, 'pendingAccounts'), pendingData);
-        toast({ title: "Update Submitted", description: "Your profile changes have been submitted for approval."});
-        setSaving(false);
-    } catch (error) {
-        toast({ title: "Submission Failed", variant: "destructive" });
-        setSaving(false);
+    if (needsApproval) {
+        // --- Create Pending Request Flow ---
+        const pendingData: Omit<PendingAccount, 'id'> = {
+            uid: user.uid,
+            staffId: staffData.id,
+            type: 'profile_update',
+            email: user.email!,
+            fullName: staffData.fullName,
+            status: 'pending',
+            createdAt: serverTimestamp() as Timestamp,
+            expiresAt: new Timestamp(Date.now() / 1000 + 30 * 24 * 60 * 60, 0),
+            updates: changedFields
+        };
+
+        try {
+            await addDoc(collection(firestore, 'pendingAccounts'), pendingData);
+            toast({ title: "Update Submitted", description: "Your profile changes have been submitted for approval."});
+        } catch (error) {
+            toast({ title: "Submission Failed", variant: "destructive" });
+        }
+    } else {
+        // --- Direct Update Flow for Admin ---
+        const updatesToApply: Partial<Staff> = {};
+        if (changedFields.birthday) {
+          const birthdayDate = parse(changedFields.birthday, 'MMMM dd, yyyy', new Date());
+          if (isValid(birthdayDate)) {
+            updatesToApply.birthday = Timestamp.fromDate(birthdayDate);
+          }
+        }
+        if (changedFields.fullName) updatesToApply.fullName = changedFields.fullName;
+        if (changedFields.contactNo) updatesToApply.contactNo = changedFields.contactNo;
+        if (changedFields.address) updatesToApply.address = changedFields.address;
+        if (changedFields.picture) updatesToApply.picture = changedFields.picture;
+
+        try {
+            const staffRef = doc(firestore, 'staff', staffData.id);
+            await updateDoc(staffRef, { ...updatesToApply, encoder: user.displayName || user.email });
+            toast({ title: "Profile Saved", description: "Your changes have been saved." });
+        } catch(error) {
+             toast({ title: "Save Failed", variant: "destructive" });
+        }
     }
+    setSaving(false);
   };
+
 
   if (loading) {
       return (
@@ -200,6 +244,8 @@ export default function AccountPage() {
       )
   }
 
+  const showPendingBanner = pendingUpdate && needsApproval;
+
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <h1 className="text-lg font-semibold md:text-2xl font-headline">
@@ -209,12 +255,12 @@ export default function AccountPage() {
         <CardHeader>
           <CardTitle>My Profile</CardTitle>
           <CardDescription>
-            {devMode ? 'You are in Developer Mode. Some features are simulated.' : 'Update your personal information. Changes require manager approval.'}
+            {devMode ? 'You are in Developer Mode. Some features are simulated.' : (needsApproval ? 'Update your personal information. Changes require manager approval.' : 'As an admin, you can update your profile directly.')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {pendingUpdate && (
+            {showPendingBanner && (
                 <Alert variant="info">
                     <AlertTitle>Pending Approval</AlertTitle>
                     <AlertDescription>You have a pending profile update request. You cannot submit new changes until it is reviewed.</AlertDescription>
@@ -250,7 +296,17 @@ export default function AccountPage() {
                 </div>
                  <div className="space-y-2">
                   <Label htmlFor="birthday">Birthday</Label>
-                  <Input id="birthday" name="birthday" value={formData.birthday as string || ''} onChange={handleDateChange} onBlur={handleDateBlur} placeholder="MM/DD/YYYY" maxLength={10} disabled={devMode || !!pendingUpdate || saving}/>
+                  <Input 
+                    id="birthday" 
+                    name="birthday" 
+                    value={formData.birthday as string || ''} 
+                    onChange={handleDateChange} 
+                    onBlur={handleDateBlur} 
+                    onFocus={handleDateFocus}
+                    placeholder="MM/DD/YYYY" 
+                    maxLength={10} 
+                    disabled={devMode || !!pendingUpdate || saving}
+                  />
                   {dateError && <p className="text-sm text-destructive">{dateError}</p>}
                 </div>
             </div>
@@ -261,9 +317,9 @@ export default function AccountPage() {
                     Log Out
                  </Button>
                 {!devMode && (
-                    <Button type="submit" disabled={saving || !!pendingUpdate} className="order-1 sm:order-2">
+                    <Button type="submit" disabled={saving || showPendingBanner} className="order-1 sm:order-2">
                         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {saving ? 'Submitting...' : 'Save & Submit for Approval'}
+                        {saving ? 'Saving...' : (needsApproval ? 'Submit for Approval' : 'Save Changes')}
                     </Button>
                 )}
             </div>
