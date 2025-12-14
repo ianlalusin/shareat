@@ -74,6 +74,8 @@ export type StaffPosition = 'admin' | 'manager' | 'cashier' | 'server' | 'kitche
 export type Staff = {
   id:string;
   assignedStore: string;
+  storeIds?: string[];
+  defaultStoreId?: string | null;
   fullName: string;
   address: string;
   email: string;
@@ -99,6 +101,8 @@ export type AppUser = {
   role: StaffPosition;
   storeId: string;
   storeName: string;
+  storeIds?: string[];
+  activeStoreId?: string | null;
   status: 'active' | 'disabled';
   createdAt: Timestamp;
   lastLoginAt: Timestamp;

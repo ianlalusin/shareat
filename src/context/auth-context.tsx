@@ -20,7 +20,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function isStaffActive(staffData: Staff | null): boolean {
+export function isStaffActive(staffData: Staff | null): boolean {
   if (!staffData) return false;
   const status = staffData.employmentStatus?.toLowerCase();
   // @ts-ignore Legacy field
@@ -41,18 +41,16 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!auth || !firestore) return;
-  
-    let userUnsubscribe: Unsubscribe | null = null;
+
+    let userDocUnsubscribe: Unsubscribe | null = null;
     
     const authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // Clean up previous user's listener
-      if (userUnsubscribe) {
-        userUnsubscribe();
-        userUnsubscribe = null;
+      if (userDocUnsubscribe) {
+        userDocUnsubscribe();
+        userDocUnsubscribe = null;
       }
       
       setUser(currentUser);
-  
       if (!currentUser) {
         setIsOnboarded(false);
         setAppUser(null);
@@ -64,77 +62,96 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       setIsInitialAuthLoading(true);
 
       try {
-        const staffQuery = query(collection(firestore, 'staff'), where('authUid', '==', currentUser.uid), limit(1));
-        const staffSnapshot = await getDocs(staffQuery);
+        const userDocRef = doc(firestore, 'users', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        const currentAppUser = userDocSnap.data() as AppUser | undefined;
 
-        if (!staffSnapshot.empty) {
-            const staffDoc = staffSnapshot.docs[0];
-            const staffData = { id: staffDoc.id, ...staffDoc.data() } as Staff;
+        let staffData: Staff | null = null;
+        if (currentAppUser?.staffId) {
+            const staffDoc = await getDoc(doc(firestore, 'staff', currentAppUser.staffId));
+            if (staffDoc.exists()) {
+                staffData = { id: staffDoc.id, ...staffDoc.data() } as Staff;
+            }
+        }
 
-            if (isStaffActive(staffData)) {
-                setStaff(staffData);
-                
-                const userDocRef = doc(firestore, 'users', currentUser.uid);
-                
-                const storeQuery = query(collection(firestore, 'stores'), where('storeName', '==', staffData.assignedStore), limit(1));
-                const storeSnap = await getDocs(storeQuery);
-                const storeDoc = storeSnap.docs[0];
-                const storeId = storeDoc?.id || '';
-                const storeName = storeDoc?.data()?.storeName || '';
-
-                const userPayload: Omit<AppUser, 'id' | 'createdAt' | 'lastLoginAt'> = {
-                    staffId: staffData.id,
-                    email: currentUser.email!,
-                    displayName: staffData.fullName,
-                    role: staffData.position?.toLowerCase() as AppUser['role'] || 'staff',
-                    storeId: storeId,
-                    storeName: storeName,
-                    status: 'active',
-                };
-                
-                const userDocSnap = await getDoc(userDocRef);
-                const currentAppUser = userDocSnap.data() as AppUser | undefined;
-
-                const needsUpdate = !currentAppUser ||
-                                    userPayload.staffId !== currentAppUser.staffId ||
-                                    userPayload.role !== currentAppUser.role ||
-                                    userPayload.storeId !== currentAppUser.storeId ||
-                                    userPayload.displayName !== currentAppUser.displayName ||
-                                    userPayload.email !== currentAppUser.email ||
-                                    userPayload.status !== currentAppUser.status;
-
-                if (needsUpdate) {
-                    await setDoc(userDocRef, { 
-                        ...userPayload, 
-                        lastLoginAt: serverTimestamp(),
-                        createdAt: currentAppUser?.createdAt || serverTimestamp()
-                    }, { merge: true });
-                } else {
-                    try {
-                        await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
-                    } catch (e) {
-                        console.warn('lastLoginAt update skipped', e);
-                    }
-                }
-                
-                userUnsubscribe = onSnapshot(userDocRef, (snap) => {
-                  if (snap.exists()) setAppUser(snap.data() as AppUser);
-                });
-                
-                setIsOnboarded(true);
-
-                try {
-                  await updateDoc(staffDoc.ref, { lastLoginAt: serverTimestamp() });
-                } catch (e) { console.warn("Staff lastLoginAt update skipped", e); }
-
-                setIsInitialAuthLoading(false);
-                return;
+        if (!staffData) {
+            const staffQuery = query(collection(firestore, 'staff'), where('authUid', '==', currentUser.uid), limit(1));
+            const staffSnapshot = await getDocs(staffQuery);
+            if (!staffSnapshot.empty) {
+                const staffDoc = staffSnapshot.docs[0];
+                staffData = { id: staffDoc.id, ...staffDoc.data() } as Staff;
             }
         }
         
-        setIsOnboarded(false);
-        setAppUser(null);
-        setStaff(null);
+        if (staffData && isStaffActive(staffData)) {
+            setStaff(staffData);
+
+            // Multi-store logic
+            let storeIds: string[] = [];
+            if (Array.isArray(staffData.storeIds) && staffData.storeIds.length > 0) {
+              storeIds = staffData.storeIds;
+            } else if(staffData.assignedStore) {
+              const storeQ = query(collection(firestore, 'stores'), where('storeName', '==', staffData.assignedStore), limit(1));
+              const storeSnap = await getDocs(storeQ);
+              if (!storeSnap.empty) storeIds = [storeSnap.docs[0].id];
+            }
+            
+            const defaultStoreId = staffData.defaultStoreId || storeIds[0] || null;
+            let activeStoreId = currentAppUser?.activeStoreId && storeIds.includes(currentAppUser.activeStoreId)
+              ? currentAppUser.activeStoreId
+              : defaultStoreId;
+            
+            const activeStoreDoc = activeStoreId ? await getDoc(doc(firestore, 'stores', activeStoreId)) : null;
+
+            const userPayload: Omit<AppUser, 'id' | 'createdAt' | 'lastLoginAt'> = {
+                staffId: staffData.id,
+                email: currentUser.email!,
+                displayName: staffData.fullName,
+                role: staffData.position?.toLowerCase() as AppUser['role'] || 'staff',
+                storeId: activeStoreId || '', // Legacy compatibility
+                storeName: activeStoreDoc?.data()?.storeName || '',
+                storeIds: storeIds,
+                activeStoreId: activeStoreId,
+                status: 'active',
+            };
+            
+            const needsUpdate = !currentAppUser ||
+                                userPayload.staffId !== currentAppUser.staffId ||
+                                userPayload.role !== currentAppUser.role ||
+                                userPayload.storeId !== activeStoreId ||
+                                userPayload.displayName !== currentAppUser.displayName ||
+                                userPayload.email !== currentAppUser.email ||
+                                JSON.stringify(userPayload.storeIds) !== JSON.stringify(currentAppUser.storeIds) ||
+                                userPayload.activeStoreId !== currentAppUser.activeStoreId ||
+                                userPayload.status !== currentAppUser.status;
+
+            if (needsUpdate) {
+                 await setDoc(userDocRef, { 
+                    ...userPayload, 
+                    lastLoginAt: serverTimestamp(),
+                    createdAt: currentAppUser?.createdAt || serverTimestamp()
+                }, { merge: true });
+            } else {
+                 try {
+                    await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
+                } catch (e) {
+                    console.warn('lastLoginAt update skipped', e);
+                }
+            }
+
+            userDocUnsubscribe = onSnapshot(userDocRef, (snap) => {
+              if (snap.exists()) setAppUser(snap.data() as AppUser);
+            });
+
+            setIsOnboarded(true);
+            try {
+              await updateDoc(doc(firestore, 'staff', staffData.id), { lastLoginAt: serverTimestamp() });
+            } catch (e) { console.warn("Staff lastLoginAt update skipped", e); }
+        } else {
+            setIsOnboarded(false);
+            setAppUser(null);
+            setStaff(null);
+        }
       } catch (error) {
         console.error("Error during auth state processing:", error);
         setIsOnboarded(false);
@@ -144,11 +161,11 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
         setIsInitialAuthLoading(false);
       }
     });
-  
+
     return () => {
         authUnsubscribe();
-        if (userUnsubscribe) {
-          userUnsubscribe();
+        if (userDocUnsubscribe) {
+            userDocUnsubscribe();
         }
     };
   }, [auth, firestore]);
@@ -174,5 +191,3 @@ export const useAuthContext = () => {
   }
   return context;
 };
-
-export { isStaffActive };
