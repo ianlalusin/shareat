@@ -11,6 +11,7 @@ interface AuthContextType {
   user: FirebaseAuthUser | null;
   appUser: AppUser | null;
   staff: Staff | null;
+  isActiveStaff: boolean;
   isInitialAuthLoading: boolean;
   isOnboarded: boolean;
   devMode: boolean;
@@ -22,7 +23,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function isStaffActive(staffData: Staff | null): boolean {
   if (!staffData) return false;
   const status = staffData.employmentStatus?.toLowerCase();
-  // @ts-ignore
+  // @ts-ignore Legacy field
   const isActiveBool = staffData.is_active === true;
   return status === 'active' || isActiveBool;
 }
@@ -36,6 +37,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   const [devMode, setDevModeState] = useState(false);
   const auth = useAuth();
   const firestore = useFirestore();
+  const isActiveStaff = isStaffActive(staff);
 
   useEffect(() => {
     if (!auth || !firestore) return;
@@ -76,38 +78,42 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
                 
                 const storeQuery = query(collection(firestore, 'stores'), where('storeName', '==', staffData.assignedStore), limit(1));
                 const storeSnap = await getDocs(storeQuery);
-                const storeId = storeSnap.empty ? '' : storeSnap.docs[0].id;
+                const storeDoc = storeSnap.docs[0];
+                const storeId = storeDoc?.id || '';
+                const storeName = storeDoc?.data()?.storeName || '';
 
-                const userPayload = {
+                const userPayload: Omit<AppUser, 'id' | 'createdAt' | 'lastLoginAt'> = {
                     staffId: staffData.id,
-                    email: currentUser.email,
+                    email: currentUser.email!,
                     displayName: staffData.fullName,
-                    role: staffData.position?.toLowerCase() || 'staff',
+                    role: staffData.position?.toLowerCase() as AppUser['role'] || 'staff',
                     storeId: storeId,
+                    storeName: storeName,
                     status: 'active',
                 };
                 
                 const userDocSnap = await getDoc(userDocRef);
+                const currentAppUser = userDocSnap.data() as AppUser | undefined;
 
-                if (!userDocSnap.exists()) {
-                    await setDoc(userDocRef, { ...userPayload, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp() });
+                const needsUpdate = !currentAppUser ||
+                                    userPayload.staffId !== currentAppUser.staffId ||
+                                    userPayload.role !== currentAppUser.role ||
+                                    userPayload.storeId !== currentAppUser.storeId ||
+                                    userPayload.displayName !== currentAppUser.displayName ||
+                                    userPayload.email !== currentAppUser.email ||
+                                    userPayload.status !== currentAppUser.status;
+
+                if (needsUpdate) {
+                    await setDoc(userDocRef, { 
+                        ...userPayload, 
+                        lastLoginAt: serverTimestamp(),
+                        createdAt: currentAppUser?.createdAt || serverTimestamp()
+                    }, { merge: true });
                 } else {
-                    const currentAppUser = userDocSnap.data() as AppUser;
-                    const needsUpdate = userPayload.staffId !== currentAppUser.staffId ||
-                                        userPayload.role !== currentAppUser.role ||
-                                        userPayload.storeId !== currentAppUser.storeId ||
-                                        userPayload.displayName !== currentAppUser.displayName ||
-                                        userPayload.email !== currentAppUser.email ||
-                                        userPayload.status !== currentAppUser.status;
-
-                    if (needsUpdate) {
-                       await updateDoc(userDocRef, { ...userPayload, lastLoginAt: serverTimestamp() });
-                    } else {
-                        try {
-                           await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
-                        } catch (e) {
-                           console.warn('lastLoginAt update skipped', e);
-                        }
+                    try {
+                        await updateDoc(userDocRef, { lastLoginAt: serverTimestamp() });
+                    } catch (e) {
+                        console.warn('lastLoginAt update skipped', e);
                     }
                 }
                 
@@ -155,7 +161,7 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, appUser, staff, isInitialAuthLoading, isOnboarded, devMode, setDevMode }}>
+    <AuthContext.Provider value={{ user, appUser, staff, isActiveStaff, isInitialAuthLoading, isOnboarded, devMode, setDevMode }}>
       {children}
     </AuthContext.Provider>
   );

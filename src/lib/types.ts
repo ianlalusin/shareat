@@ -98,6 +98,7 @@ export type AppUser = {
   displayName: string;
   role: StaffPosition;
   storeId: string;
+  storeName: string;
   status: 'active' | 'disabled';
   createdAt: Timestamp;
   lastLoginAt: Timestamp;
