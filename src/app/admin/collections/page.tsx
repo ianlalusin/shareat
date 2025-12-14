@@ -533,49 +533,49 @@ export default function CollectionsPage() {
                     </Button>
                 </div>
                 <AccordionContent className="p-0">
-                    <ScrollArea className="w-full max-w-full">
-                        <div className="border-t">
-                        <Table>
-                            <TableHeader>
-                            <TableRow>
-                                <TableHead>Item</TableHead>
-                                <TableHead className="hidden sm:table-cell">Sub-category</TableHead>
-                                <TableHead className="hidden md:table-cell">Assigned Stores</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="w-24">Actions</TableHead>
+                  <ScrollArea className="w-full max-w-full">
+                    <div className="border-t">
+                    <Table>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead>Item</TableHead>
+                            <TableHead className="hidden sm:table-cell">Sub-category</TableHead>
+                            <TableHead className="hidden md:table-cell">Assigned Stores</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="w-24">Actions</TableHead>
+                        </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {groupedItems[category].map((item) => (
+                            <TableRow key={item.id}>
+                            <TableCell>{item.item}</TableCell>
+                            <TableCell className="hidden sm:table-cell">{item.subCategory}</TableCell>
+                            <TableCell className="hidden md:table-cell">
+                                <div className="flex flex-wrap gap-1">
+                                {item.storeIds?.map(id => (
+                                    <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
+                                ))}
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                <Badge variant={item.is_active ? 'default' : 'destructive'} className={item.is_active ? 'bg-green-500' : ''}>
+                                {item.is_active ? 'Active' : 'Inactive'}
+                                </Badge>
+                            </TableCell>
+                            <TableCell>
+                                <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditItem(item)}><Pencil className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(item.id); setDeleteTargetType('item');}}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                </div>
+                            </TableCell>
                             </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                            {groupedItems[category].map((item) => (
-                                <TableRow key={item.id}>
-                                <TableCell>{item.item}</TableCell>
-                                <TableCell className="hidden sm:table-cell">{item.subCategory}</TableCell>
-                                <TableCell className="hidden md:table-cell">
-                                    <div className="flex flex-wrap gap-1">
-                                    {item.storeIds?.map(id => (
-                                        <Badge key={id} variant="secondary">{stores.find(s => s.id === id)?.storeName || '...'}</Badge>
-                                    ))}
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant={item.is_active ? 'default' : 'destructive'} className={item.is_active ? 'bg-green-500' : ''}>
-                                    {item.is_active ? 'Active' : 'Inactive'}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditItem(item)}><Pencil className="h-4 w-4" /></Button>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(item.id); setDeleteTargetType('item');}}>
-                                          <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
-                                    </div>
-                                </TableCell>
-                                </TableRow>
-                            ))}
-                            </TableBody>
-                        </Table>
-                        </div>
-                    </ScrollArea>
+                        ))}
+                        </TableBody>
+                    </Table>
+                    </div>
+                  </ScrollArea>
                 </AccordionContent>
                 </div>
             </AccordionItem>
@@ -607,46 +607,46 @@ export default function CollectionsPage() {
                         </Button>
                     </div>
                     <AccordionContent className="p-0">
-                        <ScrollArea className="w-full max-w-full">
-                            <div className="border-t">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Display Name</TableHead>
-                                            <TableHead className="hidden sm:table-cell">Code</TableHead>
-                                            <TableHead className="hidden md:table-cell">Type</TableHead>
-                                            <TableHead>Value</TableHead>
-                                            <TableHead>Status</TableHead>
-                                            <TableHead className="w-24">Actions</TableHead>
+                       <ScrollArea className="w-full max-w-full">
+                        <div className="border-t">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Display Name</TableHead>
+                                        <TableHead className="hidden sm:table-cell">Code</TableHead>
+                                        <TableHead className="hidden md:table-cell">Type</TableHead>
+                                        <TableHead>Value</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead className="w-24">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {discountTypes.map(d => (
+                                        <TableRow key={d.id}>
+                                            <TableCell>{d.item}</TableCell>
+                                            <TableCell className="hidden sm:table-cell">{d.code}</TableCell>
+                                            <TableCell className="hidden md:table-cell">{d.discountMode}</TableCell>
+                                            <TableCell>{d.discountMode === 'PCT' ? `${d.discountValue}%` : `₱${d.discountValue}`}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={d.is_active ? 'default' : 'destructive'} className={d.is_active ? 'bg-green-500' : ''}>
+                                                    {d.is_active ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-1">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditDiscountType(d)}><Pencil className="h-4 w-4" /></Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setDeleteTargetId(d.id); setDeleteTargetType('discount'); }}>
+                                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
                                         </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {discountTypes.map(d => (
-                                            <TableRow key={d.id}>
-                                                <TableCell>{d.item}</TableCell>
-                                                <TableCell className="hidden sm:table-cell">{d.code}</TableCell>
-                                                <TableCell className="hidden md:table-cell">{d.discountMode}</TableCell>
-                                                <TableCell>{d.discountMode === 'PCT' ? `${d.discountValue}%` : `₱${d.discountValue}`}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant={d.is_active ? 'default' : 'destructive'} className={d.is_active ? 'bg-green-500' : ''}>
-                                                        {d.is_active ? 'Active' : 'Inactive'}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-1">
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditDiscountType(d)}><Pencil className="h-4 w-4" /></Button>
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setDeleteTargetId(d.id); setDeleteTargetType('discount'); }}>
-                                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                                {discountTypes.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No discount types created yet.</p>}
-                            </div>
-                        </ScrollArea>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {discountTypes.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No discount types created yet.</p>}
+                        </div>
+                       </ScrollArea>
                     </AccordionContent>
                 </div>
             </AccordionItem>
@@ -678,13 +678,17 @@ export default function CollectionsPage() {
                     </div>
                     <AccordionContent className="p-0">
                         <ScrollArea className="w-full max-w-full">
+                        <ScrollArea className="w-full max-w-full">
                         <div className="border-t">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Display Name</TableHead>
                                         <TableHead className="hidden sm:table-cell">Code</TableHead>
+                                        <TableHead className="hidden sm:table-cell">Code</TableHead>
                                         <TableHead>Rate</TableHead>
+                                        <TableHead className="hidden md:table-cell">Inclusive</TableHead>
+                                        <TableHead className="hidden lg:table-cell">Assigned Stores</TableHead>
                                         <TableHead className="hidden md:table-cell">Inclusive</TableHead>
                                         <TableHead className="hidden lg:table-cell">Assigned Stores</TableHead>
                                         <TableHead>Status</TableHead>
@@ -696,7 +700,10 @@ export default function CollectionsPage() {
                                         <TableRow key={rate.id}>
                                             <TableCell>{rate.item}</TableCell>
                                             <TableCell className="hidden sm:table-cell">{rate.code}</TableCell>
+                                            <TableCell className="hidden sm:table-cell">{rate.code}</TableCell>
                                             <TableCell>{(rate.rate * 100).toFixed(2)}%</TableCell>
+                                            <TableCell className="hidden md:table-cell">{rate.isInclusive ? 'Yes' : 'No'}</TableCell>
+                                            <TableCell className="hidden lg:table-cell">
                                             <TableCell className="hidden md:table-cell">{rate.isInclusive ? 'Yes' : 'No'}</TableCell>
                                             <TableCell className="hidden lg:table-cell">
                                                 <div className="flex flex-wrap gap-1">
@@ -724,6 +731,7 @@ export default function CollectionsPage() {
                             </Table>
                             {taxRates.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No tax profiles created yet.</p>}
                         </div>
+                        </ScrollArea>
                         </ScrollArea>
                     </AccordionContent>
                 </div>
@@ -756,46 +764,46 @@ export default function CollectionsPage() {
               </div>
               <AccordionContent className="p-0">
                 <ScrollArea className="w-full max-w-full">
-                    <div className="border-t">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Schedule Name</TableHead>
-                            <TableHead className="hidden sm:table-cell">Time</TableHead>
-                            <TableHead>Days</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="w-24">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {schedules.map(schedule => (
-                            <TableRow key={schedule.id}>
-                              <TableCell>{schedule.item}</TableCell>
-                              <TableCell className="hidden sm:table-cell">{schedule.startTime} - {schedule.endTime}</TableCell>
-                              <TableCell>
-                                <div className="flex flex-wrap gap-1">
-                                  {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={schedule.is_active ? 'default' : 'destructive'} className={schedule.is_active ? 'bg-green-500' : ''}>
-                                  {schedule.is_active ? 'Active' : 'Inactive'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditSchedule(schedule)}><Pencil className="h-4 w-4" /></Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(schedule.id); setDeleteTargetType('schedule');}}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      {schedules.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No schedules created yet.</p>}
-                    </div>
+                <div className="border-t">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Schedule Name</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead className="hidden sm:table-cell">Days</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-24">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {schedules.map(schedule => (
+                        <TableRow key={schedule.id}>
+                          <TableCell>{schedule.item}</TableCell>
+                          <TableCell>{schedule.startTime} - {schedule.endTime}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            <div className="flex flex-wrap gap-1">
+                              {schedule.days.map((day:string) => <Badge key={day} variant="outline">{day}</Badge>)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={schedule.is_active ? 'default' : 'destructive'} className={schedule.is_active ? 'bg-green-500' : ''}>
+                              {schedule.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditSchedule(schedule)}><Pencil className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {setDeleteTargetId(schedule.id); setDeleteTargetType('schedule');}}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {schedules.length === 0 && <p className="text-center text-sm text-muted-foreground p-8">No schedules created yet.</p>}
+                </div>
                 </ScrollArea>
               </AccordionContent>
             </div>
