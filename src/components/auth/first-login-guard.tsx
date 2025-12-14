@@ -17,6 +17,14 @@ type OnboardingStatus =
   | "duplicateStaff" // Found multiple matching staff records
   | "applicant" // No staff record, application needed
   | "pendingApproval"; // Applied, waiting for admin
+  
+const ROLE_REDIRECTS: Record<StaffRole, string> = {
+  admin: '/admin',
+  manager: '/admin',
+  cashier: '/cashier',
+  server: '/refill',
+  kitchen: '/kitchen',
+};
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
   const { user, isInitialAuthLoading, isOnboarded, appUser, devMode } = useAuthContext();
