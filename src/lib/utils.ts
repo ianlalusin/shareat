@@ -102,9 +102,9 @@ export const UNIT_OPTIONS = [
 export function getDefaultRouteForRole(role: string): string {
   switch (role?.toLowerCase()) {
     case 'admin':
-      return '/admin';
+      return '/admin/reports/sales';
     case 'manager':
-      return '/admin';
+      return '/admin/reports/sales';
     case 'cashier':
       return '/cashier';
     case 'server':
