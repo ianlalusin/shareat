@@ -5,61 +5,41 @@ import { ReactNode, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import type { Staff, StaffRole } from "@/lib/types";
+import type { Staff } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
 import { Skeleton } from "../ui/skeleton";
 import { useOnboardingStore } from "@/store/use-onboarding-store";
 
-type OnboardingStatus =
-  | "loading"
-  | "ready" // Fully onboarded
-  | "existingStaff" // Found one matching staff record
-  | "duplicateStaff" // Found multiple matching staff records
-  | "applicant" // No staff record, application needed
-  | "pendingApproval"; // Applied, waiting for admin
-  
-const ROLE_REDIRECTS: Record<StaffRole, string> = {
-  admin: '/admin',
-  manager: '/admin',
-  cashier: '/cashier',
-  server: '/refill',
-  kitchen: '/kitchen',
-};
-
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
-  const { user, isInitialAuthLoading, isOnboarded, appUser, devMode } = useAuthContext();
+  const { user, isInitialAuthLoading, isOnboarded, devMode } = useAuthContext();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    // If auth is still loading, wait.
     if (isInitialAuthLoading) {
-      return;
+      return; // Wait until auth state is fully determined
     }
 
-    // If user is not logged in (and not in dev mode), push to login page.
     if (!user && !devMode) {
-      // Don't redirect if we are already on a public/auth path
-      if (!pathname.startsWith('/login') && !pathname.startsWith('/onboarding')) {
-         router.replace("/login");
+      // If not logged in, ensure user is on a public page or redirect to login.
+      const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/onboarding');
+      if (!isPublicPath) {
+        router.replace("/login");
       }
       return;
     }
 
-    // If the user IS logged in but NOT onboarded yet, let the OnboardingFlowManager handle it.
-    // The OnboardingFlowManager will be rendered instead of `children` and perform the necessary redirect.
-    if (user && !isOnboarded) {
-        // We don't need to do anything here, the component will render the manager.
-        return;
+    if (isOnboarded) {
+      // User is fully onboarded. If they land on a public page, redirect them.
+      const isOnPublicAuthPage = pathname === '/login' || pathname.startsWith('/onboarding') || pathname === '/';
+      if (isOnPublicAuthPage) {
+        router.replace('/admin'); // Default page for all onboarded users
+      }
     }
-
-    // If we get here, the user is logged in AND onboarded.
-    // If they land on the login or root page, send them to the main admin dashboard.
-    if (isOnboarded && (pathname === '/' || pathname === '/login')) {
-        router.replace('/admin');
-    }
-
-  }, [isInitialAuthLoading, user, isOnboarded, appUser, devMode, router, pathname]);
+    // If user is logged in but !isOnboarded, the component will render OnboardingFlowManager
+    // which handles the specific onboarding step redirects.
+    
+  }, [isInitialAuthLoading, user, isOnboarded, devMode, router, pathname]);
 
   if (isInitialAuthLoading) {
     return (
@@ -74,18 +54,19 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  // If user is logged in but not onboarded, render the OnboardingFlowManager.
-  // This manager will handle redirecting to the correct /onboarding/... page.
   if (user && !isOnboarded) {
     return <OnboardingFlowManager />;
   }
 
-  // If user is fully onboarded, show the main application content.
   if (isOnboarded) {
     return <>{children}</>;
   }
+  
+  if (!user && (pathname.startsWith('/login') || pathname.startsWith('/onboarding'))) {
+    return <>{children}</>;
+  }
 
-  // Fallback, should not be reached in normal flow.
+  // Fallback, should ideally not be reached if logic is sound.
   return null;
 }
 
@@ -145,7 +126,6 @@ function OnboardingFlowManager() {
 
     }, [user, firestore, devMode, router, setStaffToVerify, setStaffListToResolve]);
     
-    // Render a loading state while the check is in progress
     return (
          <div className="flex h-svh w-full items-center justify-center">
             <p className="text-center text-muted-foreground">Redirecting to onboarding...</p>
