@@ -5,7 +5,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { useAuth, useFirestore } from '@/firebase';
 import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc, query, collection, where, getDocs, setDoc, limit, Unsubscribe } from 'firebase/firestore';
-import type { AppUser, Staff, Store } from '@/lib/types';
+import type { AppUser, Staff, Store, StaffRole } from '@/lib/types';
 import { useStoreSelector } from '@/store/use-store-selector';
 
 interface AuthContextType {
@@ -28,6 +28,13 @@ export function isStaffActive(staffData: Staff | null): boolean {
   // @ts-ignore Legacy field
   const isActiveBool = staffData.is_active === true;
   return status === 'active' || isActiveBool;
+}
+
+const ALLOWED_ROLES: StaffRole[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
+
+function isValidRole(role?: string): role is StaffRole {
+    if (!role) return false;
+    return ALLOWED_ROLES.includes(role.toLowerCase() as StaffRole);
 }
 
 export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
@@ -68,16 +75,14 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
       setIsInitialAuthLoading(true);
 
       try {
-        // 1. Find the canonical staff record via authUid
         const staffQuery = query(collection(firestore, 'staff'), where('authUid', '==', currentUser.uid), limit(1));
         const staffSnapshot = await getDocs(staffQuery);
         const staffDoc = staffSnapshot.empty ? null : staffSnapshot.docs[0];
         const staffData = staffDoc ? { id: staffDoc.id, ...staffDoc.data() } as Staff : null;
         
-        if (staffData && isStaffActive(staffData)) {
+        if (staffData && isStaffActive(staffData) && isValidRole(staffData.position)) {
             setStaff(staffData);
-            
-            // 2. Derive storeIds (with backward compatibility)
+
             let derivedStoreIds: string[] = [];
             if (Array.isArray(staffData.storeIds) && staffData.storeIds.length > 0) {
               derivedStoreIds = staffData.storeIds;
@@ -87,7 +92,6 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
               if (!storeSnap.empty) derivedStoreIds = [storeSnap.docs[0].id];
             }
 
-            // 3. Determine default and active store IDs
             const defaultStoreId = staffData.defaultStoreId && derivedStoreIds.includes(staffData.defaultStoreId)
               ? staffData.defaultStoreId
               : derivedStoreIds[0] || null;
@@ -100,22 +104,20 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
               ? currentAppUser.activeStoreId
               : defaultStoreId;
             
-            // 4. Construct the canonical AppUser payload
             const activeStoreDoc = activeStoreId ? await getDoc(doc(firestore, 'stores', activeStoreId)) : null;
 
             const userPayload: Omit<AppUser, 'id' | 'createdAt' | 'lastLoginAt'> = {
                 staffId: staffData.id,
                 email: currentUser.email!,
                 displayName: staffData.fullName,
-                role: staffData.position?.toLowerCase() as AppUser['role'] || 'staff',
-                storeId: activeStoreId || '', // Legacy compatibility
+                role: staffData.position.toLowerCase() as StaffRole,
+                storeId: activeStoreId || '',
                 storeName: activeStoreDoc?.data()?.storeName || '',
                 storeIds: derivedStoreIds,
                 activeStoreId: activeStoreId,
                 status: 'active',
             };
             
-            // 5. No-churn update/set of the user document
             const needsUpdate = !currentAppUser ||
                                 JSON.stringify(userPayload) !== JSON.stringify({
                                     staffId: currentAppUser.staffId,
@@ -143,12 +145,11 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
                 }
             }
 
-            // 6. Set up a snapshot listener for the user doc and sync active store
             userDocUnsubscribe = onSnapshot(userDocRef, (snap) => {
               if (snap.exists()) {
                 const updatedAppUser = snap.data() as AppUser;
                 setAppUser(updatedAppUser);
-                setSelectedStoreId(updatedAppUser.activeStoreId || null); // Sync with Zustand
+                setSelectedStoreId(updatedAppUser.activeStoreId || null);
               }
             });
 
@@ -199,10 +200,9 @@ export const AuthContextProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const userRef = doc(firestore, 'users', user.uid);
-    // This will trigger the onSnapshot listener to update the context state
     await updateDoc(userRef, {
       activeStoreId: storeId,
-      storeId: storeId, // for legacy compat
+      storeId: storeId,
     });
   };
 

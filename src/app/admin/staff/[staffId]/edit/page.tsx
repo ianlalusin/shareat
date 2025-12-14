@@ -14,6 +14,7 @@ import {
   query,
   where,
   getDocs,
+  addDoc,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useFirestore, useStorage } from '@/firebase';
@@ -27,24 +28,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft, User, ChevronDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Staff, Store, StaffPosition } from '@/lib/types';
+import { Staff, Store, StaffPosition, OrderUpdateLog } from '@/lib/types';
 import { formatAndValidateDate, revertToInputFormat, autoformatDate } from '@/lib/utils';
 import { parse, isValid, format } from 'date-fns';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useSuccessModal } from '@/store/use-success-modal';
 import { useAuthContext } from '@/context/auth-context';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, serverTimestamp } from 'firebase/firestore';
+import { toast } from '@/hooks/use-toast';
 
 const positionOptions: StaffPosition[] = ['admin', 'manager', 'cashier', 'server', 'kitchen'];
 
 export default function EditStaffPage() {
   const params = useParams();
   const staffId = params.staffId as string;
-  const [formData, setFormData] = useState<Omit<Staff, 'id'> | null>(null);
+  const [formData, setFormData] = useState<Partial<Staff>>({});
+  const [originalData, setOriginalData] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState<Store[]>([]);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
@@ -70,17 +81,18 @@ export default function EditStaffPage() {
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-            const staffData = docSnap.data() as Omit<Staff, 'id'>;
+            const staffData = { id: docSnap.id, ...docSnap.data() } as Staff;
+            setOriginalData(staffData);
             
              const formattedData = {
               ...staffData,
+              storeIds: staffData.storeIds || [],
               birthday: staffData.birthday ? formatAndValidateDate(staffData.birthday).formatted : '',
               dateHired: staffData.dateHired ? formatAndValidateDate(staffData.dateHired).formatted : ''
             }
-
             setFormData(formattedData);
         } else {
-            setFormData(null); // Not found
+            setFormData(null);
         }
         setLoading(false);
     }
@@ -98,7 +110,7 @@ export default function EditStaffPage() {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!formData) return;
     const { name, value } = e.target;
-    const previousValue = formData[name as 'birthday' | 'dateHired'] || '';
+    const previousValue = (formData as any)[name] || '';
     const updatedValue = autoformatDate(value, previousValue);
     
     setFormData((prev) => (prev ? { ...prev, [name]: updatedValue } : null));
@@ -143,6 +155,26 @@ export default function EditStaffPage() {
     if (!formData) return;
     setFormData((prev) => (prev ? { ...prev, [name]: value } : null));
   };
+  
+  const handleStoreIdChange = (storeId: string) => {
+    setFormData((prev) => {
+      if(!prev) return prev;
+      const currentIds = prev.storeIds || [];
+      const newStoreIds = currentIds.includes(storeId)
+        ? currentIds.filter(id => id !== storeId)
+        : [...currentIds, storeId];
+      
+      let newDefaultId = prev.defaultStoreId;
+      if (!newStoreIds.includes(newDefaultId || '')) {
+        newDefaultId = newStoreIds[0] || null;
+      }
+      if (newStoreIds.length === 1) {
+        newDefaultId = newStoreIds[0];
+      }
+
+      return { ...prev, storeIds: newStoreIds, defaultStoreId: newDefaultId };
+    });
+  };
 
   const handleFileChange = (file: File | null) => {
     setPictureFile(file);
@@ -156,11 +188,26 @@ export default function EditStaffPage() {
         e.preventDefault();
     }
   };
+  
+  const getSelectedStoreNames = () => {
+    if (!formData?.storeIds || formData.storeIds.length === 0) return "Select stores";
+    if (formData.storeIds.length === stores.length) return "All stores selected";
+    if (formData.storeIds.length > 2) return `${formData.storeIds.length} stores selected`;
+    return stores
+        .filter(s => formData.storeIds?.includes(s.id))
+        .map(s => s.storeName)
+        .join(', ');
+  };
 
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firestore || !storage || !formData || Object.values(dateErrors).some(e => e)) return;
+    if (!firestore || !storage || !formData || !originalData || Object.values(dateErrors).some(e => e)) return;
+    
+    if (formData.storeIds?.length === 0) {
+      toast({ variant: 'destructive', title: 'Store required', description: 'Please assign at least one store.'});
+      return;
+    }
 
     let pictureUrl = formData.picture || '';
     if (pictureFile) {
@@ -170,27 +217,49 @@ export default function EditStaffPage() {
         pictureUrl = await getDownloadURL(snapshot.ref);
       } catch (error) {
         console.error("Error uploading image:", error);
-        // Do not block saving if image upload fails, but log it.
       }
     }
     
-    // Convert formatted date strings back to valid Date objects for Firestore
     const birthdayDate = formData.birthday ? parse(formData.birthday as string, 'MMMM dd, yyyy', new Date()) : null;
     const dateHiredDate = formData.dateHired ? parse(formData.dateHired as string, 'MMMM dd, yyyy', new Date()) : null;
 
-    const dataToSave = {
+    const dataToSave: Partial<Staff> = {
       ...formData,
       picture: pictureUrl,
-      birthday: isValid(birthdayDate) ? birthdayDate : null,
-      dateHired: isValid(dateHiredDate) ? dateHiredDate : null,
+      birthday: isValid(birthdayDate) ? Timestamp.fromDate(birthdayDate) : null,
+      dateHired: isValid(dateHiredDate) ? Timestamp.fromDate(dateHiredDate) : null,
       encoder: authUser?.displayName || (devMode ? 'Dev User' : 'Unknown'),
+      assignedStore: stores.find(s => s.id === formData.defaultStoreId)?.storeName || '',
     };
+    
+    const auditChanges: OrderUpdateLog['changes'] = [];
+    if(JSON.stringify(originalData.storeIds) !== JSON.stringify(dataToSave.storeIds)) {
+      auditChanges.push({ field: 'storeIds', oldValue: originalData.storeIds || [], newValue: dataToSave.storeIds || [] });
+    }
+     if(originalData.defaultStoreId !== dataToSave.defaultStoreId) {
+      auditChanges.push({ field: 'defaultStoreId', oldValue: originalData.defaultStoreId || '', newValue: dataToSave.defaultStoreId || '' });
+    }
+
 
     try {
       const staffRef = doc(firestore, 'staff', staffId);
-      await updateDoc(staffRef, dataToSave as Partial<Staff>);
+      await updateDoc(staffRef, dataToSave as any);
 
-      // Sync role to user doc
+      if (auditChanges.length > 0) {
+        const auditLogRef = doc(collection(firestore, 'auditLogs'));
+        const auditData = {
+          action: 'staff_store_assignment_update',
+          actorUid: authUser?.uid,
+          actorRole: appUser?.role,
+          targetId: staffId,
+          targetType: 'staff',
+          before: { storeIds: originalData.storeIds, defaultStoreId: originalData.defaultStoreId },
+          after: { storeIds: dataToSave.storeIds, defaultStoreId: dataToSave.defaultStoreId },
+          ts: serverTimestamp(),
+        };
+        await addDoc(collection(firestore, 'auditLogs'), auditData);
+      }
+
       const userQuery = query(collection(firestore, 'users'), where('staffId', '==', staffId));
       const userSnap = await getDocs(userQuery);
       for (const userDoc of userSnap.docs) {
@@ -203,6 +272,15 @@ export default function EditStaffPage() {
       console.error('Error updating document: ', error);
     }
   };
+  
+  const managerAllowedStores = useMemo(() => {
+    if (appUser?.role === 'admin') return stores;
+    if (appUser?.role === 'manager' && appUser.storeIds) {
+      const managerStoreIds = new Set(appUser.storeIds);
+      return stores.filter(s => managerStoreIds.has(s.id));
+    }
+    return [];
+  }, [appUser, stores]);
 
   if (loading) {
     return (
@@ -256,18 +334,7 @@ export default function EditStaffPage() {
                 <Label htmlFor="fullName">Full Name</Label>
                 <Input id="fullName" name="fullName" value={formData.fullName} onChange={handleInputChange} required />
               </div>
-               <div className="space-y-2">
-                <Label htmlFor="assignedStore">Assigned Store</Label>
-                <Select name="assignedStore" value={formData.assignedStore} onValueChange={(value) => handleSelectChange('assignedStore', value)} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a store" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {stores.map(store => <SelectItem key={store.id} value={store.storeName}>{store.storeName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-               <div className="space-y-2">
+              <div className="space-y-2">
                 <Label htmlFor="position">Position (Role)</Label>
                  <Select name="position" value={formData.position} onValueChange={(value) => handleSelectChange('position', value as StaffPosition)} required>
                     <SelectTrigger>
@@ -277,6 +344,61 @@ export default function EditStaffPage() {
                         {filteredPositionOptions.map(pos => <SelectItem key={pos} value={pos} className="capitalize">{pos}</SelectItem>)}
                     </SelectContent>
                 </Select>
+              </div>
+               <div className="space-y-2">
+                <Label htmlFor="employmentStatus">Employment Status</Label>
+                <Select name="employmentStatus" value={formData.employmentStatus} onValueChange={(value) => handleSelectChange('employmentStatus', value)} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                    <SelectItem value="Resigned">Resigned</SelectItem>
+                    <SelectItem value="AWOL">AWOL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="storeIds">Assigned Stores</Label>
+                  <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                          <span>{getSelectedStoreNames()}</span>
+                          <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: managerAllowedStores.map(s => s.id)}))}>Select All</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setFormData(prev => ({...prev, storeIds: []}))}>Select None</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {managerAllowedStores.map(store => (
+                              <DropdownMenuCheckboxItem
+                                  key={store.id}
+                                  checked={formData.storeIds?.includes(store.id)}
+                                  onSelect={(e) => e.preventDefault()}
+                                  onClick={() => handleStoreIdChange(store.id)}
+                              >
+                                  {store.storeName}
+                              </DropdownMenuCheckboxItem>
+                          ))}
+                      </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="defaultStoreId">Default Store</Label>
+                    <Select name="defaultStoreId" value={formData.defaultStoreId || ''} onValueChange={(value) => handleSelectChange('defaultStoreId', value)} required disabled={!formData.storeIds || formData.storeIds.length === 0}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select default store"/>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {stores.filter(s => formData.storeIds?.includes(s.id)).map(s => (
+                                <SelectItem key={s.id} value={s.id}>{s.storeName}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -303,20 +425,6 @@ export default function EditStaffPage() {
               <div className="space-y-2">
                 <Label htmlFor="rate">Rate</Label>
                 <Input id="rate" name="rate" type="number" value={formData.rate} onChange={handleInputChange} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="employmentStatus">Employment Status</Label>
-                <Select name="employmentStatus" value={formData.employmentStatus} onValueChange={(value) => handleSelectChange('employmentStatus', value)} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                    <SelectItem value="Resigned">Resigned</SelectItem>
-                    <SelectItem value="AWOL">AWOL</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
 
                <div className="md:col-span-3 space-y-2">
