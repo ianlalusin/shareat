@@ -1,7 +1,7 @@
 
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useFirestore } from "@/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
@@ -9,37 +9,38 @@ import type { Staff } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
 import { Skeleton } from "../ui/skeleton";
 import { useOnboardingStore } from "@/store/use-onboarding-store";
+import { getDefaultRouteForRole } from "@/lib/utils";
 
 export function FirstLoginGuard({ children }: { children: ReactNode }) {
-  const { user, isInitialAuthLoading, isOnboarded, devMode } = useAuthContext();
+  const { user, appUser, isInitialAuthLoading, isOnboarded, devMode } = useAuthContext();
   const router = useRouter();
   const pathname = usePathname();
+  const [hasRedirected, setHasRedirected] = useState(false);
 
   useEffect(() => {
-    if (isInitialAuthLoading) {
-      return; // Wait until auth state is fully determined
+    if (isInitialAuthLoading || hasRedirected) {
+      return; 
     }
 
     if (!user && !devMode) {
-      // If not logged in, ensure user is on a public page or redirect to login.
       const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/onboarding');
       if (!isPublicPath) {
         router.replace("/login");
+        setHasRedirected(true);
       }
       return;
     }
 
-    if (isOnboarded) {
-      // User is fully onboarded. If they land on a public page, redirect them.
-      const isOnPublicAuthPage = pathname === '/login' || pathname.startsWith('/onboarding') || pathname === '/';
-      if (isOnPublicAuthPage) {
-        router.replace('/admin'); // Default page for all onboarded users
+    if (isOnboarded && appUser?.role) {
+      const isPublicAuthPage = pathname === '/login' || pathname.startsWith('/onboarding') || pathname === '/';
+      if (isPublicAuthPage) {
+        const defaultRoute = getDefaultRouteForRole(appUser.role);
+        router.replace(defaultRoute);
+        setHasRedirected(true);
       }
     }
-    // If user is logged in but !isOnboarded, the component will render OnboardingFlowManager
-    // which handles the specific onboarding step redirects.
     
-  }, [isInitialAuthLoading, user, isOnboarded, devMode, router, pathname]);
+  }, [isInitialAuthLoading, user, appUser, isOnboarded, devMode, router, pathname, hasRedirected]);
 
   if (isInitialAuthLoading) {
     return (
@@ -54,7 +55,7 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (user && !isOnboarded) {
+  if (user && !isOnboarded && !devMode) {
     return <OnboardingFlowManager />;
   }
 
@@ -62,11 +63,16 @@ export function FirstLoginGuard({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
   
+  // Allow access to public pages if not logged in
   if (!user && (pathname.startsWith('/login') || pathname.startsWith('/onboarding'))) {
     return <>{children}</>;
   }
 
-  // Fallback, should ideally not be reached if logic is sound.
+  // Fallback for dev mode when no user is logged in but trying to access protected routes
+  if (devMode) {
+    return <>{children}</>;
+  }
+
   return null;
 }
 

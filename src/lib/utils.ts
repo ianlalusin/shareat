@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { parse, isValid, format, isDate } from 'date-fns';
@@ -97,3 +98,20 @@ export const UNIT_OPTIONS = [
   { value: "bottle", label: "Bottle" },
   { value: "can", label: "Can" },
 ];
+
+export function getDefaultRouteForRole(role: string): string {
+  switch (role?.toLowerCase()) {
+    case 'admin':
+      return '/admin';
+    case 'manager':
+      return '/admin';
+    case 'cashier':
+      return '/cashier';
+    case 'server':
+      return '/refill';
+    case 'kitchen':
+      return '/kitchen';
+    default:
+      return '/admin';
+  }
+}

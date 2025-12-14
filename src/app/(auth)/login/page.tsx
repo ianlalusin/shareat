@@ -33,10 +33,11 @@ function LoginAndSignupForms() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   const { setDevMode } = useAuthContext();
+  const router = useRouter();
+
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -44,8 +45,7 @@ function LoginAndSignupForms() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // The FirstLoginGuard will handle the redirect now.
-      // router.push('/admin');
+      // Redirect is now handled by AuthContextProvider and FirstLoginGuard.
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -71,8 +71,7 @@ function LoginAndSignupForms() {
           displayName: fullName,
         });
       }
-      // The FirstLoginGuard will handle the redirect now.
-      // router.push('/admin');
+      // Redirect is now handled by AuthContextProvider and FirstLoginGuard.
     } catch (error: any) {
       toast({
         variant: 'destructive',
