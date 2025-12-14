@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFirestore, useAuth } from '@/firebase';
-import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { RoleGate } from '@/components/auth/role-gate';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ import { Loader2, ShieldAlert } from 'lucide-react';
 import { Store, Staff, AppUser } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { saveAs } from 'file-saver';
+import { useAuthContext } from '@/context/auth-context';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 type MigrationStatus = 'READY' | 'SKIP' | 'UNRESOLVED' | 'ERROR';
 
@@ -42,8 +44,10 @@ function StoreScopeMigrationPage() {
   const [users, setUsers] = useState<AppUser[]>([]);
   
   const [proposals, setProposals] = useState<MigrationProposal[]>([]);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   
   const firestore = useFirestore();
+  const { appUser } = useAuthContext();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -85,9 +89,9 @@ function StoreScopeMigrationPage() {
 
     // Process Staff
     for (const s of staff) {
-        const needsMigration = !s.storeIds || s.storeIds.length === 0 || !s.defaultStoreId;
-        if (!needsMigration) {
-            newProposals.push({ type: 'Staff', docId: s.id, name: s.fullName, legacyFields: { assignedStore: s.assignedStore }, proposedChanges: {}, status: 'SKIP', details: 'Already has storeIds.' });
+        const hasNewFields = Array.isArray(s.storeIds) && s.storeIds.length > 0 && s.defaultStoreId;
+        if (hasNewFields) {
+            newProposals.push({ type: 'Staff', docId: s.id, name: s.fullName, legacyFields: { assignedStore: s.assignedStore }, proposedChanges: {}, status: 'SKIP', details: 'Already has multi-store fields.' });
             continue;
         }
 
@@ -115,8 +119,8 @@ function StoreScopeMigrationPage() {
 
     // Process Users
     for (const u of users) {
-        const needsMigration = !u.storeIds || u.storeIds.length === 0 || !u.activeStoreId;
-        if (!needsMigration) {
+        const hasNewFields = Array.isArray(u.storeIds) && u.storeIds.length > 0 && u.activeStoreId;
+        if (hasNewFields) {
             newProposals.push({ type: 'User', docId: u.id, name: u.displayName, legacyFields: { storeId: u.storeId }, proposedChanges: {}, status: 'SKIP', details: 'Already has multi-store fields.' });
             continue;
         }
@@ -173,15 +177,11 @@ function StoreScopeMigrationPage() {
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to apply changes to ${readyProposals.length} documents? This action is irreversible.`)) {
-      return;
-    }
-
+    setIsConfirmModalOpen(false);
     setProcessing(true);
     let successCount = 0;
     const errors: string[] = [];
     
-    // Batching in chunks of 400
     for (let i = 0; i < readyProposals.length; i += 400) {
       const batch = writeBatch(firestore);
       const chunk = readyProposals.slice(i, i + 400);
@@ -189,7 +189,20 @@ function StoreScopeMigrationPage() {
       chunk.forEach(p => {
         const collectionName = p.type === 'Staff' ? 'staff' : 'users';
         const docRef = doc(firestore, collectionName, p.docId);
-        batch.update(docRef, p.proposedChanges);
+        setDoc(docRef, p.proposedChanges, { merge: true });
+
+        // Add audit log entry
+        const auditLogRef = doc(collection(firestore, 'auditLogs'));
+        batch.set(auditLogRef, {
+          action: 'migration_store_scope',
+          actorUid: appUser?.id,
+          actorRole: appUser?.role,
+          targetType: collectionName,
+          targetId: p.docId,
+          before: p.legacyFields,
+          after: p.proposedChanges,
+          ts: serverTimestamp(),
+        });
       });
       
       try {
@@ -207,7 +220,7 @@ function StoreScopeMigrationPage() {
     } else {
       toast({ title: 'Migration Complete!', description: `${successCount} documents were successfully updated.` });
     }
-    setProposals([]); // Clear proposals to force a new preview
+    setProposals([]); 
   };
 
   const handleExport = () => {
@@ -222,6 +235,7 @@ function StoreScopeMigrationPage() {
   const readyCount = useMemo(() => proposals.filter(p => p.status === 'READY').length, [proposals]);
 
   return (
+    <>
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <RoleGate allow={['admin']}>
         <div className="space-y-4">
@@ -246,7 +260,7 @@ function StoreScopeMigrationPage() {
                     <Button onClick={handlePreview} disabled={loading || processing}>
                         {loading ? 'Loading Data...' : (processing ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Preview Changes')}
                     </Button>
-                    <Button onClick={handleApplyChanges} disabled={processing || readyCount === 0}>
+                    <Button onClick={() => setIsConfirmModalOpen(true)} disabled={processing || readyCount === 0}>
                          {processing ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Apply READY Changes'} ({readyCount})
                     </Button>
                     <Button variant="outline" onClick={handleExport} disabled={proposals.length === 0}>
@@ -304,6 +318,21 @@ function StoreScopeMigrationPage() {
         </div>
       </RoleGate>
     </main>
+    <AlertDialog open={isConfirmModalOpen} onOpenChange={setIsConfirmModalOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    You are about to apply changes to {readyCount} document(s). This action is irreversible.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleApplyChanges}>Apply Changes</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
