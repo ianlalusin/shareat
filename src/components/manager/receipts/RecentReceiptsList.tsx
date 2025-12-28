@@ -16,7 +16,7 @@ type PastSession = {
     tableNumber: string;
     customer?: { name?: string };
     sessionMode: 'package_dinein' | 'alacarte';
-    closedAt: Timestamp | Date; // Can be either type
+    closedAt: Timestamp | Date | { seconds: number; nanoseconds: number };
     paymentSummary: {
         grandTotal: number;
     };
@@ -26,7 +26,7 @@ interface RecentReceiptsListProps {
     store: Store;
 }
 
-export function RecentReceiptsList({ store }: RecentReceiptsListProps) {
+export function RecentReceiptsList({ store }: { store: Store }) {
     const [sessions, setSessions] = useState<PastSession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -58,11 +58,27 @@ export function RecentReceiptsList({ store }: RecentReceiptsListProps) {
         window.open(url, '_blank');
     };
 
-    const getFormattedDate = (date: Timestamp | Date) => {
+    const getFormattedDate = (date: PastSession['closedAt']) => {
         if (!date) return 'N/A';
-        // Check if it's a Firestore Timestamp and convert, otherwise assume it's a JS Date
-        const jsDate = (date as Timestamp).toDate ? (date as Timestamp).toDate() : date;
-        return format(jsDate, 'p');
+
+        // Check if it is a Firestore Timestamp
+        if (typeof (date as Timestamp).toDate === 'function') {
+            return format((date as Timestamp).toDate(), 'p');
+        }
+        
+        // Check if it is a plain object with seconds and nanoseconds
+        if (typeof date === 'object' && 'seconds' in date && 'nanoseconds' in date) {
+            const jsDate = new Date(date.seconds * 1000 + date.nanoseconds / 1000000);
+            return format(jsDate, 'p');
+        }
+        
+        // Check if it is already a Date object
+        if (date instanceof Date) {
+            return format(date, 'p');
+        }
+
+        // Fallback for unexpected formats
+        return 'Invalid Date';
     };
 
     return (
