@@ -13,9 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KitchenLocation } from "./tabs/KitchenLocationsSettings";
-import { StoreRefill, StoreFlavor } from "../store-packages-settings";
+import { StoreRefill } from "../store-packages-settings";
+import type { StoreFlavor } from "../store-flavors-settings";
 import { MenuSchedule } from "./tabs/SchedulesSettings";
-import { StorePackage } from "@/lib/types";
+import type { StorePackage } from "@/lib/types";
 
 const formSchema = z.object({
     pricePerHead: z.coerce.number().min(0),

@@ -81,6 +81,22 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
     );
 }
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
     const { session, billables, payments, settings } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
@@ -119,23 +135,8 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         return Array.from(map.entries());
     }, [billables]);
 
-    const getSafeDate = (date: any): Date => {
-      if (!date) return new Date();
-      // Handle Firestore Timestamp or mock object with toDate()
-      if (typeof date.toDate === 'function') {
-        return date.toDate();
-      }
-      // Handle plain object from Firestore { seconds, nanoseconds }
-      if (typeof date === 'object' && 'seconds' in date && 'nanoseconds' in date) {
-        return new Timestamp(date.seconds, date.nanoseconds).toDate();
-      }
-      // Handle if it's already a JS Date
-      if (date instanceof Date) {
-        return date;
-      }
-      // Fallback for any other unexpected formats (like a string)
-      return new Date(date);
-    }
+    const closedDate = toJsDate(session.closedAt);
+    const dateLabel = closedDate ? format(closedDate, 'MM/dd/yy HH:mm') : 'N/A';
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg">
@@ -151,7 +152,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
             <hr className="border-dashed border-black my-2" />
 
             <section className="space-y-px mb-2 receipt-section">
-                <ReceiptRow label="Date:" value={format(getSafeDate(session.closedAt), 'MM/dd/yy HH:mm')} />
+                <ReceiptRow label="Date:" value={dateLabel} />
                 {settings.showTableOrCustomer && (
                      <ReceiptRow 
                         label={session.sessionMode === 'alacarte' ? "Customer:" : "Table:"} 
