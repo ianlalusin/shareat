@@ -137,7 +137,11 @@ service cloud.firestore {
       match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /receiptSettings/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
-      match /receipts/{docId} { allow read: if isStoreMember(storeId); allow create: if isCashier() && isStoreMember(storeId); }
+match /receipts/{receiptId} {
+  allow read: if isStoreMember(storeId);                 // list + preview
+  allow create: if isCashier() && isStoreMember(storeId); // created at Complete Payment
+  allow update, delete: if false;                        // receipts are immutable
+}
 
 
       // -- Operational Data --

@@ -70,14 +70,14 @@ export default function ReceiptSettingsPage() {
         session: {
             id: 'PREVIEW',
             tableNumber: '12',
-            sessionMode: 'package_dinein',
+            sessionMode: 'package_dinein' as const,
             paymentSummary: { subtotal: 850, lineDiscountsTotal: 50, billDiscountAmount: 0, adjustmentsTotal: 10, grandTotal: 810, totalPaid: 900, change: 90 },
-            closedAt: { toDate: () => new Date() },
+            closedAt: new Date(),
             startedByUid: 'cashier123',
         },
         billables: [
-            { itemName: 'Sample Package', qty: 2, unitPrice: 425, isFree: false, lineDiscountType: 'fixed', lineDiscountValue: 25 },
-            { itemName: 'Extra Fries', qty: 1, unitPrice: 100, isFree: false, lineDiscountType: 'fixed', lineDiscountValue: 0 },
+            { itemName: 'Sample Package', qty: 2, unitPrice: 425, isFree: false, lineDiscountType: 'fixed' as const, lineDiscountValue: 25 },
+            { itemName: 'Extra Fries', qty: 1, unitPrice: 100, isFree: false, lineDiscountType: 'fixed' as const, lineDiscountValue: 0 },
         ],
         payments: [{ methodId: 'Cash', amount: 900 }],
         settings: watchedSettings,
