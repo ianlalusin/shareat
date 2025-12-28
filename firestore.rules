@@ -137,6 +137,7 @@ service cloud.firestore {
       match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /receiptSettings/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /receipts/{docId} { allow read: if isStoreMember(storeId); allow create: if isCashier() && isStoreMember(storeId); }
 
 
       // -- Operational Data --

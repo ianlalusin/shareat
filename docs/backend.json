@@ -952,6 +952,35 @@
         }
       },
       {
+        "path": "/stores/{storeId}/receipts/{receiptId}",
+        "definition": {
+          "entityName": "Receipt",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "storeId": { "type": "string" },
+              "sessionId": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "createdByUid": { "type": "string" },
+              "sessionMode": { "type": "string" },
+              "tableId": { "type": "string" },
+              "tableNumber": { "type": "string" },
+              "customerName": { "type": "string" },
+              "total": { "type": "number" },
+              "totalPaid": { "type": "number" },
+              "change": { "type": "number" },
+              "status": { "type": "string" }
+            }
+          },
+          "description": "A snapshot of a receipt created when a session is closed.",
+          "params": [
+            {"name": "storeId", "description": "The unique identifier for the store."},
+            {"name": "receiptId", "description": "Unique ID for the receipt, same as sessionId."}
+          ]
+        }
+      },
+      {
         "path": "/stores/{storeId}/receiptSettings/{settingsId}",
         "definition": {
           "entityName": "ReceiptSettings",

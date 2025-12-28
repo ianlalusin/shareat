@@ -260,20 +260,24 @@ export async function completePayment(
 ) {
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
-    const snap = await tx.get(sessionRef);
+    const sessionSnap = await tx.get(sessionRef);
 
-    if (!snap.exists()) {
+    if (!sessionSnap.exists()) {
       throw new Error(`Session ${sessionId} does not exist.`);
     }
 
-    const data = snap.data();
-    if (data.status === "closed" || data.isPaid === true) {
+    const sessionData = sessionSnap.data();
+    if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       return; // Idempotent no-op
     }
 
+    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
+    const receiptSnap = await tx.get(receiptRef);
+    const shouldCreateReceipt = !receiptSnap.exists();
+
     // Use tableId from session data for safety, with a fallback to the client-provided one.
-    const sessionTableId = data.tableId ?? tableId;
+    const sessionTableId = sessionData.tableId ?? tableId;
     
     // For 'alacarte' sessions, tableId might be 'alacarte', so don't try to get a doc ref for it.
     let tableRef = null;
@@ -312,6 +316,24 @@ export async function completePayment(
       },
       updatedAt: serverTimestamp(),
     }));
+
+    if (shouldCreateReceipt) {
+        tx.set(receiptRef, stripUndefined({
+            id: sessionId,
+            storeId,
+            sessionId,
+            createdAt: serverTimestamp(),
+            createdByUid: user.uid,
+            sessionMode: sessionData.sessionMode,
+            tableId: sessionData.tableId ?? null,
+            tableNumber: sessionData.tableNumber ?? null,
+            customerName: sessionData.customer?.name ?? null,
+            total: billingSummary.grandTotal,
+            totalPaid,
+            change: Math.max(0, totalPaid - billingSummary.grandTotal),
+            status: "final",
+        }));
+    }
 
     // Free table ONLY if it still points to this session and exists
     if (tableSnap && tableRef && tableSnap.exists()) {
