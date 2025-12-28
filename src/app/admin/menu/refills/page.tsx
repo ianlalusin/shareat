@@ -16,8 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
-import type { StoreFlavor } from "@/components/manager/store-settings/store-packages-settings";
-import { useStoreContext } from "@/context/store-context";
+import { Flavor } from "../flavors/page";
 
 export type Refill = {
   id: string;
@@ -31,10 +30,9 @@ export type Refill = {
 
 export default function RefillsManagementPage() {
   const { appUser } = useAuthContext();
-  const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const [refills, setRefills] = useState<Refill[]>([]);
-  const [flavors, setFlavors] = useState<StoreFlavor[]>([]);
+  const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -50,19 +48,15 @@ export default function RefillsManagementPage() {
         setRefills(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Refill)));
     }));
 
-    if (activeStore) {
-        const flavorsRef = collection(db, "stores", activeStore.id, "storeFlavors");
-        unsubs.push(onSnapshot(query(flavorsRef, where("isEnabled", "==", true)), (snapshot) => {
-            setFlavors(snapshot.docs.map(doc => doc.data() as StoreFlavor));
-        }));
-    } else {
-        setFlavors([]);
-    }
+    const flavorsRef = collection(db, "flavors");
+    unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot) => {
+        setFlavors(snapshot.docs.map(doc => doc.data() as Flavor));
+    }));
     
     setIsLoading(false);
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [appUser, activeStore]);
+  }, [appUser]);
 
   const handleOpenDialog = (item: Refill | null = null) => {
     setEditingRefill(item);

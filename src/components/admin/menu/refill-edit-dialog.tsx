@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Refill } from "@/app/admin/menu/refills/page";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { StoreFlavor } from "@/components/manager/store-settings/store-packages-settings";
+import type { Flavor } from "@/app/admin/menu/flavors/page";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -30,7 +30,7 @@ interface RefillEditDialogProps {
   onSave: (data: FormValues) => void;
   item: Refill | null;
   isSubmitting: boolean;
-  flavors: StoreFlavor[];
+  flavors: Flavor[];
 }
 
 export function RefillEditDialog({ isOpen, onClose, onSave, item, isSubmitting, flavors }: RefillEditDialogProps) {
@@ -71,19 +71,19 @@ export function RefillEditDialog({ isOpen, onClose, onSave, item, isSubmitting, 
                   <FormLabel>Allowed Flavors</FormLabel>
                   <ScrollArea className="h-32 rounded-md border p-4">
                     {flavors.map(flavor => (
-                      <FormField key={flavor.flavorId} control={form.control} name="allowedFlavorIds" render={({ field }) => (
+                      <FormField key={flavor.id} control={form.control} name="allowedFlavorIds" render={({ field }) => (
                         <FormItem className="flex items-center space-x-3 space-y-0 mb-2">
                           <FormControl>
                             <Checkbox 
-                                checked={field.value?.includes(flavor.flavorId)}
+                                checked={field.value?.includes(flavor.id)}
                                 onCheckedChange={(checked) => {
                                     return checked
-                                        ? field.onChange([...(field.value || []), flavor.flavorId])
-                                        : field.onChange(field.value?.filter(id => id !== flavor.flavorId))
+                                        ? field.onChange([...(field.value || []), flavor.id])
+                                        : field.onChange(field.value?.filter(id => id !== flavor.id))
                                 }}
                             />
                           </FormControl>
-                          <FormLabel className="font-normal">{flavor.flavorName}</FormLabel>
+                          <FormLabel className="font-normal">{flavor.name}</FormLabel>
                         </FormItem>
                       )} />
                     ))}

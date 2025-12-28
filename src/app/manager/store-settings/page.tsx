@@ -2,7 +2,6 @@
 "use client";
 
 import { RoleGuard } from "@/components/guards/RoleGuard";
-import { AddonsSettings } from "@/components/manager/store-settings/addons-settings";
 import { KitchenLocationsSettings } from "@/components/manager/store-settings/kitchen-locations-settings";
 import { TablesSettings } from "@/components/manager/store-settings/tables-settings";
 import { PageHeader } from "@/components/page-header";
@@ -17,6 +16,7 @@ import { StoreRefillsSettings } from "@/components/manager/store-settings/store-
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import { AddonsSettings } from "@/components/manager/store-settings/addons-settings";
 
 
 const TABS = [
