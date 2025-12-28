@@ -525,7 +525,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             id: session.id,
             tableNumber: session.tableNumber,
             guestCount: session.guestCountFinal || 0,
-            packageName: session.packageName ?? session.packageSnapshot?.name ?? "N/A",
+            packageName: session.packageName ?? "N/A",
             sessionMode: session.sessionMode,
             customerName: session.customerName ?? null,
         }} />
@@ -800,3 +800,4 @@ export default function CashierPage() {
 
 
     
+

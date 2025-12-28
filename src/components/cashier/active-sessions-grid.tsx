@@ -17,7 +17,7 @@ export type ActiveSession = {
     customerName?: string | null;
     currentSessionId: string | null;
     startedAt?: Timestamp;
-    packageSnapshot?: { name?: string };
+    packageName?: string;
     guestCountCashier?: number;
     guestCountServer?: number;
     guestCountFinal?: number;
@@ -94,7 +94,7 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
                 {sessions.map(session => {
                     const isAlaCarte = session.sessionMode === 'alacarte';
                     const title = isAlaCarte ? session.customerName : `Table ${session.tableNumber}`;
-                    const subtitle = isAlaCarte ? "Ala Carte" : session.packageSnapshot?.name;
+                    const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
                     
                     const final = Number(session.guestCountFinal ?? NaN);
                     const cashier = Number(session.guestCountCashier ?? 0);
