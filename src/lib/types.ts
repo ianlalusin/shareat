@@ -35,3 +35,10 @@ export type StorePackage = {
     sortOrder: number;
     menuScheduleId: string | null;
 };
+
+export type StoreFlavor = {
+    flavorId: string,
+    flavorName: string, // denormalized
+    isEnabled: boolean,
+    sortOrder: number,
+}

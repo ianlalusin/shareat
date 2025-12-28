@@ -20,8 +20,7 @@ import { MenuSchedule } from "./schedules-settings";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
-import { StoreFlavor } from "./store-flavors-settings";
-import type { StorePackage } from "@/lib/types";
+import type { StorePackage, StoreFlavor } from "@/lib/types";
 
 export type StoreRefill = {
     refillId: string,

@@ -14,9 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KitchenLocation } from "./tabs/KitchenLocationsSettings";
 import { StoreRefill } from "../store-packages-settings";
-import type { StoreFlavor } from "../store-flavors-settings";
 import { MenuSchedule } from "./tabs/SchedulesSettings";
-import type { StorePackage } from "@/lib/types";
+import type { StorePackage, StoreFlavor } from "@/lib/types";
 
 const formSchema = z.object({
     pricePerHead: z.coerce.number().min(0),

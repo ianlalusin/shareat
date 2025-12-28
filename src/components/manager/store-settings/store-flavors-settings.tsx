@@ -16,13 +16,8 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { Flavor } from "@/app/admin/menu/flavors/page";
+import type { StoreFlavor } from "@/lib/types";
 
-export type StoreFlavor = {
-    flavorId: string,
-    flavorName: string, // denormalized
-    isEnabled: boolean,
-    sortOrder: number,
-}
 
 export function StoreFlavorsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -208,4 +203,3 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         </Card>
     );
 }
-

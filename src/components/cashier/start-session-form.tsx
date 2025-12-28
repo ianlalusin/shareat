@@ -18,11 +18,10 @@ import { Loader2, PlusCircle, Minus, Plus } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { StorePackage } from "@/components/manager/store-settings/store-packages-settings";
 import { QuantityInput } from "./quantity-input";
-import type { StoreFlavor } from "../manager/store-settings/store-packages-settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "../ui/form";
+import type { StorePackage, StoreFlavor } from "@/lib/types";
 
 // --- TYPES ---
 export type Table = {
