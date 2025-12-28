@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { ReceiptSettings } from "@/components/manager/store-settings/receipt-settings";
 import { useStoreContext } from "@/context/store-context";
 import { Loader2 } from "lucide-react";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecentReceiptsList } from "@/components/manager/receipts/RecentReceiptsList";
 import { Separator } from "@/components/ui/separator";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
