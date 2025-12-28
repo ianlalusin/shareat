@@ -10,14 +10,14 @@ interface SessionHeaderProps {
     guestCount: number;
     packageName: string;
     sessionMode?: 'package_dinein' | 'alacarte';
-    customer?: { name?: string | null };
+    customerName?: string | null;
   };
 }
 
 export function SessionHeader({ session }: SessionHeaderProps) {
   
   const isAlaCarte = session.sessionMode === 'alacarte';
-  const title = isAlaCarte ? session.customer?.name : `Table ${session.tableNumber}`;
+  const title = isAlaCarte ? session.customerName : `Table ${session.tableNumber}`;
   const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
 
   return (

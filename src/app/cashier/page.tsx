@@ -525,9 +525,9 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             id: session.id,
             tableNumber: session.tableNumber,
             guestCount: session.guestCountFinal || 0,
-            packageName: "N/A",
+            packageName: session.packageName ?? session.packageSnapshot?.name ?? "N/A",
             sessionMode: session.sessionMode,
-            customer: session.customer,
+            customerName: session.customerName ?? null,
         }} />
         <div className="ml-auto">
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
