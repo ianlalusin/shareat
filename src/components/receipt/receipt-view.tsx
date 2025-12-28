@@ -21,7 +21,7 @@ export type Session = {
         totalPaid: number;
         change: number;
     };
-    closedAt: Timestamp | { toDate: () => Date };
+    closedAt: Timestamp | { toDate: () => Date } | Date | { seconds: number, nanoseconds: number };
     startedByUid: string;
     verifiedByUid?: string;
 };
@@ -121,12 +121,19 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
 
     const getSafeDate = (date: any): Date => {
       if (!date) return new Date();
+      // Firestore Timestamp
       if (typeof date.toDate === 'function') {
         return date.toDate();
       }
+      // Plain object from Firestore { seconds, nanoseconds }
+      if (typeof date === 'object' && 'seconds' in date && 'nanoseconds' in date) {
+        return new Timestamp(date.seconds, date.nanoseconds).toDate();
+      }
+      // Already a JS Date
       if (date instanceof Date) {
         return date;
       }
+      // Fallback for unexpected formats
       return new Date(date);
     }
 
