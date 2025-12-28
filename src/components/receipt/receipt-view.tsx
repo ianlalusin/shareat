@@ -4,6 +4,7 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
+import type { Timestamp } from "firebase/firestore";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -20,7 +21,7 @@ export type Session = {
         totalPaid: number;
         change: number;
     };
-    closedAt: { toDate: () => Date };
+    closedAt: Timestamp | { toDate: () => Date };
     startedByUid: string;
     verifiedByUid?: string;
 };
@@ -118,6 +119,17 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         return Array.from(map.entries());
     }, [billables]);
 
+    const getSafeDate = (date: any): Date => {
+      if (!date) return new Date();
+      if (typeof date.toDate === 'function') {
+        return date.toDate();
+      }
+      if (date instanceof Date) {
+        return date;
+      }
+      return new Date(date);
+    }
+
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg">
             <header className="text-center space-y-px mb-2 receipt-section">
@@ -132,7 +144,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
             <hr className="border-dashed border-black my-2" />
 
             <section className="space-y-px mb-2 receipt-section">
-                <ReceiptRow label="Date:" value={format(session.closedAt.toDate(), 'MM/dd/yy HH:mm')} />
+                <ReceiptRow label="Date:" value={format(getSafeDate(session.closedAt), 'MM/dd/yy HH:mm')} />
                 {settings.showTableOrCustomer && (
                      <ReceiptRow 
                         label={session.sessionMode === 'alacarte' ? "Customer:" : "Table:"} 
