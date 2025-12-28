@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { MenuSchedule } from './SchedulesSettings';
+import { MenuSchedule } from '../../schedules-settings';
 import { isScheduleActiveNow } from '../_utils/isScheduleActiveNow';
 
 type StorePackage = {
