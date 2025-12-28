@@ -33,6 +33,13 @@ export type Discount = {
   updatedBy: string;
 };
 
+function formatScope(scope: ("item" | "bill")[] | undefined) {
+  if (!scope || scope.length === 0) return "—";
+  return scope
+    .map(s => (s === "item" ? "Item" : "Bill"))
+    .join(", ");
+}
+
 export function DiscountsSettings({ store }: { store: Store }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -145,16 +152,6 @@ export function DiscountsSettings({ store }: { store: Store }) {
 
   if (isLoading) {
     return <div className="flex justify-center p-8"><Loader className="animate-spin" /></div>;
-  }
-  
-  const formatScope = (scope: Discount['scope']) => {
-    if (Array.isArray(scope)) {
-      return scope.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
-    }
-    if (typeof scope === 'string') {
-        return scope.charAt(0).toUpperCase() + scope.slice(1);
-    }
-    return '—';
   }
 
   return (

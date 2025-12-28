@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -64,11 +63,8 @@ export type Discount = { type: "percentage" | "fixed"; value: number };
  */
 function hasScope(discount: StoreDiscount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
-  if (!scope) return false; // No scope means it's not applicable anywhere.
-  if (Array.isArray(scope)) {
-    return scope.includes(scopeKey);
-  }
-  return scope === scopeKey;
+  if (!scope || !Array.isArray(scope)) return false;
+  return scope.includes(scopeKey);
 }
 
 const REASON_OPTIONS = {
@@ -801,3 +797,6 @@ export default function CashierPage() {
 
     
 
+
+
+    
