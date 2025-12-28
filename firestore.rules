@@ -1,0 +1,197 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================================
+    //           CulinaryFlow Role-Based Access Control (RBAC) Rules
+    //
+    // ROLE HIERARCHY & PERMISSIONS SUMMARY:
+    // -----------------------------------------------------------------
+    // - Unauthenticated: No access.
+    // - Authenticated (pending/disabled): No access, except own user doc.
+    // - Admin: God-mode. Full read/write on ALL collections.
+    // - Manager: Full access within their assigned store.
+    // - Cashier: Can start/manage sessions, apply discounts, take payments. Read-only on most settings.
+    // - Server: Can view sessions, create orders (refills/addons), request changes. Cannot perform billing.
+    // - Kitchen: Can only view and update status of kitchen tickets.
+    // =====================================================================
+
+
+    // =====================================================================
+    // Helper Functions
+    // =====================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // -- User & Role Helpers --
+    
+    function getUserDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function requestingUserData() {
+      return getUserDoc(request.auth.uid).data;
+    }
+
+    function isUserActive() {
+      return isSignedIn() && requestingUserData().status == 'active';
+    }
+
+    function hasRole(role) {
+      // Use a map of roles, e.g., { admin: true, manager: true }
+      return isUserActive() && requestingUserData().roles[role] == true;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isManager() {
+      return hasRole('manager') || isAdmin();
+    }
+    
+    function isCashier() {
+      return hasRole('cashier') || isManager();
+    }
+    
+    function isServer() {
+      return hasRole('server') || isManager();
+    }
+    
+    function isKitchen() {
+      return hasRole('kitchen') || isManager();
+    }
+    
+    // -- Store & Permission Helpers --
+
+    function userStoreId() {
+      return requestingUserData().storeId;
+    }
+
+    /**
+     *  Checks if the requesting user is a member of the specified store.
+     *  Admins have implicit access to all stores.
+     */
+    function isStoreMember(storeId) {
+      return isUserActive() && (isAdmin() || userStoreId() == storeId);
+    }
+    
+    // -- Data Validation Helpers --
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Only allow updating certain keys (field-level guard)
+    function changedKeysOnly(allowedKeys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedKeys);
+    }
+
+    // =====================================================================
+    // Collection Rules
+    // =====================================================================
+
+    // == Global Collections ==
+    
+    match /users/{userId} {
+      // User can read own doc; Manager/Admin can read users in their store context.
+      allow get: if isOwner(userId) || isAdmin() || (isManager() && resource.data.storeId == userStoreId());
+      allow list: if isAdmin();
+      
+      // User can update their own non-privileged fields
+      allow update: if (isOwner(userId) && changedKeysOnly(['displayName', 'photoURL', 'address', 'contactNumber', 'updatedAt'])) || isAdmin();
+
+      // Only Admins can create or delete users
+      allow create, delete: if isAdmin();
+    }
+    
+    // Global products/menu items are readable by any active user, but only managed by Admin.
+    match /products/{productId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+    match /flavors/{flavorId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+    match /refills/{refillId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+    match /packages/{packageId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+    match /addons/{addonId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+    match /addonCategories/{categoryId} { allow read: if isUserActive(); allow write: if isAdmin(); }
+
+
+    // == Store-Scoped Collections ==
+    
+    match /stores/{storeId} {
+      allow get: if isStoreMember(storeId);
+      allow list, create, update, delete: if isAdmin(); // Only admins manage the store documents themselves
+
+      // -- Store-Level Settings (Manager/Admin only) --
+      match /storeAddons/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storePackages/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storeRefills/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storeFlavors/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /menuSchedules/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /kitchenLocations/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /tables/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /inventory/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storeCharges/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+
+
+      // -- Operational Data --
+      
+      // Sessions
+      match /sessions/{sessionId} {
+        allow read: if isStoreMember(storeId);
+        allow create: if isStoreMember(storeId) && (isServer() || isCashier());
+        allow update: if isStoreMember(storeId) && (isServer() || isCashier()); // for updates like guest verification, change requests
+        allow delete: if isStoreMember(storeId) && isManager();
+      }
+
+      // Kitchen Tickets
+      match /sessions/{sessionId}/kitchentickets/{ticketId} {
+        allow read: if isStoreMember(storeId);
+        allow create: if isStoreMember(storeId) && isServer();
+        
+        allow update: if isStoreMember(storeId) && (
+          // Kitchen role can ONLY update status fields
+          (isKitchen() && changedKeysOnly([
+              'status', 'preparedAt', 'preparedByUid', 'servedAt', 'servedByUid', 
+              'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+          ])) ||
+          // Server/Cashier can cancel/void
+          ((isServer() || isCashier()) && changedKeysOnly([
+              'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+          ])) ||
+          // Manager/Admin can do more
+          isManager()
+        );
+        
+        allow delete: if false; // Use status 'cancelled' or 'void' instead of deleting.
+      }
+      
+      // Billable Items
+      match /sessions/{sessionId}/billables/{billableId} {
+        allow read: if isStoreMember(storeId);
+        allow create: if isStoreMember(storeId) && (isServer() || isCashier());
+        
+        allow update: if isStoreMember(storeId) && (
+           // Cashier can manage discounts and free status
+          (isCashier() && changedKeysOnly([
+            'lineDiscountType', 'lineDiscountValue', 'isFree', 'updatedAt'
+          ])) ||
+          isManager()
+        );
+        
+        allow delete: if false;
+      }
+      
+      // Payments
+      match /sessions/{sessionId}/payments/{paymentId} {
+        allow read: if isStoreMember(storeId) && isCashier();
+        allow create: if isStoreMember(storeId) && isCashier();
+        allow update, delete: if isStoreMember(storeId) && isManager(); // Tightly controlled
+      }
+    }
+  }
+}

@@ -1,0 +1,934 @@
+
+{
+  "entities": {
+    "Store": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Store",
+      "type": "object",
+      "description": "Represents a store within the CulinaryFlow application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Store entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the store."
+        },
+        "address": {
+          "type": "string",
+          "description": "The physical address of the store."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates whether the store is currently active."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "address",
+        "isActive"
+      ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a globally managed product available across all stores.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Product entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the product."
+        },
+        "variant": {
+          "type": "string",
+          "description": "A specific variant of the product (e.g., color, size)."
+        },
+        "uom": {
+          "type": "string",
+          "description": "The unit of measurement for the product (e.g., kg, piece)."
+        },
+        "category": {
+            "type": "string",
+            "description": "The category of the product."
+        },
+        "subCategory": {
+            "type": "string",
+            "description": "The sub-category of the product."
+        },
+        "barcode": {
+            "type": "string",
+            "description": "The barcode of the product."
+        },
+        "imageUrl": {
+            "type": "string",
+            "description": "URL for the product image."
+        },
+        "isActive": {
+            "type": "boolean",
+            "description": "Indicates whether the product is currently active."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "uom",
+        "isActive"
+      ]
+    },
+    "Inventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Inventory",
+      "type": "object",
+      "description": "Represents the inventory of a product within a specific store.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Inventory entity."
+        },
+        "productId": {
+          "type": "string",
+          "description": "Reference to Product. (Relationship: Product 1:N Inventory)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Denormalized name of the product."
+        },
+        "variant": {
+          "type": "string",
+          "description": "Denormalized variant of the product."
+        },
+        "category": {
+          "type": "string",
+          "description": "Denormalized category of the product."
+        },
+        "subCategory": {
+          "type": "string",
+          "description": "Denormalized sub-category of the product."
+        },
+        "uom": {
+          "type": "string",
+          "description": "Denormalized unit of measurement for the product."
+        },
+        "cost": {
+          "type": "number",
+          "description": "The cost of the product for this store."
+        },
+        "sellingPrice": {
+          "type": "number",
+          "description": "The selling price of the product in this store."
+        },
+        "taxId": {
+          "type": "string",
+          "description": "Optional reference to a tax rate."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates if the item is active in this store's inventory."
+        }
+      },
+      "required": [
+        "id",
+        "productId",
+        "name",
+        "uom",
+        "cost",
+        "sellingPrice",
+        "isActive"
+      ]
+    },
+    "MenuItem": {
+      "$schema": "http://json-schema.org/draft  -07/schema#",
+      "title": "MenuItem",
+      "type": "object",
+      "description": "Represents a menu item offered by a specific store, derived from its inventory.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the MenuItem entity."
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Reference to Store. (Relationship: Store 1:N MenuItem)"
+        },
+        "inventoryId": {
+          "type": "string",
+          "description": "Reference to Inventory. (Relationship: Inventory 1:N MenuItem)"
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the menu item."
+        },
+        "price": {
+          "type": "number",
+          "description": "The price of the menu item."
+        },
+        "components": {
+          "type": "array",
+          "description": "References to Inventory items that are components of this menu item. (Relationship: Inventory N:N MenuItem)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "inventoryId",
+        "name",
+        "price",
+        "components"
+      ]
+    },
+    "Order": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Order",
+      "type": "object",
+      "description": "Represents an order placed at a store.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Order entity."
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Reference to Store. (Relationship: Store 1:N Order)"
+        },
+        "cashierId": {
+          "type": "string",
+          "description": "Reference to the User who created the order."
+        },
+        "tableId": {
+          "type": "string",
+          "description": "Reference to the Table. (Relationship: Table 1:N Order)"
+        },
+        "orderDate": {
+          "type": "string",
+          "description": "The date and time the order was placed.",
+          "format": "date-time"
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "The total amount of the order."
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the order (e.g., pending, processing, completed)."
+        }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "cashierId",
+        "tableId",
+        "orderDate",
+        "totalAmount",
+        "status"
+      ]
+    },
+    "OrderItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "OrderItem",
+      "type": "object",
+      "description": "Represents a single item within an order.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the OrderItem entity."
+        },
+        "orderId": {
+          "type": "string",
+          "description": "Reference to Order. (Relationship: Order 1:N OrderItem)"
+        },
+        "menuItemId": {
+          "type": "string",
+          "description": "Reference to MenuItem. (Relationship: MenuItem 1:N OrderItem)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The quantity of the menu item in the order."
+        },
+        "itemPrice": {
+          "type": "number",
+          "description": "The total price of the item (price * quantity)."
+        }
+      },
+      "required": [
+        "id",
+        "orderId",
+        "menuItemId",
+        "quantity",
+        "itemPrice"
+      ]
+    },
+    "KitchenStation": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "KitchenStation",
+      "type": "object",
+      "description": "Represents a kitchen station where orders are prepared.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the KitchenStation entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the kitchen station (e.g., Grill, Fry Station)."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the kitchen station's responsibilities."
+        },
+        "key": {
+          "type": "string",
+          "description": "A unique, uppercase key for the station (e.g., GRILL, PREP)."
+        },
+        "storeIds": {
+          "type": "array",
+          "description": "An array of store IDs where this station is active.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates whether the station is currently active."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "key",
+        "isActive"
+      ]
+    },
+    "Table": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Table",
+      "type": "object",
+      "description": "Represents a table in a store.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Table entity."
+        },
+        "storeId": {
+          "type": "string",
+          "description": "Reference to Store. (Relationship: Store 1:N Table)"
+        },
+        "tableNumber": {
+          "type": "number",
+          "description": "The table number."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "occupied"],
+          "description": "The current status of the table."
+        },
+        "currentSessionId": {
+          "type": ["string", "null"],
+          "description": "The ID of the active session on this table, if any."
+        }
+      },
+      "required": [
+        "id",
+        "storeId",
+        "tableNumber",
+        "status"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the CulinaryFlow application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role within the application (e.g., admin, manager, cashier, kitchen, server)."
+        },
+        "assignedStoreIds": {
+          "type": "array",
+          "description": "References to Stores that this user is assigned to. (Relationship: Store N:N User)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "role"
+      ]
+    },
+    "Flavor": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Flavor",
+      "type": "object",
+      "description": "Represents available flavors for applicable products.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "isActive"]
+    },
+    "Refill": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Refill",
+      "type": "object",
+      "description": "Defines refillable items.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "requiresFlavor": { "type": "boolean" },
+        "allowedFlavorIds": { "type": "array", "items": { "type": "string" } },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "requiresFlavor", "isActive"]
+    },
+    "Package": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Package",
+      "type": "object",
+      "description": "Represents product packages or bundles.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "allowedRefillIds": { "type": "array", "items": { "type": "string" } },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "isActive"]
+    },
+    "Addon": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Addon",
+      "type": "object",
+      "description": "Represents add-on items for products.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "stationKey": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "stationKey", "isActive"]
+    },
+    "AddonCategory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AddonCategory",
+      "type": "object",
+      "description": "Represents a category for add-on products.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "isActive", "sortOrder"]
+    },
+    "StoreAddon": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "StoreAddon",
+      "type": "object",
+      "description": "Represents store-specific settings for a global Addon, including pricing.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the StoreAddon, mirroring the global Addon ID."
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Indicates whether this addon is available for sale in this specific store."
+        },
+        "price": {
+          "type": "number",
+          "description": "The price for this addon in this specific store."
+        },
+        "imageUrl": {
+            "type": "string",
+            "description": "Denormalized URL for the add-on image from the global product."
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "isEnabled", "price"]
+    },
+    "Session": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Session",
+      "description": "Represents a single customer dining session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "tableId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_verification", "active", "closed"] },
+        "sessionMode": { "type": "string", "enum": ["package_dinein", "alacarte"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "startedByUid": { "type": "string" },
+        "closedAt": { "type": ["string", "null"], "format": "date-time" },
+        "closedByUid": { "type": ["string", "null"] },
+        "guestCountCashierInitial": { "type": "number" },
+        "guestCountServerVerified": { "type": ["number", "null"] },
+        "guestCountFinal": { "type": ["number", "null"] },
+        "guestCountVerifyLocked": { "type": "boolean" },
+        "packageOfferingId": { "type": "string" },
+        "packageSnapshot": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "pricePerHead": { "type": "number" },
+            "kitchenLocationId": { "type": "string" }
+          }
+        },
+        "initialFlavorIds": { "type": "array", "items": { "type": "string" } },
+        "customer": {
+          "type": "object",
+          "properties": {
+            "name": { "type": ["string", "null"] },
+            "phone": { "type": ["string", "null"] },
+            "notes": { "type": ["string", "null"] },
+            "tin": { "type": ["string", "null"] },
+            "address": { "type": ["string", "null"] }
+          }
+        },
+        "guestCountChange": {
+          "type": ["object", "null"],
+          "properties": {
+            "status": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
+            "requestedCount": { "type": ["number", "null"] },
+            "requestedByUid": { "type": ["string", "null"] },
+            "requestedAt": { "type": ["string", "null"], "format": "date-time" },
+            "approvedByUid": { "type": ["string", "null"] },
+            "approvedAt": { "type": ["string", "null"], "format": "date-time" },
+            "rejectedByUid": { "type": ["string", "null"] },
+            "rejectedAt": { "type": ["string", "null"], "format": "date-time" },
+            "reason": { "type": ["string", "null"] },
+            "reasonNote": { "type": ["string", "null"] }
+          }
+        },
+        "packageChange": {
+          "type": ["object", "null"],
+          "properties": {
+            "status": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
+            "requestedPackageId": { "type": ["string", "null"] },
+            "requestedPackageSnapshot": { "type": ["object", "null"] },
+            "requestedByUid": { "type": ["string", "null"] },
+            "requestedAt": { "type": ["string", "null"], "format": "date-time" },
+            "approvedByUid": { "type": ["string", "null"] },
+            "approvedAt": { "type": ["string", "null"], "format": "date-time" },
+            "rejectedByUid": { "type": ["string", "null"] },
+            "rejectedAt": { "type": ["string", "null"], "format": "date-time" },
+            "reason": { "type": ["string", "null"] },
+            "reasonNote": { "type": ["string", "null"] }
+          }
+        }
+      },
+      "required": ["id", "storeId", "tableId", "status", "startedAt", "startedByUid", "guestCountCashierInitial", "packageOfferingId", "packageSnapshot"]
+    },
+    "Charge": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Charge",
+      "type": "object",
+      "description": "Represents a service charge or other fee applicable to a bill.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["fixed", "percent"] },
+        "value": { "type": "number" },
+        "appliesTo": { "type": "string", "enum": ["subtotal", "total"] },
+        "isEnabled": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
+        "archivedBy": { "type": ["string", "null"] }
+      },
+      "required": ["id", "name", "type", "value", "isEnabled", "sortOrder", "isArchived", "createdBy", "updatedBy"]
+    },
+    "Discount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Discount",
+      "type": "object",
+      "description": "Represents a discount that can be applied to a bill.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["fixed", "percent"] },
+        "value": { "type": "number" },
+        "scope": { "type": "string", "enum": ["bill", "item"] },
+        "stackable": { "type": "boolean" },
+        "isEnabled": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
+        "archivedBy": { "type": ["string", "null"] }
+      },
+      "required": ["id", "name", "type", "value", "scope", "stackable", "isEnabled", "sortOrder", "isArchived", "createdBy", "updatedBy"]
+    },
+    "ModeOfPayment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ModeOfPayment",
+      "type": "object",
+      "description": "Represents an accepted mode of payment.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["cash", "card", "online", "other"] },
+        "sortOrder": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "hasRef": { "type": "boolean", "description": "Indicates if this mode of payment requires a reference number." },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
+        "archivedBy": { "type": ["string", "null"] }
+      },
+      "required": ["id", "name", "type", "sortOrder", "isActive", "isArchived", "createdBy", "updatedBy", "hasRef"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/stores/{storeId}",
+        "definition": {
+          "entityName": "Store",
+          "schema": {
+            "$ref": "#/backend/entities/Store"
+          },
+          "description": "Represents stores within the application.  Access is controlled via user.assignedStoreIds and the canAccessStore() function in rules.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Represents globally managed products. Only admins can manage products.",
+          "params": [
+            {
+              "name": "productId",
+              "description": "The unique identifier for the product."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/inventory/{inventoryId}",
+        "definition": {
+          "entityName": "Inventory",
+          "schema": {
+            "$ref": "#/backend/entities/Inventory"
+          },
+          "description": "Represents the inventory of a product within a specific store. Includes denormalized 'storeId' and is controlled through canAccessStore(storeId) for authorization independence.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "inventoryId",
+              "description": "The unique identifier for the inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/menu/{menuItemId}",
+        "definition": {
+          "entityName": "MenuItem",
+          "schema": {
+            "$ref": "#/backend/entities/MenuItem"
+          },
+          "description": "Represents a menu item offered by a specific store. Includes denormalized 'storeId' and is controlled through canAccessStore(storeId) for authorization independence.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "menuItemId",
+              "description": "The unique identifier for the menu item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/orders/{orderId}",
+        "definition": {
+          "entityName": "Order",
+          "schema": {
+            "$ref": "#/backend/entities/Order"
+          },
+          "description": "Represents an order placed at a store. Includes denormalized 'storeId' and is controlled through canAccessStore(storeId) for authorization independence.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "orderId",
+              "description": "The unique identifier for the order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/orders/{orderId}/orderItems/{orderItemId}",
+        "definition": {
+          "entityName": "OrderItem",
+          "schema": {
+            "$ref": "#/backend/entities/OrderItem"
+          },
+          "description": "Represents a single item within an order.  Inherits authorization context from the parent Order document.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "orderId",
+              "description": "The unique identifier for the order."
+            },
+            {
+              "name": "orderItemId",
+              "description": "The unique identifier for the order item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/kitchenStations/{kitchenStationId}",
+        "definition": {
+          "entityName": "KitchenStation",
+          "schema": {
+            "$ref": "#/backend/entities/KitchenStation"
+          },
+          "description": "Represents a kitchen station. Only admins can manage kitchen stations.",
+          "params": [
+            {
+              "name": "kitchenStationId",
+              "description": "The unique identifier for the kitchen station."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/tables/{tableId}",
+        "definition": {
+          "entityName": "Table",
+          "schema": {
+            "$ref": "#/backend/entities/Table"
+          },
+          "description": "Represents a table in a store. Includes denormalized 'storeId' and is controlled through canAccessStore(storeId) for authorization independence.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "tableId",
+              "description": "The unique identifier for the table."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/sessions/{sessionId}",
+        "definition": {
+          "entityName": "Session",
+          "schema": {
+            "$ref": "#/backend/entities/Session"
+          },
+          "description": "Represents a customer dining session. Includes denormalized 'storeId' for authorization.",
+          "params": [
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "sessionId",
+              "description": "The unique identifier for the session."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Represents a user of the application.  Access is restricted to the user themselves or to admins.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_admin/{userId}",
+        "definition": {
+          "entityName": "roles_admin",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Collection used to grant admin privileges.  The existence of a document here grants admin access.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/flavors/{flavorId}",
+        "definition": {
+          "entityName": "Flavor",
+          "schema": { "$ref": "#/backend/entities/Flavor" },
+          "description": "Global flavors.",
+          "params": [{"name": "flavorId", "description": "Unique ID for the flavor."}]
+        }
+      },
+      {
+        "path": "/refills/{refillId}",
+        "definition": {
+          "entityName": "Refill",
+          "schema": { "$ref": "#/backend/entities/Refill" },
+          "description": "Global refill options.",
+          "params": [{"name": "refillId", "description": "Unique ID for the refill."}]
+        }
+      },
+      {
+        "path": "/packages/{packageId}",
+        "definition": {
+          "entityName": "Package",
+          "schema": { "$ref": "#/backend/entities/Package" },
+          "description": "Global product packages.",
+          "params": [{"name": "packageId", "description": "Unique ID for the package."}]
+        }
+      },
+      {
+        "path": "/addons/{addonId}",
+        "definition": {
+          "entityName": "Addon",
+          "schema": { "$ref": "#/backend/entities/Addon" },
+          "description": "Global add-on items.",
+          "params": [{"name": "addonId", "description": "Unique ID for the add-on."}]
+        }
+      },
+      {
+        "path": "/addonCategories/{addonCategoryId}",
+        "definition": {
+          "entityName": "AddonCategory",
+          "schema": { "$ref": "#/backend/entities/AddonCategory" },
+          "description": "Global add-on categories.",
+          "params": [{"name": "addonCategoryId", "description": "Unique ID for the add-on category."}]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/storeAddons/{addonId}",
+        "definition": {
+          "entityName": "StoreAddon",
+          "schema": { "$ref": "#/backend/entities/StoreAddon" },
+          "description": "Store-specific settings for global addons.",
+          "params": [
+            {"name": "storeId", "description": "The unique identifier for the store."},
+            {"name": "addonId", "description": "The unique identifier for the addon being configured."}
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/storeCharges/{chargeId}",
+        "definition": {
+          "entityName": "Charge",
+          "schema": { "$ref": "#/backend/entities/Charge" },
+          "description": "Store-level service charges or other fees.",
+          "params": [
+            {"name": "storeId", "description": "The unique identifier for the store."},
+            {"name": "chargeId", "description": "Unique ID for the charge."}
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/storeDiscounts/{discountId}",
+        "definition": {
+          "entityName": "Discount",
+          "schema": { "$ref": "#/backend/entities/Discount" },
+          "description": "Store-level discounts.",
+          "params": [
+            {"name": "storeId", "description": "The unique identifier for the store."},
+            {"name": "discountId", "description": "Unique ID for the discount."}
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/storeModesOfPayment/{mopId}",
+        "definition": {
+          "entityName": "ModeOfPayment",
+          "schema": { "$ref": "#/backend/entities/ModeOfPayment" },
+          "description": "Store-level modes of payment.",
+          "params": [
+            {"name": "storeId", "description": "The unique identifier for the store."},
+            {"name": "mopId", "description": "Unique ID for the mode of payment."}
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support CulinaryFlow's core features: store management, product and inventory, menu management, POS, KDS, and admin settings with role-based access control. The structure prioritizes authorization independence and simplifies security rules. It avoids hierarchical authorization dependencies to ensure atomic operations.\n\n**Authorization Independence and QAPs:**\n\n*   **Stores:** Store documents are located at `/stores/{storeId}`. Access control is managed through the `User.assignedStoreIds` array, with a rule function `canAccessStore(storeId)` defined in the security rules to check if a user is authorized to access a specific store. This design decouples authorization logic from the store document itself, facilitating atomic operations.\n*   **Products:** Products are global and stored in the `/products/{productId}` collection, managed exclusively by admins. This segregation ensures products can be listed securely since all documents in the collection have the same access controls (QAP).\n*   **Inventory:** Inventory documents, located at `/stores/{storeId}/inventory/{inventoryId}`, store denormalized information regarding product availability in a specific store. Authorization independence is achieved because access is controlled via the `canAccessStore(storeId)` function. Additionally, the `storeId` is included in each inventory document, eliminating the need to fetch the parent store to validate permissions.\n*   **MenuItems:** Menu items, located at `/stores/{storeId}/menuItems/{menuItemId}`, use the same access pattern as inventory. Including the `storeId` in each document enables access control via `canAccessStore(storeId)` without requiring a `get()` call, maintaining authorization independence.\n*   **Orders:** Orders are stored at `/stores/{storeId}/orders/{orderId}` and include the `storeId`. Access is granted to users through `canAccessStore(storeId)`. The `cashierId` field links to the user who created the order, but this is not used for authorization; it is for audit/reporting purposes.\n*   **OrderItems:** Order items, nested under their respective orders at `/stores/{storeId}/orders/{orderId}/orderItems/{orderItemId}`, inherit authorization context from the order. Since all docs share security needs, listing is secure (QAP).\n*   **KitchenStations:** Kitchen stations are global and located at `/kitchenStations/{kitchenStationId}`. Admin-only access is enforced, and all documents share the same security requirements, supporting QAPs for listing.\n*   **Tables:** Tables are stored at `/stores/{storeId}/tables/{tableId}`. Access is controlled through `canAccessStore(storeId)`, with the `storeId` denormalized into each document for authorization independence.\n*   **Users:** User profiles are stored at `/users/{userId}`. Access to a user profile is restricted to the user themselves or to admins. The `assignedStoreIds` array is used by security rules to determine which stores a user can manage. Existence of a document in `/roles_admin/{userId}` provides admin privileges.\n*   **Admin Roles:** Global admin roles are managed via document existence in the `/roles_admin/{userId}` collection. This Existence over Content strategy simplifies checking admin privileges in rules.\n\nThis structure adheres to the core design principles by denormalizing authorization data, segregating data based on security posture, and using consistent access modeling."
+  }
+}
+
+    

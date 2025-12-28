@@ -1,0 +1,8 @@
+{
+  "firestore": {
+    "database": "shareatv5",
+    "location": "asia-southeast1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

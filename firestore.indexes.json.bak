@@ -1,0 +1,3 @@
+Failed to fetch Firebase Project from current Studio Workspace: Unable to refresh auth: not yet authenticated.
+
+Error: Request to https://firestore.googleapis.com/v1/projects/shareatv5/databases/(default)/collectionGroups/-/indexes had HTTP Error: 404, Project 'shareatv5' or database '(default)' does not exist.
