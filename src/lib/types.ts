@@ -59,3 +59,14 @@ export type KitchenLocation = {
   sortOrder: number;
   isActive: boolean;
 };
+
+export type MenuSchedule = {
+  id: string;
+  name: string;
+  days: string[];
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
+  createdAt: any;
+  updatedAt: any;
+};

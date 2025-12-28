@@ -15,17 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ScheduleEditDialog } from "./schedule-edit-dialog";
-
-export type MenuSchedule = {
-  id: string;
-  name: string;
-  days: string[];
-  startTime: string;
-  endTime: string;
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { MenuSchedule } from "@/lib/types";
 
 export function SchedulesSettings() {
   const { appUser } = useAuthContext();

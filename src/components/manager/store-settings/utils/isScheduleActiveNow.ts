@@ -1,5 +1,5 @@
 
-import { MenuSchedule } from "../schedules-settings";
+import { MenuSchedule } from "@/lib/types";
 
 const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 

@@ -16,8 +16,7 @@ import { Loader } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { RequestChangeDialog } from "@/components/server/request-change-dialog";
 import { AddonsPOSModal } from "@/components/cashier/AddonsPOSModal";
-import type { StorePackage } from "@/components/manager/store-settings/store-packages-settings";
-import type { MenuSchedule } from "@/components/manager/store-settings/schedules-settings";
+import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 
 
@@ -221,7 +220,7 @@ export default function ServerPage() {
         <div className="lg:col-span-2">
             <PendingTables
                 sessions={[...pendingSessions, ...activeSessions]}
-                onVerify={handleVerify}
+                onVerify={onVerify}
                 onRequestChange={handleOpenRequestDialog}
                 onViewTimeline={(sid) => setTimelineSessionId(sid)}
                 onAddRefill={handleOpenRefillDialog}
