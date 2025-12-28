@@ -59,3 +59,55 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* Print-specific styles */
+@media print {
+  body {
+    background-color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide everything except the receipt container */
+  body > *:not(.receipt-print-container) {
+    display: none;
+  }
+
+  .receipt-print-container {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* Hide elements that should not be printed */
+  .no-print {
+    display: none !important;
+  }
+  
+  .receipt-view {
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    font-size: 10pt; /* A larger base for A4, will be scaled down for thermal */
+  }
+
+  /* Specific widths for thermal printers */
+  .receipt-view[data-paper-width="80mm"] {
+    width: 80mm;
+    font-size: 8pt;
+  }
+  
+  .receipt-view[data-paper-width="58mm"] {
+    width: 58mm;
+    font-size: 7pt;
+  }
+
+  /* Ensure no page breaks within important sections */
+  .receipt-section, .receipt-item-row {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
