@@ -262,6 +262,11 @@ export async function completePayment(
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const sessionSnap = await tx.get(sessionRef);
 
+    // READ a receipt doc BEFORE any writes.
+    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
+    const receiptSnap = await tx.get(receiptRef);
+    const shouldCreateReceipt = !receiptSnap.exists();
+
     if (!sessionSnap.exists()) {
       throw new Error(`Session ${sessionId} does not exist.`);
     }
@@ -271,10 +276,6 @@ export async function completePayment(
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       return; // Idempotent no-op
     }
-
-    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    const receiptSnap = await tx.get(receiptRef);
-    const shouldCreateReceipt = !receiptSnap.exists();
 
     // Use tableId from session data for safety, with a fallback to the client-provided one.
     const sessionTableId = sessionData.tableId ?? tableId;
