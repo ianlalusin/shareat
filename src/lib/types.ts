@@ -42,3 +42,10 @@ export type StoreFlavor = {
     isEnabled: boolean,
     sortOrder: number,
 }
+
+export type StoreRefill = {
+    refillId: string,
+    refillName: string, // denormalized
+    isEnabled: boolean,
+    sortOrder: number,
+};
