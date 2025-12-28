@@ -52,3 +52,10 @@ export type StoreRefill = {
     kitchenLocationName: string | null;
     flavorsAllowed?: string[] | null;
 };
+
+export type KitchenLocation = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+};

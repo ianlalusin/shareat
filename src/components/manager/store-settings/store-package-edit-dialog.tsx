@@ -12,22 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { KitchenLocation } from "./kitchen-location-edit-dialog";
-import { StoreRefill, StoreFlavor } from "./store-packages-settings";
 import { MenuSchedule } from "./schedules-settings";
-
-export type StorePackage = {
-    packageId: string;
-    packageName: string;
-    isEnabled: boolean;
-    pricePerHead: number;
-    kitchenLocationId: string | null;
-    kitchenLocationName: string | null;
-    refillsAllowed: string[];
-    flavorsAllowed: string[];
-    sortOrder: number;
-    menuScheduleId: string | null;
-};
+import type { StorePackage, StoreRefill, StoreFlavor, KitchenLocation } from "@/lib/types";
 
 const formSchema = z.object({
     pricePerHead: z.coerce.number().min(0),

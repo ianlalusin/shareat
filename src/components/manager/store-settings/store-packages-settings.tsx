@@ -15,12 +15,11 @@ import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
-import { KitchenLocation } from "./kitchen-locations-settings";
 import { MenuSchedule } from "./schedules-settings";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
-import type { StorePackage, StoreFlavor, StoreRefill } from "@/lib/types";
+import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
