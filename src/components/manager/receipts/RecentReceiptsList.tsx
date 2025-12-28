@@ -16,7 +16,7 @@ type PastSession = {
     tableNumber: string;
     customer?: { name?: string };
     sessionMode: 'package_dinein' | 'alacarte';
-    closedAt: Timestamp;
+    closedAt: Timestamp | Date; // Can be either type
     paymentSummary: {
         grandTotal: number;
     };
@@ -58,6 +58,13 @@ export function RecentReceiptsList({ store }: RecentReceiptsListProps) {
         window.open(url, '_blank');
     };
 
+    const getFormattedDate = (date: Timestamp | Date) => {
+        if (!date) return 'N/A';
+        // Check if it's a Firestore Timestamp and convert, otherwise assume it's a JS Date
+        const jsDate = (date as Timestamp).toDate ? (date as Timestamp).toDate() : date;
+        return format(jsDate, 'p');
+    };
+
     return (
         <Card>
             <CardHeader>
@@ -87,7 +94,7 @@ export function RecentReceiptsList({ store }: RecentReceiptsListProps) {
                                     return (
                                         <TableRow key={session.id}>
                                             <TableCell className="font-medium">{identifier}</TableCell>
-                                            <TableCell>{session.closedAt ? format(session.closedAt.toDate(), 'p') : 'N/A'}</TableCell>
+                                            <TableCell>{getFormattedDate(session.closedAt)}</TableCell>
                                             <TableCell>₱{(session.paymentSummary?.grandTotal || 0).toFixed(2)}</TableCell>
                                             <TableCell className="text-right">
                                                 <Button variant="outline" size="sm" onClick={() => handlePrint(session.id)}>
