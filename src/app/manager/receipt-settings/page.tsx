@@ -7,6 +7,8 @@ import { ReceiptSettings } from "@/components/manager/store-settings/receipt-set
 import { useStoreContext } from "@/context/store-context";
 import { Loader } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { RecentReceiptsList } from "@/components/manager/receipts/RecentReceiptsList";
+import { Separator } from "@/components/ui/separator";
 
 export default function ReceiptSettingsPage() {
     const { activeStore, loading } = useStoreContext();
@@ -29,7 +31,11 @@ export default function ReceiptSettingsPage() {
     return (
         <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Receipt Settings" description={`Customize the printed receipts for ${activeStore.name}`} />
-            <ReceiptSettings store={activeStore} />
+            <div className="space-y-6">
+                <ReceiptSettings store={activeStore} />
+                <Separator />
+                <RecentReceiptsList store={activeStore} />
+            </div>
         </RoleGuard>
     );
 }
