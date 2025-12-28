@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 
@@ -24,6 +24,7 @@ const managerTools = [
     { title: "Store Settings", description: "Manage add-ons, packages, and prices.", href: "/manager/store-settings", icon: SlidersHorizontal },
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
+    { title: "Receipt Settings", description: "Customize printed customer receipts.", href: "/manager/receipt-settings", icon: Receipt },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/manager/reports", icon: LineChart },
 ]
 

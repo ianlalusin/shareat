@@ -2,11 +2,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
-import { db, storage } from "@/lib/firebase/client";
+import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,7 +72,6 @@ export function ReceiptSettings({ store }: { store: Store }) {
       if (doc.exists()) {
         form.reset(doc.data() as ReceiptSettingsFormValues);
       } else {
-        // If no settings exist, pre-fill with store data
         form.reset({
             businessName: store.name || "",
             branchName: store.name || "",
@@ -114,14 +113,9 @@ export function ReceiptSettings({ store }: { store: Store }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Receipt Settings</CardTitle>
-        <CardDescription>Customize the information and layout of your printed receipts.</CardDescription>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            {/* Business Info */}
             <div className="space-y-4 p-4 border rounded-lg">
               <h3 className="font-semibold">Business Information</h3>
               <div className="grid md:grid-cols-2 gap-4">
@@ -142,7 +136,6 @@ export function ReceiptSettings({ store }: { store: Store }) {
               </div>
             </div>
 
-            {/* Display Options */}
              <div className="space-y-4 p-4 border rounded-lg">
                 <h3 className="font-semibold">Display Options</h3>
                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -155,7 +148,6 @@ export function ReceiptSettings({ store }: { store: Store }) {
                  </div>
             </div>
 
-            {/* Formatting */}
             <div className="space-y-4 p-4 border rounded-lg">
                 <h3 className="font-semibold">Formatting</h3>
                  <div className="grid md:grid-cols-2 gap-4">
