@@ -49,7 +49,23 @@ export async function uploadUserAvatar(userId: string, file: File): Promise<stri
     return downloadURL;
 }
 
+export async function uploadReceiptLogo(storeId: string, file: File): Promise<string> {
+    if (!storeId) {
+        throw new Error("Store ID is required to upload a logo.");
+    }
+
+    const storageRef = ref(storage, `stores/${storeId}/receipt_logo.png`);
+    
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+
+    const settingsDocRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
+    await updateDoc(settingsDocRef, {
+        logoUrl: downloadURL,
+    });
+
+    return downloadURL;
+}
+
 
 export { app, auth, db, storage };
-
-    

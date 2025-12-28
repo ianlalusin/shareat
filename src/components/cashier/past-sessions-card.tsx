@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Timestamp } from "firebase/firestore";
 import { format } from 'date-fns';
+import { Button } from "../ui/button";
+import { useRouter } from "next/navigation";
 
 export type PastSession = {
     id: string;
@@ -22,6 +24,13 @@ interface PastSessionsCardProps {
 
 export function PastSessionsCard({ sessions }: PastSessionsCardProps) {
     const totalRevenue = sessions.reduce((sum, s) => sum + (s.paymentSummary?.grandTotal || 0), 0);
+    const router = useRouter();
+
+    const handlePrint = (sessionId: string) => {
+        const url = `/receipt/${sessionId}`;
+        // Open in a new tab for better print UX
+        window.open(url, '_blank');
+    };
 
     return (
         <Card>
@@ -37,7 +46,8 @@ export function PastSessionsCard({ sessions }: PastSessionsCardProps) {
                         <TableRow>
                             <TableHead>Table</TableHead>
                             <TableHead>Time</TableHead>
-                            <TableHead className="text-right">Billed</TableHead>
+                            <TableHead>Billed</TableHead>
+                            <TableHead className="text-right">Receipt</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -46,12 +56,17 @@ export function PastSessionsCard({ sessions }: PastSessionsCardProps) {
                                 <TableRow key={session.id}>
                                     <TableCell>{session.tableNumber}</TableCell>
                                     <TableCell>{format(session.closedAt.toDate(), 'p')}</TableCell>
-                                    <TableCell className="text-right">₱{(session.paymentSummary?.grandTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                    <TableCell>₱{(session.paymentSummary?.grandTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="outline" size="sm" onClick={() => handlePrint(session.id)}>
+                                            Print
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={3} className="text-center text-muted-foreground">No sessions closed yet today.</TableCell>
+                                <TableCell colSpan={4} className="text-center text-muted-foreground">No sessions closed yet today.</TableCell>
                             </TableRow>
                         )}
                     </TableBody>

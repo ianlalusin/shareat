@@ -17,6 +17,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { AddonsSettings } from "@/components/manager/store-settings/addons-settings";
+import { ReceiptSettings } from "./receipt/page";
 
 
 const TABS = [
@@ -27,6 +28,7 @@ const TABS = [
     { value: "schedules", label: "Schedules" },
     { value: "kitchen", label: "Kitchen" },
     { value: "tables", label: "Tables" },
+    { value: "receipt", label: "Receipt" },
 ]
 
 export default function StoreSettingsPage() {
@@ -66,7 +68,7 @@ export default function StoreSettingsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-7">
+                    <TabsList className="grid w-full grid-cols-8">
                         {TABS.map(tab => (
                              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -93,6 +95,9 @@ export default function StoreSettingsPage() {
                 </TabsContent>
                  <TabsContent value="tables">
                     <TablesSettings store={activeStore} />
+                </TabsContent>
+                <TabsContent value="receipt">
+                    <ReceiptSettings store={activeStore} />
                 </TabsContent>
             </Tabs>
         </RoleGuard>
