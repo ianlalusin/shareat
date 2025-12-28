@@ -18,6 +18,7 @@ type PastSession = {
     customer?: { name?: string };
     sessionMode: 'package_dinein' | 'alacarte';
     closedAt: Timestamp | Date | { seconds: number; nanoseconds: number };
+    createdAt: Timestamp | Date | { seconds: number; nanoseconds: number };
     paymentSummary: {
         grandTotal: number;
     };
@@ -27,6 +28,23 @@ interface RecentReceiptsListProps {
     store: Store;
     onSelectReceipt: (data: ReceiptData | null) => void;
 }
+
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 
 export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsListProps) {
     const [sessions, setSessions] = useState<PastSession[]>([]);
@@ -91,25 +109,6 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
     }, [selectedSessionId, store, onSelectReceipt]);
 
 
-    const getFormattedDate = (date: PastSession['closedAt']) => {
-        if (!date) return 'N/A';
-
-        if (typeof (date as Timestamp).toDate === 'function') {
-            return format((date as Timestamp).toDate(), 'p');
-        }
-        
-        if (typeof date === 'object' && 'seconds' in date && 'nanoseconds' in date) {
-            const jsDate = new Date(date.seconds * 1000 + date.nanoseconds / 1000000);
-            return format(jsDate, 'p');
-        }
-        
-        if (date instanceof Date) {
-            return format(date, 'p');
-        }
-
-        return 'Invalid Date';
-    };
-    
     const handleSelectSession = (sessionId: string) => {
         setSelectedSessionId(sessionId);
     }
@@ -138,6 +137,9 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                     const identifier = session.sessionMode === 'alacarte' 
                                         ? session.customer?.name || 'Ala Carte'
                                         : `Table ${session.tableNumber}`;
+                                    
+                                    const d = toJsDate(session.closedAt ?? session.createdAt);
+                                    const timeClosedLabel = d ? format(d, 'p') : "—";
 
                                     return (
                                         <TableRow 
@@ -147,7 +149,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                             data-state={selectedSessionId === session.id ? 'selected' : undefined}
                                         >
                                             <TableCell className="font-medium">{identifier}</TableCell>
-                                            <TableCell>{getFormattedDate(session.closedAt)}</TableCell>
+                                            <TableCell>{timeClosedLabel}</TableCell>
                                             <TableCell>₱{(session.paymentSummary?.grandTotal || 0).toFixed(2)}</TableCell>
                                         </TableRow>
                                     );
