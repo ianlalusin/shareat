@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
-import { ReceiptSettings } from "@/components/manager/store-settings/receipt-settings";
+import { ReceiptSettings, receiptSettingsSchema } from "@/components/manager/store-settings/receipt-settings";
 import { useStoreContext } from "@/context/store-context";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,16 +13,75 @@ import { Separator } from "@/components/ui/separator";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
 
 export default function ReceiptSettingsPage() {
     const { activeStore, loading } = useStoreContext();
-    const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
+    
+    // State for the bottom panel (recent receipts)
+    const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
 
-    const handlePrint = () => {
-        if (selectedReceiptData) {
-            window.print();
+    // State and form for the top panel (live settings preview)
+    const form = useForm({
+        resolver: zodResolver(receiptSettingsSchema),
+        defaultValues: {
+            businessName: activeStore?.name || "",
+            branchName: activeStore?.name || "",
+            address: activeStore?.address || "",
+            contact: activeStore?.contactNumber || "",
+            vatType: "NON_VAT",
+            showCashierName: true,
+            showServerName: true,
+            showTableOrCustomer: true,
+            showItemNotes: true,
+            showDiscountBreakdown: true,
+            showChargeBreakdown: true,
+            paperWidth: "80mm",
+        }
+    });
+
+    const watchedSettings = form.watch();
+
+    useEffect(() => {
+        if (!activeStore) return;
+        const settingsRef = doc(db, `stores/${activeStore.id}/receiptSettings`, "main");
+        const unsubscribe = onSnapshot(settingsRef, (doc) => {
+            if (doc.exists()) {
+                form.reset(doc.data());
+            }
+        });
+        return () => unsubscribe();
+    }, [activeStore, form]);
+
+    const handlePrint = (data: ReceiptData | null) => {
+        if (data) {
+            // A bit of a hack: set the data, then print.
+            // A better way would be a dedicated print service/context.
+            setSelectedRecentReceipt(data);
+            setTimeout(() => window.print(), 100);
         }
     };
+    
+    const livePreviewData = useMemo(() => ({
+        session: {
+            id: 'PREVIEW',
+            tableNumber: '12',
+            sessionMode: 'package_dinein',
+            paymentSummary: { subtotal: 850, lineDiscountsTotal: 50, billDiscountAmount: 0, adjustmentsTotal: 10, grandTotal: 810, totalPaid: 900, change: 90 },
+            closedAt: { toDate: () => new Date() },
+            startedByUid: 'cashier123',
+        },
+        billables: [
+            { itemName: 'Sample Package', qty: 2, unitPrice: 425, isFree: false, lineDiscountType: 'fixed', lineDiscountValue: 25 },
+            { itemName: 'Extra Fries', qty: 1, unitPrice: 100, isFree: false, lineDiscountType: 'fixed', lineDiscountValue: 0 },
+        ],
+        payments: [{ methodId: 'Cash', amount: 900 }],
+        settings: watchedSettings,
+    } as ReceiptData), [watchedSettings]);
 
     if (loading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>
@@ -43,38 +102,73 @@ export default function ReceiptSettingsPage() {
         <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Receipt Center" description={`Manage receipt templates and browse recent transactions for ${activeStore.name}`} />
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                {/* Main Preview Panel */}
-                <div className="lg:col-span-1 space-y-4">
-                     <Card className="sticky top-20">
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <div>
-                                <CardTitle>Receipt Preview</CardTitle>
-                                <CardDescription>A live preview of your receipt.</CardDescription>
+            <Accordion type="single" collapsible className="w-full" defaultValue="settings">
+                <AccordionItem value="settings">
+                    <Card>
+                        <AccordionTrigger className="p-6">
+                            <div className="flex justify-between w-full pr-4">
+                                <CardTitle>Receipt Template Settings</CardTitle>
+                                <CardDescription>Click to expand and edit your receipt template.</CardDescription>
                             </div>
-                            <Button onClick={handlePrint} disabled={!selectedReceiptData} className="no-print">
-                                <Printer className="mr-2"/> Print
-                            </Button>
-                        </CardHeader>
-                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                           {selectedReceiptData ? (
-                                <ReceiptView data={selectedReceiptData} />
-                           ) : (
-                               <div className="flex items-center justify-center h-96 text-muted-foreground">
-                                   <p>Select a recent receipt to preview.</p>
-                               </div>
-                           )}
-                        </CardContent>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-t">
+                                <div>
+                                    <ReceiptSettings store={activeStore} form={form} />
+                                </div>
+                                <div className="space-y-4">
+                                     <Card className="sticky top-20">
+                                        <CardHeader className="flex flex-row items-center justify-between">
+                                            <CardTitle>Live Preview</CardTitle>
+                                             <Button onClick={() => handlePrint(livePreviewData)} className="no-print">
+                                                <Printer className="mr-2"/> Print Preview
+                                            </Button>
+                                        </CardHeader>
+                                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                                            <ReceiptView data={livePreviewData} />
+                                        </CardContent>
+                                    </Card>
+                                </div>
+                            </div>
+                        </AccordionContent>
                     </Card>
-                </div>
-                
-                {/* Settings and Recent List Panel */}
-                <div className="lg:col-span-2 space-y-6">
-                    <ReceiptSettings store={activeStore} />
-                    <Separator />
-                    <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedReceiptData}/>
-                </div>
-            </div>
+                </AccordionItem>
+            </Accordion>
+
+
+            <Separator className="my-8" />
+
+            <Card>
+                 <CardHeader>
+                    <CardTitle>Recent Transactions</CardTitle>
+                    <CardDescription>Select a transaction to view and reprint its receipt.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                        <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedRecentReceipt}/>
+                        <div className="space-y-4">
+                             <Card className="sticky top-20">
+                                <CardHeader className="flex flex-row items-center justify-between">
+                                    <CardTitle>Selected Receipt</CardTitle>
+                                    <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt} className="no-print">
+                                        <Printer className="mr-2"/> Print
+                                    </Button>
+                                </CardHeader>
+                                <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                                {selectedRecentReceipt ? (
+                                        <ReceiptView data={selectedRecentReceipt} />
+                                ) : (
+                                    <div className="flex items-center justify-center h-96 text-muted-foreground">
+                                        <p>Select a recent receipt to preview.</p>
+                                    </div>
+                                )}
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
         </RoleGuard>
     );
 }
