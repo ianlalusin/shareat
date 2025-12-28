@@ -65,6 +65,11 @@ export type ReceiptData = {
     settings: ReceiptSettings;
 };
 
+interface ReceiptViewProps {
+    data: ReceiptData;
+    forcePaperWidth?: "58mm" | "80mm" | "A4";
+}
+
 function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { label: string, value: string, isBold?: boolean, isEmphasized?: boolean }) {
     const valueClass = isEmphasized ? 'text-lg' : '';
     return (
@@ -75,8 +80,9 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
     );
 }
 
-export function ReceiptView({ data }: { data: ReceiptData }) {
+export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
     const { session, billables, payments, settings } = data;
+    const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
 
     const groupedItems = useMemo(() => {
         const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percentage' }>();
@@ -112,14 +118,8 @@ export function ReceiptView({ data }: { data: ReceiptData }) {
         return Array.from(map.entries());
     }, [billables]);
 
-    const paperWidthClass = settings.paperWidth === '58mm' 
-        ? 'w-[58mm]' 
-        : settings.paperWidth === '80mm' 
-        ? 'w-[80mm]' 
-        : 'w-full max-w-2xl';
-
     return (
-        <div data-paper-width={settings.paperWidth || '80mm'} className={`receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg ${paperWidthClass}`}>
+        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg">
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && <Image src={settings.logoUrl} alt="Logo" width={40} height={40} className="mx-auto" />}
                 <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>

@@ -62,23 +62,34 @@
 
 /* Print-specific styles */
 @media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
   body {
     background-color: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  /* Hide everything except the receipt container */
-  body > *:not(.receipt-print-container) {
-    display: none;
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Make the receipt container and its children visible */
+  .receipt-print-container, .receipt-print-container * {
+    visibility: visible;
   }
 
   .receipt-print-container {
-    display: block;
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
+    margin: 0;
+    padding: 0;
   }
 
   /* Hide elements that should not be printed */
@@ -87,22 +98,24 @@
   }
   
   .receipt-view {
-    margin: 0;
-    padding: 0;
-    border: none;
-    box-shadow: none;
-    font-size: 10pt; /* A larger base for A4, will be scaled down for thermal */
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 10pt; /* Base font size for A4, will be scaled down for thermal */
+    background: transparent !important;
+    color: black !important;
   }
 
   /* Specific widths for thermal printers */
   .receipt-view[data-paper-width="80mm"] {
     width: 80mm;
-    font-size: 8pt;
+    font-size: 9pt;
   }
   
   .receipt-view[data-paper-width="58mm"] {
     width: 58mm;
-    font-size: 7pt;
+    font-size: 8pt;
   }
 
   /* Ensure no page breaks within important sections */
