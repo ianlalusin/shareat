@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { Timestamp } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -121,19 +121,19 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
 
     const getSafeDate = (date: any): Date => {
       if (!date) return new Date();
-      // Firestore Timestamp
+      // Handle Firestore Timestamp or mock object with toDate()
       if (typeof date.toDate === 'function') {
         return date.toDate();
       }
-      // Plain object from Firestore { seconds, nanoseconds }
+      // Handle plain object from Firestore { seconds, nanoseconds }
       if (typeof date === 'object' && 'seconds' in date && 'nanoseconds' in date) {
         return new Timestamp(date.seconds, date.nanoseconds).toDate();
       }
-      // Already a JS Date
+      // Handle if it's already a JS Date
       if (date instanceof Date) {
         return date;
       }
-      // Fallback for unexpected formats
+      // Fallback for any other unexpected formats (like a string)
       return new Date(date);
     }
 
