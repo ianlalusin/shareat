@@ -254,7 +254,6 @@ type BillingSummary = {
 export async function completePayment(
   storeId: string,
   sessionId: string,
-  tableId: string, // Fallback tableId from the client
   user: AppUser,
   payments: Payment[],
   billingSummary: BillingSummary,
@@ -263,7 +262,7 @@ export async function completePayment(
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const sessionSnap = await tx.get(sessionRef);
 
-    // READ a receipt doc BEFORE any writes.
+    // READ receipt doc BEFORE any writes.
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const receiptSnap = await tx.get(receiptRef);
     const shouldCreateReceipt = !receiptSnap.exists();
@@ -278,17 +277,15 @@ export async function completePayment(
       return; // Idempotent no-op
     }
 
-    // Use tableId from session data for safety, with a fallback to the client-provided one.
-    const sessionTableId = sessionData.tableId ?? tableId;
+    // Use tableId from session data for safety.
+    const sessionTableId = sessionData.tableId;
     
-    // For 'alacarte' sessions, tableId might be 'alacarte', so don't try to get a doc ref for it.
     let tableRef = null;
     let tableSnap = null;
-    if (sessionTableId !== 'alacarte') {
+    if (sessionTableId && sessionTableId !== 'alacarte') {
         tableRef = doc(db, `stores/${storeId}/tables`, sessionTableId);
         tableSnap = await tx.get(tableRef);
     }
-
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
@@ -327,8 +324,8 @@ export async function completePayment(
             createdAt: serverTimestamp(),
             createdByUid: user.uid,
             sessionMode: sessionData.sessionMode,
-            tableId: sessionData.tableId ?? null,
-            tableNumber: sessionData.tableNumber ?? null,
+            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
+            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
             customerName: sessionData.customer?.name ?? null,
             total: billingSummary.grandTotal,
             totalPaid,
@@ -350,3 +347,5 @@ export async function completePayment(
     }
   });
 }
+
+    

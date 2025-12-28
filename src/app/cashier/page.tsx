@@ -402,8 +402,11 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
         return ticket?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled');
     })
     .map(billable => {
-        const qty = billable.type === 'package' ? (session.guestCountFinal ?? billable.qty) : billable.qty;
-        return { ...billable, qty };
+        const qty =
+        billable.type === "package"
+          ? ((session?.guestCountFinal ?? billable.qty) as number)
+          : billable.qty;
+              return { ...billable, qty };
     });
 
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
@@ -426,7 +429,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const discountedSubtotal = subtotal - lineDiscountsTotal;
   
   const billDiscountAmount = billDiscount
-    ? (billDiscount.type === 'percentage'
+    ? (billDiscount.type === 'percent'
         ? discountedSubtotal * (billDiscount.value / 100)
         : Math.min(billDiscount.value, discountedSubtotal))
     : 0;
@@ -481,7 +484,6 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
       await completePayment(
         activeStore.id,
         sessionId,
-        session.tableId,
         appUser,
         payments,
         {
@@ -790,6 +792,7 @@ export default function CashierPage() {
 
 
     
+
 
 
 
