@@ -28,7 +28,6 @@ import { type ModeOfPayment } from "../manager/collections/_components/ModesOfPa
 import { type Charge } from "../manager/collections/_components/ChargesSettings";
 import { type Discount as StoreDiscount } from "../manager/collections/_components/DiscountsSettings";
 import { PastSessionsCard, type PastSession } from "@/components/cashier/past-sessions-card";
-import { type MenuSchedule } from "@/components/manager/store-settings/schedules-settings";
 import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StoreAddon } from "@/components/manager/store-settings/addons-settings";
 import type { PendingSession } from "@/components/server/pending-tables";
-import type { StorePackage, StoreFlavor } from "@/lib/types";
+import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
 
 
 const statusOrder: OrderItemStatus[] = ["preparing", "ready", "served", "cancelled"];
