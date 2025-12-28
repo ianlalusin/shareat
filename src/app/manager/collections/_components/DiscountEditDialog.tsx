@@ -18,7 +18,7 @@ const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
   type: z.enum(["fixed", "percent"]),
   value: z.coerce.number().min(0, "Value cannot be negative."),
-  scope: z.array(z.string()).refine(value => value.length > 0, {
+  scope: z.array(z.enum(["item", "bill"])).refine(value => value.length > 0, {
     message: "You must select at least one scope (Item or Bill).",
   }),
   stackable: z.boolean().default(false),
@@ -48,7 +48,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
       name: "",
       type: "fixed",
       value: 0,
-      scope: ["bill"],
+      scope: ["bill"] as ("item" | "bill")[],
       stackable: false,
       sortOrder: 1000,
       isEnabled: true,
@@ -58,9 +58,9 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
   useEffect(() => {
     if (item) {
       const currentScope = item.scope;
-      const normalizedScope = Array.isArray(currentScope) 
+      const normalizedScope = (Array.isArray(currentScope) 
         ? currentScope 
-        : (typeof currentScope === 'string' ? [currentScope] : []);
+        : (typeof currentScope === 'string' ? [currentScope] : [])) as ("item" | "bill")[];
       
       form.reset({
         name: item.name,

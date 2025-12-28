@@ -22,7 +22,7 @@ export type Discount = {
   name: string;
   type: "fixed" | "percent";
   value: number;
-  scope: "bill" | "item" | ("bill" | "item")[];
+  scope: ("bill" | "item")[];
   stackable: boolean;
   isEnabled: boolean;
   sortOrder: number;

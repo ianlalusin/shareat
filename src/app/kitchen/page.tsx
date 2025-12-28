@@ -125,7 +125,7 @@ export default function KitchenPage() {
         const sessionIds = [...new Set(allTickets.map(t => t.sessionId))];
         if (sessionIds.length > 0) {
             // Firestore 'in' queries are limited to 30 values. We need to chunk the requests.
-            const chunkArray = <T>(arr: T[], size: number): T[][] => {
+            const chunkArray = <T,>(arr: T[], size: number): T[][] => {
                 const chunks: T[][] = [];
                 for (let i = 0; i < arr.length; i += size) {
                     chunks.push(arr.slice(i, i + size));
