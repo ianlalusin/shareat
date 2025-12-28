@@ -18,16 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { logActivity } from "@/lib/firebase/activity-log";
 import { Refill } from "@/app/admin/menu/refills/page";
 import { KitchenLocation } from "./kitchen-location-edit-dialog";
-
-export type StoreRefill = {
-    refillId: string,
-    refillName: string, // denormalized
-    isEnabled: boolean,
-    sortOrder: number,
-    kitchenLocationId: string | null;
-    kitchenLocationName: string | null;
-    flavorsAllowed?: string[] | null;
-}
+import type { StoreRefill } from "@/lib/types";
 
 export function StoreRefillsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();

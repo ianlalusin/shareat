@@ -48,4 +48,7 @@ export type StoreRefill = {
     refillName: string, // denormalized
     isEnabled: boolean,
     sortOrder: number,
+    kitchenLocationId: string | null;
+    kitchenLocationName: string | null;
+    flavorsAllowed?: string[] | null;
 };

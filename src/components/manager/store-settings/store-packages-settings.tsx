@@ -20,14 +20,7 @@ import { MenuSchedule } from "./schedules-settings";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
-import type { StorePackage, StoreFlavor } from "@/lib/types";
-
-export type StoreRefill = {
-    refillId: string,
-    refillName: string, // denormalized
-    isEnabled: boolean,
-    sortOrder: number,
-};
+import type { StorePackage, StoreFlavor, StoreRefill } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
