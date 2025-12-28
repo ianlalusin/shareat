@@ -14,17 +14,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { StorePackageEditDialog, type StorePackage } from "./store-package-edit-dialog";
-import { KitchenLocation } from "./kitchen-location-edit-dialog";
+import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
+import { KitchenLocation } from "./kitchen-locations-settings";
 import { MenuSchedule } from "./schedules-settings";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
 import { StoreFlavor } from "./store-flavors-settings";
+import type { StorePackage } from "@/lib/types";
 
 export type StoreRefill = {
     refillId: string,
-    refillName: string,
+    refillName: string, // denormalized
     isEnabled: boolean,
     sortOrder: number,
 };

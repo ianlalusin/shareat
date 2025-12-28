@@ -20,10 +20,10 @@ import { db } from "@/lib/firebase/client";
 import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAuthContext } from "@/context/auth-context";
 import { type PendingSession } from "./pending-tables";
-import type { StorePackage } from "../manager/store-settings/store-packages-settings";
 import { MenuSchedule } from "../manager/store-settings/schedules-settings";
 import { isScheduleActiveNow } from "../manager/store-settings/utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { StorePackage } from "@/lib/types";
 
 const REASON_OPTIONS = {
   guest_request: "Guest Request",

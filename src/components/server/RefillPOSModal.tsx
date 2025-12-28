@@ -19,10 +19,10 @@ import type { StoreRefill } from "../manager/store-settings/store-refills-settin
 import type { StoreFlavor } from "../manager/store-settings/store-flavors-settings";
 import { Label } from "../ui/label";
 import { Checkbox } from "../ui/checkbox";
-import type { StorePackage } from "../manager/store-settings/store-packages-settings";
 import type { Refill } from "@/app/admin/menu/refills/page";
 import { Textarea } from "../ui/textarea";
 import { cn } from "@/lib/utils";
+import type { StorePackage } from "@/lib/types";
 
 interface RefillPOSModalProps {
   open: boolean;

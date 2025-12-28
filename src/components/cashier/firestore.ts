@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -18,8 +19,8 @@ import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
 import { BillableItem } from './billable-items';
 import { Payment } from './payment-section';
-import type { StorePackage } from '../manager/store-settings/store-packages-settings';
 import { stripUndefined } from '@/lib/firebase/utils';
+import type { StorePackage } from '@/lib/types';
 
 export type StartSessionPayload = {
   tableId: string;

@@ -194,7 +194,7 @@ match /receipts/{receiptId} {
       
       // Payments
       match /sessions/{sessionId}/payments/{paymentId} {
-        allow read: if isStoreMember(storeId) && isCashier();
+      allow read: if isStoreMember(storeId) && (isCashier() || isManager());
         allow create: if isStoreMember(storeId) && isCashier();
         allow update, delete: if isStoreMember(storeId) && isManager(); // Tightly controlled
       }

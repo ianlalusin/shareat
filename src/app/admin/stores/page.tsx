@@ -56,7 +56,7 @@ async function getCollectionData(collectionRef: any) {
     const collectionData: any = {};
     const querySnapshot = await getDocs(collectionRef);
     for (const docSnapshot of querySnapshot.docs) {
-        const docData = docSnapshot.data();
+        const docData = (docSnapshot.data() ?? {}) as Record<string, unknown>;
         const subCollections = await getSubCollections(docSnapshot.ref);
         collectionData[docSnapshot.id] = { ...docData, ...subCollections };
     }

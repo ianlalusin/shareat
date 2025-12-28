@@ -22,3 +22,16 @@ export interface UserDocument {
     storeId: string;
     photoURL?: string;
 }
+
+export type StorePackage = {
+    packageId: string;
+    packageName: string;
+    isEnabled: boolean;
+    pricePerHead: number;
+    kitchenLocationId: string | null;
+    kitchenLocationName: string | null;
+    refillsAllowed: string[];
+    flavorsAllowed: string[];
+    sortOrder: number;
+    menuScheduleId: string | null;
+};

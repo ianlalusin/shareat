@@ -21,7 +21,6 @@ import { startSession, updateKitchenTicketStatus, completePayment } from "@/comp
 import { Loader2, History, X, ArrowLeft, AlertCircle, Handshake, PackageCheck, PackageX } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
-import type { StorePackage } from "@/components/manager/store-settings/store-packages-settings";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ActiveSession, ActiveSessionsGrid } from "@/components/cashier/active-sessions-grid";
 import { Product } from "../admin/menu/products/page";
@@ -40,6 +39,7 @@ import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StoreAddon } from "@/components/manager/store-settings/addons-settings";
 import type { PendingSession } from "@/components/server/pending-tables";
+import type { StorePackage } from "@/lib/types";
 
 
 const statusOrder: OrderItemStatus[] = ["preparing", "ready", "served", "cancelled"];
@@ -791,5 +791,6 @@ export default function CashierPage() {
 
 
     
+
 
 
