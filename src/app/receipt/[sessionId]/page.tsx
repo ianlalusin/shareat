@@ -56,7 +56,7 @@ export default function ReceiptPage() {
                 const receiptDocData = receiptSnap.exists()
                     ? (receiptSnap.data({ serverTimestamps: "estimate" }) as any)
                     : null;
-                
+                    
                 const receiptCreatedAt =
                     receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
                     
