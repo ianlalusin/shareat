@@ -47,13 +47,21 @@ export default function ReceiptPage() {
                 ]);
                 
                 if (!sessionSnap.exists()) throw new Error("Session not found.");
-                if (sessionSnap.data().storeId !== activeStoreId) throw new Error("You do not have permission to view this receipt.");
+
+                const sessionData = sessionSnap.data({ serverTimestamps: "estimate" }) as any;
+                if (sessionData.storeId !== activeStoreId) throw new Error("You do not have permission to view this receipt.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
-                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }).createdAt : null;
+                
+                const receiptDocData = receiptSnap.exists()
+                    ? (receiptSnap.data({ serverTimestamps: "estimate" }) as any)
+                    : null;
+                
+                const receiptCreatedAt =
+                    receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
 
                 setReceiptData({
-                    session: sessionSnap.data() as any,
+                    session: { ...sessionData, closedAt: sessionData?.closedAt ?? sessionSnap.updateTime } as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
