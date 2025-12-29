@@ -18,38 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReadyToServe } from "@/components/kitchen/ReadyToServe";
 import { stripUndefined } from "@/lib/firebase/utils";
-
-export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "void";
-export type OrderItemType = "package" | "refill" | "addon";
-
-export type KitchenTicket = {
-    id: string;
-    sessionId: string;
-    storeId: string;
-    tableId: string;
-    tableNumber: string;
-    type: OrderItemType;
-    itemName: string;
-    guestCount: number;
-    status: OrderItemStatus;
-    kitchenLocationId: string;
-    kitchenLocationName?: string;
-    notes?: string;
-    qty: number;
-    createdByUid: string;
-    createdAt: Timestamp;
-    preparedByUid?: string | null;
-    preparedAt?: Timestamp | null;
-    servedByUid?: string | null;
-    servedAt?: Timestamp | null;
-    cancelledByUid?: string | null;
-    cancelledAt?: Timestamp | null;
-    cancelReason?: string | null;
-    initialFlavorIds?: string[];
-    initialFlavorNames?: string[];
-    sessionMode?: 'package_dinein' | 'alacarte';
-    customerName?: string | null;
-};
+import type { KitchenTicket } from "@/lib/types";
 
 export type KitchenStation = {
     id: string;

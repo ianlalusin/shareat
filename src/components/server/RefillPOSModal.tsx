@@ -13,7 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
-import type { PendingSession } from "./pending-tables";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { StoreRefill } from "../manager/store-settings/store-refills-settings";
 import type { StoreFlavor } from "../manager/store-settings/store-flavors-settings";
@@ -22,7 +21,7 @@ import { Checkbox } from "../ui/checkbox";
 import type { Refill } from "@/app/admin/menu/refills/page";
 import { Textarea } from "../ui/textarea";
 import { cn } from "@/lib/utils";
-import type { StorePackage } from "@/lib/types";
+import type { StorePackage, PendingSession } from "@/lib/types";
 
 interface RefillPOSModalProps {
   open: boolean;

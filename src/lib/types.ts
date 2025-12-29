@@ -76,7 +76,7 @@ export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "
 
 export type BillableItem = {
   id: string;
-  type: "package" | "addon";
+  type: "package" | "addon" | "refill";
   source: "auto" | "manual" | "kitchenticket";
   addonId?: string;
   itemName: string;
@@ -162,5 +162,68 @@ export type ModeOfPayment = {
   updatedBy: string;
 };
 
+export type OrderItemType = "package" | "refill" | "addon";
 
-    
+export type KitchenTicket = {
+    id: string;
+    sessionId: string;
+    storeId: string;
+    tableId: string;
+    tableNumber: string;
+    type: OrderItemType;
+    itemName: string;
+    guestCount: number;
+    status: OrderItemStatus;
+    kitchenLocationId: string;
+    kitchenLocationName?: string;
+    notes?: string;
+    qty: number;
+    createdByUid: string;
+    createdAt: any;
+    preparedByUid?: string | null;
+    preparedAt?: any | null;
+    servedByUid?: string | null;
+    servedAt?: any | null;
+    cancelledByUid?: string | null;
+    cancelledAt?: any | null;
+    cancelReason?: string | null;
+    initialFlavorIds?: string[];
+    initialFlavorNames?: string[];
+    sessionMode?: 'package_dinein' | 'alacarte';
+    customerName?: string | null;
+};
+
+export type StoreAddon = {
+    id: string; // The document ID, which is the Product ID
+    name: string; // Denormalized name
+    price: number;
+    isEnabled: boolean;
+    sortOrder: number;
+    isArchived: boolean;
+    category?: string;
+    uom?: string;
+    kitchenLocationId?: string | null;
+    kitchenLocationName?: string | null;
+    imageUrl?: string;
+};
+
+export type PendingSession = {
+  id: string;
+  tableNumber: string;
+  packageName: string;
+  status: 'pending_verification' | 'active' | 'closed';
+  sessionMode: 'package_dinein' | 'alacarte';
+  customerName?: string | null;
+  isPaid?: boolean;
+  packageOfferingId: string;
+  initialFlavorIds?: string[];
+  startedAt: any;
+  // Guest Count Model
+  guestCountCashierInitial: number;
+  guestCountServerVerified: number | null;
+  guestCountFinal: number | null;
+  guestCountVerifyLocked: boolean;
+  // Change Request Models
+  guestCountChange?: { status: string };
+  packageChange?: { status: string };
+};

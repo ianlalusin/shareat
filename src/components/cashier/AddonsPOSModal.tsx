@@ -16,10 +16,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
-import type { StoreAddon } from "../manager/store-settings/addons-settings";
-import type { PendingSession } from "../server/pending-tables";
 import { stripUndefined } from "@/lib/firebase/utils";
 import { Product } from "@/app/admin/menu/products/page";
+import type { StoreAddon, PendingSession } from "@/lib/types";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -313,5 +312,3 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
     </Dialog>
   );
 }
-
-    

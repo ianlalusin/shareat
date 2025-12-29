@@ -21,20 +21,7 @@ import { StoreAddonEditDialog } from "./StoreAddonEditDialog";
 import { KitchenLocation } from "./kitchen-locations-settings";
 import Image from "next/image";
 import { Product } from "@/app/admin/menu/products/page";
-
-export type StoreAddon = {
-    id: string; // The document ID, which is the Product ID
-    name: string; // Denormalized name
-    price: number;
-    isEnabled: boolean;
-    sortOrder: number;
-    isArchived: boolean;
-    category?: string;
-    uom?: string;
-    kitchenLocationId?: string | null;
-    kitchenLocationName?: string | null;
-    imageUrl?: string;
-};
+import type { StoreAddon } from "@/lib/types";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();

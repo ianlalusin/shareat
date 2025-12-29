@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
 import { AddonsPOSModal } from "./AddonsPOSModal";
-import type { PendingSession } from "../server/pending-tables";
+import type { PendingSession } from "@/lib/types";
 
 interface AddonsLauncherButtonProps {
   storeId: string;

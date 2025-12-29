@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Send, Clock, History, Loader2 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import { Badge } from "../ui/badge";
+import type { KitchenTicket } from "@/lib/types";
 
 export type ReadyItem = {
   id: string; // The field from the document data
@@ -25,6 +25,7 @@ export type ReadyItem = {
   servedAt?: Timestamp | null;
 };
 
+
 interface ReadyToServeProps {
     items: ReadyItem[];
     onMarkServed: (item: ReadyItem) => void;
@@ -32,17 +33,35 @@ interface ReadyToServeProps {
     isServing: Record<string, boolean>;
 }
 
-function TimeAgo({ date }: { date: Date | undefined }) {
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate();
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+
+function TimeAgo({ date }: { date: any }) {
     const [displayTime, setDisplayTime] = useState("just now");
+    const jsDate = toJsDate(date);
 
     useEffect(() => {
-        if (!date) {
+        if (!jsDate) {
             setDisplayTime("a moment ago");
             return;
         }
         
         const updateDisplay = () => {
-            const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+            const seconds = Math.floor((new Date().getTime() - jsDate.getTime()) / 1000);
             if (seconds < 60) {
                 setDisplayTime(`${seconds}s ago`);
             } else {
@@ -55,9 +74,9 @@ function TimeAgo({ date }: { date: Date | undefined }) {
         const interval = setInterval(updateDisplay, 5000); // Update every 5 seconds
 
         return () => clearInterval(interval);
-    }, [date]);
+    }, [jsDate]);
 
-    if (!date) {
+    if (!jsDate) {
         return <p className="text-xs text-amber-600 flex items-center gap-1 mt-1"><Clock size={14}/> ...</p>;
     }
 
@@ -86,7 +105,7 @@ export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }:
              <CardHeader className="flex flex-row items-center justify-between p-3">
                  <div className="flex items-center gap-2">
                     <CardTitle className="text-lg">{displayLocation}</CardTitle>
-                    <TimeAgo date={item.preparedAt?.toDate()} />
+                    <TimeAgo date={item.preparedAt} />
                  </div>
                  <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewTimeline(item.sessionId)}>
