@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { format } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import type { ReceiptData } from "@/components/receipt/receipt-view";
+import { toJsDate } from "@/lib/utils/date";
 
 type PastSession = {
     id: string;
@@ -27,22 +28,6 @@ type PastSession = {
 interface RecentReceiptsListProps {
     store: Store;
     onSelectReceipt: (data: ReceiptData | null) => void;
-}
-
-function toJsDate(v: any): Date | null {
-  if (!v) return null;
-  if (v instanceof Date) return v;
-  if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  }
-   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
 }
 
 

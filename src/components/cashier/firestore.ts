@@ -18,7 +18,7 @@ import {
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
 import type { StorePackage, BillableItem } from '@/lib/types';
-import { Payment } from './payment-section';
+import type { Payment } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 
 export type StartSessionPayload = {

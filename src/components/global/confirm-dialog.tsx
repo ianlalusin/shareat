@@ -31,7 +31,7 @@ export function useConfirmDialog() {
     destructive: true,
   });
 
-  const resolverRef = React.useRef<(v: boolean) => void>();
+  const resolverRef = React.useRef<((v: boolean) => void) | null>(null);
 
   function confirm(next: ConfirmOptions) {
     setOpts({
@@ -50,7 +50,7 @@ export function useConfirmDialog() {
   function close(v: boolean) {
     setOpen(false);
     resolverRef.current?.(v);
-    resolverRef.current = undefined;
+    resolverRef.current = null;
   }
 
   const Dialog = (
