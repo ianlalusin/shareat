@@ -1,7 +1,7 @@
 
 "use client";
 
-import { KitchenTicket } from "@/app/kitchen/page";
+import type { KitchenTicket } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "../ui/button";
 import { Send, Clock } from "lucide-react";

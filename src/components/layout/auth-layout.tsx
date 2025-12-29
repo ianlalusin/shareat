@@ -17,7 +17,6 @@ function combineUser(
     uid: firebaseUser.uid,
     email: firebaseUser.email,
     displayName: firebaseUser.displayName,
-    role: "pending",
     status: "pending",
     // Spread the Firestore data, which will override defaults
     ...appUser,

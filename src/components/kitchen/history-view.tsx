@@ -3,7 +3,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { KitchenTicket } from "@/app/kitchen/page";
+import type { KitchenTicket } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
