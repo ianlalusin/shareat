@@ -118,7 +118,12 @@ function GroupedBillableItemRow({
                                 <p>({group.servedQty} served, {group.pendingQty} pending)</p>
                             )}
                         </div>
-                        <Badge variant={getStatusVariant(group.status)} className="capitalize mt-1">{group.status}</Badge>
+                        <Badge
+                          variant={getStatusVariant(group.status ?? "preparing")}
+                          className="capitalize mt-1"
+                        >
+                          {group.status ?? "preparing"}
+                        </Badge>
                          {group.isFree && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free</Badge>}
                          {group.lineDiscountValue > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted</Badge>}
                     </div>

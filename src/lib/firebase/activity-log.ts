@@ -4,6 +4,7 @@
 import { collection, addDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db } from "./client";
 import type { AppUser } from "@/context/auth-context";
+import { toJsDate } from "@/lib/utils/date";
 
 type ActivityLog = {
     userId: string;
@@ -79,8 +80,7 @@ export function subscribeToUserActivity(
             activities.push({
                 id: doc.id,
                 ...data,
-                // Convert Firestore Timestamp to JS Date if it exists
-                createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+                createdAt: toJsDate(data.createdAt) || new Date(),
             });
         });
         callback(activities);

@@ -172,7 +172,7 @@ export default function AccountPage() {
                                         {activities.map((activity) => (
                                             <TableRow key={activity.id}>
                                                 <TableCell className="text-muted-foreground">
-                                                     {format(activity.createdAt, 'MM/dd/yyyy')}
+                                                     {format(activity.createdAt, 'MM/dd/yyyy HH:mm')}
                                                 </TableCell>
                                                 <TableCell>{activity.description}</TableCell>
                                             </TableRow>
