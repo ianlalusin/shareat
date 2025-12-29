@@ -74,7 +74,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         return packages.filter(pkg => {
             if (!pkg.menuScheduleId) return true; // Always available if no schedule
             const schedule = schedules.get(pkg.menuScheduleId);
-            if (!schedule) return true; // Fail open if schedule not found
+            if (!schedule) return false; // Fail closed if schedule not found yet.
             return isScheduleActiveNow(schedule);
         });
     }, [packages, schedules, availableNowFilter]);
