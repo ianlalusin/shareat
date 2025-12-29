@@ -48,8 +48,16 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
             limit(20)
         );
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setReceipts(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as ReceiptRow)));
+        const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+            setReceipts(snapshot.docs.map(d => {
+              const data = d.data() as any;
+              return {
+                id: d.id,
+                ...data,
+                // fallback if createdAt isn't resolved yet:
+                createdAt: data.createdAt ?? d.createTime,
+              } as ReceiptRow;
+            }));
             setIsLoading(false);
         }, (error) => {
             console.error("Error fetching recent receipts:", error);
