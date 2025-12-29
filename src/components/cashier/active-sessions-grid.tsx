@@ -14,6 +14,7 @@ export type ActiveSession = {
     tableNumber: string;
     status: 'active' | 'pending_verification';
     sessionMode: 'package_dinein' | 'alacarte';
+    customer?: { name?: string | null };
     customerName?: string | null;
     currentSessionId: string | null;
     startedAt?: Timestamp;
@@ -104,7 +105,7 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sessions.map(session => {
                     const isAlaCarte = session.sessionMode === 'alacarte';
-                    const title = isAlaCarte ? session.customerName : `Table ${session.tableNumber}`;
+                    const title = isAlaCarte ? (session.customer?.name || 'Ala Carte') : `Table ${session.tableNumber}`;
                     const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
                     
                     const final = Number(session.guestCountFinal ?? NaN);
