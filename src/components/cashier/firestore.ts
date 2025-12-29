@@ -17,7 +17,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { BillableItem, StorePackage } from '@/lib/types';
+import type { StorePackage, BillableItem } from '@/lib/types';
 import { Payment } from './payment-section';
 import { stripUndefined } from '@/lib/firebase/utils';
 

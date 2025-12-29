@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { KitchenTicket } from "@/app/kitchen/page";
@@ -16,8 +15,27 @@ interface ReadyToServeProps {
 }
 
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate();
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+
 function CreationTime({ startTime }: { startTime: Timestamp }) {
-    const timeString = format(startTime.toDate(), "HH:mm");
+    const date = toJsDate(startTime);
+    if (!date) return null;
+    const timeString = format(date, "HH:mm");
 
     return (
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
