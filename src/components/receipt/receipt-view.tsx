@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useMemo } from "react";
@@ -7,6 +6,7 @@ import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
 import type { BillableItem } from "@/lib/types";
+import { toJsDate } from "@/lib/utils/date";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -56,6 +56,7 @@ export type ReceiptData = {
     billables: BillableItem[];
     payments: Payment[];
     settings: ReceiptSettings;
+    receiptCreatedAt?: any;
 };
 
 interface ReceiptViewProps {
@@ -71,22 +72,6 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
             <span className="text-right">{value}</span>
         </div>
     );
-}
-
-function toJsDate(v: any): Date | null {
-  if (!v) return null;
-  if (v instanceof Date) return v;
-  if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  }
-   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
 }
 
 export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
@@ -127,8 +112,8 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         return Array.from(map.entries());
     }, [billables]);
 
-    const closedDate = toJsDate(session.closedAt);
-    const dateLabel = closedDate ? format(closedDate, 'MM/dd/yy HH:mm') : 'N/A';
+    const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
+    const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg">
@@ -234,6 +219,3 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         </div>
     );
 }
-
-
-    

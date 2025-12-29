@@ -38,22 +38,26 @@ export default function ReceiptPage() {
             }
 
             try {
-                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap] = await Promise.all([
+                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
                     getDoc(doc(db, "stores", activeStoreId, "sessions", sessionId as string)),
                     getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "billables"), orderBy("createdAt", "asc"))),
                     getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "payments"), orderBy("createdAt", "asc"))),
-                    getDoc(doc(db, "stores", activeStoreId, "receiptSettings", "main"))
+                    getDoc(doc(db, "stores", activeStoreId, "receiptSettings", "main")),
+                    getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string))
                 ]);
                 
                 if (!sessionSnap.exists()) throw new Error("Session not found.");
                 if (sessionSnap.data().storeId !== activeStoreId) throw new Error("You do not have permission to view this receipt.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
+                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data().createdAt : null;
+
                 setReceiptData({
                     session: sessionSnap.data() as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
+                    receiptCreatedAt: receiptCreatedAt,
                 });
                 setPaperWidth(settingsData.paperWidth || "80mm");
 
