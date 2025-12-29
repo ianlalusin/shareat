@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -321,6 +322,7 @@ export async function completePayment(
             sessionId,
             createdAtClientMs: Date.now(),
             createdByUid: user.uid,
+            createdByUsername: user.displayName || user.name || null,
             sessionMode: sessionData.sessionMode,
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
             tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
