@@ -60,7 +60,7 @@ type ReasonKey = keyof typeof REASON_OPTIONS;
 
 function SessionDetailView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const { toast } } from useToast();
+  const { toast } = useToast();
   
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
@@ -715,7 +715,7 @@ function SessionListView() {
             if (!pkg.isEnabled) return false;
             if (!pkg.menuScheduleId) return true; // Always available if no schedule
             const schedule = schedules.get(pkg.menuScheduleId);
-            if (!schedule) return false; // Fail closed if schedule not found yet.
+            if (!schedule) return true; // Fail open if schedule not found
             return isScheduleActiveNow(schedule);
         });
     }, [packages, schedules]);
@@ -767,5 +767,3 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
-
-    
