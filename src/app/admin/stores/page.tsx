@@ -11,7 +11,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Download } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Download, ImageIcon } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreEditDialog } from "@/components/admin/store-edit-dialog";
@@ -19,6 +19,7 @@ import { logActivity } from "@/lib/firebase/activity-log";
 import { format } from "date-fns";
 import { StoreDetailsModal } from "@/components/admin/store-details-modal";
 import type { Store } from "@/lib/types";
+import Image from "next/image";
 
 function toJsDate(v: any): Date | null {
   if (!v) return null;
@@ -108,7 +109,7 @@ export default function StoreManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSaveStore = async (storeData: Omit<Store, 'id' | 'createdAt' | 'updatedAt' | 'openingDate'> & { openingDate?: Date | null }) => {
+  const handleSaveStore = async (storeData: Omit<Store, 'id' | 'createdAt' | 'updatedAt' | 'openingDate' | 'logoUrl'> & { openingDate?: Date | null, logoUrl?: string | null }) => {
     if (!appUser) return;
     setIsSubmitting(true);
     
@@ -123,6 +124,7 @@ export default function StoreManagementPage() {
         const storeDocRef = doc(db, "stores", editingStore.id);
         await updateDoc(storeDocRef, {
           ...dataToSave,
+          logoUrl: storeData.logoUrl,
           updatedAt: serverTimestamp(),
         });
         await logActivity(appUser, "store_updated", `Updated store: ${storeData.name}`);
@@ -134,6 +136,7 @@ export default function StoreManagementPage() {
         
         batch.set(newDocRef, {
             ...dataToSave,
+            logoUrl: storeData.logoUrl,
             id: newDocRef.id, // Set the id field to the document's ID
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -276,6 +279,7 @@ export default function StoreManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Logo</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>Contact</TableHead>
@@ -289,6 +293,15 @@ export default function StoreManagementPage() {
                     const openingDate = toJsDate(store.openingDate);
                     return (
                         <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
+                            <TableCell>
+                                <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                    {store.logoUrl ? (
+                                        <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                                    ) : (
+                                        <ImageIcon className="text-muted-foreground" />
+                                    )}
+                                </div>
+                            </TableCell>
                             <TableCell className="font-medium">{store.name}</TableCell>
                             <TableCell>{store.code}</TableCell>
                             <TableCell>
@@ -354,5 +367,3 @@ export default function StoreManagementPage() {
     </RoleGuard>
   );
 }
-
-    
