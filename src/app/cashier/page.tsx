@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 import { startSession, updateKitchenTicketStatus, completePayment } from "@/components/cashier/firestore";
-import { Loader2, History, X, ArrowLeft, AlertCircle, Handshake, PackageCheck, PackageX } from "lucide-react";
+import { Loader2, History, X, ArrowLeft, AlertCircle, Handshake, PackageCheck, PackageX, Receipt } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -287,7 +288,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleApplyDiscount = async (ticketIds: string[], discountType: "fixed" | "percentage", discountValue: number, quantity: number) => {
+  const handleApplyDiscount = async (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     if (isBillingLocked || !activeStore || !session) return;
     
     const batch = writeBatch(db);
@@ -395,7 +396,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     .filter(item => !item.isFree)
     .reduce((total, item) => {
       const lineTotal = item.qty * item.unitPrice;
-      if (item.lineDiscountType === 'percentage') {
+      if (item.lineDiscountType === 'percent') {
         return total + (lineTotal * (item.lineDiscountValue / 100));
       }
       return total + Math.min(item.lineDiscountValue, lineTotal);
@@ -505,7 +506,13 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             sessionMode: session.sessionMode,
             customerName: session.customerName ?? null,
         }} />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+                <Link href="/manager/receipt-settings">
+                    <Receipt className="mr-2" />
+                    Receipts
+                </Link>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" />
                 View Timeline
@@ -762,3 +769,5 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
+
+    
