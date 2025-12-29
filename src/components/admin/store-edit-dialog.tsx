@@ -22,6 +22,7 @@ const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),
   code: z.string().min(2, "Code must be at least 2 characters.").max(10, "Code cannot be more than 10 characters.").toUpperCase(),
   address: z.string().min(5, "Address is required."),
+  tin: z.string().optional(),
   isActive: z.boolean().default(true),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
   contactNumber: z.string().optional(),
@@ -45,6 +46,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       name: "",
       code: "",
       address: "",
+      tin: "",
       isActive: true,
       email: "",
       contactNumber: "",
@@ -58,6 +60,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: store.name,
         code: store.code,
         address: store.address,
+        tin: store.tin || "",
         isActive: store.isActive,
         email: store.email || "",
         contactNumber: store.contactNumber || "",
@@ -68,6 +71,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: "",
         code: "",
         address: "",
+        tin: "",
         isActive: true,
         email: "",
         contactNumber: "",
@@ -107,19 +111,34 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Store Code</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., MAIN" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                    control={form.control}
+                    name="code"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Store Code</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., MAIN" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                    <FormField
+                    control={form.control}
+                    name="tin"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>TIN</FormLabel>
+                        <FormControl>
+                            <Input placeholder="e.g., 123-456-789-000" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                </div>
                 <FormField
                   control={form.control}
                   name="address"
@@ -230,3 +249,5 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
     </Dialog>
   );
 }
+
+    

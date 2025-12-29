@@ -67,6 +67,10 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                         <span className="font-medium text-sm">{store.code}</span>
                     </div>
                     <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> TIN</span>
+                        <span className="font-medium text-sm text-right">{store.tin || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-start justify-between">
                         <span className="text-sm text-muted-foreground flex items-center gap-2"><MapPin /> Address</span>
                         <span className="font-medium text-sm text-right">{store.address}</span>
                     </div>
@@ -97,3 +101,5 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
     </Dialog>
   );
 }
+
+    

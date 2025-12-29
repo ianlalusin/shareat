@@ -36,7 +36,7 @@ export default function ReceiptSettingsPage() {
             branchName: activeStore?.name || "",
             address: activeStore?.address || "",
             contact: activeStore?.contactNumber || "",
-            tin: "",
+            tin: activeStore?.tin || "",
             vatType: "NON_VAT",
             showCashierName: true,
             showServerName: true,
@@ -60,6 +60,7 @@ export default function ReceiptSettingsPage() {
         form.setValue("branchName", activeStore.name);
         form.setValue("address", activeStore.address);
         form.setValue("contact", activeStore.contactNumber || "");
+        form.setValue("tin", activeStore.tin || "");
 
         const settingsRef = doc(db, `stores/${activeStore.id}/receiptSettings`, "main");
         const unsubscribe = onSnapshot(settingsRef, (doc) => {
@@ -72,6 +73,7 @@ export default function ReceiptSettingsPage() {
                     branchName: activeStore.name,
                     address: activeStore.address,
                     contact: activeStore.contactNumber || "",
+                    tin: activeStore.tin || "",
                 });
             }
         });
@@ -192,3 +194,5 @@ export default function ReceiptSettingsPage() {
         </RoleGuard>
     );
 }
+
+    

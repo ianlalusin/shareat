@@ -87,7 +87,6 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
             <div className="space-y-4 p-4 border rounded-lg">
                 <h3 className="font-semibold">Business Information</h3>
                 <div className="grid md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="tin" render={({ field }) => <FormItem><FormLabel>TIN</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="vatType" render={({ field }) => <FormItem><FormLabel>VAT Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="VAT">VAT</SelectItem><SelectItem value="NON_VAT">Non-VAT</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
                     <FormItem>
                         <FormLabel>Logo</FormLabel>
@@ -131,3 +130,5 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
     </Form>
   );
 }
+
+    

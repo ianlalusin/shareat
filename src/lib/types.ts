@@ -141,7 +141,6 @@ export type KitchenTicket = {
     servedAt?: any | null;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
-    cancelReason?: string | null;
     initialFlavorIds?: string[];
     initialFlavorNames?: string[];
     sessionMode?: 'package_dinein' | 'alacarte';
@@ -276,6 +275,7 @@ export type Store = {
   name: string;
   code: string;
   address: string;
+  tin?: string;
   isActive: boolean;
   openingDate?: Timestamp | null;
   contactNumber?: string;
@@ -283,3 +283,5 @@ export type Store = {
   createdAt: any;
   updatedAt: any;
 };
+
+    
