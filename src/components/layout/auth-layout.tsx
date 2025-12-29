@@ -12,19 +12,17 @@ function combineUser(
   appUser: AppUser | null
 ): AppUser | null {
   if (!firebaseUser) return null;
+  
+  // Spread the Firestore data first, then override with fresh auth data.
+  // This ensures uid, email, etc., are always from the source of truth (Firebase Auth)
+  // while retaining other Firestore-specific fields like role and status.
   return {
-    // Start with default/fallback values
-    uid: firebaseUser.uid,
-    email: firebaseUser.email,
-    displayName: firebaseUser.displayName,
-    status: "pending",
-    // Spread the Firestore data, which will override defaults
     ...appUser,
-    // Ensure core auth data isn't overwritten by stale Firestore data
     uid: firebaseUser.uid,
     email: firebaseUser.email,
     displayName: firebaseUser.displayName || appUser?.displayName || appUser?.name,
-    photoURL: firebaseUser.photoURL || appUser?.photoURL, 
+    photoURL: firebaseUser.photoURL || appUser?.photoURL,
+    status: appUser?.status || "pending", // Ensure status has a fallback
   };
 }
 
