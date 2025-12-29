@@ -17,7 +17,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {
@@ -74,7 +74,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         return packages.filter(pkg => {
             if (!pkg.menuScheduleId) return true; // Always available if no schedule
             const schedule = schedules.get(pkg.menuScheduleId);
-            if (!schedule) return false; // Schedule not found or not loaded yet, assume not available.
+            if (!schedule) return false; // Fail closed if schedule not found yet.
             return isScheduleActiveNow(schedule);
         });
     }, [packages, schedules, availableNowFilter]);
