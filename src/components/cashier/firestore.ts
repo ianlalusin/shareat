@@ -315,11 +315,10 @@ export async function completePayment(
     }));
 
     if (shouldCreateReceipt) {
-        tx.set(receiptRef, stripUndefined({
+        const receiptPayload = stripUndefined({
             id: sessionId,
             storeId,
             sessionId,
-            createdAt: serverTimestamp(),
             createdAtClientMs: Date.now(),
             createdByUid: user.uid,
             sessionMode: sessionData.sessionMode,
@@ -330,7 +329,12 @@ export async function completePayment(
             totalPaid,
             change: Math.max(0, totalPaid - billingSummary.grandTotal),
             status: "final",
-        }));
+        });
+
+        tx.set(receiptRef, {
+            ...receiptPayload,
+            createdAt: serverTimestamp(),
+        });
     }
 
     // Free table ONLY if it still points to this session and exists
