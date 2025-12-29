@@ -60,7 +60,7 @@ type ReasonKey = keyof typeof REASON_OPTIONS;
 
 function SessionDetailView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const { toast } = useToast();
+  const { toast } } from useToast();
   
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
@@ -712,12 +712,10 @@ function SessionListView() {
 
     const availablePackages = useMemo(() => {
         return packages.filter(pkg => {
-            const isPkgEnabled = (pkg.isEnabled ?? true) === true;
-            if (!isPkgEnabled) return false;
-
-            if (!pkg.menuScheduleId) return true; 
+            if (!pkg.isEnabled) return false;
+            if (!pkg.menuScheduleId) return true; // Always available if no schedule
             const schedule = schedules.get(pkg.menuScheduleId);
-            if (!schedule) return false; 
+            if (!schedule) return false; // Fail closed if schedule not found yet.
             return isScheduleActiveNow(schedule);
         });
     }, [packages, schedules]);
