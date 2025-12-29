@@ -24,7 +24,7 @@ import { SessionTimelineDrawer } from "@/components/session/session-timeline-dra
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ActiveSession, ActiveSessionsGrid } from "@/components/cashier/active-sessions-grid";
-import { type KitchenTicket, OrderItemStatus } from "../kitchen/page";
+import type { KitchenTicket, OrderItemStatus } from "@/lib/types";
 import { PastSessionsCard, type PastSession } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -32,8 +32,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
-import type { StoreAddon } from "@/components/manager/store-settings/addons-settings";
-import type { PendingSession } from "@/components/server/pending-tables";
+import type { StoreAddon } from "@/lib/types";
+import type { PendingSession } from "@/lib/types";
 import type { StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment } from "@/lib/types";
 
 
@@ -770,4 +770,5 @@ export default function CashierPage() {
 }
 
 
+    
     

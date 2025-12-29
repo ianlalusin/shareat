@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { KitchenTicket } from "@/app/kitchen/page";
+import { KitchenTicket } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
