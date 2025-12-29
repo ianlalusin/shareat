@@ -36,6 +36,7 @@ export default function ReceiptSettingsPage() {
             branchName: activeStore?.name || "",
             address: activeStore?.address || "",
             contact: activeStore?.contactNumber || "",
+            tin: "",
             vatType: "NON_VAT",
             showCashierName: true,
             showServerName: true,
@@ -53,10 +54,25 @@ export default function ReceiptSettingsPage() {
 
     useEffect(() => {
         if (!activeStore) return;
+
+        // Set read-only fields from store context
+        form.setValue("businessName", activeStore.name);
+        form.setValue("branchName", activeStore.name);
+        form.setValue("address", activeStore.address);
+        form.setValue("contact", activeStore.contactNumber || "");
+
         const settingsRef = doc(db, `stores/${activeStore.id}/receiptSettings`, "main");
         const unsubscribe = onSnapshot(settingsRef, (doc) => {
             if (doc.exists()) {
-                form.reset(doc.data());
+                const data = doc.data();
+                // Reset form with fetched data, but keep read-only fields from store
+                form.reset({
+                    ...data,
+                    businessName: activeStore.name,
+                    branchName: activeStore.name,
+                    address: activeStore.address,
+                    contact: activeStore.contactNumber || "",
+                });
             }
         });
         return () => unsubscribe();
