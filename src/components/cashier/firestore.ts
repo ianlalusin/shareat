@@ -258,9 +258,6 @@ export async function completePayment(
   billingSummary: BillingSummary,
 ) {
   await runTransaction(db, async (tx) => {
-    // Generate a single timestamp for this entire transaction
-    const completionTimestamp = new Date();
-    
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const sessionSnap = await tx.get(sessionRef);
 
@@ -298,7 +295,7 @@ export async function completePayment(
       tx.set(paymentRef, stripUndefined({
         ...payment,
         id: paymentRef.id,
-        createdAt: completionTimestamp, // Use consistent timestamp
+        createdAt: serverTimestamp(),
         createdByUid: user.uid,
       }));
     });
@@ -307,7 +304,7 @@ export async function completePayment(
     tx.update(sessionRef, stripUndefined({
       status: "closed",
       isPaid: true,
-      closedAt: completionTimestamp, // Use consistent timestamp
+      closedAt: serverTimestamp(),
       closedByUid: user.uid,
       paymentSummary: {
         ...billingSummary,
@@ -315,7 +312,7 @@ export async function completePayment(
         change: Math.max(0, totalPaid - billingSummary.grandTotal),
         payments,
       },
-      updatedAt: completionTimestamp, // Use consistent timestamp
+      updatedAt: serverTimestamp(),
     }));
 
     if (shouldCreateReceipt) {
@@ -323,7 +320,7 @@ export async function completePayment(
             id: sessionId,
             storeId,
             sessionId,
-            createdAt: completionTimestamp, // Use consistent timestamp
+            createdAt: serverTimestamp(),
             createdByUid: user.uid,
             sessionMode: sessionData.sessionMode,
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
@@ -343,11 +340,9 @@ export async function completePayment(
         tx.update(tableRef, {
           status: "available",
           currentSessionId: null,
-          updatedAt: completionTimestamp, // Use consistent timestamp
+          updatedAt: serverTimestamp(),
         });
       }
     }
   });
 }
-
-    
