@@ -18,8 +18,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { useAuthContext } from "@/context/auth-context";
+import { cn } from "@/lib/utils";
 
 export default function ReceiptSettingsPage() {
+    const { appUser } = useAuthContext();
     const { activeStore, loading } = useStoreContext();
     
     // State for the bottom panel (recent receipts)
@@ -46,6 +49,8 @@ export default function ReceiptSettingsPage() {
 
     const watchedSettings = form.watch();
 
+    const canEditReceiptSettings = appUser?.role === 'admin' || appUser?.role === 'manager';
+
     useEffect(() => {
         if (!activeStore) return;
         const settingsRef = doc(db, `stores/${activeStore.id}/receiptSettings`, "main");
@@ -59,8 +64,6 @@ export default function ReceiptSettingsPage() {
 
     const handlePrint = (data: ReceiptData | null) => {
         if (data) {
-            // A bit of a hack: set the data, then print.
-            // A better way would be a dedicated print service/context.
             setSelectedRecentReceipt(data);
             setTimeout(() => window.print(), 100);
         }
@@ -99,41 +102,43 @@ export default function ReceiptSettingsPage() {
     }
 
     return (
-        <RoleGuard allow={["admin", "manager"]}>
+        <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipt Center" description={`Manage receipt templates and browse recent transactions for ${activeStore.name}`} />
             
-            <Accordion type="single" collapsible className="w-full" defaultValue="settings">
-                <AccordionItem value="settings">
-                    <Card>
-                        <AccordionTrigger className="p-6">
-                            <div className="flex justify-between w-full pr-4">
-                                <CardTitle>Receipt Template Settings</CardTitle>
-                                <CardDescription>Click to expand and edit your receipt template.</CardDescription>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-t">
-                                <div>
-                                    <ReceiptSettings store={activeStore} form={form} />
+            {canEditReceiptSettings && (
+                 <Accordion type="single" collapsible className="w-full" defaultValue="settings">
+                    <AccordionItem value="settings">
+                        <Card>
+                            <AccordionTrigger className="p-6">
+                                <div className="flex justify-between w-full pr-4">
+                                    <CardTitle>Receipt Template Settings</CardTitle>
+                                    <CardDescription>Click to expand and edit your receipt template.</CardDescription>
                                 </div>
-                                <div className="space-y-4">
-                                     <Card className="sticky top-20">
-                                        <CardHeader className="flex flex-row items-center justify-between">
-                                            <CardTitle>Live Preview</CardTitle>
-                                             <Button onClick={() => handlePrint(livePreviewData)} className="no-print">
-                                                <Printer className="mr-2"/> Print Preview
-                                            </Button>
-                                        </CardHeader>
-                                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                                            <ReceiptView data={livePreviewData} />
-                                        </CardContent>
-                                    </Card>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-t">
+                                    <div>
+                                        <ReceiptSettings store={activeStore} form={form} />
+                                    </div>
+                                    <div className="space-y-4">
+                                        <Card className="sticky top-20">
+                                            <CardHeader className="flex flex-row items-center justify-between">
+                                                <CardTitle>Live Preview</CardTitle>
+                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print">
+                                                    <Printer className="mr-2"/> Print Preview
+                                                </Button>
+                                            </CardHeader>
+                                            <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                                                <ReceiptView data={livePreviewData} />
+                                            </CardContent>
+                                        </Card>
+                                    </div>
                                 </div>
-                            </div>
-                        </AccordionContent>
-                    </Card>
-                </AccordionItem>
-            </Accordion>
+                            </AccordionContent>
+                        </Card>
+                    </AccordionItem>
+                </Accordion>
+            )}
 
 
             <Separator className="my-8" />
@@ -144,7 +149,7 @@ export default function ReceiptSettingsPage() {
                     <CardDescription>Select a transaction to view and reprint its receipt.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    <div className={cn("grid grid-cols-1 gap-6 items-start", canEditReceiptSettings ? "lg:grid-cols-2" : "lg:grid-cols-[1fr,1fr]")}>
                         <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedRecentReceipt}/>
                         <div className="space-y-4">
                              <Card className="sticky top-20">
@@ -168,7 +173,6 @@ export default function ReceiptSettingsPage() {
                     </div>
                 </CardContent>
             </Card>
-
         </RoleGuard>
     );
 }
