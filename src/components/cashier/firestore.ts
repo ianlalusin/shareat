@@ -258,13 +258,11 @@ export async function completePayment(
   billingSummary: BillingSummary,
 ) {
   await runTransaction(db, async (tx) => {
+    // Generate a single timestamp for this entire transaction
+    const completionTimestamp = new Date();
+    
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const sessionSnap = await tx.get(sessionRef);
-
-    // READ receipt doc BEFORE any writes.
-    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    const receiptSnap = await tx.get(receiptRef);
-    const shouldCreateReceipt = !receiptSnap.exists();
 
     if (!sessionSnap.exists()) {
       throw new Error(`Session ${sessionId} does not exist.`);
@@ -275,6 +273,11 @@ export async function completePayment(
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       return; // Idempotent no-op
     }
+    
+    // READ receipt doc BEFORE any writes.
+    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
+    const receiptSnap = await tx.get(receiptRef);
+    const shouldCreateReceipt = !receiptSnap.exists();
 
     // Use tableId from session data for safety.
     const sessionTableId = sessionData.tableId;
@@ -295,7 +298,7 @@ export async function completePayment(
       tx.set(paymentRef, stripUndefined({
         ...payment,
         id: paymentRef.id,
-        createdAt: serverTimestamp(),
+        createdAt: completionTimestamp, // Use consistent timestamp
         createdByUid: user.uid,
       }));
     });
@@ -304,7 +307,7 @@ export async function completePayment(
     tx.update(sessionRef, stripUndefined({
       status: "closed",
       isPaid: true,
-      closedAt: serverTimestamp(),
+      closedAt: completionTimestamp, // Use consistent timestamp
       closedByUid: user.uid,
       paymentSummary: {
         ...billingSummary,
@@ -312,7 +315,7 @@ export async function completePayment(
         change: Math.max(0, totalPaid - billingSummary.grandTotal),
         payments,
       },
-      updatedAt: serverTimestamp(),
+      updatedAt: completionTimestamp, // Use consistent timestamp
     }));
 
     if (shouldCreateReceipt) {
@@ -320,7 +323,7 @@ export async function completePayment(
             id: sessionId,
             storeId,
             sessionId,
-            createdAt: serverTimestamp(),
+            createdAt: completionTimestamp, // Use consistent timestamp
             createdByUid: user.uid,
             sessionMode: sessionData.sessionMode,
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
@@ -340,13 +343,11 @@ export async function completePayment(
         tx.update(tableRef, {
           status: "available",
           currentSessionId: null,
-          updatedAt: serverTimestamp(),
+          updatedAt: completionTimestamp, // Use consistent timestamp
         });
       }
     }
   });
 }
-
-    
 
     
