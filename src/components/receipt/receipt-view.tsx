@@ -26,6 +26,8 @@ export type Session = {
     closedAt: Timestamp | { toDate: () => Date } | Date | { seconds: number, nanoseconds: number };
     startedByUid: string;
     verifiedByUid?: string;
+    cashierName?: string;
+    serverName?: string;
 };
 
 export type Payment = {
@@ -136,7 +138,8 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
                         value={session.sessionMode === 'alacarte' ? session.customer?.name || 'N/A' : session.tableNumber || 'N/A'}
                      />
                 )}
-                {settings.showCashierName && <ReceiptRow label="Cashier:" value={session.startedByUid.substring(0, 6)} />}
+                {settings.showCashierName && <ReceiptRow label="Cashier:" value={session.cashierName || session.startedByUid.substring(0, 6)} />}
+                {settings.showServerName && session.serverName && <ReceiptRow label="Server:" value={session.serverName} />}
             </section>
 
             <hr className="border-dashed border-black my-2" />

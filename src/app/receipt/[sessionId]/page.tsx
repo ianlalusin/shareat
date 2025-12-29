@@ -59,9 +59,33 @@ export default function ReceiptPage() {
                 
                 const receiptCreatedAt =
                     receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
+                    
+                // Fetch user names
+                let cashierName = sessionData.startedByUid.substring(0, 6);
+                let serverName = sessionData.verifiedByUid ? sessionData.verifiedByUid.substring(0, 6) : null;
+                
+                const uidsToFetch = [sessionData.startedByUid, sessionData.verifiedByUid].filter(Boolean);
+                if (uidsToFetch.length > 0) {
+                    const userDocs = await Promise.all(uidsToFetch.map(uid => getDoc(doc(db, "users", uid))));
+                    const userNames: Record<string, string> = {};
+                    userDocs.forEach(userDoc => {
+                        if (userDoc.exists()) {
+                            userNames[userDoc.id] = userDoc.data().name || userDoc.id.substring(0,6);
+                        }
+                    });
+                    cashierName = userNames[sessionData.startedByUid] || cashierName;
+                    if (sessionData.verifiedByUid) {
+                        serverName = userNames[sessionData.verifiedByUid] || serverName;
+                    }
+                }
 
                 setReceiptData({
-                    session: { ...sessionData, closedAt: sessionData?.closedAt ?? sessionSnap.updateTime } as any,
+                    session: { 
+                        ...sessionData, 
+                        closedAt: sessionData?.closedAt ?? sessionSnap.updateTime,
+                        cashierName,
+                        serverName,
+                    } as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
