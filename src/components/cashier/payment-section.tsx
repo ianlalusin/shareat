@@ -7,20 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, X } from "lucide-react";
-
-export type PaymentMethod = {
-    id: string;
-    name: string;
-    type: 'cash' | 'card' | 'online' | 'other';
-    hasRef?: boolean;
-};
-
-export type Payment = {
-    id: string;
-    methodId: string;
-    amount: number;
-    reference?: string;
-};
+import type { Payment, ModeOfPayment as PaymentMethod } from "@/lib/types";
 
 interface PaymentSectionProps {
     paymentMethods: PaymentMethod[];

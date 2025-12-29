@@ -8,30 +8,12 @@ import { useState, useMemo } from "react";
 import { AddonsLauncherButton } from "./addons-launcher-button";
 import { Badge } from "../ui/badge";
 import { Timestamp } from "firebase/firestore";
-import { GroupedBillableItem } from "@/app/cashier/page";
-import { BillableItemActionDialog } from "./billable-item-action-dialog";
-import { OrderItemStatus } from "@/app/kitchen/page";
 import { cn } from "@/lib/utils";
-import { Discount } from "@/app/manager/collections/_components/DiscountsSettings";
-import { PendingSession } from "../server/pending-tables";
 import { useConfirmDialog } from "../global/confirm-dialog";
-
-export type BillableItem = {
-  id: string;
-  type: "package" | "addon";
-  source: "auto" | "manual" | "kitchenticket";
-  addonId?: string;
-  itemName: string;
-  qty: number;
-  unitPrice: number;
-  lineDiscountType: "percentage" | "fixed";
-  lineDiscountValue: number;
-  isFree: boolean;
-  status: OrderItemStatus;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  createdByUid: string;
-};
+import type { OrderItemStatus } from "@/app/kitchen/page";
+import type { BillableItem, GroupedBillableItem, Discount } from "@/lib/types";
+import { BillableItemActionDialog } from "./billable-item-action-dialog";
+import type { PendingSession } from "../server/pending-tables";
 
 interface BillableItemsProps {
   groupedItems: GroupedBillableItem[];

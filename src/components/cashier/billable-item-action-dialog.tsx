@@ -10,11 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GroupedBillableItem } from "@/app/cashier/page";
 import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
-import { type Discount } from "@/app/manager/collections/_components/DiscountsSettings";
 import { Minus, Plus } from "lucide-react";
+import type { GroupedBillableItem, Discount } from "@/lib/types";
 
 type ActionType = "discount" | "free";
 

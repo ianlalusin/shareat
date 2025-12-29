@@ -6,27 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Check, Percent, Tag, Trash2, X } from "lucide-react";
-import { type StoreDiscount, type Charge } from "@/app/cashier/page";
 import { cn } from "@/lib/utils";
 import { Separator } from "../ui/separator";
-
-export type Adjustment = {
-  id: string;
-  note: string;
-  amount: number;
-  source: 'charge' | 'custom';
-  sourceId?: string;
-};
+import type { Discount, Charge, Adjustment } from "@/lib/types";
 
 interface BillAdjustmentsProps {
   adjustments: Adjustment[];
-  billDiscount: StoreDiscount | null;
+  billDiscount: Discount | null;
   charges: Charge[];
-  discounts: StoreDiscount[];
+  discounts: Discount[];
   onAddAdjustment: (charge: Charge) => void;
   onAddCustomAdjustment: (note: string, amount: number) => void;
   onRemoveAdjustment: (id: string) => void;
-  onSetBillDiscount: (discount: StoreDiscount | null) => void;
+  onSetBillDiscount: (discount: Discount | null) => void;
   isLocked?: boolean;
 }
 
@@ -161,14 +153,14 @@ export function BillAdjustments({
   }
 
   const handleApplyDiscount = () => {
-    let discountToApply: StoreDiscount;
+    let discountToApply: Discount;
     if (isCustomDiscount) {
          discountToApply = {
             id: `custom-${Date.now()}`,
             name: 'Custom Discount',
             type: tempDiscountType,
             value: tempDiscountValue,
-            scope: 'bill',
+            scope: ['bill'],
             stackable: false, isEnabled: true, sortOrder: 9999, isArchived: false, createdAt: '', updatedAt: '', createdBy: '', updatedBy: ''
         };
     } else {

@@ -6,10 +6,10 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
-import { BillableItems, type BillableItem } from "@/components/cashier/billable-items";
-import { BillAdjustments, type Adjustment } from "@/components/cashier/bill-adjustments";
+import { BillableItems } from "@/components/cashier/billable-items";
+import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { BillTotals } from "@/components/cashier/bill-totals";
-import { PaymentSection, type Payment } from "@/components/cashier/payment-section";
+import { PaymentSection } from "@/components/cashier/payment-section";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
 import { collection, onSnapshot, query, where, doc, getDocs, Timestamp, addDoc, orderBy, setDoc, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
@@ -22,11 +22,7 @@ import { SessionTimelineDrawer } from "@/components/session/session-timeline-dra
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ActiveSession, ActiveSessionsGrid } from "@/components/cashier/active-sessions-grid";
-import { Product } from "../admin/menu/products/page";
 import { type KitchenTicket, OrderItemStatus } from "../kitchen/page";
-import { type ModeOfPayment } from "../manager/collections/_components/ModesOfPaymentSettings";
-import { type Charge } from "../manager/collections/_components/ChargesSettings";
-import { type Discount as StoreDiscount } from "../manager/collections/_components/DiscountsSettings";
 import { PastSessionsCard, type PastSession } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -36,31 +32,16 @@ import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StoreAddon } from "@/components/manager/store-settings/addons-settings";
 import type { PendingSession } from "@/components/server/pending-tables";
-import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
+import type { StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment } from "@/lib/types";
 
 
 const statusOrder: OrderItemStatus[] = ["preparing", "ready", "served", "cancelled"];
-
-export type GroupedBillableItem = {
-    key: string;
-    isGrouped: boolean;
-    totalQty: number;
-    servedQty: number;
-    pendingQty: number;
-    cancelledQty: number;
-    ticketIds: string[];
-    createdAtMin: Timestamp | null;
-} & Omit<BillableItem, 'id' | 'qty'>;
-
-
-// --- MOCK DATA & TYPES ---
-export type Discount = { type: "percentage" | "fixed"; value: number };
 
 /**
  * Helper function to check if a discount's scope matches the required context (item or bill).
  * It supports both string and array formats for the 'scope' property.
  */
-function hasScope(discount: StoreDiscount, scopeKey: "item" | "bill"): boolean {
+function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
   if (!scope || !Array.isArray(scope)) return false;
   return scope.includes(scopeKey);
@@ -87,11 +68,11 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [billables, setBillables] = useState<Map<string, BillableItem>>(new Map());
   const [tickets, setTickets] = useState<Map<string, KitchenTicket>>(new Map());
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
-  const [billDiscount, setBillDiscount] = useState<StoreDiscount | null>(null);
+  const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]); // Using any to avoid circular deps for ModeOfPayment
   const [charges, setCharges] = useState<Charge[]>([]);
-  const [discounts, setDiscounts] = useState<StoreDiscount[]>([]);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [isCompleting, setIsCompleting] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
@@ -181,7 +162,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             orderBy("name", "asc")
         );
         unsubs.push(onSnapshot(mopQuery, (snapshot) => {
-            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }));
     
         // Charges
@@ -193,7 +174,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
         // Discounts - Made less strict to allow for missing fields
         const discountsRef = collection(db, "stores", activeStore.id, "storeDiscounts");
         unsubs.push(onSnapshot(query(discountsRef, where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
-            setDiscounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StoreDiscount)));
+            setDiscounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Discount)));
         }));
     
         return () => unsubs.forEach(unsub => unsub());
@@ -781,21 +762,3 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
-
-
-
-
-
-    
-
-
-
-
-
-
-
-    
-
-
-
-    

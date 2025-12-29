@@ -4,11 +4,10 @@
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { BillableItem } from "./billable-items";
 import { useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
-import { Adjustment } from "./bill-adjustments";
+import type { BillableItem, Adjustment } from "@/lib/types";
 
 interface BillTotalsProps {
   items: BillableItem[];
