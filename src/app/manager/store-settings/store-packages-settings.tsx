@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs } from "firebase/firestore";

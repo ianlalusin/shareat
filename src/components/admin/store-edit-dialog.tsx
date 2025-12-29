@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),

@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, UploadCloud } from "lucide-react";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 import Image from "next/image";
 import { uploadReceiptLogo } from "@/lib/firebase/client";
 

@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Edit, Globe, Mail, Phone, Calendar, Hash, MapPin } from "lucide-react";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 import { format } from "date-fns";
+import { Timestamp } from "firebase/firestore";
 
 interface StoreDetailsModalProps {
   store: Store;
@@ -16,8 +17,26 @@ interface StoreDetailsModalProps {
   onEdit: (store: Store) => void;
 }
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetailsModalProps) {
   if (!store) return null;
+
+  const openingDate = toJsDate(store.openingDate);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -62,7 +81,7 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                     <div className="flex items-start justify-between">
                         <span className="text-sm text-muted-foreground flex items-center gap-2"><Calendar /> Opening Date</span>
                         <span className="font-medium text-sm">
-                            {store.openingDate ? format(store.openingDate.toDate(), 'MMMM dd, yyyy') : 'N/A'}
+                            {openingDate ? format(openingDate, 'MMMM dd, yyyy') : 'N/A'}
                         </span>
                     </div>
                 </div>

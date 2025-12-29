@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDoc, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 import { Loader2 } from "lucide-react";
 import { format } from 'date-fns';
 import { Button } from "@/components/ui/button";

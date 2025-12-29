@@ -2,13 +2,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, setDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader, Edit, Power, PowerOff } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, Save } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -18,19 +18,7 @@ import { StoreEditDialog } from "@/components/admin/store-edit-dialog";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { format } from "date-fns";
 import { StoreDetailsModal } from "@/components/admin/store-details-modal";
-
-export type Store = {
-  id: string;
-  name: string;
-  code: string;
-  address: string;
-  isActive: boolean;
-  openingDate?: Timestamp | null;
-  contactNumber?: string;
-  email?: string;
-  createdAt: any;
-  updatedAt: any;
-};
+import type { Store } from "@/lib/types";
 
 // Helper function to recursively get all subcollections
 async function getSubCollections(docRef: any) {

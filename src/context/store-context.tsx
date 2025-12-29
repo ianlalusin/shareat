@@ -5,7 +5,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "./auth-context";
-import { Store } from "@/app/admin/stores/page";
+import type { Store } from "@/lib/types";
 
 type StoreCtx = {
   activeStoreId: string | null;
