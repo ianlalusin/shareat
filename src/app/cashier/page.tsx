@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -508,12 +507,6 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             customerName: session.customerName ?? null,
         }} />
         <div className="ml-auto flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-                <Link href="/manager/receipt-settings">
-                    <Receipt className="mr-2" />
-                    Receipts
-                </Link>
-            </Button>
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" />
                 View Timeline
@@ -732,7 +725,14 @@ function SessionListView() {
 
     return (
         <>
-            <PageHeader title="Cashier" description="Start a new session or manage active ones." />
+            <PageHeader title="Cashier" description="Start a new session or manage active ones.">
+              <Button asChild variant="outline" size="sm">
+                  <Link href="/manager/receipt-settings">
+                      <Receipt className="mr-2" />
+                      Receipts
+                  </Link>
+              </Button>
+            </PageHeader>
             
             {isLoading ? <Loader2 className="animate-spin" /> : (
                 <div className="space-y-8">
