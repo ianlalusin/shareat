@@ -81,7 +81,7 @@ export type BillableItem = {
   itemName: string;
   qty: number;
   unitPrice: number;
-  lineDiscountType: "percentage" | "fixed";
+  lineDiscountType: "percent" | "fixed";
   lineDiscountValue: number;
   isFree: boolean;
   status: OrderItemStatus;
@@ -119,7 +119,7 @@ export type Adjustment = {
 export type Charge = {
   id: string;
   name: string;
-  type: "fixed" | "percentage";
+  type: "fixed" | "percent";
   value: number;
   appliesTo: "subtotal" | "total";
   isEnabled: boolean;

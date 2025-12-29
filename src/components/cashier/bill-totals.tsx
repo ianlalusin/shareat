@@ -26,7 +26,7 @@ type GroupedSummaryItem = {
     qty: number;
     unitPrice: number;
     lineTotal: number;
-    discountType: 'fixed' | 'percentage';
+    discountType: 'fixed' | 'percent';
     discountValue: number;
     ticketIds: string[];
 };
@@ -104,7 +104,7 @@ export function BillTotals({
                 const hasDiscount = item.discountValue > 0;
                 let discountAmount = 0;
                 if (hasDiscount) {
-                    discountAmount = item.discountType === 'percentage'
+                    discountAmount = item.discountType === 'percent'
                         ? item.lineTotal * (item.discountValue / 100)
                         : Math.min(item.discountValue * item.qty, item.lineTotal);
                 }
@@ -122,7 +122,7 @@ export function BillTotals({
                         </div>
                         {hasDiscount && (
                             <div className="flex justify-between items-center text-xs text-red-600 pl-4 cursor-pointer" onClick={() => onRemoveDiscount(item.ticketIds)}>
-                                <span>Discount ({item.discountType === 'percentage' ? `${item.discountValue}%` : `₱${item.discountValue}`})</span>
+                                <span>Discount ({item.discountType === 'percent' ? `${item.discountValue}%` : `₱${item.discountValue}`})</span>
                                 <div className="flex items-center gap-1">
                                     <span>- ₱{discountAmount.toFixed(2)}</span>
                                     <Trash2 className="h-3 w-3" />

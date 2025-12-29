@@ -21,7 +21,7 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   onUpdateQty: (ticketIds: string[], newQty: number) => void;
-  onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percentage", discountValue: number, quantity: number) => void;
+  onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
   onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>;
   isLocked?: boolean;
@@ -40,7 +40,7 @@ function GroupedBillableItemRow({
 }: { 
     group: GroupedBillableItem, 
     onUpdateQty: (ticketIds: string[], newQty: number) => void,
-    onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percentage", discountValue: number, quantity: number) => void,
+    onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void,
     onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
     onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>,
     discounts: Discount[],

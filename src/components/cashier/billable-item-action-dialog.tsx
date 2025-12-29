@@ -23,7 +23,7 @@ interface BillableItemActionDialogProps {
     group: GroupedBillableItem;
     actionType: ActionType;
     discounts: Discount[];
-    onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percentage", discountValue: number, quantity: number) => void;
+    onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
     onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
 }
 
@@ -75,8 +75,8 @@ function CurrencyInput({ value, onChange, disabled, className }: { value: number
     )
 }
 
-function normalizeDiscountType(t: any): "fixed" | "percentage" {
-    if (t === "percentage" || t === "percent") return "percentage";
+function normalizeDiscountType(t: any): "fixed" | "percent" {
+    if (t === "percentage" || t === "percent") return "percent";
     return "fixed";
 }
 
@@ -88,7 +88,7 @@ export function BillableItemActionDialog({ isOpen, onClose, group, actionType, d
     
     const formSchema = z.object({
         discountId: z.string().optional(),
-        discountType: z.enum(["fixed", "percentage"]),
+        discountType: z.enum(["fixed", "percent"]),
         discountValue: z.coerce.number().min(0, "Value must be positive."),
         quantity: z.coerce.number().int().min(1).max(group.servedQty, `Cannot exceed served quantity (${group.servedQty}).`)
     });
@@ -284,7 +284,7 @@ export function BillableItemActionDialog({ isOpen, onClose, group, actionType, d
                                     </FormControl>
                                     <SelectContent>
                                       <SelectItem value="fixed">₱ (Fixed)</SelectItem>
-                                      <SelectItem value="percentage">% (Percent)</SelectItem>
+                                      <SelectItem value="percent">% (Percent)</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </FormItem>

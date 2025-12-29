@@ -91,8 +91,8 @@ const EditorPanel = ({
     </div>
 );
 
-function normalizeDiscountType(t: any): "fixed" | "percentage" {
-    if (t === "percentage" || t === "percent") return "percentage";
+function normalizeDiscountType(t: any): "fixed" | "percent" {
+    if (t === "percentage" || t === "percent") return "percent";
     return "fixed";
 }
 
@@ -113,7 +113,7 @@ export function BillAdjustments({
   // State for the discount editor
   const [isCustomDiscount, setIsCustomDiscount] = useState(true);
   const [selectedDiscountId, setSelectedDiscountId] = useState<string>('custom');
-  const [tempDiscountType, setTempDiscountType] = useState<'fixed' | 'percentage'>('fixed');
+  const [tempDiscountType, setTempDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [tempDiscountValue, setTempDiscountValue] = useState(0);
 
   // State for custom charge
@@ -242,12 +242,12 @@ export function BillAdjustments({
                  <div className="flex items-center gap-1">
                     <Select 
                         value={tempDiscountType}
-                        onValueChange={(type: 'percentage' | 'fixed') => setTempDiscountType(type)}
+                        onValueChange={(type: 'percent' | 'fixed') => setTempDiscountType(type)}
                         disabled={isLocked || !isCustomDiscount}
                     >
                         <SelectTrigger className="h-9 w-16"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="percentage">%</SelectItem>
+                            <SelectItem value="percent">%</SelectItem>
                             <SelectItem value="fixed">₱</SelectItem>
                         </SelectContent>
                     </Select>

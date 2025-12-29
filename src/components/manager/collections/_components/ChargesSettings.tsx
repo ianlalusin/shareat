@@ -160,7 +160,7 @@ export function ChargesSettings({ store }: { store: Store }) {
                   <TableRow key={charge.id}>
                     <TableCell className="font-medium">{charge.name}</TableCell>
                     <TableCell className="capitalize">{charge.type}</TableCell>
-                    <TableCell>{charge.type === 'percentage' ? `${charge.value}%` : `₱${charge.value.toFixed(2)}`}</TableCell>
+                    <TableCell>{charge.type === 'percent' ? `${charge.value}%` : `₱${charge.value.toFixed(2)}`}</TableCell>
                     <TableCell><Badge variant={charge.isEnabled ? "default" : "outline"}>{charge.isEnabled ? "Enabled" : "Disabled"}</Badge></TableCell>
                     <TableCell>{charge.sortOrder}</TableCell>
                     <TableCell className="text-right">
