@@ -1,4 +1,5 @@
 
+
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
 
 export interface User {
@@ -84,7 +85,7 @@ export type BillableItem = {
   lineDiscountType: "percent" | "fixed";
   lineDiscountValue: number;
   isFree: boolean;
-  status: OrderItemStatus;
+  status?: OrderItemStatus; // Optional as it comes from a separate doc
   createdAt: any; // Ideally Timestamp, but any for flexibility
   updatedAt: any;
   createdByUid: string;
@@ -160,3 +161,6 @@ export type ModeOfPayment = {
   createdBy: string;
   updatedBy: string;
 };
+
+
+    

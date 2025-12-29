@@ -42,26 +42,38 @@ interface PendingTablesProps {
     onAddAddon: (session: PendingSession) => void;
 }
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate();
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+
 const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
     const [elapsed, setElapsed] = useState("0m");
 
     useEffect(() => {
         if (!startTime) return;
+        
+        const start = toJsDate(startTime);
+        if (!start) {
+            console.warn("Invalid startTime prop in TimeElapsed:", startTime);
+            return;
+        }
 
         const updateElapsed = () => {
             const now = Date.now();
-            // Firestore Timestamps have a `toMillis` function. JS Dates do not.
-            // This handles cases where the timestamp might have been converted.
-            const start = typeof (startTime as any).toMillis === 'function' 
-                ? (startTime as any).toMillis() 
-                : new Date(startTime as any).getTime();
-
-            if (isNaN(start)) {
-                console.warn("Invalid startTime prop in TimeElapsed:", startTime);
-                return;
-            }
-            
-            const totalMinutes = Math.floor((now - start) / 60000);
+            const totalMinutes = Math.floor((now - start.getTime()) / 60000);
 
             if (totalMinutes < 60) {
                 setElapsed(`${totalMinutes}m`);

@@ -1,10 +1,12 @@
 
+
 "use client";
 
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
+import type { BillableItem } from "@/lib/types";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -24,16 +26,6 @@ export type Session = {
     closedAt: Timestamp | { toDate: () => Date } | Date | { seconds: number, nanoseconds: number };
     startedByUid: string;
     verifiedByUid?: string;
-};
-
-export type BillableItem = {
-    itemName: string;
-    qty: number;
-    unitPrice: number;
-    isFree: boolean;
-    lineDiscountType: 'fixed' | 'percentage';
-    lineDiscountValue: number;
-    notes?: string;
 };
 
 export type Payment = {
@@ -102,7 +94,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
 
     const groupedItems = useMemo(() => {
-        const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percentage' }>();
+        const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percent' }>();
         billables.forEach(item => {
             if (item.isFree) return;
             const key = `${item.itemName}@${item.unitPrice.toFixed(2)}`;
@@ -242,3 +234,6 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         </div>
     );
 }
+
+
+    

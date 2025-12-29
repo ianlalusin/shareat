@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GroupedBillableItem } from "@/app/cashier/page";
+import type { GroupedBillableItem } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 
 interface BillableItemDiscountDialogProps {

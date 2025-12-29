@@ -17,10 +17,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import { BillableItem } from './billable-items';
+import type { BillableItem, StorePackage } from '@/lib/types';
 import { Payment } from './payment-section';
 import { stripUndefined } from '@/lib/firebase/utils';
-import type { StorePackage } from '@/lib/types';
 
 export type StartSessionPayload = {
   tableId: string;
@@ -347,5 +346,7 @@ export async function completePayment(
     }
   });
 }
+
+    
 
     
