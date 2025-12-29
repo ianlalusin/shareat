@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
+type AssignableRole = Exclude<UserRole, "pending">;
 
 export default function UserManagementPage() {
     const { appUser } = useAuthContext();
@@ -39,7 +40,7 @@ export default function UserManagementPage() {
     const { confirm, Dialog } = useConfirmDialog();
     
     const [availableStores, setAvailableStores] = useState<StoreOption[]>([]);
-    const [selectedRoles, setSelectedRoles] = useState<Record<string, UserRole>>({});
+    const [selectedRoles, setSelectedRoles] = useState<Record<string, AssignableRole>>({});
     const [selectedStoreAssignments, setSelectedStoreAssignments] = useState<Record<string, string[]>>({});
     const [popoverOpen, setPopoverOpen] = useState<Record<string, boolean>>({});
 
@@ -76,7 +77,7 @@ export default function UserManagementPage() {
                 setIsLoadingUsers(false);
             });
     
-            const qActive = query(usersRef, where("status", "==", "active"));
+            const qActive = query(usersRef, where("status", "==", "active"), where("role", "!=", null));
             activeUnsub = onSnapshot(qActive, (querySnapshot) => {
                 const users: AppUser[] = [];
                 querySnapshot.forEach((doc) => {
@@ -268,7 +269,7 @@ export default function UserManagementPage() {
         }
     }
 
-    const handleRoleSelect = (uid: string, role: UserRole) => {
+    const handleRoleSelect = (uid: string, role: AssignableRole) => {
         setSelectedRoles(prev => ({...prev, [uid]: role}));
     };
 
@@ -313,7 +314,7 @@ export default function UserManagementPage() {
                                                     <div className="text-sm text-muted-foreground">{user.email}</div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Select value={selectedRoles[user.uid]} onValueChange={(role: UserRole) => handleRoleSelect(user.uid, role)}>
+                                                    <Select value={selectedRoles[user.uid]} onValueChange={(role: AssignableRole) => handleRoleSelect(user.uid, role)}>
                                                         <SelectTrigger className="w-[140px]">
                                                             <SelectValue placeholder="Set role..." />
                                                         </SelectTrigger>

@@ -34,6 +34,7 @@ interface UserDetailsModalProps {
 }
 
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
+type AssignableRole = Exclude<UserRole, "pending">;
 
 export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, currentUserId, availableStores, onDeactivate, onReactivate, onDelete, onUpdate, isProcessing }: UserDetailsModalProps) {
     const [isEditing, setIsEditing] = useState(false);
@@ -94,8 +95,8 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
         setEditableUser(prev => ({...prev, [field]: value}));
     };
     
-    const handleRoleChange = (value: UserRole) => {
-        setEditableUser(prev => ({...prev, role: value, roles: [value] }));
+    const handleRoleChange = (value: AssignableRole) => {
+      setEditableUser(prev => ({ ...prev, role: value, roles: [value] }));
     };
 
     const handleStoreAssignmentChange = (storeId: string) => {
