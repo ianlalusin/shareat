@@ -17,8 +17,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
-import { Product } from "@/app/admin/menu/products/page";
-import type { StoreAddon, PendingSession } from "@/lib/types";
+import type { Product, StoreAddon, PendingSession } from "@/lib/types";
 
 interface AddonsPOSModalProps {
   open: boolean;

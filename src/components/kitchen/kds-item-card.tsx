@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { KitchenTicket } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +11,7 @@ import { useConfirmDialog } from "../global/confirm-dialog";
 import { Timestamp } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import type { KitchenTicket } from "@/lib/types";
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;

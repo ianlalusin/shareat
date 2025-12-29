@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Store } from "@/app/admin/stores/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, setDoc, updateDoc } from "firebase/firestore";
@@ -16,8 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logActivity } from "@/lib/firebase/activity-log";
-import { Refill } from "@/app/admin/menu/refills/page";
-import type { StoreRefill, KitchenLocation } from "@/lib/types";
+import type { Store, Refill, StoreRefill, KitchenLocation } from "@/lib/types";
 
 export function StoreRefillsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();

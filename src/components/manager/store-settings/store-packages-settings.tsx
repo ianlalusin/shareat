@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Store } from "@/app/admin/stores/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs } from "firebase/firestore";
@@ -18,7 +17,7 @@ import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "./utils/isScheduleActiveNow";
-import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
+import type { Store, StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();

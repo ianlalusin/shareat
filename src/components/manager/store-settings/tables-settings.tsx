@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, writeBatch, serverTimestamp, updateDoc, getDocs, getDoc } from "firebase/firestore";
@@ -16,6 +15,7 @@ import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import type { Store } from "@/lib/types";
 
 export type StoreTable = {
     id: string; // T1, T2 etc.

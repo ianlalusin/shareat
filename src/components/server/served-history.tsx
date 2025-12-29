@@ -1,13 +1,12 @@
 
-
 "use client";
 
 import { useState } from "react";
-import { ReadyItem } from "./ready-to-serve";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "../ui/button";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import type { ReadyItem } from "./ready-to-serve";
 
 interface ServedHistoryProps {
     servedItems: ReadyItem[];

@@ -10,14 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { GroupedBillableItem } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
+import type { GroupedBillableItem } from "@/lib/types";
 
 interface BillableItemDiscountDialogProps {
     isOpen: boolean;
     onClose: () => void;
     group: GroupedBillableItem;
-    onApply: (ticketIds: string[], discountType: "fixed" | "percentage", discountValue: number, quantity: number) => void;
+    onApply: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
 }
 
 export function BillableItemDiscountDialog({ isOpen, onClose, group, onApply }: BillableItemDiscountDialogProps) {
@@ -25,7 +25,7 @@ export function BillableItemDiscountDialog({ isOpen, onClose, group, onApply }: 
     const [isSubmitting, setIsSubmitting] = useState(false);
     
     const formSchema = z.object({
-        discountType: z.enum(["fixed", "percentage"]),
+        discountType: z.enum(["fixed", "percent"]),
         discountValue: z.coerce.number().min(0, "Discount must be positive."),
         quantity: z.coerce.number().int().min(1).max(group.servedQty, `Cannot exceed served quantity in group (${group.servedQty}).`)
     });
@@ -89,7 +89,7 @@ export function BillableItemDiscountDialog({ isOpen, onClose, group, onApply }: 
                                         </FormControl>
                                         <SelectContent>
                                             <SelectItem value="fixed">₱ (Fixed)</SelectItem>
-                                            <SelectItem value="percentage">% (Percent)</SelectItem>
+                                            <SelectItem value="percent">% (Percent)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </FormItem>

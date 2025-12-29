@@ -96,7 +96,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="fixed">Fixed (₱)</SelectItem>
-                      <SelectItem value="percent">Percentage (%)</SelectItem>
+                      <SelectItem value="percent">Percent (%)</SelectItem>
                     </SelectContent>
                   </Select>
                 </FormItem>

@@ -10,10 +10,8 @@ import { Badge } from "../ui/badge";
 import { Timestamp } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { OrderItemStatus } from "@/app/kitchen/page";
-import type { BillableItem, GroupedBillableItem, Discount } from "@/lib/types";
 import { BillableItemActionDialog } from "./billable-item-action-dialog";
-import type { PendingSession } from "../server/pending-tables";
+import type { OrderItemStatus, BillableItem, GroupedBillableItem, Discount, PendingSession } from "@/lib/types";
 
 interface BillableItemsProps {
   groupedItems: GroupedBillableItem[];

@@ -20,6 +20,23 @@ import { format } from "date-fns";
 import { StoreDetailsModal } from "@/components/admin/store-details-modal";
 import type { Store } from "@/lib/types";
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
+  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+   if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+
 // Helper function to recursively get all subcollections
 async function getSubCollections(docRef: any) {
     const subCollections: any = {};
@@ -268,41 +285,44 @@ export default function StoreManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {stores.map((store) => (
-                  <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
-                    <TableCell className="font-medium">{store.name}</TableCell>
-                    <TableCell>{store.code}</TableCell>
-                    <TableCell>
-                        <div className="text-sm">{store.contactNumber || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">{store.email || ''}</div>
-                    </TableCell>
-                    <TableCell>
-                        {store.openingDate ? format(store.openingDate.toDate(), 'yyyy-MM-dd') : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={store.isActive ? "default" : "secondary"}>
-                        {store.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                       <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); downloadStoreData(store.id); }} className="mr-2" disabled={isDownloading === store.id}>
-                          {isDownloading === store.id ? <Loader className="animate-spin" /> : <Download />}
-                       </Button>
-                      <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(store); }} className="mr-2">
-                        Edit
-                      </Button>
-                      <Button
-                        variant={store.isActive ? "destructive" : "default"}
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleToggleActive(store);}}
-                        disabled={isSubmitting}
-                      >
-                         {store.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
-                        {store.isActive ? "Deactivate" : "Activate"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {stores.map((store) => {
+                    const openingDate = toJsDate(store.openingDate);
+                    return (
+                        <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
+                            <TableCell className="font-medium">{store.name}</TableCell>
+                            <TableCell>{store.code}</TableCell>
+                            <TableCell>
+                                <div className="text-sm">{store.contactNumber || 'N/A'}</div>
+                                <div className="text-xs text-muted-foreground">{store.email || ''}</div>
+                            </TableCell>
+                            <TableCell>
+                                {openingDate ? format(openingDate, 'yyyy-MM-dd') : '—'}
+                            </TableCell>
+                            <TableCell>
+                            <Badge variant={store.isActive ? "default" : "secondary"}>
+                                {store.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); downloadStoreData(store.id); }} className="mr-2" disabled={isDownloading === store.id}>
+                                {isDownloading === store.id ? <Loader className="animate-spin" /> : <Download />}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(store); }} className="mr-2">
+                                Edit
+                            </Button>
+                            <Button
+                                variant={store.isActive ? "destructive" : "default"}
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleToggleActive(store);}}
+                                disabled={isSubmitting}
+                            >
+                                {store.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                {store.isActive ? "Deactivate" : "Activate"}
+                            </Button>
+                            </TableCell>
+                        </TableRow>
+                    );
+                })}
               </TableBody>
             </Table>
           ) : (
@@ -334,3 +354,5 @@ export default function StoreManagementPage() {
     </RoleGuard>
   );
 }
+
+    

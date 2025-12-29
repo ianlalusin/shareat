@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader, Search } from "lucide-react";
-import type { Product } from "@/app/admin/products/page";
+import type { Product } from "@/lib/types";
 
 interface AddInventoryDialogProps {
   isOpen: boolean;

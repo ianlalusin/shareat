@@ -19,20 +19,7 @@ import { logActivity } from "@/lib/firebase/activity-log";
 import { ProductEditDialog } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { slugify } from "@/lib/utils/slugify";
-
-export type Product = {
-  id: string;
-  name: string;
-  variant?: string;
-  category: string;
-  subCategory?: string;
-  uom: string;
-  barcode?: string;
-  imageUrl?: string;
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { Product } from "@/lib/types";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -296,5 +283,3 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
-
-    

@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, writeBatch, serverTimestamp, updateDoc } from "firebase/firestore";
@@ -15,7 +14,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { KitchenLocationEditDialog } from "./kitchen-location-edit-dialog";
-import type { KitchenLocation } from "@/lib/types";
+import type { Store, KitchenLocation } from "@/lib/types";
 
 export function KitchenLocationsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();

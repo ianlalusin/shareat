@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -25,6 +24,48 @@ export interface UserDocument {
     storeId: string;
     photoURL?: string;
 }
+
+export type Product = {
+  id: string;
+  name: string;
+  variant?: string;
+  category: string;
+  subCategory?: string;
+  uom: string;
+  barcode?: string;
+  imageUrl?: string;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type Flavor = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type Package = {
+  id: string;
+  name: string;
+  allowedRefillIds?: string[];
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type Refill = {
+  id: string;
+  name: string;
+  requiresFlavor: boolean;
+  allowedFlavorIds?: string[];
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 
 export type StorePackage = {
     packageId: string;

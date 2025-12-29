@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Flavor } from "@/app/admin/menu/flavors/page";
+import type { Flavor } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Flavor name must be at least 2 characters."),

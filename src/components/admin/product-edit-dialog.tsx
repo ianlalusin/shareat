@@ -12,7 +12,6 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Product } from "@/app/admin/menu/products/page";
 import { Textarea } from "../ui/textarea";
 import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase/client";
@@ -25,7 +24,7 @@ import { Loader2, UploadCloud } from "lucide-react";
 import Image from "next/image";
 import { Package } from "lucide-react";
 import { Label } from "@/components/ui/label";
-
+import type { Product } from "@/lib/types";
 
 type AddonCategory = {
     id: string;
@@ -302,5 +301,3 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     </Dialog>
   );
 }
-
-    

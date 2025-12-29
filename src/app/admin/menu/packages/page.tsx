@@ -16,16 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
-import { Refill } from "../refills/page";
-
-export type Package = {
-  id: string;
-  name: string;
-  allowedRefillIds?: string[];
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { Refill, Package } from "@/lib/types";
 
 export default function PackagesManagementPage() {
   const { appUser } = useAuthContext();
@@ -179,5 +170,3 @@ export default function PackagesManagementPage() {
     </RoleGuard>
   );
 }
-
-    

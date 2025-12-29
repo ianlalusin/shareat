@@ -10,19 +10,8 @@ import { Timestamp } from "firebase/firestore";
 import { Badge } from "../ui/badge";
 import type { KitchenTicket } from "@/lib/types";
 
-export type ReadyItem = {
-  id: string; // The field from the document data
-  docId: string; // The actual document ID
-  sessionId: string;
-  tableNumber: string;
-  customerName?: string | null;
-  sessionMode?: 'package_dinein' | 'alacarte';
-  itemName: string;
-  kitchenLocationId: string;
-  kitchenLocationName?: string;
-  status: 'ready' | 'served';
-  preparedAt: Timestamp;
-  servedAt?: Timestamp | null;
+export type ReadyItem = KitchenTicket & {
+  docId: string;
 };
 
 

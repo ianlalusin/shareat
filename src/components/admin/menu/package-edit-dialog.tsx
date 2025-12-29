@@ -10,11 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Package } from "@/app/admin/menu/packages/page";
-import { Refill } from "@/app/admin/menu/refills/page";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import type { Package, Refill } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -114,5 +113,3 @@ export function PackageEditDialog({ isOpen, onClose, onSave, item, isSubmitting,
     </Dialog>
   );
 }
-
-    

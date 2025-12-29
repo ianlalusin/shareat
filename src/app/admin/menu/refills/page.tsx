@@ -16,17 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
-import { Flavor } from "../flavors/page";
-
-export type Refill = {
-  id: string;
-  name: string;
-  requiresFlavor: boolean;
-  allowedFlavorIds?: string[];
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { Flavor, Refill } from "@/lib/types";
 
 export default function RefillsManagementPage() {
   const { appUser } = useAuthContext();

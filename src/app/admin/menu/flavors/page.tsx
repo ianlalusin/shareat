@@ -16,14 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { FlavorEditDialog } from "@/components/admin/menu/flavor-edit-dialog";
-
-export type Flavor = {
-  id: string;
-  name: string;
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { Flavor } from "@/lib/types";
 
 export default function FlavorsManagementPage() {
   const { appUser } = useAuthContext();

@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Store } from "@/app/admin/stores/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
@@ -15,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ChargeEditDialog } from "./ChargeEditDialog";
-import type { Charge } from "@/lib/types";
+import type { Store, Charge } from "@/lib/types";
 
 export function ChargesSettings({ store }: { store: Store }) {
   const { appUser } = useAuthContext();

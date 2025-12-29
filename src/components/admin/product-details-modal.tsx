@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Edit, Package, Tag, Hash, Barcode, Ruler, FileText, Image as ImageIcon } from "lucide-react";
-import type { Product } from "@/app/admin/menu/products/page";
 import Image from "next/image";
+import type { Product } from "@/lib/types";
 
 interface ProductDetailsModalProps {
   product: Product;

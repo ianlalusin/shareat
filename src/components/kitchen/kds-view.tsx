@@ -2,8 +2,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { KitchenTicket } from "@/app/kitchen/page";
 import { KdsItemCard } from "./kds-item-card";
+import type { KitchenTicket } from "@/lib/types";
 
 interface KdsViewProps {
     tickets: KitchenTicket[];
