@@ -122,7 +122,6 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && <Image src={settings.logoUrl} alt="Logo" width={40} height={40} className="mx-auto" />}
                 <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>
-                <p>{settings.branchName}</p>
                 <p>{settings.address}</p>
                 <p>{settings.contact}</p>
                 {settings.tin && <p>TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
@@ -222,3 +221,5 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         </div>
     );
 }
+
+    
