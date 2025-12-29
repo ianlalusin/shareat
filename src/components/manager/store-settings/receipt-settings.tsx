@@ -15,18 +15,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Store } from "@/lib/types";
-import Image from "next/image";
-import { uploadReceiptLogo } from "@/lib/firebase/client";
 
 export const receiptSettingsSchema = z.object({
-  businessName: z.string().min(1, "Business name is required."),
-  branchName: z.string().min(1, "Branch name is required."),
-  address: z.string().min(1, "Address is required."),
-  contact: z.string().min(1, "Contact is required."),
+  businessName: z.string(),
+  branchName: z.string(),
+  address: z.string(),
+  contact: z.string(),
   tin: z.string().optional(),
-  vatType: z.enum(["VAT", "NON_VAT"]).default("NON_VAT"),
+  vatType: z.enum(["VAT", "NON_VAT"]).optional(),
   logoUrl: z.string().url().optional().nullable(),
   footerText: z.string().optional(),
   showCashierName: z.boolean().default(true),
@@ -51,7 +49,6 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
   const { toast } = useToast();
   
   const isSubmitting = form.formState.isSubmitting;
-  const logoUrl = form.watch("logoUrl");
 
   const onSubmit = async (data: ReceiptSettingsFormValues) => {
     if (!appUser) return;
@@ -64,41 +61,9 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
     }
   };
   
-   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-        const url = await uploadReceiptLogo(store.id, file);
-        form.setValue("logoUrl", url);
-        toast({ title: "Logo Uploaded" });
-    } catch (error: any) {
-        toast({
-            variant: "destructive",
-            title: "Upload Failed",
-            description: error.message || "Could not upload the logo.",
-        });
-    }
-  };
-
   return (
     <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <div className="space-y-4 p-4 border rounded-lg">
-                <h3 className="font-semibold">Business Information</h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="vatType" render={({ field }) => <FormItem><FormLabel>VAT Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="VAT">VAT</SelectItem><SelectItem value="NON_VAT">Non-VAT</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
-                    <FormItem>
-                        <FormLabel>Logo</FormLabel>
-                        <div className="flex items-center gap-4">
-                            {logoUrl && <Image src={logoUrl} alt="logo" width={64} height={64} className="rounded-md object-contain border"/>}
-                            <Button type="button" variant="outline" onClick={() => document.getElementById('logo-upload')?.click()}><UploadCloud className="mr-2"/>Upload</Button>
-                            <Input id="logo-upload" type="file" className="hidden" onChange={handleLogoUpload} accept="image/png, image/jpeg"/>
-                        </div>
-                    </FormItem>
-                </div>
-            </div>
-
             <div className="space-y-4 p-4 border rounded-lg">
                 <h3 className="font-semibold">Display Options</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -130,5 +95,3 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
     </Form>
   );
 }
-
-    

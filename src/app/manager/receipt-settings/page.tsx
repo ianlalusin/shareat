@@ -37,7 +37,8 @@ export default function ReceiptSettingsPage() {
             address: activeStore?.address || "",
             contact: activeStore?.contactNumber || "",
             tin: activeStore?.tin || "",
-            vatType: "NON_VAT",
+            logoUrl: activeStore?.logoUrl || null,
+            vatType: activeStore?.vatType || "NON_VAT",
             showCashierName: true,
             showServerName: true,
             showTableOrCustomer: true,
@@ -61,6 +62,8 @@ export default function ReceiptSettingsPage() {
         form.setValue("address", activeStore.address);
         form.setValue("contact", activeStore.contactNumber || "");
         form.setValue("tin", activeStore.tin || "");
+        form.setValue("logoUrl", activeStore.logoUrl || null);
+        form.setValue("vatType", activeStore.vatType || "NON_VAT");
 
         const settingsRef = doc(db, `stores/${activeStore.id}/receiptSettings`, "main");
         const unsubscribe = onSnapshot(settingsRef, (doc) => {
@@ -74,6 +77,8 @@ export default function ReceiptSettingsPage() {
                     address: activeStore.address,
                     contact: activeStore.contactNumber || "",
                     tin: activeStore.tin || "",
+                    logoUrl: activeStore.logoUrl || null,
+                    vatType: activeStore.vatType || "NON_VAT",
                 });
             }
         });
@@ -194,5 +199,3 @@ export default function ReceiptSettingsPage() {
         </RoleGuard>
     );
 }
-
-    

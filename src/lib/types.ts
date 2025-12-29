@@ -276,6 +276,8 @@ export type Store = {
   code: string;
   address: string;
   tin?: string;
+  logoUrl?: string | null;
+  vatType?: "VAT" | "NON_VAT";
   isActive: boolean;
   openingDate?: Timestamp | null;
   contactNumber?: string;
@@ -283,5 +285,3 @@ export type Store = {
   createdAt: any;
   updatedAt: any;
 };
-
-    

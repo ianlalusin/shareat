@@ -3,7 +3,7 @@
 
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { initializeFirestore, doc, updateDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { firebaseConfig } from "@/firebase/config";
 
@@ -49,6 +49,25 @@ export async function uploadUserAvatar(userId: string, file: File): Promise<stri
     return downloadURL;
 }
 
+export async function uploadStoreLogo(storeId: string, file: File): Promise<string> {
+    if (!storeId) {
+        throw new Error("Store ID is required to upload a logo.");
+    }
+
+    const storageRef = ref(storage, `stores/${storeId}/logo.png`);
+    
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+
+    const storeDocRef = doc(db, "stores", storeId);
+    await updateDoc(storeDocRef, {
+        logoUrl: downloadURL,
+        updatedAt: serverTimestamp(),
+    });
+
+    return downloadURL;
+}
+
 export async function uploadReceiptLogo(storeId: string, file: File): Promise<string> {
     if (!storeId) {
         throw new Error("Store ID is required to upload a logo.");
@@ -60,9 +79,7 @@ export async function uploadReceiptLogo(storeId: string, file: File): Promise<st
     const downloadURL = await getDownloadURL(storageRef);
 
     const settingsDocRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
-    await updateDoc(settingsDocRef, {
-        logoUrl: downloadURL,
-    });
+    await setDoc(settingsDocRef, { logoUrl: downloadURL }, { merge: true });
 
     return downloadURL;
 }

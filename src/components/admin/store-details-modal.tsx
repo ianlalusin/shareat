@@ -5,10 +5,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Edit, Globe, Mail, Phone, Calendar, Hash, MapPin } from "lucide-react";
+import { Edit, Globe, Mail, Phone, Calendar, Hash, MapPin, Image as ImageIcon } from "lucide-react";
 import type { Store } from "@/lib/types";
 import { format } from "date-fns";
 import { Timestamp } from "firebase/firestore";
+import Image from "next/image";
 
 interface StoreDetailsModalProps {
   store: Store;
@@ -43,8 +44,12 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <div className="flex items-center gap-4">
-                     <div className="p-3 bg-muted rounded-md">
-                        <Globe className="h-6 w-6 text-muted-foreground" />
+                     <div className="p-3 bg-muted rounded-md relative h-20 w-20 flex-shrink-0">
+                        {store.logoUrl ? (
+                            <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                        ) : (
+                            <ImageIcon className="h-full w-full text-muted-foreground" />
+                        )}
                     </div>
                     <div className="grid gap-1">
                         <DialogTitle className="text-2xl">{store.name}</DialogTitle>
@@ -69,6 +74,10 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                     <div className="flex items-start justify-between">
                         <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> TIN</span>
                         <span className="font-medium text-sm text-right">{store.tin || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> VAT Type</span>
+                        <span className="font-medium text-sm text-right">{store.vatType || 'N/A'}</span>
                     </div>
                     <div className="flex items-start justify-between">
                         <span className="text-sm text-muted-foreground flex items-center gap-2"><MapPin /> Address</span>
@@ -101,5 +110,3 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
     </Dialog>
   );
 }
-
-    
