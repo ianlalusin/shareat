@@ -50,7 +50,7 @@ export default function ReceiptPage() {
                 if (sessionSnap.data().storeId !== activeStoreId) throw new Error("You do not have permission to view this receipt.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
-                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data().createdAt : null;
+                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }).createdAt : null;
 
                 setReceiptData({
                     session: sessionSnap.data() as any,

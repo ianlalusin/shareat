@@ -48,14 +48,12 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
             limit(20)
         );
 
-        const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+        const unsubscribe = onSnapshot(q, (snapshot) => {
             setReceipts(snapshot.docs.map(d => {
-              const data = d.data() as any;
+              const data = d.data({ serverTimestamps: "estimate" }) as any;
               return {
                 id: d.id,
                 ...data,
-                // fallback if createdAt isn't resolved yet:
-                createdAt: data.createdAt ?? d.createTime,
               } as ReceiptRow;
             }));
             setIsLoading(false);
@@ -86,7 +84,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                 if (!sessionSnap.exists()) throw new Error("Session not found.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
-                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data().createdAt : null;
+                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }).createdAt : null;
 
                 onSelectReceipt({
                     session: sessionSnap.data() as any,
