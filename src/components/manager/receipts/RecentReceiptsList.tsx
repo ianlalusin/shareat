@@ -20,6 +20,7 @@ type ReceiptRow = {
     customerName: string | null;
     sessionMode: 'package_dinein' | 'alacarte';
     createdAt: Timestamp | Date | { seconds: number; nanoseconds: number };
+    createdAtClientMs: number;
     total: number;
     totalPaid: number;
     change: number;
@@ -44,7 +45,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
         const receiptsRef = collection(db, "stores", store.id, "receipts");
         const q = query(
             receiptsRef, 
-            orderBy("createdAt", "desc"), 
+            orderBy("createdAtClientMs", "desc"), 
             limit(20)
         );
 
@@ -133,7 +134,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                         ? receipt.customerName || 'Ala Carte'
                                         : `Table ${receipt.tableNumber ?? '—'}`;
                                     
-                                    const d = toJsDate(receipt.createdAt);
+                                    const d = toJsDate(receipt.createdAt) ?? toJsDate(receipt.createdAtClientMs);
                                     const timeClosedLabel = d ? format(d, 'p') : "—";
 
                                     return (

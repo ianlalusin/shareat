@@ -962,6 +962,7 @@
               "storeId": { "type": "string" },
               "sessionId": { "type": "string" },
               "createdAt": { "type": "string", "format": "date-time" },
+              "createdAtClientMs": { "type": "number" },
               "createdByUid": { "type": "string" },
               "sessionMode": { "type": "string" },
               "tableId": { "type": "string" },
