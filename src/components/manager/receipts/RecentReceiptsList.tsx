@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { collection, query, where, orderBy, limit, onSnapshot, Timestamp, getDoc, doc, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, Timestamp, getDoc, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Store } from "@/lib/types";
 import { Loader2 } from "lucide-react";
@@ -13,17 +13,18 @@ import { Button } from "@/components/ui/button";
 import type { ReceiptData } from "@/components/receipt/receipt-view";
 import { toJsDate } from "@/lib/utils/date";
 
-type PastSession = {
+type ReceiptRow = {
     id: string;
-    tableNumber: string;
-    customer?: { name?: string };
+    sessionId: string;
+    tableNumber: string | null;
+    customerName: string | null;
     sessionMode: 'package_dinein' | 'alacarte';
-    closedAt: Timestamp | Date | { seconds: number; nanoseconds: number };
     createdAt: Timestamp | Date | { seconds: number; nanoseconds: number };
-    paymentSummary: {
-        grandTotal: number;
-    };
+    total: number;
+    totalPaid: number;
+    change: number;
 };
+
 
 interface RecentReceiptsListProps {
     store: Store;
@@ -32,7 +33,7 @@ interface RecentReceiptsListProps {
 
 
 export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsListProps) {
-    const [sessions, setSessions] = useState<PastSession[]>([]);
+    const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
@@ -40,19 +41,18 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
         if (!store) return;
         
         setIsLoading(true);
-        const sessionsRef = collection(db, "stores", store.id, "sessions");
+        const receiptsRef = collection(db, "stores", store.id, "receipts");
         const q = query(
-            sessionsRef, 
-            where("status", "==", "closed"), 
-            orderBy("closedAt", "desc"), 
+            receiptsRef, 
+            orderBy("createdAt", "desc"), 
             limit(20)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setSessions(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as PastSession)));
+            setReceipts(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as ReceiptRow)));
             setIsLoading(false);
         }, (error) => {
-            console.error("Error fetching recent sessions:", error);
+            console.error("Error fetching recent receipts:", error);
             setIsLoading(false);
         });
 
@@ -67,21 +67,25 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
             }
 
             try {
-                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap] = await Promise.all([
+                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
                     getDoc(doc(db, "stores", store.id, "sessions", selectedSessionId)),
                     getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "billables"), orderBy("createdAt", "asc"))),
                     getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "payments"), orderBy("createdAt", "asc"))),
-                    getDoc(doc(db, "stores", store.id, "receiptSettings", "main"))
+                    getDoc(doc(db, "stores", store.id, "receiptSettings", "main")),
+                    getDoc(doc(db, "stores", store.id, "receipts", selectedSessionId))
                 ]);
                 
                 if (!sessionSnap.exists()) throw new Error("Session not found.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
+                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data().createdAt : null;
+
                 onSelectReceipt({
                     session: sessionSnap.data() as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
+                    receiptCreatedAt: receiptCreatedAt,
                 });
 
             } catch (err: any) {
@@ -117,25 +121,25 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sessions.length > 0 ? (
-                                sessions.map(session => {
-                                    const identifier = session.sessionMode === 'alacarte' 
-                                        ? session.customer?.name || 'Ala Carte'
-                                        : `Table ${session.tableNumber}`;
+                            {receipts.length > 0 ? (
+                                receipts.map(receipt => {
+                                    const identifier = receipt.sessionMode === 'alacarte' 
+                                        ? receipt.customerName || 'Ala Carte'
+                                        : `Table ${receipt.tableNumber ?? '—'}`;
                                     
-                                    const d = toJsDate(session.closedAt ?? session.createdAt);
+                                    const d = toJsDate(receipt.createdAt);
                                     const timeClosedLabel = d ? format(d, 'p') : "—";
 
                                     return (
                                         <TableRow 
-                                            key={session.id} 
-                                            onClick={() => handleSelectSession(session.id)}
+                                            key={receipt.id} 
+                                            onClick={() => handleSelectSession(receipt.sessionId)}
                                             className="cursor-pointer"
-                                            data-state={selectedSessionId === session.id ? 'selected' : undefined}
+                                            data-state={selectedSessionId === receipt.sessionId ? 'selected' : undefined}
                                         >
                                             <TableCell className="font-medium">{identifier}</TableCell>
                                             <TableCell>{timeClosedLabel}</TableCell>
-                                            <TableCell>₱{(session.paymentSummary?.grandTotal || 0).toFixed(2)}</TableCell>
+                                            <TableCell>₱{(receipt.total || 0).toFixed(2)}</TableCell>
                                         </TableRow>
                                     );
                                 })
