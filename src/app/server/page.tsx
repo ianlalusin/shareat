@@ -220,7 +220,7 @@ export default function ServerPage() {
         <div className="lg:col-span-2">
             <PendingTables
                 sessions={[...pendingSessions, ...activeSessions]}
-                onVerify={onVerify}
+                onVerify={handleVerify}
                 onRequestChange={handleOpenRequestDialog}
                 onViewTimeline={(sid) => setTimelineSessionId(sid)}
                 onAddRefill={handleOpenRefillDialog}
@@ -276,3 +276,4 @@ export default function ServerPage() {
     </RoleGuard>
   );
 }
+
