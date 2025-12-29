@@ -178,7 +178,6 @@ function POSContent({
                 createdByUid: appUser.uid,
                 sessionId: session.id, 
                 storeId,
-                tableId: session.tableId,
                 tableNumber: session.tableNumber,
                 customerName: session.customerName,
                 sessionMode: session.sessionMode,

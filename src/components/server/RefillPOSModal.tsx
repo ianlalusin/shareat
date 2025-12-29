@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -173,7 +173,6 @@ function POSContent({
             createdByUid: appUser.uid,
             sessionId: session.id, 
             storeId,
-            tableId: session.tableId,
             tableNumber: session.tableNumber,
             customerName: session.customerName,
             sessionMode: session.sessionMode,
