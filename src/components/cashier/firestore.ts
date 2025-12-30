@@ -372,6 +372,14 @@ export async function completePayment(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
+        const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
+        const chargesTotal = billingSummary.adjustmentsTotal || 0;
+        const mop = payments.reduce((acc, p) => {
+          const k = String(p.methodId || "unknown").toLowerCase();
+          acc[k] = (acc[k] || 0) + (p.amount || 0);
+          return acc;
+        }, {} as Record<string, number>);
+
         const receiptPayload = stripUndefined({
             id: sessionId,
             storeId,
@@ -389,6 +397,16 @@ export async function completePayment(
             receiptSeq: nextSeq,
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
+            analytics: {
+              subtotal: billingSummary.subtotal,
+              discountsTotal,
+              chargesTotal,
+              taxAmount: 0, // Placeholder for future use
+              grandTotal: billingSummary.grandTotal,
+              totalPaid,
+              change: Math.max(0, totalPaid - billingSummary.grandTotal),
+              mop,
+            }
         });
 
         tx.set(receiptRef, {
