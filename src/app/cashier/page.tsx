@@ -31,7 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
-import type { StoreAddon } from "@/lib/types";
+import type { StoreAddon, ModeOfPayment } from "@/lib/types";
 import type { PendingSession } from "@/lib/types";
 import type { StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment } from "@/lib/types";
 
@@ -71,13 +71,32 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<any[]>([]); // Using any to avoid circular deps for ModeOfPayment
+  const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
 
+  // Client-side payment validation
+  function validatePayments(payments: Payment[], grandTotal: number, paymentMethods: ModeOfPayment[]): string | null {
+    if (!payments || payments.length === 0) return "Add at least one payment method.";
+    
+    for (const p of payments) {
+        if (!p.methodId) return "Select a payment method.";
+        if (typeof p.amount !== "number" || isNaN(p.amount) || p.amount <= 0) return "Payment amounts must be greater than zero.";
+
+        const methodDetails = paymentMethods.find(pm => pm.id === p.methodId);
+        if (methodDetails?.hasRef && (!p.reference || String(p.reference).trim().length === 0)) {
+            return `Reference is required for ${methodDetails.name}.`;
+        }
+    }
+    
+    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+    if (totalPaid < grandTotal) return "Payment is not enough to cover the total.";
+    
+    return null;
+  }
 
   // Listen to Session Doc
   useEffect(() => {
@@ -163,7 +182,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             orderBy("name", "asc")
         );
         unsubs.push(onSnapshot(mopQuery, (snapshot) => {
-            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
         }));
     
         // Charges
@@ -462,7 +481,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const remainingBalance = grandTotal - totalPaid;
   const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
   
-  const canCompletePayment = remainingBalance <= 0 && payments.length > 0 && pendingItems.length === 0 && allServedItems.length > 0;
+  const canCompletePayment = pendingItems.length === 0 && allServedItems.length > 0;
 
   const handleCompletePayment = async () => {
     if (!appUser || !activeStore || !session) return;
@@ -473,6 +492,12 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
       return;
     }
   
+    const paymentError = validatePayments(payments, grandTotal, paymentMethods);
+    if (paymentError) {
+        toast({ variant: "destructive", title: "Cannot Complete", description: paymentError });
+        return;
+    }
+
     if (!canCompletePayment) {
       toast({
         variant: "destructive",
@@ -483,19 +508,23 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   
     setIsCompletingPayment(true);
+
+    const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
+    const billingSummary = {
+        subtotal,
+        lineDiscountsTotal,
+        billDiscountAmount,
+        adjustmentsTotal,
+        grandTotal,
+    };
+
     try {
       await completePayment(
         activeStore.id,
         sessionId,
         appUser,
-        payments,
-        {
-          subtotal,
-          lineDiscountsTotal,
-          billDiscountAmount,
-          adjustmentsTotal,
-          grandTotal,
-        }
+        normalizedPayments,
+        billingSummary
       );
   
       toast({ title: "Payment complete", description: "Session closed successfully." });
