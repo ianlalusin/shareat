@@ -16,10 +16,17 @@ import { Printer } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
+
+function getUsername(appUser: any) {
+  return (appUser?.displayName?.trim())
+    || (appUser?.name?.trim())
+    || (appUser?.email ? String(appUser.email).split("@")[0] : "")
+    || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
+}
 
 export default function ReceiptSettingsPage() {
     const { appUser } = useAuthContext();
@@ -27,6 +34,7 @@ export default function ReceiptSettingsPage() {
     
     // State for the bottom panel (recent receipts)
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
+    const [isPrinting, setIsPrinting] = useState(false);
 
     // State and form for the top panel (live settings preview)
     const form = useForm({
@@ -46,6 +54,7 @@ export default function ReceiptSettingsPage() {
             showDiscountBreakdown: true,
             showChargeBreakdown: true,
             paperWidth: "80mm",
+            receiptNoFormat: "",
         }
     });
 
@@ -79,16 +88,35 @@ export default function ReceiptSettingsPage() {
                     tin: activeStore.tin || "",
                     logoUrl: activeStore.logoUrl || null,
                     vatType: activeStore.vatType || "NON_VAT",
+                    receiptNoFormat: data.receiptNoFormat || ""
                 });
             }
         });
         return () => unsubscribe();
     }, [activeStore, form]);
 
-    const handlePrint = (data: ReceiptData | null) => {
-        if (data) {
+    const handlePrint = async (data: ReceiptData | null) => {
+        if (!data || !activeStore) return;
+        if (isPrinting) return;
+
+        setIsPrinting(true);
+        try {
             setSelectedRecentReceipt(data);
+
+            // Only track prints for REAL receipts (not live preview)
+            if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
+            const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
+            await updateDoc(receiptRef, {
+                printedCount: increment(1),
+                lastPrintedAt: serverTimestamp(),
+                lastPrintedByUid: appUser.uid,
+                lastPrintedByUsername: getUsername(appUser),
+            });
+            }
+
             setTimeout(() => window.print(), 100);
+        } finally {
+            setIsPrinting(false);
         }
     };
     
@@ -147,8 +175,8 @@ export default function ReceiptSettingsPage() {
                                         <Card className="sticky top-20">
                                             <CardHeader className="flex flex-row items-center justify-between">
                                                 <CardTitle>Live Preview</CardTitle>
-                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print">
-                                                    <Printer className="mr-2"/> Print Preview
+                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
+                                                     {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
                                                 </Button>
                                             </CardHeader>
                                             <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
@@ -178,8 +206,8 @@ export default function ReceiptSettingsPage() {
                              <Card className="sticky top-20">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Selected Receipt</CardTitle>
-                                    <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt} className="no-print">
-                                        <Printer className="mr-2"/> Print
+                                    <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
+                                        {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
                                     </Button>
                                 </CardHeader>
                                 <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
