@@ -618,7 +618,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session}
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
-                    onApplyDiscount={onApplyDiscount}
+                    onApplyDiscount={handleApplyDiscount}
                     onApplyFree={handleApplyFree}
                     onStatusUpdate={handleCashierItemStatusUpdate}
                     isLocked={isBillingLocked}
