@@ -204,11 +204,9 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             const ticket = tickets.get(billable.id);
             const isPackage = billable.type === "package";
             
-            // For packages, quantity is always the number of guests.
-            // For add-ons, quantity is stored on the item itself.
-            const qty = isPackage 
-                ? (session?.guestCountFinal ?? session?.guestCountCashierInitial ?? 1)
-                : billable.qty;
+            const qty = isPackage
+              ? (session?.guestCountFinal ?? billable.qty ?? 1)
+              : billable.qty;
 
             return {
                 ...billable,
@@ -469,17 +467,21 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleCompletePayment = async () => {
     if (!appUser || !activeStore || !session) return;
     if (isCompletingPayment) return;
-    
-    if (session?.status === "closed" || session?.isPaid === true) {
-        toast({ title: "Already paid", description: "This session is already closed." });
-        return;
+  
+    if (session.status === "closed" || session.isPaid === true) {
+      toast({ title: "Already paid", description: "This session is already closed." });
+      return;
     }
-    
+  
     if (!canCompletePayment) {
-        toast({ variant: "destructive", title: "Cannot Complete", description: "Please ensure balance is paid and all items are served." });
-        return;
+      toast({
+        variant: "destructive",
+        title: "Cannot Complete",
+        description: "Please ensure balance is paid and all items are served.",
+      });
+      return;
     }
-
+  
     setIsCompletingPayment(true);
     try {
       await completePayment(
@@ -495,17 +497,13 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
           grandTotal,
         }
       );
-      toast({
-        title: "Payment Complete",
-        description: `Session for Table ${session.tableNumber} has been closed.`,
-      });
-      // The redirect will happen automatically via the session listener
-    } catch (error: any) {
-      console.error("Payment completion failed:", error);
+  
+      toast({ title: "Payment complete", description: "Session closed successfully." });
+    } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Payment Failed",
-        description: error.message || "An unexpected error occurred.",
+        title: "Payment failed",
+        description: err?.message ?? "Something went wrong.",
       });
     } finally {
       setIsCompletingPayment(false);
