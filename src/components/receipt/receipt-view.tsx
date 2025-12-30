@@ -51,6 +51,7 @@ export type ReceiptSettings = {
     showDiscountBreakdown?: boolean;
     showChargeBreakdown?: boolean;
     paperWidth?: "58mm" | "80mm" | "A4";
+    receiptNoFormat?: string;
 };
 
 export type ReceiptData = {

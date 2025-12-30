@@ -134,8 +134,8 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                         ? receipt.customerName || 'Ala Carte'
                                         : `Table ${receipt.tableNumber ?? '—'}`;
                                     
-                                    const d = toJsDate(receipt.createdAt) ?? toJsDate(receipt.createdAtClientMs);
-                                    const timeClosedLabel = d ? format(d, 'p') : "—";
+                                    const d = toJsDate(receipt.createdAt) ?? (receipt.createdAtClientMs ? new Date(receipt.createdAtClientMs) : null);
+                                    const timeClosedLabel = d ? format(d, 'MM/dd/yy HH:mm') : "—";
 
                                     return (
                                         <TableRow 
