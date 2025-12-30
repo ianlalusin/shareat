@@ -264,6 +264,10 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
         });
 
         return Object.values(groups).sort((a, b) => {
+            // Prioritize 'package' type to be first
+            if (a.type === 'package' && b.type !== 'package') return -1;
+            if (a.type !== 'package' && b.type === 'package') return 1;
+
             const getItemTime = (date: any) => {
                 if (!date) return 0;
                 return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
@@ -777,3 +781,5 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
+
+    

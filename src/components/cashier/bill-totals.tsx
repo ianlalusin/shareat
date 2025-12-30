@@ -23,6 +23,7 @@ interface BillTotalsProps {
 type GroupedSummaryItem = {
     key: string;
     itemName: string;
+    type: 'package' | 'addon' | 'refill';
     qty: number;
     unitPrice: number;
     lineTotal: number;
@@ -55,6 +56,7 @@ export function BillTotals({
                 groups[key] = {
                     key,
                     itemName: item.itemName || "(Unnamed Item)",
+                    type: item.type,
                     qty: 0,
                     unitPrice: item.unitPrice,
                     lineTotal: 0,
@@ -69,7 +71,12 @@ export function BillTotals({
             groups[key].ticketIds.push(item.id);
         });
 
-        return Object.values(groups);
+        return Object.values(groups).sort((a, b) => {
+             // Prioritize 'package' type to be first
+            if (a.type === 'package' && b.type !== 'package') return -1;
+            if (a.type !== 'package' && b.type === 'package') return 1;
+            return a.itemName.localeCompare(b.itemName);
+        });
 
     }, [billableItems]);
 
@@ -81,6 +88,7 @@ export function BillTotals({
                 groups[key] = {
                     key,
                     itemName: item.itemName || "(Unnamed Item)",
+                    type: item.type,
                     qty: 0,
                     unitPrice: item.unitPrice,
                     lineTotal: 0,
@@ -186,3 +194,5 @@ export function BillTotals({
     </div>
   );
 }
+
+    
