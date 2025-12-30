@@ -309,12 +309,10 @@ export async function completePayment(
 
     const actor = getActorStamp(user);
     
-    // READ receipt doc BEFORE any writes.
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const receiptSnap = await tx.get(receiptRef);
     const shouldCreateReceipt = !receiptSnap.exists();
 
-    // Use tableId from session data for safety.
     const sessionTableId = sessionData.tableId;
     
     let tableRef = null;
@@ -324,7 +322,6 @@ export async function completePayment(
         tableSnap = await tx.get(tableRef);
     }
 
-    // Create payment documents inside the transaction
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
@@ -340,7 +337,6 @@ export async function completePayment(
       });
     });
 
-    // Close the session
     const sessionUpdatePayload = stripUndefined({
       status: "closed",
       isPaid: true,
@@ -361,7 +357,6 @@ export async function completePayment(
     });
 
     if (shouldCreateReceipt) {
-        // Get settings and counter for receipt numbering
         const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
         const settingsSnap = await tx.get(settingsRef);
         const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
@@ -401,7 +396,6 @@ export async function completePayment(
         });
     }
 
-    // Free table ONLY if it still points to this session and exists
     if (tableSnap && tableRef && tableSnap.exists()) {
       const t = tableSnap.data();
       if (t.currentSessionId === sessionId) {

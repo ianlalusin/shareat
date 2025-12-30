@@ -82,7 +82,6 @@ export default function ReceiptPage() {
                 const receiptCreatedAt =
                     receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
                     
-                // Use denormalized cashier name from receipt, fallback to session, then UID
                 const cashierName = receiptDocData?.createdByUsername || sessionData.startedByName || sessionData.startedByUid.substring(0, 6);
 
 
@@ -135,7 +134,6 @@ export default function ReceiptPage() {
       setIsPrinting(true);
       try {
 
-        // Only track prints for REAL receipts (not live preview)
         if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
           try {
             const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, data.session.id);
