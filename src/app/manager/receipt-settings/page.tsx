@@ -35,12 +35,10 @@ export default function ReceiptSettingsPage() {
     const { activeStore, loading } = useStoreContext();
     const { toast } = useToast();
     
-    // State for the bottom panel (recent receipts)
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
     const [isPrinting, setIsPrinting] = useState(false);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
 
-    // State and form for the top panel (live settings preview)
     const form = useForm({
         resolver: zodResolver(receiptSettingsSchema),
         defaultValues: {
@@ -64,8 +62,6 @@ export default function ReceiptSettingsPage() {
 
     const watchedSettings = form.watch();
 
-    const canEditReceiptSettings = appUser?.role === 'admin' || appUser?.role === 'manager';
-
     const storageKey = useMemo(
         () => `receiptPaperWidth:${activeStore?.id ?? "nostore"}:${appUser?.uid ?? "nouser"}`,
         [activeStore?.id, appUser?.uid]
@@ -81,7 +77,6 @@ export default function ReceiptSettingsPage() {
     useEffect(() => {
         if (!activeStore) return;
 
-        // Set read-only fields from store context
         form.setValue("businessName", activeStore.name);
         form.setValue("branchName", activeStore.name);
         form.setValue("address", activeStore.address);
@@ -94,7 +89,6 @@ export default function ReceiptSettingsPage() {
         const unsubscribe = onSnapshot(settingsRef, (doc) => {
             if (doc.exists()) {
                 const data = doc.data();
-                // Reset form with fetched data, but keep read-only fields from store
                 form.reset({
                     ...data,
                     businessName: activeStore.name,
@@ -120,7 +114,6 @@ export default function ReceiptSettingsPage() {
         try {
             setSelectedRecentReceipt(data);
 
-            // Only track prints for REAL receipts (not live preview)
             if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
                 try {
                     const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
@@ -145,9 +138,7 @@ export default function ReceiptSettingsPage() {
     const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
         setPaperWidth(value);
         localStorage.setItem(storageKey, value);
-        if (canEditReceiptSettings) {
-            form.setValue("paperWidth", value);
-        }
+        form.setValue("paperWidth", value);
     };
     
     const livePreviewData = useMemo(() => ({
@@ -183,58 +174,56 @@ export default function ReceiptSettingsPage() {
     }
 
     return (
-        <RoleGuard allow={["admin", "manager", "cashier"]}>
+        <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Receipt Center" description={`Manage receipt templates and browse recent transactions for ${activeStore.name}`} />
             
-            {canEditReceiptSettings && (
-                 <Accordion type="single" collapsible className="w-full no-print" defaultValue="settings">
-                    <AccordionItem value="settings">
-                        <Card>
-                            <AccordionTrigger className="p-6">
-                                <div className="flex justify-between w-full pr-4">
-                                    <CardTitle>Receipt Template Settings</CardTitle>
-                                    <CardDescription>Click to expand and edit your receipt template.</CardDescription>
+             <Accordion type="single" collapsible className="w-full no-print" defaultValue="settings">
+                <AccordionItem value="settings">
+                    <Card>
+                        <AccordionTrigger className="p-6">
+                            <div className="flex justify-between w-full pr-4">
+                                <CardTitle>Receipt Template Settings</CardTitle>
+                                <CardDescription>Click to expand and edit your receipt template.</CardDescription>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-t">
+                                <div>
+                                    <ReceiptSettings store={activeStore} form={form} />
                                 </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 border-t">
-                                    <div>
-                                        <ReceiptSettings store={activeStore} form={form} />
-                                    </div>
-                                    <div className="space-y-4">
-                                        <Card className="sticky top-20">
-                                            <CardHeader className="flex flex-row items-center justify-between">
-                                                <CardTitle>Live Preview</CardTitle>
-                                                <div className="flex items-center gap-2">
-                                                    <Select value={paperWidth} onValueChange={handlePaperWidthChange}>
-                                                        <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="58mm">58mm</SelectItem>
-                                                            <SelectItem value="80mm">80mm</SelectItem>
-                                                            <SelectItem value="A4">A4</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
-                                                        {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
-                                                    </Button>
-                                                </div>
-                                            </CardHeader>
-                                            <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                                                <ReceiptView data={livePreviewData} forcePaperWidth={paperWidth} />
-                                            </CardContent>
-                                        </Card>
-                                    </div>
+                                <div className="space-y-4">
+                                    <Card className="sticky top-20">
+                                        <CardHeader className="flex flex-row items-center justify-between">
+                                            <CardTitle>Live Preview</CardTitle>
+                                            <div className="flex items-center gap-2">
+                                                <Select value={paperWidth} onValueChange={handlePaperWidthChange}>
+                                                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="58mm">58mm</SelectItem>
+                                                        <SelectItem value="80mm">80mm</SelectItem>
+                                                        <SelectItem value="A4">A4</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
+                                                    {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
+                                                </Button>
+                                            </div>
+                                        </CardHeader>
+                                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                                            <ReceiptView data={livePreviewData} forcePaperWidth={paperWidth} />
+                                        </CardContent>
+                                    </Card>
                                 </div>
-                            </AccordionContent>
-                        </Card>
-                    </AccordionItem>
-                </Accordion>
-            )}
+                            </div>
+                        </AccordionContent>
+                    </Card>
+                </AccordionItem>
+            </Accordion>
 
 
             <Separator className="my-8 no-print" />
 
-            <div className={cn("grid grid-cols-1 gap-6 items-start no-print", canEditReceiptSettings ? "lg:grid-cols-2" : "lg:grid-cols-[1fr,1fr]")}>
+            <div className="grid grid-cols-1 gap-6 items-start no-print lg:grid-cols-2">
                 <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedRecentReceipt}/>
                 <div className="space-y-4">
                      <Card className="sticky top-20">
@@ -265,6 +254,10 @@ export default function ReceiptSettingsPage() {
                         </CardContent>
                     </Card>
                 </div>
+            </div>
+            
+            <div className="hidden print-block">
+                {selectedRecentReceipt && <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />}
             </div>
         </RoleGuard>
     );

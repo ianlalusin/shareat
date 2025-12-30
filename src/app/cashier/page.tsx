@@ -789,7 +789,7 @@ function SessionListView() {
         <>
             <PageHeader title="Cashier" description="Start a new session or manage active ones.">
               <Button asChild variant="outline" size="sm">
-                  <Link href="/manager/receipt-settings">
+                  <Link href="/cashier/receipts">
                       <Receipt className="mr-2" />
                       Receipts
                   </Link>
