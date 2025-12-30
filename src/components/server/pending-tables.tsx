@@ -10,6 +10,7 @@ import { User, Users, Check, Clock, PlusCircle, History, Minus, Plus } from "luc
 import { Timestamp } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { QuantityInput } from "../cashier/quantity-input";
+import { toJsDate } from "@/lib/utils/date";
 
 export type PendingSession = {
   id: string;
@@ -42,38 +43,24 @@ interface PendingTablesProps {
     onAddAddon: (session: PendingSession) => void;
 }
 
-function toJsDate(v: any): Date | null {
-  if (!v) return null;
-  if (v instanceof Date) return v;
-  if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate();
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
-
-
 const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
-    const [elapsed, setElapsed] = useState("0m");
+    const [elapsed, setElapsed] = useState("...");
+    const jsDate = toJsDate(startTime);
 
     useEffect(() => {
-        if (!startTime) return;
-        
-        const start = toJsDate(startTime);
-        if (!start) {
-            console.warn("Invalid startTime prop in TimeElapsed:", startTime);
+        if (!jsDate) {
+            setElapsed("...");
             return;
         }
 
         const updateElapsed = () => {
             const now = Date.now();
-            const totalMinutes = Math.floor((now - start.getTime()) / 60000);
+            const totalMinutes = Math.floor((now - jsDate.getTime()) / 60000);
+
+            if (totalMinutes < 0) { // Handle case where client time is behind server time
+                setElapsed("0m");
+                return;
+            }
 
             if (totalMinutes < 60) {
                 setElapsed(`${totalMinutes}m`);
@@ -85,11 +72,11 @@ const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
             }
         };
 
-        const timer = setInterval(updateElapsed, 1000 * 30); // Update every 30 seconds
-        updateElapsed(); // Initial calculation
+        updateElapsed();
+        const timer = setInterval(updateElapsed, 30000); // Update every 30 seconds
 
         return () => clearInterval(timer);
-    }, [startTime]);
+    }, [jsDate]);
 
     return (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">

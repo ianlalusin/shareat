@@ -1,59 +1,75 @@
 
+
 "use client";
 
 import type { KitchenTicket } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "../ui/button";
-import { Send, Clock } from "lucide-react";
+import { Send, Clock, History, Loader2 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { format } from "date-fns";
+import { toJsDate } from "@/lib/utils/date";
+
 
 interface ReadyToServeProps {
     items: KitchenTicket[];
     onMarkServed: (ticketId: string, sessionId: string, newStatus: "served") => void;
+    onViewTimeline: (sessionId: string) => void;
+    isServing: Record<string, boolean>;
 }
 
+function TimeAgo({ date }: { date: any }) {
+    const [displayTime, setDisplayTime] = useState("just now");
+    const jsDate = toJsDate(date);
 
-function toJsDate(v: any): Date | null {
-  if (!v) return null;
-  if (v instanceof Date) return v;
-  if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate();
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
+    useEffect(() => {
+        if (!jsDate) {
+            setDisplayTime("...");
+            return;
+        }
+        
+        const updateDisplay = () => {
+            const seconds = Math.floor((new Date().getTime() - jsDate.getTime()) / 1000);
 
+            if (seconds < 0) { // Handle client/server time differences
+                setDisplayTime("just now");
+                return;
+            }
+            if (seconds < 60) {
+                setDisplayTime(`${seconds}s ago`);
+            } else {
+                const minutes = Math.floor(seconds / 60);
+                setDisplayTime(`${minutes}m ago`);
+            }
+        };
 
-function CreationTime({ startTime }: { startTime: Timestamp }) {
-    const date = toJsDate(startTime);
-    if (!date) return null;
-    const timeString = format(date, "HH:mm");
+        updateDisplay();
+        const interval = setInterval(updateDisplay, 5000); // Update every 5 seconds
+
+        return () => clearInterval(interval);
+    }, [jsDate]);
+
+    if (!jsDate) {
+        return <p className="text-xs text-amber-600 flex items-center gap-1 mt-1"><Clock size={14}/> ...</p>;
+    }
 
     return (
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Clock size={14} />
-            <span>{timeString}</span>
-        </div>
+        <p className="text-xs text-amber-600 flex items-center gap-1"><Clock size={14}/> {displayTime}</p>
     );
 }
 
-export function ReadyToServe({ items, onMarkServed }: ReadyToServeProps) {
+export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }: ReadyToServeProps) {
     
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Ready</CardTitle>
-                <CardDescription>Items waiting to be served.</CardDescription>
+                <div className="flex items-center justify-between">
+                    <CardTitle>Ready to Serve</CardTitle>
+                    <Badge variant="destructive">{items.length}</Badge>
+                </div>
+                <CardDescription>Items waiting for server pickup.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 max-h-[40vh] overflow-y-auto">
+            <CardContent className="space-y-2 max-h-[70vh] overflow-y-auto">
                  {items.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No items are ready.</p>
                 ) : (
@@ -62,21 +78,30 @@ export function ReadyToServe({ items, onMarkServed }: ReadyToServeProps) {
                         const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
                         
                         return (
-                        <Card key={item.id} className="p-0">
-                            <CardHeader className="flex flex-row items-center justify-between p-3">
-                                <div className="flex items-center gap-2">
+                          <Card key={item.id} className="p-0">
+                             <CardHeader className="flex flex-row items-center justify-between p-3">
+                                 <div className="flex items-center gap-2">
                                     <CardTitle className="text-lg">{displayLocation}</CardTitle>
-                                    {item.preparedAt && <CreationTime startTime={item.preparedAt} />}
+                                    <TimeAgo date={item.preparedAt} />
+                                 </div>
+                                 <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewTimeline(item.sessionId)}>
+                                        <History className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="sm" onClick={() => onMarkServed(item.id, item.sessionId, 'served')} disabled={isServing[item.id]} className="h-8">
+                                        {isServing[item.id] ? <Loader2 className="animate-spin"/> : <Send />}
+                                    </Button>
                                 </div>
-                            </CardHeader>
-                            <CardContent className="p-3 pt-0">
-                                <p className="font-medium text-base">{item.itemName}</p>
-                                <p className="text-sm text-muted-foreground">{item.kitchenLocationName}</p>
-                            </CardContent>
-                        </Card>
-                    )})
+                             </CardHeader>
+                             <CardContent className="p-3 pt-0">
+                                 <p className="font-medium text-base">{item.itemName}</p>
+                                 <p className="text-sm text-muted-foreground">{item.kitchenLocationName}</p>
+                             </CardContent>
+                          </Card>
+                        )
+                    })
                 )}
             </CardContent>
         </Card>
-    )
+    );
 }
