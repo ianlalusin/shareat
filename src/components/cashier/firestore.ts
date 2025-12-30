@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -20,6 +19,18 @@ import { AppUser } from '@/context/auth-context';
 import type { StorePackage, BillableItem } from '@/lib/types';
 import type { Payment } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
+
+type ActorStamp = { uid: string; username: string; email?: string | null };
+
+function getActorStamp(user: AppUser): ActorStamp {
+  const username =
+    (user.displayName && user.displayName.trim()) ||
+    ((user as any).name && String((user as any).name).trim()) ||
+    (user.email ? user.email.split("@")[0] : "") ||
+    user.uid.slice(0, 6);
+
+  return { uid: user.uid, username, email: user.email ?? null };
+}
 
 export type StartSessionPayload = {
   tableId: string;
@@ -288,32 +299,47 @@ export async function completePayment(
 
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
+    if (totalPaid < billingSummary.grandTotal) {
+      throw new Error("Cannot complete payment: balance is not zero.");
+    }
+    
+    const actor = getActorStamp(user);
+
     // Create payment documents inside the transaction
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
-      tx.set(paymentRef, stripUndefined({
+      const paymentPayload = stripUndefined({
         ...payment,
         id: paymentRef.id,
-        createdAt: serverTimestamp(),
-        createdByUid: user.uid,
-      }));
+        createdByUid: actor.uid,
+        createdByUsername: actor.username,
+      });
+      tx.set(paymentRef, {
+          ...paymentPayload,
+          createdAt: serverTimestamp(),
+      });
     });
 
     // Close the session
-    tx.update(sessionRef, stripUndefined({
+    const sessionUpdatePayload = stripUndefined({
       status: "closed",
       isPaid: true,
-      closedAt: serverTimestamp(),
-      closedByUid: user.uid,
+      closedByUid: actor.uid,
+      closedByUsername: actor.username,
       paymentSummary: {
         ...billingSummary,
         totalPaid,
         change: Math.max(0, totalPaid - billingSummary.grandTotal),
         payments,
       },
-      updatedAt: serverTimestamp(),
-    }));
+    });
+
+    tx.update(sessionRef, {
+        ...sessionUpdatePayload,
+        closedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    });
 
     if (shouldCreateReceipt) {
         const receiptPayload = stripUndefined({
@@ -321,8 +347,8 @@ export async function completePayment(
             storeId,
             sessionId,
             createdAtClientMs: Date.now(),
-            createdByUid: user.uid,
-            createdByUsername: user.displayName || user.name || null,
+            createdByUid: actor.uid,
+            createdByUsername: actor.username,
             sessionMode: sessionData.sessionMode,
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
             tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
