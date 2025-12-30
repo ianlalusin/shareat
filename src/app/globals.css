@@ -63,8 +63,16 @@
 /* =========================
    Receipt printing safety
    ========================= */
-.receipt-view[data-paper-width="58mm"] { width: 58mm; }
-.receipt-view[data-paper-width="80mm"] { width: 80mm; }
+.receipt-view[data-paper-width="58mm"] {
+  width: 58mm;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.receipt-view[data-paper-width="80mm"] {
+  width: 80mm;
+  font-size: 12px;
+  line-height: 1.25;
+}
 
 @media print {
   @page {
@@ -97,6 +105,8 @@
     margin: 0 auto !important;
     box-shadow: none !important;
     border: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* avoid ugly splits */
