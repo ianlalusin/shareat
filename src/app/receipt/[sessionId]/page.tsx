@@ -97,6 +97,7 @@ export default function ReceiptPage() {
                     settings: settingsData,
                     receiptCreatedAt: receiptCreatedAt,
                     createdByUsername: receiptDocData?.createdByUsername,
+                    receiptNumber: receiptDocData?.receiptNumber,
                 });
                 
                 const storedWidth = localStorage.getItem(storageKey);

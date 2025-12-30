@@ -60,6 +60,7 @@ export type ReceiptData = {
     settings: ReceiptSettings;
     receiptCreatedAt?: any;
     createdByUsername?: string;
+    receiptNumber?: string;
 };
 
 interface ReceiptViewProps {
@@ -133,6 +134,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
 
             <section className="space-y-px mb-2 receipt-section">
                 <ReceiptRow label="Date:" value={dateLabel} />
+                <ReceiptRow label="Receipt:" value={data.receiptNumber ?? "—"} />
                 {settings.showTableOrCustomer && (
                      <ReceiptRow 
                         label={session.sessionMode === 'alacarte' ? "Customer:" : "Table:"} 

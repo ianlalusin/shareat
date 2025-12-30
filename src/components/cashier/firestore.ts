@@ -45,6 +45,25 @@ export type StartSessionPayload = {
 };
 
 /**
+ * Formats a receipt number based on a template and a sequence number.
+ * @param fmt The format string (e.g., "PREFIX-#####").
+ * @param seq The sequence number.
+ * @returns The formatted receipt number string.
+ */
+function formatReceiptNumber(fmt: string, seq: number): string {
+  // Find the longest run of '#' characters to determine padding.
+  const m = fmt.match(/#+/g);
+  if (!m) {
+    // If no hash marks, just append the sequence number.
+    return `${fmt}${seq}`;
+  }
+  const run = m.sort((a, b) => b.length - a.length)[0];
+  const padded = String(seq).padStart(run.length, "0");
+  return fmt.replace(run, padded);
+}
+
+
+/**
  * Starts a new dining session.
  * Creates session doc, table update, initial package billable, and initial kitchen ticket.
  */
@@ -342,6 +361,20 @@ export async function completePayment(
     });
 
     if (shouldCreateReceipt) {
+        // Get settings and counter for receipt numbering
+        const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
+        const settingsSnap = await tx.get(settingsRef);
+        const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
+
+        const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
+        const counterSnap = await tx.get(counterRef);
+        const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
+        const nextSeq = currentSeq + 1;
+        
+        tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
+        
+        const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
+
         const receiptPayload = stripUndefined({
             id: sessionId,
             storeId,
@@ -356,6 +389,9 @@ export async function completePayment(
             totalPaid,
             change: Math.max(0, totalPaid - billingSummary.grandTotal),
             status: "final",
+            receiptSeq: nextSeq,
+            receiptNumber,
+            receiptNoFormatUsed: receiptNoFormat,
         });
 
         tx.set(receiptRef, {
