@@ -35,7 +35,6 @@ export default function ReceiptPage() {
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
     const { toast } = useToast();
     
-    const hasAutoPrinted = useRef(false);
     const shouldAutoPrint = searchParams.get('autoprint') === '1';
 
      const storageKey = useMemo(
@@ -137,7 +136,7 @@ export default function ReceiptPage() {
                     lastPrintedByUsername: getUsername(appUser),
                 });
             } catch (e) {
-                console.warn("Print tracking failed:", e);
+                console.warn("Print audit tracking failed:", e);
                 // Optionally inform the user, but don't block them
             } finally {
                 setIsPrinting(false);
@@ -146,12 +145,15 @@ export default function ReceiptPage() {
     };
     
     useEffect(() => {
-        if (shouldAutoPrint && receiptData && !isLoading && !hasAutoPrinted.current) {
-            hasAutoPrinted.current = true;
-            handlePrint();
+        if (shouldAutoPrint && receiptData && !isLoading) {
+            const printKey = `autoprint:${sessionId}`;
+            if (sessionStorage.getItem(printKey) !== "1") {
+                sessionStorage.setItem(printKey, "1");
+                handlePrint();
+            }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shouldAutoPrint, receiptData, isLoading]);
+    }, [shouldAutoPrint, receiptData, isLoading, sessionId]);
 
     const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
         setPaperWidth(value);

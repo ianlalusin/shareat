@@ -653,7 +653,8 @@
         "showDiscountBreakdown": { "type": "boolean" },
         "showChargeBreakdown": { "type": "boolean" },
         "paperWidth": { "type": "string", "enum": ["58mm", "80mm", "A4"] },
-        "receiptNoFormat": { "type": "string" }
+        "receiptNoFormat": { "type": "string" },
+        "autoPrintAfterPayment": { "type": "boolean" }
       },
       "required": ["businessName", "branchName", "address", "contact"]
     }

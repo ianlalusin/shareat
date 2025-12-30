@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -50,13 +51,13 @@ export default function ReceiptSettingsPage() {
             logoUrl: activeStore?.logoUrl || null,
             vatType: activeStore?.vatType || "NON_VAT",
             showCashierName: true,
-            showServerName: true,
             showTableOrCustomer: true,
             showItemNotes: true,
             showDiscountBreakdown: true,
             showChargeBreakdown: true,
             paperWidth: "80mm",
             receiptNoFormat: "",
+            autoPrintAfterPayment: false,
         }
     });
 
@@ -98,7 +99,8 @@ export default function ReceiptSettingsPage() {
                     tin: activeStore.tin || "",
                     logoUrl: activeStore.logoUrl || null,
                     vatType: activeStore.vatType || "NON_VAT",
-                    receiptNoFormat: data.receiptNoFormat || ""
+                    receiptNoFormat: data.receiptNoFormat || "",
+                    autoPrintAfterPayment: data.autoPrintAfterPayment || false,
                 });
                 setPaperWidth(data.paperWidth || "80mm");
             }

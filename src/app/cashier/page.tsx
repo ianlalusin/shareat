@@ -13,7 +13,7 @@ import { BillTotals } from "@/components/cashier/bill-totals";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
-import { collection, onSnapshot, query, where, doc, getDocs, Timestamp, addDoc, orderBy, setDoc, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, getDocs, Timestamp, addDoc, orderBy, setDoc, serverTimestamp, updateDoc, writeBatch, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -528,8 +528,11 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             billingSummary
         );
     
+        const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
+        const autoPrint = settingsSnap.exists() ? !!settingsSnap.data()?.autoPrintAfterPayment : false;
+
         toast({ title: "Payment complete", description: "Session closed successfully." });
-        router.push(`/receipt/${sessionId}?autoprint=1`);
+        router.push(`/receipt/${sessionId}${autoPrint ? "?autoprint=1" : ""}`);
 
     } catch (err: any) {
       toast({
@@ -615,7 +618,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session}
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
-                    onApplyDiscount={handleApplyDiscount}
+                    onApplyDiscount={onApplyDiscount}
                     onApplyFree={handleApplyFree}
                     onStatusUpdate={handleCashierItemStatusUpdate}
                     isLocked={isBillingLocked}
