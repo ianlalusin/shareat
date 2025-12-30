@@ -152,25 +152,33 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
                 {groupedItems.map(([key, item]) => {
                     const [name] = key.split('@');
                     const hasDiscount = item.lineDiscountValue > 0;
-                    const discountAmount = item.lineDiscountType === 'percentage' 
+                    const discountAmount = item.lineDiscountType === 'percent' 
                         ? item.total * (item.lineDiscountValue / 100) 
                         : item.lineDiscountValue * item.qty;
 
                     return (
                         <div key={key} className="receipt-item-row">
-                            <div className="grid grid-cols-[20px,1fr,auto] gap-x-2">
+                             <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 items-start">
                                 <span>{item.qty}</span>
-                                <span className="truncate">{name}</span>
-                                <span className="text-right">{item.total.toFixed(2)}</span>
+                                <div className="min-w-0">
+                                  <div className="whitespace-normal break-words leading-tight">
+                                    {name}
+                                  </div>
+                                  {settings.showItemNotes && item.notes && (
+                                    <div className="text-gray-600 text-xs italic mt-0.5">
+                                      ↳ {item.notes}
+                                    </div>
+                                  )}
+                                </div>
+                                <span className="text-right whitespace-nowrap">
+                                  {item.total.toFixed(2)}
+                                </span>
                             </div>
                              {hasDiscount && settings.showDiscountBreakdown && (
                                 <div className="pl-4 text-xs flex justify-between">
                                     <span>Discount</span>
-                                    <span className="text-right">- {discountAmount.toFixed(2)}</span>
+                                    <span className="text-right whitespace-nowrap">- {discountAmount.toFixed(2)}</span>
                                 </div>
-                            )}
-                            {settings.showItemNotes && item.notes && (
-                                <p className="col-span-3 text-gray-600 text-xs pl-2 italic">↳ {item.notes}</p>
                             )}
                         </div>
                     );
