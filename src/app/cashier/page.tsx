@@ -74,7 +74,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]); // Using any to avoid circular deps for ModeOfPayment
   const [charges, setCharges] = useState<Charge[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
-  const [isCompleting, setIsCompleting] = useState(false);
+  const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
 
@@ -467,9 +467,20 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   const canCompletePayment = remainingBalance <= 0 && payments.length > 0 && pendingItems.length === 0 && allServedItems.length > 0;
 
   const handleCompletePayment = async () => {
-    if (!appUser || !activeStore || !session || !canCompletePayment) return;
+    if (!appUser || !activeStore || !session) return;
+    if (isCompletingPayment) return;
     
-    setIsCompleting(true);
+    if (session?.status === "closed" || session?.isPaid === true) {
+        toast({ title: "Already paid", description: "This session is already closed." });
+        return;
+    }
+    
+    if (!canCompletePayment) {
+        toast({ variant: "destructive", title: "Cannot Complete", description: "Please ensure balance is paid and all items are served." });
+        return;
+    }
+
+    setIsCompletingPayment(true);
     try {
       await completePayment(
         activeStore.id,
@@ -497,7 +508,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
         description: error.message || "An unexpected error occurred.",
       });
     } finally {
-      setIsCompleting(false);
+      setIsCompletingPayment(false);
     }
   };
   
@@ -593,10 +604,10 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
                         type="button"
                         className="w-full" 
                         size="lg" 
-                        disabled={!canCompletePayment || isBillingLocked || isCompleting} 
+                        disabled={!canCompletePayment || isBillingLocked || isCompletingPayment} 
                         onClick={handleCompletePayment}
                     >
-                        {isCompleting ? (
+                        {isCompletingPayment ? (
                             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Completing...</>
                         ) : isBillingLocked ? (
                             'Payment Finalized'
@@ -781,5 +792,3 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
-
-    
