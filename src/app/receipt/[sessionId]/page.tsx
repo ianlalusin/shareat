@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -27,7 +27,7 @@ export default function ReceiptPage() {
     const { sessionId } = useParams();
     const searchParams = useSearchParams();
     const { appUser } = useAuthContext();
-    const { activeStoreId } = useStoreContext();
+    const { activeStoreId, activeStore } = useStoreContext();
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -36,6 +36,21 @@ export default function ReceiptPage() {
     
     const hasAutoPrinted = useRef(false);
     const shouldAutoPrint = searchParams.get('autoprint') === '1';
+
+     const storageKey = useMemo(
+        () => `receiptPaperWidth:${activeStore?.id ?? "nostore"}:${appUser?.uid ?? "nouser"}`,
+        [activeStore?.id, appUser?.uid]
+    );
+
+    useEffect(() => {
+        const storedWidth = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
+        if (storedWidth === "58mm" || storedWidth === "80mm" || storedWidth === "A4") {
+            setPaperWidth(storedWidth);
+        } else if (receiptData?.settings?.paperWidth) {
+            setPaperWidth(receiptData.settings.paperWidth);
+        }
+    }, [storageKey, receiptData]);
+
 
     useEffect(() => {
         const fetchData = async () => {
@@ -91,7 +106,14 @@ export default function ReceiptPage() {
                     settings: settingsData,
                     receiptCreatedAt: receiptCreatedAt,
                 });
-                setPaperWidth(settingsData.paperWidth || "80mm");
+                
+                const storedWidth = localStorage.getItem(storageKey);
+                if (storedWidth === "58mm" || storedWidth === "80mm" || storedWidth === "A4") {
+                    setPaperWidth(storedWidth);
+                } else if (settingsData.paperWidth) {
+                    setPaperWidth(settingsData.paperWidth);
+                }
+
 
             } catch (err: any) {
                 setError(err.message);
@@ -101,7 +123,7 @@ export default function ReceiptPage() {
         };
 
         fetchData();
-    }, [sessionId, activeStoreId, appUser]);
+    }, [sessionId, activeStoreId, appUser, storageKey]);
 
     useEffect(() => {
         if (shouldAutoPrint && receiptData && !isLoading && !hasAutoPrinted.current) {
@@ -142,20 +164,9 @@ export default function ReceiptPage() {
       }
     };
 
-    const handlePaperWidthChange = async (value: "58mm" | "80mm" | "A4") => {
+    const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
         setPaperWidth(value);
-        
-        // Only managers and admins can persist this setting
-        if (appUser?.role === 'admin' || appUser?.role === 'manager') {
-            if (!activeStoreId) return;
-            try {
-                const settingsRef = doc(db, `stores/${activeStoreId}/receiptSettings`, "main");
-                await updateDoc(settingsRef, { paperWidth: value, updatedAt: serverTimestamp() });
-                toast({ title: "Paper Width Saved", description: `Default paper size set to ${value}.` });
-            } catch (error: any) {
-                 toast({ variant: "destructive", title: "Save Failed", description: error.message });
-            }
-        }
+        localStorage.setItem(storageKey, value);
     };
 
     if (isLoading) {

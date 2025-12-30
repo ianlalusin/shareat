@@ -21,6 +21,7 @@ import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -37,6 +38,7 @@ export default function ReceiptSettingsPage() {
     // State for the bottom panel (recent receipts)
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
     const [isPrinting, setIsPrinting] = useState(false);
+    const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
 
     // State and form for the top panel (live settings preview)
     const form = useForm({
@@ -63,6 +65,18 @@ export default function ReceiptSettingsPage() {
     const watchedSettings = form.watch();
 
     const canEditReceiptSettings = appUser?.role === 'admin' || appUser?.role === 'manager';
+
+    const storageKey = useMemo(
+        () => `receiptPaperWidth:${activeStore?.id ?? "nostore"}:${appUser?.uid ?? "nouser"}`,
+        [activeStore?.id, appUser?.uid]
+    );
+
+    useEffect(() => {
+        const storedWidth = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
+        if (storedWidth === "58mm" || storedWidth === "80mm" || storedWidth === "A4") {
+            setPaperWidth(storedWidth);
+        }
+    }, [storageKey]);
 
     useEffect(() => {
         if (!activeStore) return;
@@ -92,6 +106,7 @@ export default function ReceiptSettingsPage() {
                     vatType: activeStore.vatType || "NON_VAT",
                     receiptNoFormat: data.receiptNoFormat || ""
                 });
+                setPaperWidth(data.paperWidth || "80mm");
             }
         });
         return () => unsubscribe();
@@ -124,6 +139,14 @@ export default function ReceiptSettingsPage() {
             setTimeout(() => window.print(), 100);
         } finally {
             setIsPrinting(false);
+        }
+    };
+
+    const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
+        setPaperWidth(value);
+        localStorage.setItem(storageKey, value);
+        if (canEditReceiptSettings) {
+            form.setValue("paperWidth", value);
         }
     };
     
@@ -182,12 +205,22 @@ export default function ReceiptSettingsPage() {
                                         <Card className="sticky top-20">
                                             <CardHeader className="flex flex-row items-center justify-between">
                                                 <CardTitle>Live Preview</CardTitle>
-                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
-                                                     {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
-                                                </Button>
+                                                <div className="flex items-center gap-2">
+                                                    <Select value={paperWidth} onValueChange={handlePaperWidthChange}>
+                                                        <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="58mm">58mm</SelectItem>
+                                                            <SelectItem value="80mm">80mm</SelectItem>
+                                                            <SelectItem value="A4">A4</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
+                                                        {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
+                                                    </Button>
+                                                </div>
                                             </CardHeader>
                                             <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                                                <ReceiptView data={livePreviewData} />
+                                                <ReceiptView data={livePreviewData} forcePaperWidth={paperWidth} />
                                             </CardContent>
                                         </Card>
                                     </div>
@@ -207,13 +240,23 @@ export default function ReceiptSettingsPage() {
                      <Card className="sticky top-20">
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Selected Receipt</CardTitle>
-                            <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
-                                {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
-                            </Button>
+                            <div className="flex items-center gap-2">
+                               <Select value={paperWidth} onValueChange={handlePaperWidthChange}>
+                                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="58mm">58mm</SelectItem>
+                                        <SelectItem value="80mm">80mm</SelectItem>
+                                        <SelectItem value="A4">A4</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
+                                    {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
+                                </Button>
+                            </div>
                         </CardHeader>
                         <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                         {selectedRecentReceipt ? (
-                                <ReceiptView data={selectedRecentReceipt} />
+                                <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />
                         ) : (
                             <div className="flex items-center justify-center h-96 text-muted-foreground">
                                 <p>Select a recent receipt to preview.</p>
