@@ -28,7 +28,6 @@ export type Session = {
     startedByUid: string;
     verifiedByUid?: string;
     cashierName?: string;
-    serverName?: string;
 };
 
 export type Payment = {
@@ -46,7 +45,6 @@ export type ReceiptSettings = {
     logoUrl?: string;
     footerText?: string;
     showCashierName?: boolean;
-    showServerName?: boolean;
     showTableOrCustomer?: boolean;
     showItemNotes?: boolean;
     showDiscountBreakdown?: boolean;
@@ -142,7 +140,6 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
                      />
                 )}
                 {settings.showCashierName && <ReceiptRow label="Cashier:" value={cashierName} />}
-                {settings.showServerName && session.serverName && <ReceiptRow label="Server:" value={session.serverName} />}
             </section>
 
             <hr className="border-dashed border-black my-2" />

@@ -82,15 +82,6 @@ export default function ReceiptPage() {
                 const receiptCreatedAt =
                     receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
                     
-                // Fetch server name if needed
-                let serverName = null;
-                if (sessionData.verifiedByUid) {
-                    const serverDoc = await getDoc(doc(db, "users", sessionData.verifiedByUid));
-                    if (serverDoc.exists()) {
-                        serverName = serverDoc.data().name || sessionData.verifiedByUid.substring(0, 6);
-                    }
-                }
-                
                 // Use denormalized cashier name from receipt, fallback to session, then UID
                 const cashierName = receiptDocData?.createdByUsername || sessionData.startedByName || sessionData.startedByUid.substring(0, 6);
 
@@ -100,7 +91,6 @@ export default function ReceiptPage() {
                         ...sessionData, 
                         closedAt: sessionData?.closedAt ?? sessionSnap.updateTime,
                         cashierName,
-                        serverName,
                     } as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],

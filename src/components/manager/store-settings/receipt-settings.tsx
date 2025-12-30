@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect } from "react";
@@ -28,7 +29,6 @@ export const receiptSettingsSchema = z.object({
   logoUrl: z.string().url().optional().nullable(),
   footerText: z.string().optional(),
   showCashierName: z.boolean().default(true),
-  showServerName: z.boolean().default(true),
   showTableOrCustomer: z.boolean().default(true),
   showItemNotes: z.boolean().default(true),
   showDiscountBreakdown: z.boolean().default(true),
@@ -68,7 +68,6 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
                 <h3 className="font-semibold">Display Options</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <FormField control={form.control} name="showCashierName" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Cashier</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
-                    <FormField control={form.control} name="showServerName" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Server</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showTableOrCustomer" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Table/Customer</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showItemNotes" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Item Notes</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showDiscountBreakdown" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Discount Breakdown</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
