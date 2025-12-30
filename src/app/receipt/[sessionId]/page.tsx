@@ -117,43 +117,41 @@ export default function ReceiptPage() {
         fetchData();
     }, [sessionId, activeStoreId, appUser, storageKey]);
 
+    const [isPrinting, setIsPrinting] = useState(false);
+
+    const handlePrint = async () => {
+        if (!receiptData || !activeStoreId || !appUser) return;
+        if (isPrinting) return;
+
+        setIsPrinting(true);
+        
+        window.requestAnimationFrame(async () => {
+            window.print();
+            
+            try {
+                const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, receiptData.session.id);
+                await updateDoc(receiptRef, {
+                    printedCount: increment(1),
+                    lastPrintedAt: serverTimestamp(),
+                    lastPrintedByUid: appUser.uid,
+                    lastPrintedByUsername: getUsername(appUser),
+                });
+            } catch (e) {
+                console.warn("Print tracking failed:", e);
+                // Optionally inform the user, but don't block them
+            } finally {
+                setIsPrinting(false);
+            }
+        });
+    };
+    
     useEffect(() => {
         if (shouldAutoPrint && receiptData && !isLoading && !hasAutoPrinted.current) {
             hasAutoPrinted.current = true;
-            handlePrint(receiptData);
+            handlePrint();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shouldAutoPrint, receiptData, isLoading]);
-
-    const [isPrinting, setIsPrinting] = useState(false);
-
-    const handlePrint = async (data: ReceiptData | null) => {
-      if (!data || !activeStoreId) return;
-      if (isPrinting) return;
-
-      setIsPrinting(true);
-      try {
-
-        if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
-          try {
-            const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, data.session.id);
-            await updateDoc(receiptRef, {
-              printedCount: increment(1),
-              lastPrintedAt: serverTimestamp(),
-              lastPrintedByUid: appUser.uid,
-              lastPrintedByUsername: getUsername(appUser),
-            });
-          } catch (e) {
-            console.warn("Print tracking failed", e);
-            toast({ variant: "destructive", title: "Print tracking failed", description: "Printing will continue, but audit fields were not saved." });
-          }
-        }
-
-        setTimeout(() => window.print(), 100);
-      } finally {
-        setIsPrinting(false);
-      }
-    };
 
     const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
         setPaperWidth(value);
@@ -175,6 +173,8 @@ export default function ReceiptPage() {
         )
     }
 
+    const printedCount = receiptData?.session?.paymentSummary?.printedCount || 0;
+
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <div className="max-w-4xl mx-auto py-8">
@@ -190,8 +190,9 @@ export default function ReceiptPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={() => handlePrint(receiptData)} disabled={isPrinting}>
-                             {isPrinting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</> : <><Printer className="mr-2"/> Print Receipt</>}
+                        <Button onClick={handlePrint} disabled={isPrinting} className="w-32">
+                             {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2"/>}
+                             {printedCount > 0 ? 'Reprint' : 'Print'}
                         </Button>
                     </div>
                     <Accordion type="single" collapsible>
@@ -207,7 +208,7 @@ export default function ReceiptPage() {
                       </AccordionItem>
                     </Accordion>
                 </div>
-                 <div className="receipt-print-container">
+                 <div id="print-receipt-area">
                     {receiptData ? <ReceiptView data={receiptData} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
                 </div>
             </div>

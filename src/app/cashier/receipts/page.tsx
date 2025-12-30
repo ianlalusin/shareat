@@ -25,7 +25,7 @@ function getUsername(appUser: any) {
 
 export default function CashierReceiptsPage() {
     const { appUser } = useAuthContext();
-    const { activeStore, loading } = useStoreContext();
+    const { activeStore } = useStoreContext();
     const { toast } = useToast();
     
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
@@ -44,33 +44,33 @@ export default function CashierReceiptsPage() {
         }
     }, [storageKey]);
 
-    const handlePrint = async (data: ReceiptData | null) => {
-        if (!data || !activeStore) return;
+    const handlePrint = async () => {
+        if (!selectedRecentReceipt || !activeStore || !appUser) return;
         if (isPrinting) return;
 
         setIsPrinting(true);
-        try {
-            setSelectedRecentReceipt(data);
-
-            if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
-                try {
-                    const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
-                    await updateDoc(receiptRef, {
-                        printedCount: increment(1),
-                        lastPrintedAt: serverTimestamp(),
-                        lastPrintedByUid: appUser.uid,
-                        lastPrintedByUsername: getUsername(appUser),
-                    });
-                } catch (e) {
-                    console.warn("Print tracking failed", e);
-                    toast({ variant: "destructive", title: "Print tracking failed", description: "Printing will continue, but audit fields were not saved." });
-                }
+        
+        // Use a timeout to ensure the state updates and renders before the print dialog blocks the main thread
+        window.requestAnimationFrame(async () => {
+            window.print();
+            
+            // Fire-and-forget audit update
+            try {
+                const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, selectedRecentReceipt.session.id);
+                await updateDoc(receiptRef, {
+                    printedCount: increment(1),
+                    lastPrintedAt: serverTimestamp(),
+                    lastPrintedByUid: appUser.uid,
+                    lastPrintedByUsername: getUsername(appUser),
+                    updatedAt: serverTimestamp(),
+                });
+            } catch (e) {
+                console.warn("Print audit tracking failed:", e);
+                // Optional: Show a non-blocking toast warning
+            } finally {
+                setIsPrinting(false);
             }
-
-            setTimeout(() => window.print(), 100);
-        } finally {
-            setIsPrinting(false);
-        }
+        });
     };
     
     const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
@@ -78,20 +78,20 @@ export default function CashierReceiptsPage() {
         localStorage.setItem(storageKey, value);
     };
 
-    if (loading) {
-        return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>
-    }
-
     if (!activeStore) {
         return (
-            <Card className="w-full max-w-md mx-auto text-center">
-                <CardHeader>
-                    <CardTitle>No Store Selected</CardTitle>
-                    <CardDescription>Please select a store from the dropdown in the header to view receipts.</CardDescription>
-                </CardHeader>
-            </Card>
+            <RoleGuard allow={["admin", "manager", "cashier"]}>
+                <Card className="w-full max-w-md mx-auto text-center">
+                    <CardHeader>
+                        <CardTitle>No Store Selected</CardTitle>
+                        <CardDescription>Please select a store from the dropdown in the header to view receipts.</CardDescription>
+                    </CardHeader>
+                </Card>
+            </RoleGuard>
         )
     }
+
+    const printedCount = selectedRecentReceipt?.session?.paymentSummary?.printedCount || 0;
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -112,12 +112,13 @@ export default function CashierReceiptsPage() {
                                         <SelectItem value="A4">A4</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
-                                    {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
+                                <Button onClick={handlePrint} disabled={!selectedRecentReceipt || isPrinting} className="no-print w-28">
+                                    {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2"/>}
+                                    {printedCount > 0 ? 'Reprint' : 'Print'}
                                 </Button>
                             </div>
                         </CardHeader>
-                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                        <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                         {selectedRecentReceipt ? (
                                 <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />
                         ) : (

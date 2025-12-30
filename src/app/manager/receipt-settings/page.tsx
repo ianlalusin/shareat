@@ -106,17 +106,18 @@ export default function ReceiptSettingsPage() {
         return () => unsubscribe();
     }, [activeStore, form]);
 
-    const handlePrint = async (data: ReceiptData | null) => {
-        if (!data || !activeStore) return;
+    const handlePrint = async (receiptId: string | undefined) => {
+        if (!receiptId || !activeStore || !appUser) return;
         if (isPrinting) return;
-
+    
         setIsPrinting(true);
-        try {
-            setSelectedRecentReceipt(data);
-
-            if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
+    
+        window.requestAnimationFrame(async () => {
+            window.print();
+    
+            if (receiptId !== "PREVIEW") {
                 try {
-                    const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
+                    const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, receiptId);
                     await updateDoc(receiptRef, {
                         printedCount: increment(1),
                         lastPrintedAt: serverTimestamp(),
@@ -124,15 +125,12 @@ export default function ReceiptSettingsPage() {
                         lastPrintedByUsername: getUsername(appUser),
                     });
                 } catch (e) {
-                    console.warn("Print tracking failed", e);
-                    toast({ variant: "destructive", title: "Print tracking failed", description: "Printing will continue, but audit fields were not saved." });
+                    console.warn("Print audit tracking failed:", e);
                 }
             }
-
-            setTimeout(() => window.print(), 100);
-        } finally {
+    
             setIsPrinting(false);
-        }
+        });
     };
 
     const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
@@ -146,7 +144,7 @@ export default function ReceiptSettingsPage() {
             id: 'PREVIEW',
             tableNumber: '12',
             sessionMode: 'package_dinein' as const,
-            paymentSummary: { subtotal: 850, lineDiscountsTotal: 50, billDiscountAmount: 0, adjustmentsTotal: 10, grandTotal: 810, totalPaid: 900, change: 90 },
+            paymentSummary: { subtotal: 850, lineDiscountsTotal: 50, billDiscountAmount: 0, adjustmentsTotal: 10, grandTotal: 810, totalPaid: 900, change: 90, printedCount: 0 },
             closedAt: new Date(),
             startedByUid: 'cashier123',
         },
@@ -164,14 +162,18 @@ export default function ReceiptSettingsPage() {
 
     if (!activeStore) {
         return (
-            <Card className="w-full max-w-md mx-auto text-center">
-                <CardHeader>
-                    <CardTitle>No Store Selected</CardTitle>
-                    <CardDescription>Please select a store from the dropdown in the header to manage its receipt settings.</CardDescription>
-                </CardHeader>
-            </Card>
+             <RoleGuard allow={["admin", "manager"]}>
+                <Card className="w-full max-w-md mx-auto text-center">
+                    <CardHeader>
+                        <CardTitle>No Store Selected</CardTitle>
+                        <CardDescription>Please select a store from the dropdown in the header to manage its receipt settings.</CardDescription>
+                    </CardHeader>
+                </Card>
+            </RoleGuard>
         )
     }
+
+    const printedCount = selectedRecentReceipt?.session?.paymentSummary?.printedCount || 0;
 
     return (
         <RoleGuard allow={["admin", "manager"]}>
@@ -204,12 +206,12 @@ export default function ReceiptSettingsPage() {
                                                         <SelectItem value="A4">A4</SelectItem>
                                                     </SelectContent>
                                                 </Select>
-                                                <Button onClick={() => handlePrint(livePreviewData)} className="no-print" disabled={isPrinting}>
+                                                <Button onClick={() => handlePrint('PREVIEW')} className="no-print" disabled={isPrinting}>
                                                     {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print Preview</>)}
                                                 </Button>
                                             </div>
                                         </CardHeader>
-                                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                                        <CardContent id="print-receipt-area-live" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                                             <ReceiptView data={livePreviewData} forcePaperWidth={paperWidth} />
                                         </CardContent>
                                     </Card>
@@ -238,12 +240,13 @@ export default function ReceiptSettingsPage() {
                                         <SelectItem value="A4">A4</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
-                                    {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
+                                <Button onClick={() => handlePrint(selectedRecentReceipt?.session.id)} disabled={!selectedRecentReceipt || isPrinting} className="no-print w-28">
+                                    {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2"/>}
+                                    {printedCount > 0 ? 'Reprint' : 'Print'}
                                 </Button>
                             </div>
                         </CardHeader>
-                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                        <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                         {selectedRecentReceipt ? (
                                 <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />
                         ) : (
@@ -254,10 +257,6 @@ export default function ReceiptSettingsPage() {
                         </CardContent>
                     </Card>
                 </div>
-            </div>
-            
-            <div className="hidden print-block">
-                {selectedRecentReceipt && <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />}
             </div>
         </RoleGuard>
     );
