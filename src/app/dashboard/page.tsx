@@ -12,8 +12,10 @@ import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/com
 import { StatCards, type DashboardStats } from "@/components/dashboard/StatCards";
 import { RecentSales, type Sale } from "@/components/dashboard/RecentSales";
 import { PaymentMix, type PaymentMethodTally } from "@/components/dashboard/PaymentMix";
+import { useAuthContext } from "@/context/auth-context";
 
 export default function DashboardPage() {
+    const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
     const [stats, setStats] = useState<DashboardStats>({ grossSales: 0, transactions: 0, avgTicket: 0 });
     const [activeSessions, setActiveSessions] = useState(0);
@@ -61,10 +63,11 @@ export default function DashboardPage() {
             
             const tally: PaymentMethodTally = {};
             receiptsData.forEach(r => {
-                r.paymentSummary?.payments?.forEach((p: any) => {
-                    const name = p.methodName || p.methodId || 'Unknown';
-                    tally[name] = (tally[name] || 0) + p.amount;
-                });
+                if (r.analytics?.mop) {
+                  for (const [method, amount] of Object.entries(r.analytics.mop)) {
+                    tally[method] = (tally[method] || 0) + (amount as number);
+                  }
+                }
             });
             setPaymentTally(tally);
             
@@ -94,7 +97,7 @@ export default function DashboardPage() {
 
     if (!activeStore && !storeLoading) {
         return (
-             <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
+             <RoleGuard allow={["admin", "manager", "cashier", "server", "kitchen"]}>
                 <PageHeader title="Dashboard" description="Select a store to view its performance." />
                 <Card>
                     <CardContent className="pt-6">
@@ -104,32 +107,48 @@ export default function DashboardPage() {
             </RoleGuard>
         );
     }
+    
+    const canViewDashboard = appUser?.role && ['admin', 'manager', 'cashier'].includes(appUser.role);
 
     return (
-        <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
-            <PageHeader title="Dashboard" description={`A real-time overview of ${activeStore?.name}'s performance today.`} />
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                <Card className="col-span-1 lg:col-span-4">
+        <RoleGuard allow={["admin", "manager", "cashier", "server", "kitchen"]}>
+            <PageHeader title="Dashboard" description={activeStore ? `A real-time overview of ${activeStore.name}'s performance today.` : "Select a store to begin."} />
+            
+            {canViewDashboard ? (
+                 <>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                        <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+                        <Card className="col-span-1 lg:col-span-4">
+                            <CardHeader>
+                                <CardTitle>Recent Sales</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <RecentSales sales={recentSales} storeId={activeStore?.id || ""} isLoading={isLoading} />
+                            </CardContent>
+                        </Card>
+                        <Card className="col-span-1 lg:col-span-3">
+                            <CardHeader>
+                                <CardTitle>Payment Mix</CardTitle>
+                                <CardDescription>A breakdown of payment methods used today.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <PaymentMix tally={paymentTally} isLoading={isLoading} />
+                            </CardContent>
+                        </Card>
+                    </div>
+                </>
+            ) : (
+                <Card>
                     <CardHeader>
-                        <CardTitle>Recent Sales</CardTitle>
+                        <CardTitle>Coming Soon</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <RecentSales sales={recentSales} storeId={activeStore?.id || ""} isLoading={isLoading} />
+                        <p className="text-center text-muted-foreground py-10">A specialized dashboard for your role is coming soon.</p>
                     </CardContent>
                 </Card>
-                <Card className="col-span-1 lg:col-span-3">
-                    <CardHeader>
-                        <CardTitle>Payment Mix</CardTitle>
-                        <CardDescription>A breakdown of payment methods used today.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <PaymentMix tally={paymentTally} isLoading={isLoading} />
-                    </CardContent>
-                </Card>
-            </div>
+            )}
         </RoleGuard>
     );
 }

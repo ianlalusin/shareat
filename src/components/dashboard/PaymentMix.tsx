@@ -2,6 +2,7 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMemo } from "react";
 
 export type PaymentMethodTally = { [methodName: string]: number };
 
@@ -25,7 +26,9 @@ export function PaymentMix({ tally, isLoading }: PaymentMixProps) {
         )
     }
 
-    const sortedTally = Object.entries(tally).sort(([, a], [, b]) => b - a);
+    const sortedTally = useMemo(() => {
+        return Object.entries(tally).sort(([, a], [, b]) => b - a);
+    }, [tally]);
     
     if (sortedTally.length === 0) {
         return <p className="text-center text-muted-foreground py-10">No payments recorded today.</p>
@@ -35,7 +38,7 @@ export function PaymentMix({ tally, isLoading }: PaymentMixProps) {
         <div className="space-y-2 text-sm">
             {sortedTally.map(([method, amount]) => (
                 <div key={method} className="flex justify-between items-center">
-                    <span className="font-medium">{method}</span>
+                    <span className="font-medium capitalize">{method}</span>
                     <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
             ))}
