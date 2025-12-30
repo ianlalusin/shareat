@@ -164,7 +164,7 @@ export default function ReceiptSettingsPage() {
             <PageHeader title="Receipt Center" description={`Manage receipt templates and browse recent transactions for ${activeStore.name}`} />
             
             {canEditReceiptSettings && (
-                 <Accordion type="single" collapsible className="w-full" defaultValue="settings">
+                 <Accordion type="single" collapsible className="w-full no-print" defaultValue="settings">
                     <AccordionItem value="settings">
                         <Card>
                             <AccordionTrigger className="p-6">
@@ -199,38 +199,30 @@ export default function ReceiptSettingsPage() {
             )}
 
 
-            <Separator className="my-8" />
+            <Separator className="my-8 no-print" />
 
-            <Card>
-                 <CardHeader>
-                    <CardTitle>Recent Transactions</CardTitle>
-                    <CardDescription>Select a transaction to view and reprint its receipt.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className={cn("grid grid-cols-1 gap-6 items-start", canEditReceiptSettings ? "lg:grid-cols-2" : "lg:grid-cols-[1fr,1fr]")}>
-                        <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedRecentReceipt}/>
-                        <div className="space-y-4">
-                             <Card className="sticky top-20">
-                                <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Selected Receipt</CardTitle>
-                                    <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
-                                        {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
-                                    </Button>
-                                </CardHeader>
-                                <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                                {selectedRecentReceipt ? (
-                                        <ReceiptView data={selectedRecentReceipt} />
-                                ) : (
-                                    <div className="flex items-center justify-center h-96 text-muted-foreground">
-                                        <p>Select a recent receipt to preview.</p>
-                                    </div>
-                                )}
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
+            <div className={cn("grid grid-cols-1 gap-6 items-start no-print", canEditReceiptSettings ? "lg:grid-cols-2" : "lg:grid-cols-[1fr,1fr]")}>
+                <RecentReceiptsList store={activeStore} onSelectReceipt={setSelectedRecentReceipt}/>
+                <div className="space-y-4">
+                     <Card className="sticky top-20">
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle>Selected Receipt</CardTitle>
+                            <Button onClick={() => handlePrint(selectedRecentReceipt)} disabled={!selectedRecentReceipt || isPrinting} className="no-print">
+                                {isPrinting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</>) : (<><Printer className="mr-2"/> Print</>)}
+                            </Button>
+                        </CardHeader>
+                        <CardContent className="receipt-print-container bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                        {selectedRecentReceipt ? (
+                                <ReceiptView data={selectedRecentReceipt} />
+                        ) : (
+                            <div className="flex items-center justify-center h-96 text-muted-foreground">
+                                <p>Select a recent receipt to preview.</p>
+                            </div>
+                        )}
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
         </RoleGuard>
     );
 }
