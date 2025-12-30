@@ -202,8 +202,17 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     const groupedItems = useMemo<GroupedBillableItem[]>(() => {
         const mergedItems: BillableItem[] = Array.from(billables.values()).map(billable => {
             const ticket = tickets.get(billable.id);
+            const isPackage = billable.type === "package";
+            
+            // For packages, quantity is always the number of guests.
+            // For add-ons, quantity is stored on the item itself.
+            const qty = isPackage 
+                ? (session?.guestCountFinal ?? session?.guestCountCashierInitial ?? 1)
+                : billable.qty;
+
             return {
                 ...billable,
+                qty,
                 status: ticket?.status || 'served', // Default to served if no ticket
             };
         });
@@ -249,7 +258,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
                 groups[key].createdAtMin = item.createdAt;
             }
 
-            if (groups[key].ticketIds.length > 1) {
+            if (groups[key].ticketIds.length > 1 || item.type === "package") {
                 groups[key].isGrouped = true;
             }
         });
@@ -264,7 +273,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             return aTime - bTime;
         });
 
-    }, [tickets, billables]);
+    }, [tickets, billables, session]);
   
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
@@ -768,7 +777,3 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
-
-
-    
-    
