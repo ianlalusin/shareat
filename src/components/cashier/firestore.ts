@@ -282,6 +282,13 @@ export async function completePayment(
       return; // Idempotent no-op
     }
     
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    if (totalPaid < billingSummary.grandTotal) {
+      throw new Error("Cannot complete payment: balance is not zero.");
+    }
+
+    const actor = getActorStamp(user);
+    
     // READ receipt doc BEFORE any writes.
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const receiptSnap = await tx.get(receiptRef);
@@ -296,14 +303,6 @@ export async function completePayment(
         tableRef = doc(db, `stores/${storeId}/tables`, sessionTableId);
         tableSnap = await tx.get(tableRef);
     }
-
-    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-
-    if (totalPaid < billingSummary.grandTotal) {
-      throw new Error("Cannot complete payment: balance is not zero.");
-    }
-    
-    const actor = getActorStamp(user);
 
     // Create payment documents inside the transaction
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
@@ -346,7 +345,6 @@ export async function completePayment(
             id: sessionId,
             storeId,
             sessionId,
-            createdAtClientMs: Date.now(),
             createdByUid: actor.uid,
             createdByUsername: actor.username,
             sessionMode: sessionData.sessionMode,
@@ -362,6 +360,7 @@ export async function completePayment(
         tx.set(receiptRef, {
             ...receiptPayload,
             createdAt: serverTimestamp(),
+            createdAtClientMs: Date.now(),
         });
     }
 
