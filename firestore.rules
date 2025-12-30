@@ -137,6 +137,15 @@ service cloud.firestore {
       match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /receiptSettings/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
+      
+      match /counters/{docId} {
+        allow read: if isStoreMember(storeId);
+        // Allow cashier/manager/admin to increment ONLY the receipts counter doc
+        allow create, update: if isStoreMember(storeId) && isCashier() && docId == "receipts";
+        // Never delete counters
+        allow delete: if false;
+      }
+      
       match /receipts/{receiptId} {
         allow read: if isStoreMember(storeId);
       
