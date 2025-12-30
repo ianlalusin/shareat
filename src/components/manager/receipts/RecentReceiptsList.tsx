@@ -27,6 +27,7 @@ type ReceiptRow = {
     total: number;
     totalPaid: number;
     change: number;
+    receiptNumber?: string;
 };
 
 
@@ -97,6 +98,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                     settings: settingsData,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
+                    receiptNumber: receiptDocData.receiptNumber,
                 });
 
             } catch (err: any) {
@@ -135,9 +137,8 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                         <TableBody>
                             {receipts.length > 0 ? (
                                 receipts.map(receipt => {
-                                    const identifier = receipt.sessionMode === 'alacarte' 
-                                        ? receipt.customerName || 'Ala Carte'
-                                        : `Table ${receipt.tableNumber ?? '—'}`;
+                                    const primaryIdentifier = receipt.receiptNumber ?? (receipt.sessionMode === 'alacarte' ? receipt.customerName : `Table ${receipt.tableNumber ?? '—'}`);
+                                    const secondaryIdentifier = receipt.receiptNumber ? (receipt.sessionMode === 'alacarte' ? receipt.customerName : `Table ${receipt.tableNumber ?? '—'}`) : null;
                                     
                                     const d = toJsDate(receipt.createdAt) ?? (receipt.createdAtClientMs ? new Date(receipt.createdAtClientMs) : null);
                                     const timeClosedLabel = d ? format(d, 'MM/dd/yy HH:mm') : "—";
@@ -150,7 +151,10 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                             className="cursor-pointer"
                                             data-state={selectedSessionId === receipt.sessionId ? 'selected' : undefined}
                                         >
-                                            <TableCell className="font-medium">{identifier}</TableCell>
+                                            <TableCell className="font-medium">
+                                                <div>{primaryIdentifier}</div>
+                                                {secondaryIdentifier && <div className="text-xs text-muted-foreground">{secondaryIdentifier}</div>}
+                                            </TableCell>
                                             <TableCell>{cashierName}</TableCell>
                                             <TableCell>{timeClosedLabel}</TableCell>
                                             <TableCell>₱{(receipt.total || 0).toFixed(2)}</TableCell>
