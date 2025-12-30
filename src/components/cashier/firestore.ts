@@ -289,39 +289,45 @@ export async function completePayment(
   billingSummary: BillingSummary,
 ) {
   await runTransaction(db, async (tx) => {
+    // --- READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
-    const sessionSnap = await tx.get(sessionRef);
+    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
+    const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
+    const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
+
+    const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
+        tx.get(sessionRef),
+        tx.get(receiptRef),
+        tx.get(settingsRef),
+        tx.get(counterRef),
+    ]);
 
     if (!sessionSnap.exists()) {
       throw new Error(`Session ${sessionId} does not exist.`);
     }
-
+    
     const sessionData = sessionSnap.data();
     if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       return; // Idempotent no-op
     }
     
+    let tableRef = null;
+    let tableSnap = null;
+    if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
+        tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
+        tableSnap = await tx.get(tableRef);
+    }
+    
+    // --- VALIDATION AND PREPARATION ---
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
     if (totalPaid < billingSummary.grandTotal) {
       throw new Error("Cannot complete payment: balance is not zero.");
     }
-
     const actor = getActorStamp(user);
-    
-    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    const receiptSnap = await tx.get(receiptRef);
     const shouldCreateReceipt = !receiptSnap.exists();
 
-    const sessionTableId = sessionData.tableId;
-    
-    let tableRef = null;
-    let tableSnap = null;
-    if (sessionTableId && sessionTableId !== 'alacarte') {
-        tableRef = doc(db, `stores/${storeId}/tables`, sessionTableId);
-        tableSnap = await tx.get(tableRef);
-    }
-
+    // --- WRITE PHASE ---
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
@@ -353,16 +359,12 @@ export async function completePayment(
     tx.update(sessionRef, {
         ...sessionUpdatePayload,
         closedAt: serverTimestamp(),
+        closedAtClientMs: Date.now(),
         updatedAt: serverTimestamp(),
     });
 
     if (shouldCreateReceipt) {
-        const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
-        const settingsSnap = await tx.get(settingsRef);
         const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
-
-        const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
-        const counterSnap = await tx.get(counterRef);
         const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
         const nextSeq = currentSeq + 1;
         
