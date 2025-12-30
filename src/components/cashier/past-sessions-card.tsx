@@ -10,12 +10,17 @@ import { useRouter } from "next/navigation";
 
 export type PastSession = {
     id: string;
-    tableNumber: string;
-    closedAt: Timestamp;
-    paymentSummary: {
+    sessionId: string;
+    tableNumber: string | null;
+    customerName: string | null;
+    sessionMode: 'package_dinein' | 'alacarte';
+    closedAt?: Timestamp;
+    createdAt: Timestamp;
+    paymentSummary?: {
         grandTotal: number;
         totalPaid: number;
     };
+    total: number;
 };
 
 interface PastSessionsCardProps {
@@ -23,7 +28,7 @@ interface PastSessionsCardProps {
 }
 
 export function PastSessionsCard({ sessions }: PastSessionsCardProps) {
-    const totalRevenue = sessions.reduce((sum, s) => sum + (s.paymentSummary?.grandTotal || 0), 0);
+    const totalRevenue = sessions.reduce((sum, s) => sum + (s.total || s.paymentSummary?.grandTotal || 0), 0);
     const router = useRouter();
 
     const handlePrint = (sessionId: string) => {
@@ -54,11 +59,11 @@ export function PastSessionsCard({ sessions }: PastSessionsCardProps) {
                         {sessions.length > 0 ? (
                             sessions.map(session => (
                                 <TableRow key={session.id}>
-                                    <TableCell>{session.tableNumber}</TableCell>
-                                    <TableCell>{format(session.closedAt.toDate(), 'p')}</TableCell>
-                                    <TableCell>₱{(session.paymentSummary?.grandTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                    <TableCell>{session.sessionMode === 'alacarte' ? (session.customerName || 'Ala Carte') : `Table ${session.tableNumber}`}</TableCell>
+                                    <TableCell>{format((session.closedAt || session.createdAt).toDate(), 'p')}</TableCell>
+                                    <TableCell>₱{(session.total || session.paymentSummary?.grandTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                     <TableCell className="text-right">
-                                        <Button variant="outline" size="sm" onClick={() => handlePrint(session.id)}>
+                                        <Button variant="outline" size="sm" onClick={() => handlePrint(session.sessionId || session.id)}>
                                             Print
                                         </Button>
                                     </TableCell>

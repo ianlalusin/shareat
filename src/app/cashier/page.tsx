@@ -106,9 +106,10 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     const unsubscribe = onSnapshot(sessionRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
-            if (data.status === 'closed') {
-                toast({ title: "Session Closed", description: "This session has been closed. Redirecting..."});
-                router.replace('/cashier');
+            if (data.status === 'closed' && router) {
+                // If it's already closed but we are on the cashier page, redirect to receipt
+                // This handles cases where user navigates back after payment
+                router.replace(`/receipt/${sessionId}`);
                 return;
             }
             setSession({ id: doc.id, ...data } as PendingSession);
@@ -489,6 +490,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
   
     if (session.status === "closed" || session.isPaid === true) {
       toast({ title: "Already paid", description: "This session is already closed." });
+      router.push(`/receipt/${sessionId}`);
       return;
     }
   
@@ -508,26 +510,27 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   
     setIsCompletingPayment(true);
-
-    const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
-    const billingSummary = {
-        subtotal,
-        lineDiscountsTotal,
-        billDiscountAmount,
-        adjustmentsTotal,
-        grandTotal,
-    };
-
     try {
-      await completePayment(
-        activeStore.id,
-        sessionId,
-        appUser,
-        normalizedPayments,
-        billingSummary
-      );
-  
-      toast({ title: "Payment complete", description: "Session closed successfully." });
+        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
+        const billingSummary = {
+            subtotal,
+            lineDiscountsTotal,
+            billDiscountAmount,
+            adjustmentsTotal,
+            grandTotal,
+        };
+
+        await completePayment(
+            activeStore.id,
+            sessionId,
+            appUser,
+            normalizedPayments,
+            billingSummary
+        );
+    
+        toast({ title: "Payment complete", description: "Session closed successfully." });
+        router.push(`/receipt/${sessionId}?autoprint=1`);
+
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -561,6 +564,15 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" />
                 View Timeline
+            </Button>
+            <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => router.push(`/receipt/${sessionId}`)}
+                disabled={session.status !== 'closed'}
+            >
+                <Receipt className="mr-2 h-4 w-4" />
+                Receipt
             </Button>
         </div>
       </header>
@@ -727,11 +739,10 @@ function SessionListView() {
         todayEnd.setHours(23, 59, 59, 999);
 
         const pastSessionsQuery = query(
-            collection(db, "stores", activeStore.id, "sessions"),
-            where("status", "==", "closed"),
-            where("closedAt", ">=", Timestamp.fromDate(todayStart)),
-            where("closedAt", "<=", Timestamp.fromDate(todayEnd)),
-            orderBy("closedAt", "desc")
+            collection(db, "stores", activeStore.id, "receipts"),
+            where("createdAt", ">=", Timestamp.fromDate(todayStart)),
+            where("createdAt", "<=", Timestamp.fromDate(todayEnd)),
+            orderBy("createdAt", "desc")
         );
         unsubs.push(onSnapshot(pastSessionsQuery, (snapshot) => {
             setPastSessions(snapshot.docs.map(doc => doc.data() as PastSession));

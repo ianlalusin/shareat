@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -16,6 +16,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
+function getUsername(appUser: any) {
+  return (appUser?.displayName?.trim())
+    || (appUser?.name?.trim())
+    || (appUser?.email ? String(appUser.email).split("@")[0] : "")
+    || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
+}
 
 export default function ReceiptPage() {
     const { sessionId } = useParams();
@@ -100,11 +106,41 @@ export default function ReceiptPage() {
     useEffect(() => {
         if (shouldAutoPrint && receiptData && !isLoading && !hasAutoPrinted.current) {
             hasAutoPrinted.current = true;
-            window.print();
+            handlePrint(receiptData);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shouldAutoPrint, receiptData, isLoading]);
 
-    const handlePrint = () => window.print();
+    const [isPrinting, setIsPrinting] = useState(false);
+
+    const handlePrint = async (data: ReceiptData | null) => {
+      if (!data || !activeStoreId) return;
+      if (isPrinting) return;
+
+      setIsPrinting(true);
+      try {
+
+        // Only track prints for REAL receipts (not live preview)
+        if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
+          try {
+            const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, data.session.id);
+            await updateDoc(receiptRef, {
+              printedCount: increment(1),
+              lastPrintedAt: serverTimestamp(),
+              lastPrintedByUid: appUser.uid,
+              lastPrintedByUsername: getUsername(appUser),
+            });
+          } catch (e) {
+            console.warn("Print tracking failed", e);
+            toast({ variant: "destructive", title: "Print tracking failed", description: "Printing will continue, but audit fields were not saved." });
+          }
+        }
+
+        setTimeout(() => window.print(), 100);
+      } finally {
+        setIsPrinting(false);
+      }
+    };
 
     const handlePaperWidthChange = async (value: "58mm" | "80mm" | "A4") => {
         setPaperWidth(value);
@@ -152,7 +188,9 @@ export default function ReceiptPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={handlePrint}><Printer className="mr-2"/> Print Receipt</Button>
+                        <Button onClick={() => handlePrint(receiptData)} disabled={isPrinting}>
+                             {isPrinting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Printing...</> : <><Printer className="mr-2"/> Print Receipt</>}
+                        </Button>
                     </div>
                     <Accordion type="single" collapsible>
                       <AccordionItem value="item-1">
