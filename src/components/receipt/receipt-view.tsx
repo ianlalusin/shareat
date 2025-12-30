@@ -118,7 +118,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
 
     return (
-        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-3 shadow-lg">
+        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && <Image src={settings.logoUrl} alt="Logo" width={40} height={40} className="mx-auto" />}
                 <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>
@@ -221,5 +221,3 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
         </div>
     );
 }
-
-    
