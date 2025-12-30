@@ -20,6 +20,7 @@ import { doc, onSnapshot, setDoc, serverTimestamp, updateDoc, increment } from "
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -31,6 +32,7 @@ function getUsername(appUser: any) {
 export default function ReceiptSettingsPage() {
     const { appUser } = useAuthContext();
     const { activeStore, loading } = useStoreContext();
+    const { toast } = useToast();
     
     // State for the bottom panel (recent receipts)
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
@@ -105,13 +107,18 @@ export default function ReceiptSettingsPage() {
 
             // Only track prints for REAL receipts (not live preview)
             if (data.session?.id && data.session.id !== "PREVIEW" && appUser?.uid) {
-            const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
-            await updateDoc(receiptRef, {
-                printedCount: increment(1),
-                lastPrintedAt: serverTimestamp(),
-                lastPrintedByUid: appUser.uid,
-                lastPrintedByUsername: getUsername(appUser),
-            });
+                try {
+                    const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, data.session.id);
+                    await updateDoc(receiptRef, {
+                        printedCount: increment(1),
+                        lastPrintedAt: serverTimestamp(),
+                        lastPrintedByUid: appUser.uid,
+                        lastPrintedByUsername: getUsername(appUser),
+                    });
+                } catch (e) {
+                    console.warn("Print tracking failed", e);
+                    toast({ variant: "destructive", title: "Print tracking failed", description: "Printing will continue, but audit fields were not saved." });
+                }
             }
 
             setTimeout(() => window.print(), 100);
