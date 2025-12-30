@@ -156,7 +156,7 @@ export default function ReceiptSettingsPage() {
         ],
         payments: [{ methodId: 'Cash', amount: 900 }],
         settings: watchedSettings,
-    } as ReceiptData), [watchedSettings]);
+    } as unknown as ReceiptData), [watchedSettings]);
 
     if (loading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>
@@ -176,7 +176,6 @@ export default function ReceiptSettingsPage() {
     }
 
     const printedCount = selectedRecentReceipt?.session?.paymentSummary?.printedCount || 0;
-
     return (
         <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Receipt Center" description={`Manage receipt templates and browse recent transactions for ${activeStore.name}`} />
