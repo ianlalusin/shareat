@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useMemo } from "react";
@@ -60,6 +61,7 @@ export type ReceiptData = {
     payments: Payment[];
     settings: ReceiptSettings;
     receiptCreatedAt?: any;
+    createdByUsername?: string;
 };
 
 interface ReceiptViewProps {
@@ -78,7 +80,7 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
 }
 
 export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
-    const { session, billables, payments, settings } = data;
+    const { session, billables, payments, settings, createdByUsername } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
 
     const groupedItems = useMemo(() => {
@@ -117,6 +119,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
 
     const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
+    const cashierName = createdByUsername || session.cashierName || session.startedByUid.substring(0, 6);
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
@@ -138,7 +141,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
                         value={session.sessionMode === 'alacarte' ? session.customer?.name || 'N/A' : session.tableNumber || 'N/A'}
                      />
                 )}
-                {settings.showCashierName && <ReceiptRow label="Cashier:" value={session.cashierName || session.startedByUid.substring(0, 6)} />}
+                {settings.showCashierName && <ReceiptRow label="Cashier:" value={cashierName} />}
                 {settings.showServerName && session.serverName && <ReceiptRow label="Server:" value={session.serverName} />}
             </section>
 

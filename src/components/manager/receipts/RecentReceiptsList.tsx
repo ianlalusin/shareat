@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -21,6 +22,8 @@ type ReceiptRow = {
     sessionMode: 'package_dinein' | 'alacarte';
     createdAt: Timestamp | Date | { seconds: number; nanoseconds: number };
     createdAtClientMs: number;
+    createdByUsername?: string;
+    createdByUid: string;
     total: number;
     totalPaid: number;
     change: number;
@@ -85,14 +88,15 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                 if (!sessionSnap.exists()) throw new Error("Session not found.");
                 
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
-                const receiptCreatedAt = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }).createdAt : null;
+                const receiptDocData = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }) as any : {};
 
                 onSelectReceipt({
                     session: sessionSnap.data() as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
-                    receiptCreatedAt: receiptCreatedAt,
+                    receiptCreatedAt: receiptDocData.createdAt,
+                    createdByUsername: receiptDocData.createdByUsername,
                 });
 
             } catch (err: any) {
@@ -123,6 +127,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Identifier</TableHead>
+                                <TableHead>Cashier</TableHead>
                                 <TableHead>Time Closed</TableHead>
                                 <TableHead>Amount</TableHead>
                             </TableRow>
@@ -136,6 +141,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                     
                                     const d = toJsDate(receipt.createdAt) ?? (receipt.createdAtClientMs ? new Date(receipt.createdAtClientMs) : null);
                                     const timeClosedLabel = d ? format(d, 'MM/dd/yy HH:mm') : "—";
+                                    const cashierName = receipt.createdByUsername ?? receipt.createdByUid.substring(0, 6);
 
                                     return (
                                         <TableRow 
@@ -145,6 +151,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                                             data-state={selectedSessionId === receipt.sessionId ? 'selected' : undefined}
                                         >
                                             <TableCell className="font-medium">{identifier}</TableCell>
+                                            <TableCell>{cashierName}</TableCell>
                                             <TableCell>{timeClosedLabel}</TableCell>
                                             <TableCell>₱{(receipt.total || 0).toFixed(2)}</TableCell>
                                         </TableRow>

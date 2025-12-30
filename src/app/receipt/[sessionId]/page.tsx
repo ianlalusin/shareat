@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
@@ -105,6 +106,7 @@ export default function ReceiptPage() {
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
                     receiptCreatedAt: receiptCreatedAt,
+                    createdByUsername: receiptDocData?.createdByUsername,
                 });
                 
                 const storedWidth = localStorage.getItem(storageKey);
