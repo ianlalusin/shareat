@@ -137,11 +137,25 @@ service cloud.firestore {
       match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /receiptSettings/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
-match /receipts/{receiptId} {
-  allow read: if isStoreMember(storeId);                 // list + preview
-  allow create: if isCashier() && isStoreMember(storeId); // created at Complete Payment
-  allow update, delete: if false;                        // receipts are immutable
-}
+      match /receipts/{receiptId} {
+        allow read: if isStoreMember(storeId);
+      
+        // created only during completePayment by cashier/manager/admin
+        allow create: if isCashier() && isStoreMember(storeId);
+      
+        // allow print tracking updates only (field-level guard)
+        allow update: if isStoreMember(storeId) && (isCashier() || isManager()) &&
+          changedKeysOnly([
+            'printedCount',
+            'lastPrintedAt',
+            'lastPrintedByUid',
+            'lastPrintedByUsername',
+            'updatedAt'
+          ]);
+      
+        // never delete receipts
+        allow delete: if false;
+      }
 
 
       // -- Operational Data --
@@ -201,5 +215,3 @@ match /receipts/{receiptId} {
     }
   }
 }
-
-    
