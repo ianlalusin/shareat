@@ -205,6 +205,8 @@ export default function ServerPage() {
     }
   };
 
+  const sessionForRequestWithStore = sessionForRequest && activeStore ? { ...sessionForRequest, storeId: activeStore.id } : null;
+
   if (isLoading) {
       return (
           <div className="flex items-center justify-center h-full">
@@ -245,35 +247,34 @@ export default function ServerPage() {
             sessionId={timelineSessionId}
         />
        )}
-        {isRequestDialogOpen && sessionForRequest && activeStore && (
+        {isRequestDialogOpen && sessionForRequestWithStore && activeStore && (
             <RequestChangeDialog
                 isOpen={isRequestDialogOpen}
                 onClose={() => setIsRequestDialogOpen(false)}
-                session={sessionForRequest}
+                session={sessionForRequestWithStore}
                 storeId={activeStore.id}
                 storePackages={storePackages}
                 schedules={schedules}
             />
         )}
-         {isAddonDialogOpen && sessionForRequest && activeStore && (
+         {isAddonDialogOpen && sessionForRequestWithStore && activeStore && (
             <AddonsPOSModal
                 open={isAddonDialogOpen}
                 onOpenChange={setIsAddonDialogOpen}
                 storeId={activeStore.id}
-                session={sessionForRequest}
-                sessionIsLocked={sessionForRequest.status === 'closed' || sessionForRequest.isPaid}
+                session={sessionForRequestWithStore}
+                sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
             />
         )}
-        {isRefillDialogOpen && sessionForRequest && activeStore && (
+        {isRefillDialogOpen && sessionForRequestWithStore && activeStore && (
             <RefillPOSModal
                 open={isRefillDialogOpen}
                 onOpenChange={setIsRefillDialogOpen}
                 storeId={activeStore.id}
-                session={sessionForRequest}
-                sessionIsLocked={sessionForRequest.status === 'closed' || sessionForRequest.isPaid}
+                session={sessionForRequestWithStore}
+                sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
             />
         )}
     </RoleGuard>
   );
 }
-
