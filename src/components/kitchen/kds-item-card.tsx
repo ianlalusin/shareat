@@ -77,7 +77,9 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
 
     const isPackage = ticket.type === 'package';
     const isAlaCarte = ticket.sessionMode === 'alacarte';
-    const displayLocation = isAlaCarte ? ticket.customerName || 'Ala Carte' : `Table ${ticket.tableNumber}`;
+    const displayLocation = isAlaCarte 
+        ? `Ala Carte - ${ticket.customerName || 'Walk-in'}` 
+        : `Table ${ticket.tableNumber}`;
 
 
     return (

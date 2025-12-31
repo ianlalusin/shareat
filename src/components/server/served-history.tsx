@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { ReadyItem } from "./ready-to-serve";
@@ -44,7 +45,7 @@ export function ServedHistory({ servedItems }: ServedHistoryProps) {
             <div className="space-y-2">
                 {currentItems.map(item => {
                     const isAlaCarte = item.sessionMode === 'alacarte';
-                    const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
+                    const displayLocation = isAlaCarte ? `Ala Carte - ${item.customerName || 'Walk-in'}` : `Table ${item.tableNumber}`;
                     return (
                     <div key={item.docId} className="border rounded-lg p-3 text-sm">
                         <div className="flex justify-between items-center">
