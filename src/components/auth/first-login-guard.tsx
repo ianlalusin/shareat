@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthContext } from "@/context/auth-context";
+import { BrandLoader } from "@/components/ui/BrandLoader";
 
 function roleHome(role?: string) {
   switch (role) {
@@ -77,6 +78,22 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     // otherwise allow page
   }, [user, appUser, loading, pathname, router]);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <BrandLoader />
+      </div>
+    );
+  }
+
+  const isPublic = PUBLIC.includes(pathname);
+  if (user && !appUser && !isPublic) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <BrandLoader />
+      </div>
+    );
+  }
+  
   return <>{children}</>;
 }
