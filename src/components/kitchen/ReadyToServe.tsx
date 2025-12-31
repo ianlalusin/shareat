@@ -9,6 +9,7 @@ import { Send, Clock, History, Loader2 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { toJsDate } from "@/lib/utils/date";
+import { Badge } from "../ui/badge";
 
 
 interface ReadyToServeProps {
