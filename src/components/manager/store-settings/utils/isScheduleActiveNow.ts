@@ -15,9 +15,8 @@ export function isScheduleActiveNow(schedule: MenuSchedule, now = new Date()): b
     }
 
     const currentDayName = daysOfWeek[now.getDay()];
-    if (!schedule.days || schedule.days.length === 0 || !schedule.days.includes(currentDayName)) {
-        // If days array is missing, empty, or doesn't include today, it's not active.
-        // A schedule with no days specified should not be active on any day.
+    // If no days are specified, assume it's active every day (if the schedule itself is active).
+    if (schedule.days && schedule.days.length > 0 && !schedule.days.includes(currentDayName)) {
         return false;
     }
 
