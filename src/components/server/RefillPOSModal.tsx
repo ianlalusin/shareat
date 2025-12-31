@@ -22,6 +22,7 @@ import type { Refill } from "@/app/admin/menu/refills/page";
 import { Textarea } from "../ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession } from "@/lib/types";
+import { computeSessionLabel } from "@/lib/utils/session";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -173,8 +174,9 @@ function POSContent({
             sessionId: session.id, 
             storeId,
             tableNumber: session.tableNumber,
-            customerName: session.customerName,
+            customerName: session.customer?.name || session.customerName,
             sessionMode: session.sessionMode,
+            sessionLabel: computeSessionLabel(session),
             guestCount: session.guestCountFinal || session.guestCountCashierInitial,
         });
         batch.set(ticketRef, ticketPayload);

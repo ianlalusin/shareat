@@ -77,10 +77,9 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
 
     const isPackage = ticket.type === 'package';
     const isAlaCarte = ticket.sessionMode === 'alacarte';
-    const displayLocation = isAlaCarte 
-        ? ticket.customerName || 'Ala Carte' 
-        : `Table ${ticket.tableNumber}`;
-
+    
+    const identifier = ticket.sessionLabel 
+        ?? (isAlaCarte ? (ticket.customerName || "Ala Carte") : `Table ${ticket.tableNumber}`);
 
     return (
         <>
@@ -95,7 +94,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                         )}
                     </div>
                      <CardDescription className="flex items-center justify-between">
-                        <span>{isAlaCarte ? `${displayLocation} (Ala Carte)` : displayLocation} {isPackage && `(${ticket.guestCount} guests)`}</span>
+                        <span>{identifier} {isPackage && `(${ticket.guestCount} guests)`}</span>
                         <CreationTime startTime={ticket.createdAt} />
                     </CardDescription>
                 </CardHeader>

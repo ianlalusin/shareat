@@ -6,18 +6,20 @@ import { Badge } from "@/components/ui/badge";
 interface SessionHeaderProps {
   session: {
     id: string;
-    tableNumber: string;
+    tableNumber?: string | null;
     guestCount: number;
     packageName: string;
     sessionMode?: 'package_dinein' | 'alacarte';
     customerName?: string | null;
+    sessionLabel?: string;
   };
 }
 
 export function SessionHeader({ session }: SessionHeaderProps) {
   
   const isAlaCarte = session.sessionMode === 'alacarte';
-  const title = isAlaCarte ? (session.customerName || 'Ala Carte') : `Table ${session.tableNumber}`;
+  const title = session.sessionLabel 
+    ?? (isAlaCarte ? (session.customerName || 'Ala Carte') : `Table ${session.tableNumber}`);
   const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
 
   return (

@@ -20,6 +20,7 @@ import { AppUser } from '@/context/auth-context';
 import type { StorePackage, BillableItem } from '@/lib/types';
 import type { Payment, ModeOfPayment } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
+import { computeSessionLabel } from '@/lib/utils/session';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -78,12 +79,18 @@ export async function startSession(
   const newSessionRef = doc(collection(db, `stores/${storeId}/sessions`));
   
   const isAlaCarte = payload.sessionMode === 'alacarte';
+  const customerName = payload.customer?.name ?? null;
+  const tableNumber = isAlaCarte ? null : payload.tableNumber;
+  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber });
+
 
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
     storeId: storeId,
     tableId: payload.tableId,
-    tableNumber: payload.tableNumber,
+    tableNumber: tableNumber,
+    customerName: customerName,
+    sessionLabel: sessionLabel,
     status: isAlaCarte ? 'active' : 'pending_verification',
     sessionMode: payload.sessionMode,
     isPaid: false,
@@ -169,6 +176,7 @@ export async function startSession(
         cancelReason: null,
         sessionMode: 'package_dinein',
         customerName: payload.customer?.name,
+        sessionLabel: sessionLabel,
       });
       batch.set(ticketRef, ticketPayload);
   }
@@ -396,7 +404,7 @@ export async function completePayment(
             sessionMode: sessionData.sessionMode,
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
             tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
-            customerName: sessionData.customer?.name ?? null,
+            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
             total: grandTotal,
             totalPaid,
             change: change,

@@ -19,6 +19,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { Product, StoreAddon, PendingSession } from "@/lib/types";
 import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
+import { computeSessionLabel } from "@/lib/utils/session";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -180,8 +181,9 @@ function POSContent({
                 sessionId: session.id, 
                 storeId,
                 tableNumber: session.tableNumber,
-                customerName: session.customerName,
+                customerName: session.customer?.name || session.customerName,
                 sessionMode: session.sessionMode,
+                sessionLabel: computeSessionLabel(session),
                 guestCount: session.guestCountFinal || session.guestCountCashierInitial,
             });
             batch.set(ticketRef, ticketPayload);
