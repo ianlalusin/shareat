@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { KitchenLocationEditDialog } from "./kitchen-location-edit-dialog";
+import { KitchenLocationEditDialog } from "@/components/manager/store-settings/kitchen-location-edit-dialog";
 import type { Store, KitchenLocation } from "@/lib/types";
 
 export function KitchenLocationsSettings({ store }: { store: Store }) {

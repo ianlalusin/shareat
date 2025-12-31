@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { KitchenLocationEditDialog } from "./kitchen-location-edit-dialog";
+import { KitchenLocationEditDialog } from "@/components/manager/store-settings/kitchen-location-edit-dialog";
 import type { Store, KitchenLocation } from "@/lib/types";
 
 export function KitchenLocationsSettings({ store }: { store: Store }) {
@@ -27,6 +27,12 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     const [editingLocation, setEditingLocation] = useState<KitchenLocation | null>(null);
 
     useEffect(() => {
+        if (!store?.id) {
+            setIsLoading(false);
+            setLocations([]);
+            return;
+        }
+
         const locationsRef = collection(db, "stores", store.id, "kitchenLocations");
         const q = query(locationsRef, orderBy("sortOrder", "asc"), orderBy("name", "asc"));
         
@@ -36,7 +42,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
         });
         
         return () => unsubscribe();
-    }, [store.id]);
+    }, [store?.id]);
 
     const handleOpenDialog = (location: KitchenLocation | null = null) => {
         setEditingLocation(location);
@@ -49,7 +55,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     }
 
     const handleSave = async (data: Partial<Omit<KitchenLocation, 'id' | 'createdAt' | 'updatedAt'>>) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const maxSortOrder = locations.reduce((max, loc) => Math.max(max, loc.sortOrder || 0), 0);
 
         try {
@@ -78,7 +84,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     };
     
     const handleToggleActive = async (location: KitchenLocation) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const newStatus = !location.isActive;
         const action = newStatus ? "Activate" : "Deactivate";
         
