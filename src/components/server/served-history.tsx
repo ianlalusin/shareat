@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState } from "react";
@@ -45,14 +46,17 @@ export function ServedHistory({ servedItems }: ServedHistoryProps) {
             <div className="space-y-2">
                 {currentItems.map(item => {
                     const isAlaCarte = item.sessionMode === 'alacarte';
-                    const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
+                    const displayLocation = isAlaCarte ? `${item.customerName} (Ala Carte)` || 'Ala Carte' : `Table ${item.tableNumber}`;
                     return (
                     <div key={item.docId} className="border rounded-lg p-3 text-sm">
                         <div className="flex justify-between items-center">
                             <p className="font-semibold">{displayLocation}</p>
                             <Badge 
                                 variant="outline"
-                                className="capitalize bg-green-100 text-green-800 border-green-300"
+                                className={cn(
+                                    "capitalize",
+                                    item.status === 'served' && "bg-green-100 text-green-800 border-green-300",
+                                )}
                             >
                                 Served
                             </Badge>

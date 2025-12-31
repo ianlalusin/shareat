@@ -128,7 +128,7 @@ function SessionCard({ session, onVerify, onRequestChange, onViewTimeline, onAdd
     const isLocked = session.status === 'closed' || session.isPaid === true;
 
     const isAlaCarte = session.sessionMode === 'alacarte';
-    const displayLocation = isAlaCarte ? session.customerName || 'Ala Carte' : `Table ${session.tableNumber}`;
+    const displayLocation = isAlaCarte ? `${session.customerName} (Ala Carte)` || 'Ala Carte' : `Table ${session.tableNumber}`;
     const cardTitle = session.status === 'active' 
         ? (isAlaCarte ? displayLocation : `${displayLocation} - ${guestCount}pax`)
         : displayLocation;
