@@ -15,6 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
 import type { ModeOfPayment } from "@/lib/types";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import CompactCalendar from "@/components/ui/CompactCalendar";
 
 // --- Sub-components for Dashboard ---
 
@@ -24,6 +26,19 @@ type DashboardStats = {
     avgBasket: number;
     discountsTotal: number;
 };
+
+// --- HELPERS ---
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function endOfDay(d: Date) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
+function isSameDay(a: Date, b: Date) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" }); }
+function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
+    if (!active || !range) return "Custom";
+    return isSameDay(range.start, range.end)
+        ? `Custom: ${fmtDate(range.start)}`
+        : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
 
 const StatCard = ({ title, value, icon, isLoading, format = "number" }: { title: string, value: string | number, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) => {
     const formattedValue = () => {
@@ -90,7 +105,7 @@ const RecentReceiptsList = ({ receipts, onSelect, isLoading, selectedId }: { rec
 
 // --- Main Dashboard Page Component ---
 
-type DatePreset = "today" | "yesterday" | "week" | "month";
+type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 const presets: { label: string, value: DatePreset }[] = [
     { label: "Today", value: "today" },
     { label: "Yesterday", value: "yesterday" },
@@ -106,6 +121,8 @@ export default function DashboardPage() {
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
+    const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
     
     const [receipts, setReceipts] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -147,9 +164,22 @@ export default function DashboardPage() {
             case "month":
                 start = new Date(now.getFullYear(), now.getMonth(), 1);
                 break;
+            case "custom":
+                if (customRange) {
+                    start = startOfDay(customRange.start);
+                    end = endOfDay(customRange.end);
+                } else {
+                    start.setHours(0, 0, 0, 0);
+                    end.setHours(23, 59, 59, 999);
+                }
+                break;
         }
 
-        const limitCount = datePreset === 'today' || datePreset === 'yesterday' ? 500 : 1500;
+        const daySpan = (end.getTime() - start.getTime()) / 86400000;
+        let limitCount = 1500;
+        if (datePreset === 'today' || datePreset === 'yesterday' || (datePreset === 'custom' && daySpan <= 1)) {
+            limitCount = 500;
+        }
 
         const receiptsQuery = query(
             collection(db, "stores", activeStore.id, "receipts"),
@@ -170,14 +200,13 @@ export default function DashboardPage() {
         });
 
         return () => unsubscribe();
-    }, [activeStore, datePreset]);
+    }, [activeStore, datePreset, customRange]);
 
     const { stats, mopTotals, recentReceipts } = useMemo(() => {
         const getReceiptTotal = (r: any) => {
             const v = r?.analytics?.grandTotal ?? r?.total ?? 0;
             return typeof v === "number" ? v : Number(v) || 0;
         };
-
         const totalSales = receipts.reduce((sum, r) => sum + getReceiptTotal(r), 0);
         const discountsTotal = receipts.reduce((sum, r) => sum + (r.analytics?.discountsTotal || 0), 0);
         const receiptsCount = receipts.length;
@@ -200,7 +229,6 @@ export default function DashboardPage() {
               mop[finalMethod] = (mop[finalMethod] || 0) + amt;
             }
         });
-
         return {
             stats: { totalSales, receiptsCount, avgBasket, discountsTotal },
             mopTotals: mop,
@@ -217,7 +245,6 @@ export default function DashboardPage() {
     }, [receipts]);
 
     // --- Receipt Preview Logic ---
-
     const handleSelectReceipt = useCallback(async (receiptId: string) => {
         setSelectedReceiptId(receiptId);
         setIsLoadingPreview(true);
@@ -274,8 +301,22 @@ export default function DashboardPage() {
         });
     };
 
+    const handleCalendarChange = (range: {start: Date, end: Date}, preset: string | null) => {
+        const presetMap: Record<string, DatePreset> = {
+            today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
+        };
+
+        if (preset && preset !== "custom" && presetMap[preset]) {
+            setDatePreset(presetMap[preset]);
+        } else {
+            setCustomRange({ start: range.start, end: range.end });
+            setDatePreset("custom");
+        }
+        setIsCalendarOpen(false);
+    };
+
+
     // --- Render Logic ---
-    
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -298,6 +339,20 @@ export default function DashboardPage() {
                         {presets.map(p => (
                             <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => setDatePreset(p.value)} className="h-8">{p.label}</Button>
                         ))}
+                         <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                 <Button
+                                    variant={datePreset === "custom" ? "default" : "ghost"}
+                                    size="sm"
+                                    className="h-8 min-w-[100px]"
+                                >
+                                    {customBtnLabel(customRange, datePreset === "custom")}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <CompactCalendar onChange={handleCalendarChange}/>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </PageHeader>
 
@@ -350,3 +405,4 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
