@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
+import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import type { StoreAddon, ModeOfPayment } from "@/lib/types";
 import type { PendingSession } from "@/lib/types";
 import type { StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment } from "@/lib/types";
@@ -562,7 +563,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             guestCount: session.guestCountFinal || 0,
             packageName: session.packageName ?? "N/A",
             sessionMode: session.sessionMode,
-            customerName: session.customerName ?? null,
+            customerName: session.customer?.name ?? session.customerName,
         }} />
         <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
@@ -586,6 +587,7 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             {/* Left Panel: Receipt Preview */}
             <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
+                    <CustomerInfoForm session={session} />
                     <BillTotals
                         items={allServedItems}
                         adjustments={adjustments}
@@ -695,7 +697,7 @@ function SessionListView() {
         };
         setIsLoading(true);
 
-        const unsubs: (()=>void)[] = [];
+        const unsubs: (() => void)[] = [];
 
         // Fetch Tables
         const tablesRef = collection(db, "stores", activeStore.id, "tables");
@@ -834,3 +836,5 @@ export default function CashierPage() {
     </RoleGuard>
   );
 }
+
+    

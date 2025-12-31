@@ -163,11 +163,13 @@ export type StoreAddon = {
 
 export type PendingSession = {
   id: string;
+  storeId: string;
   tableNumber: string;
   packageName: string;
   status: 'pending_verification' | 'active' | 'closed';
   sessionMode: 'package_dinein' | 'alacarte';
   customerName?: string | null;
+  customer?: { name?: string | null, tin?: string | null, address?: string | null };
   isPaid?: boolean;
   packageOfferingId: string;
   initialFlavorIds?: string[];
@@ -285,3 +287,5 @@ export type Store = {
   createdAt: any;
   updatedAt: any;
 };
+
+    
