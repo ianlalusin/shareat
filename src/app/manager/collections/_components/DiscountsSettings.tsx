@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
@@ -16,22 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { DiscountEditDialog } from "./DiscountEditDialog";
 import { Checkbox } from "@/components/ui/checkbox";
-
-export type Discount = {
-  id: string;
-  name: string;
-  type: "fixed" | "percent";
-  value: number;
-  scope: ("bill" | "item")[];
-  stackable: boolean;
-  isEnabled: boolean;
-  sortOrder: number;
-  isArchived: boolean;
-  createdAt: any;
-  updatedAt: any;
-  createdBy: string;
-  updatedBy: string;
-};
+import type { Store, Discount } from "@/lib/types";
 
 function formatScope(scope: ("item" | "bill")[] | undefined) {
   if (!scope || scope.length === 0) return "—";

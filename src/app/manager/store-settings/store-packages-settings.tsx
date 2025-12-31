@@ -17,7 +17,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/components/manager/store-settings/_utils/isScheduleActiveNow";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {

@@ -14,14 +14,11 @@ import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { StoreRefill } from "../manager/store-settings/store-refills-settings";
-import type { StoreFlavor } from "../manager/store-settings/store-flavors-settings";
 import { Label } from "../ui/label";
 import { Checkbox } from "../ui/checkbox";
-import type { Refill } from "@/app/admin/menu/refills/page";
 import { Textarea } from "../ui/textarea";
 import { cn } from "@/lib/utils";
-import type { StorePackage, PendingSession } from "@/lib/types";
+import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 
 interface RefillPOSModalProps {

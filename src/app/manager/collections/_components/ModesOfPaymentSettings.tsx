@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
@@ -16,20 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { ModeOfPaymentEditDialog } from "./ModeOfPaymentEditDialog";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { Checkbox } from "@/components/ui/checkbox";
-
-export type ModeOfPayment = {
-  id: string;
-  name: string;
-  type: "cash" | "card" | "online" | "other";
-  sortOrder: number;
-  isActive: boolean;
-  hasRef: boolean;
-  isArchived: boolean;
-  createdAt: any;
-  updatedAt: any;
-  createdBy: string;
-  updatedBy: string;
-};
+import type { Store, ModeOfPayment } from "@/lib/types";
 
 export function ModesOfPaymentSettings({ store }: { store: Store }) {
   const { appUser } = useAuthContext();

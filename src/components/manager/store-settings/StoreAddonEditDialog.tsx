@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StoreAddon } from "./addons-settings";
-import { KitchenLocation } from "./kitchen-locations-settings";
+import type { StoreAddon, KitchenLocation } from "@/lib/types";
 
 const formSchema = z.object({
     price: z.coerce.number().min(0, "Price must be a positive number."),

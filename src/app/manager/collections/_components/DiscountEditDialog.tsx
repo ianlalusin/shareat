@@ -11,8 +11,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Discount } from "./DiscountsSettings";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { Discount } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -48,7 +48,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
       name: "",
       type: "fixed",
       value: 0,
-      scope: ["bill"] as ("item" | "bill")[],
+      scope: ["bill"],
       stackable: false,
       sortOrder: 1000,
       isEnabled: true,
@@ -124,7 +124,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
                                 checked={field.value?.includes("item")}
                                 onCheckedChange={(checked) => {
                                     return checked
-                                    ? field.onChange([...field.value, "item"])
+                                    ? field.onChange([...(field.value || []), "item"])
                                     : field.onChange(
                                         field.value?.filter(
                                             (value) => value !== "item"
@@ -147,7 +147,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
                                 checked={field.value?.includes("bill")}
                                 onCheckedChange={(checked) => {
                                     return checked
-                                    ? field.onChange([...field.value, "bill"])
+                                    ? field.onChange([...(field.value || []), "bill"])
                                     : field.onChange(
                                         field.value?.filter(
                                             (value) => value !== "bill"

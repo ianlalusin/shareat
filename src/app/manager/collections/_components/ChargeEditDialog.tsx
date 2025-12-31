@@ -11,16 +11,16 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Charge } from "./ChargesSettings";
+import type { Charge } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
-  type: z.enum(["fixed", "percentage"]),
+  type: z.enum(["fixed", "percent"]),
   value: z.coerce.number().min(0, "Value cannot be negative."),
   appliesTo: z.enum(["subtotal", "total"]).default("subtotal"),
   sortOrder: z.coerce.number().int().default(1000),
   isEnabled: z.boolean().default(true),
-}).refine(data => !(data.type === 'percentage' && data.value > 100), {
+}).refine(data => !(data.type === 'percent' && data.value > 100), {
   message: "Percentage cannot exceed 100.",
   path: ["value"],
 });
@@ -96,7 +96,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="fixed">Fixed (₱)</SelectItem>
-                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="percent">Percent (%)</SelectItem>
                     </SelectContent>
                   </Select>
                 </FormItem>

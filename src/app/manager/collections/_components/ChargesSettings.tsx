@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
@@ -15,21 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { ChargeEditDialog } from "./ChargeEditDialog";
-
-export type Charge = {
-  id: string;
-  name: string;
-  type: "fixed" | "percentage";
-  value: number;
-  appliesTo: "subtotal" | "total";
-  isEnabled: boolean;
-  sortOrder: number;
-  isArchived: boolean;
-  createdAt: any;
-  updatedAt: any;
-  createdBy: string;
-  updatedBy: string;
-};
+import type { Store, Charge } from "@/lib/types";
 
 export function ChargesSettings({ store }: { store: Store }) {
   const { appUser } = useAuthContext();
@@ -174,7 +159,7 @@ export function ChargesSettings({ store }: { store: Store }) {
                   <TableRow key={charge.id}>
                     <TableCell className="font-medium">{charge.name}</TableCell>
                     <TableCell className="capitalize">{charge.type}</TableCell>
-                    <TableCell>{charge.type === 'percentage' ? `${charge.value}%` : `₱${charge.value.toFixed(2)}`}</TableCell>
+                    <TableCell>{charge.type === 'percent' ? `${charge.value}%` : `₱${charge.value.toFixed(2)}`}</TableCell>
                     <TableCell><Badge variant={charge.isEnabled ? "default" : "outline"}>{charge.isEnabled ? "Enabled" : "Disabled"}</Badge></TableCell>
                     <TableCell>{charge.sortOrder}</TableCell>
                     <TableCell className="text-right">
@@ -205,5 +190,3 @@ export function ChargesSettings({ store }: { store: Store }) {
     </>
   );
 }
-
-  

@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -290,4 +291,13 @@ export type Store = {
   updatedAt: any;
 };
 
+export type StoreTable = {
+    id: string; // e.g., T1, T2
+    code: string;
+    tableNumber: string;
+    displayName: string;
+    isActive: boolean;
+    status: 'available' | 'occupied' | 'reserved' | 'out_of_order';
+    currentSessionId: string | null;
+};
     
