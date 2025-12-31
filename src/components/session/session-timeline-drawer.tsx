@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AppUser, useAuthContext } from "@/context/auth-context";
+import { toJsDate } from "@/lib/utils/date";
 
 interface SessionTimelineDrawerProps {
   open: boolean;
@@ -89,7 +90,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (sessionData?.startedAt) {
             allEvents.push({
                 id: `${sessionId}-start`,
-                timestamp: sessionData.startedAt.toDate(),
+                timestamp: toJsDate(sessionData.startedAt)!,
                 type: 'session',
                 description: 'Session started.',
                 actorUid: sessionData.startedByUid,
@@ -98,7 +99,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (sessionData?.closedAt) {
              allEvents.push({
                 id: `${sessionId}-closed`,
-                timestamp: sessionData.closedAt.toDate(),
+                timestamp: toJsDate(sessionData.closedAt)!,
                 type: 'session',
                 description: 'Session closed.',
                 actorUid: sessionData.closedByUid,
@@ -107,7 +108,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (sessionData?.verifiedAt) {
              allEvents.push({
                 id: `${sessionId}-verified`,
-                timestamp: sessionData.verifiedAt.toDate(),
+                timestamp: toJsDate(sessionData.verifiedAt)!,
                 type: 'session',
                 description: `Session verified with ${sessionData.guestCountFinal} guests.`,
                 actorUid: sessionData.verifiedByUid,
@@ -119,7 +120,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (guestCountChange?.requestedAt) {
              allEvents.push({
                 id: `${sessionId}-gc-req`,
-                timestamp: guestCountChange.requestedAt.toDate(),
+                timestamp: toJsDate(guestCountChange.requestedAt)!,
                 type: 'change_request',
                 description: `Requested guest count change to ${guestCountChange.requestedCount}.`,
                 actorUid: guestCountChange.requestedByUid,
@@ -128,7 +129,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (guestCountChange?.approvedAt) {
              allEvents.push({
                 id: `${sessionId}-gc-approve`,
-                timestamp: guestCountChange.approvedAt.toDate(),
+                timestamp: toJsDate(guestCountChange.approvedAt)!,
                 type: 'change_approval',
                 description: `Guest count change to ${sessionData.guestCountFinal} approved.`,
                 actorUid: guestCountChange.approvedByUid,
@@ -137,7 +138,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (guestCountChange?.rejectedAt) {
             allEvents.push({
                id: `${sessionId}-gc-reject`,
-               timestamp: guestCountChange.rejectedAt.toDate(),
+               timestamp: toJsDate(guestCountChange.rejectedAt)!,
                type: 'change_rejection',
                description: `Guest count change request was rejected.`,
                actorUid: guestCountChange.rejectedByUid,
@@ -146,7 +147,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
          if (packageChange?.requestedAt) {
              allEvents.push({
                 id: `${sessionId}-pkg-req`,
-                timestamp: packageChange.requestedAt.toDate(),
+                timestamp: toJsDate(packageChange.requestedAt)!,
                 type: 'change_request',
                 description: `Requested package change to "${packageChange.requestedPackageSnapshot?.name}".`,
                 actorUid: packageChange.requestedByUid,
@@ -155,7 +156,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (packageChange?.approvedAt) {
              allEvents.push({
                 id: `${sessionId}-pkg-approve`,
-                timestamp: packageChange.approvedAt.toDate(),
+                timestamp: toJsDate(packageChange.approvedAt)!,
                 type: 'change_approval',
                 description: `Package change to "${sessionData.packageSnapshot?.name}" approved.`,
                 actorUid: packageChange.approvedByUid,
@@ -164,7 +165,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         if (packageChange?.rejectedAt) {
             allEvents.push({
                 id: `${sessionId}-pkg-reject`,
-                timestamp: packageChange.rejectedAt.toDate(),
+                timestamp: toJsDate(packageChange.rejectedAt)!,
                 type: 'change_rejection',
                 description: `Package change request was rejected.`,
                 actorUid: packageChange.rejectedByUid,
@@ -177,28 +178,28 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
             const isRefill = ticket.type === 'refill';
             if (ticket.createdAt) allEvents.push({
                 id: `${ticket.id}-created`,
-                timestamp: ticket.createdAt.toDate(),
+                timestamp: toJsDate(ticket.createdAt)!,
                 type: isRefill ? 'refill_order' : 'kitchen',
                 description: `${isRefill ? 'Refill ordered' : 'Ticket created'} for ${ticket.itemName}.`,
                 actorUid: ticket.createdByUid
             });
             if (ticket.preparedAt) allEvents.push({
                 id: `${ticket.id}-ready`,
-                timestamp: ticket.preparedAt.toDate(),
+                timestamp: toJsDate(ticket.preparedAt)!,
                 type: 'kitchen',
                 description: `${ticket.itemName} marked as ready.`,
                 actorUid: ticket.preparedByUid
             });
              if (ticket.servedAt) allEvents.push({
                 id: `${ticket.id}-served`,
-                timestamp: ticket.servedAt.toDate(),
+                timestamp: toJsDate(ticket.servedAt)!,
                 type: 'kitchen',
                 description: `${ticket.itemName} marked as served.`,
                 actorUid: ticket.servedByUid
             });
              if (ticket.cancelledAt) allEvents.push({
                 id: `${ticket.id}-cancelled`,
-                timestamp: ticket.cancelledAt.toDate(),
+                timestamp: toJsDate(ticket.cancelledAt)!,
                 type: 'kitchen',
                 description: `${ticket.itemName} was cancelled. Reason: ${ticket.cancelReason || 'N/A'}.`,
                 actorUid: ticket.cancelledByUid
@@ -211,7 +212,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
             const after = entry.after ? JSON.stringify(entry.after) : '';
             allEvents.push({
                 id: entry.id,
-                timestamp: entry.createdAt.toDate(),
+                timestamp: toJsDate(entry.createdAt)!,
                 type: 'billing',
                 description: `Bill item ${entry.action}: ${before} -> ${after}`,
                 actorUid: entry.performedByUid
@@ -222,7 +223,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         paymentsData.forEach(payment => {
             allEvents.push({
                 id: payment.id,
-                timestamp: payment.createdAt.toDate(),
+                timestamp: toJsDate(payment.createdAt)!,
                 type: 'payment',
                 description: `Payment of ₱${payment.amount.toFixed(2)} received via ${payment.methodId}.`,
                 actorUid: payment.createdByUid
@@ -237,7 +238,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
 
     // Use onSnapshot for live data where needed, getDocs for one-time fetch
     const unsubSession = onSnapshot(sessionRef, async (sessionSnap) => {
-        const sessionData = sessionSnap.data();
+        const sessionData = sessionSnap.data({ serverTimestamps: "estimate" });
 
         const [ticketsSnap, billHistorySnap, paymentsSnap] = await Promise.all([
             getDocs(ticketsRef),
