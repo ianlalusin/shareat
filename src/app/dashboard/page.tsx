@@ -571,7 +571,7 @@ export default function DashboardPage() {
                                     {isLoadingPreview ? (
                                         <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-muted-foreground" /></div>
                                     ) : selectedReceiptData ? (
-                                        <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} /></div>
+                                        <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} paymentMethods={[]} /></div>
                                     ) : (
                                         <div className="flex items-center justify-center h-full text-muted-foreground"><p>Select a receipt to preview.</p></div>
                                     )}
@@ -583,7 +583,7 @@ export default function DashboardPage() {
                  {error && <Card className="mt-6"><CardContent className="p-10 text-center text-destructive">{error}</CardContent></Card>}
             </div>
             <div className="hidden print-block">
-                {selectedReceiptData && <ReceiptView data={selectedReceiptData} />}
+                {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={[]} />}
             </div>
         </RoleGuard>
     );
