@@ -525,7 +525,8 @@ function SessionDetailView({ sessionId }: { sessionId: string }) {
             sessionId,
             appUser,
             normalizedPayments,
-            billingSummary
+            billingSummary,
+            paymentMethods
         );
     
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));

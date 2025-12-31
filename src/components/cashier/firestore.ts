@@ -18,7 +18,7 @@ import {
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
 import type { StorePackage, BillableItem } from '@/lib/types';
-import type { Payment } from '@/lib/types';
+import type { Payment, ModeOfPayment } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
@@ -287,6 +287,7 @@ export async function completePayment(
   user: AppUser,
   payments: Payment[],
   billingSummary: BillingSummary,
+  paymentMethods: ModeOfPayment[]
 ) {
   await runTransaction(db, async (tx) => {
     // --- READ PHASE ---
@@ -378,8 +379,9 @@ export async function completePayment(
         const chargesTotal = billingSummary.adjustmentsTotal || 0;
         const change = Math.max(0, totalPaid - grandTotal);
         
+        const mopNameMap = new Map(paymentMethods.map(m => [m.id, m.name]));
         const mop = payments.reduce((acc, p) => {
-          const key = String(p.methodId || "unknown").toLowerCase();
+          const key = mopNameMap.get(p.methodId) || p.methodId || "unknown";
           const amt = typeof p.amount === "number" ? p.amount : Number(p.amount) || 0;
           acc[key] = (acc[key] || 0) + amt;
           return acc;
