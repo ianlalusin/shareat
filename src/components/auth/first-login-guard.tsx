@@ -86,8 +86,43 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Show loader if user is authenticated but their app profile is still loading.
+  // This prevents the login page from flashing for an already logged-in user.
+  if (user && !appUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <BrandLoader />
+      </div>
+    );
+  }
+
+  // Synchronously determine if a redirect will occur. If so, render the loader
+  // to prevent the current page from flashing while the useEffect hook triggers.
+  let redirectTo: string | null = null;
   const isPublic = PUBLIC.includes(pathname);
-  if (user && !appUser && !isPublic) {
+
+  if (!user) {
+    if (!isPublic) {
+      redirectTo = "/";
+    }
+  } else if (appUser) {
+    const status = appUser.status;
+    if (status === "needs_profile") {
+      if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+        redirectTo = "/signup";
+      }
+    } else if (status && status !== "active") {
+      if (!PENDING_ALLOWED.includes(pathname)) {
+        redirectTo = "/pending";
+      }
+    } else { // active user
+      if (isPublic || pathname === "/pending") {
+        redirectTo = roleHome(appUser.role);
+      }
+    }
+  }
+
+  if (redirectTo && redirectTo !== pathname) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <BrandLoader />
