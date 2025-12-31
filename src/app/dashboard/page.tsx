@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -187,6 +188,12 @@ export default function DashboardPage() {
         return { start: s, end: e };
     }, [datePreset, customRange]);
 
+    const olderReceiptsRef = useRef(olderReceipts);
+    useEffect(() => {
+        olderReceiptsRef.current = olderReceipts;
+    }, [olderReceipts]);
+
+
     // Live listener for the first page
     useEffect(() => {
         if (!activeStore?.id) {
@@ -213,8 +220,11 @@ export default function DashboardPage() {
             const newLiveReceipts = snapshot.docs.map(mapDocToReceipt);
             setLiveReceipts(newLiveReceipts);
 
-            const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
-            setLastDoc(newLastDoc);
+            if (olderReceiptsRef.current.length === 0) {
+                const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+                setLastDoc(newLastDoc);
+            }
+            
             setHasMore(snapshot.docs.length === PAGE_SIZE);
 
             setIsLoading(false);
@@ -544,18 +554,18 @@ export default function DashboardPage() {
                                 </CardHeader>
                                 <CardContent>
                                     <RecentReceiptsList receipts={recentReceipts} onSelect={handleSelectReceipt} isLoading={isLoading} selectedId={selectedReceiptId} />
-                                    {olderReceipts.length > 0 && <p className="text-xs text-center text-muted-foreground mt-2">Showing {receipts.length} loaded receipts.</p>}
                                     {hasMore && (
                                         <Button
                                             variant="outline"
                                             className="w-full mt-4"
                                             onClick={loadMore}
-                                            disabled={loadingMore}
+                                            disabled={loadingMore || !lastDoc}
                                         >
                                             {loadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
                                             {loadingMore ? "Loading..." : "Load older"}
                                         </Button>
                                     )}
+                                    {olderReceipts.length > 0 && <p className="text-xs text-center text-muted-foreground mt-2">Showing {receipts.length} loaded receipts.</p>}
                                 </CardContent>
                             </Card>
                         </div>

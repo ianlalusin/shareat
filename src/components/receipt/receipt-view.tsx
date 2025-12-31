@@ -188,13 +188,13 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                                   )}
                                 </div>
                                 <span className="text-right whitespace-nowrap">
-                                  {item.total.toFixed(2)}
+                                  {item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                             </div>
                              {hasDiscount && settings.showDiscountBreakdown && (
                                 <div className="pl-4 text-xs flex justify-between">
                                     <span>Discount</span>
-                                    <span className="text-right whitespace-nowrap">- {discountAmount.toFixed(2)}</span>
+                                    <span className="text-right whitespace-nowrap">- {discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                             )}
                         </div>
@@ -204,27 +204,27 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                <ReceiptRow label="Subtotal" value={session.paymentSummary.subtotal.toFixed(2)} />
+                <ReceiptRow label="Subtotal" value={session.paymentSummary.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 {(session.paymentSummary.lineDiscountsTotal > 0 || session.paymentSummary.billDiscountAmount > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${(session.paymentSummary.lineDiscountsTotal + session.paymentSummary.billDiscountAmount).toFixed(2)})`} />
+                    <ReceiptRow label="Discounts" value={`(${(session.paymentSummary.lineDiscountsTotal + session.paymentSummary.billDiscountAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
                 )}
                  {session.paymentSummary.adjustmentsTotal > 0 && (
-                    <ReceiptRow label="Charges" value={session.paymentSummary.adjustmentsTotal.toFixed(2)} />
+                    <ReceiptRow label="Charges" value={session.paymentSummary.adjustmentsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 )}
              </section>
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={`PHP ${session.paymentSummary.grandTotal.toFixed(2)}`} isBold={true} isEmphasized={true} />
+                <ReceiptRow label="TOTAL" value={`PHP ${session.paymentSummary.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
              </section>
             
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
                 {payments.map((p, i) => (
-                    <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount.toFixed(2)} />
+                    <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 ))}
-                 <ReceiptRow label="Total Paid" value={session.paymentSummary.totalPaid.toFixed(2)} />
-                 <ReceiptRow label="CHANGE" value={session.paymentSummary.change.toFixed(2)} isBold={true} isEmphasized={true} />
+                 <ReceiptRow label="Total Paid" value={session.paymentSummary.totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 <ReceiptRow label="CHANGE" value={session.paymentSummary.change.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
              </section>
 
              {freeItems.length > 0 && (
@@ -239,7 +239,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 </>
              )}
 
-            <footer className="text-center mt-4 space-y-px receipt-section">
+            <footer className="text-center mt-4 space-y-2 receipt-section">
                 {settings.footerText && <p className="text-xs">{settings.footerText}</p>}
                 <p className="text-xs">Thank you!</p>
             </footer>

@@ -124,15 +124,15 @@ export function BillTotals({
                         <div className="flex justify-between items-center">
                             <div>
                                 <p>{displayQty > 1 && `${displayQty}x `}{item.itemName}</p>
-                                <p className="text-muted-foreground text-xs">{displayQty} x ₱{item.unitPrice.toFixed(2)}</p>
+                                <p className="text-muted-foreground text-xs">{displayQty} x ₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
-                            <p>₱{item.lineTotal.toFixed(2)}</p>
+                            <p>₱{item.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                         {hasDiscount && (
                             <div className="flex justify-between items-center text-xs text-red-600 pl-4 cursor-pointer" onClick={() => onRemoveDiscount(item.ticketIds)}>
                                 <span>Discount ({item.discountType === 'percent' ? `${item.discountValue}%` : `₱${item.discountValue}`})</span>
                                 <div className="flex items-center gap-1">
-                                    <span>- ₱{discountAmount.toFixed(2)}</span>
+                                    <span>- ₱{discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     <Trash2 className="h-3 w-3" />
                                 </div>
                             </div>
@@ -156,14 +156,14 @@ export function BillTotals({
             {/* --- Subtotal Section --- */}
             <div className="flex justify-between text-muted-foreground">
               <span>Subtotal</span>
-              <span>₱{subtotal.toFixed(2)}</span>
+              <span>₱{subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             
             {/* --- Discounts Section --- */}
             {(lineDiscountsTotal > 0 || billDiscountAmount > 0) && (
                  <div className="flex justify-between text-red-600">
                     <span>Total Discounts</span>
-                    <span>- ₱{(lineDiscountsTotal + billDiscountAmount).toFixed(2)}</span>
+                    <span>- ₱{(lineDiscountsTotal + billDiscountAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
             )}
 
@@ -171,7 +171,7 @@ export function BillTotals({
             {adjustments.map(adj => (
                  <div key={adj.id} className={`flex justify-between ${adj.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     <span>{adj.note}</span>
-                    <span>{adj.amount >= 0 ? '+' : '-'} ₱{Math.abs(adj.amount).toFixed(2)}</span>
+                    <span>{adj.amount >= 0 ? '+' : '-'} ₱{Math.abs(adj.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
             ))}
             
@@ -179,16 +179,16 @@ export function BillTotals({
             
              <div className="flex justify-between font-bold text-lg pt-1">
               <span>Amount Due</span>
-              <span>₱{grandTotal.toFixed(2)}</span>
+              <span>₱{grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             
              <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Paid</span>
-                <span className="font-medium">₱{totalPaid.toFixed(2)}</span>
+                <span className="font-medium">₱{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className={`flex justify-between text-sm ${remainingBalance > 0 ? 'text-destructive' : 'text-green-600'}`}>
                 <span className="text-muted-foreground">{remainingBalance > 0 ? "Balance" : "Change"}</span>
-                <span className="font-medium">₱{(remainingBalance > 0 ? remainingBalance : change).toFixed(2)}</span>
+                <span className="font-medium">₱{(remainingBalance > 0 ? remainingBalance : change).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         </div>
     </div>
