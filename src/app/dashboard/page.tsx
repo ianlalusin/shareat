@@ -18,15 +18,6 @@ import type { ModeOfPayment } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 
-// --- Sub-components for Dashboard ---
-
-type DashboardStats = {
-    totalSales: number;
-    receiptsCount: number;
-    avgBasket: number;
-    discountsTotal: number;
-};
-
 // --- HELPERS ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
@@ -405,4 +396,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
