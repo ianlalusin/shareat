@@ -320,8 +320,10 @@ export async function completePayment(
     }
     
     // --- VALIDATION AND PREPARATION ---
-    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    if (totalPaid < billingSummary.grandTotal) {
+    const totalPaid = payments.reduce((s,p)=> s + (typeof p.amount==="number" ? p.amount : Number(p.amount)||0), 0);
+    const grandTotal = billingSummary.grandTotal || 0;
+
+    if (totalPaid < grandTotal) {
       throw new Error("Cannot complete payment: balance is not zero.");
     }
     const actor = getActorStamp(user);
@@ -351,7 +353,7 @@ export async function completePayment(
       paymentSummary: {
         ...billingSummary,
         totalPaid,
-        change: Math.max(0, totalPaid - billingSummary.grandTotal),
+        change: Math.max(0, totalPaid - grandTotal),
         payments,
       },
     });
@@ -374,11 +376,12 @@ export async function completePayment(
 
         const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
         const chargesTotal = billingSummary.adjustmentsTotal || 0;
-        
+        const change = Math.max(0, totalPaid - grandTotal);
+
         const mop = payments.reduce((acc, p) => {
-          const k = String(p.methodId || "unknown").toLowerCase();
+          const key = String(p.methodId || "unknown").toLowerCase();
           const amt = typeof p.amount === "number" ? p.amount : Number(p.amount) || 0;
-          acc[k] = (acc[k] || 0) + amt;
+          acc[key] = (acc[key] || 0) + amt;
           return acc;
         }, {} as Record<string, number>);
 
@@ -392,21 +395,22 @@ export async function completePayment(
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
             tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
             customerName: sessionData.customer?.name ?? null,
-            total: billingSummary.grandTotal,
+            total: grandTotal,
             totalPaid,
-            change: Math.max(0, totalPaid - billingSummary.grandTotal),
+            change: change,
             status: "final",
             receiptSeq: nextSeq,
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
             analytics: {
-              subtotal: billingSummary.subtotal,
+              v: 1,
+              subtotal: billingSummary.subtotal || 0,
               discountsTotal,
               chargesTotal,
-              taxAmount: 0, // Placeholder for future use
-              grandTotal: billingSummary.grandTotal,
+              taxAmount: 0,
+              grandTotal,
               totalPaid,
-              change: Math.max(0, totalPaid - billingSummary.grandTotal),
+              change,
               mop,
             }
         });
