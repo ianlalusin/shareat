@@ -7,10 +7,10 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Minus, Plus, Loader2 } from "lucide-react";
+import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -18,6 +18,7 @@ import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { Product, StoreAddon, PendingSession } from "@/lib/types";
+import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -66,6 +67,7 @@ function POSContent({
   const [selectedAddon, setSelectedAddon] = useState<StoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   useEffect(() => {
     if (!storeId) {
@@ -83,23 +85,24 @@ function POSContent({
     const unsub = onSnapshot(addonsQuery, async (snapshot) => {
         const storeAddonsData = snapshot.docs.map(d => ({...d.data(), id: d.id}) as StoreAddon);
 
-        const addonsWithImages = await Promise.all(storeAddonsData.map(async (addon) => {
-            if (addon.imageUrl) {
-                return addon;
-            }
+        const addonsWithDetails = await Promise.all(storeAddonsData.map(async (addon) => {
+            let productData: Product | null = null;
             try {
                 const productDoc = await getDoc(doc(db, "products", addon.id));
                 if (productDoc.exists()) {
-                    const productData = productDoc.data();
-                    return { ...addon, imageUrl: productData.imageUrl || null };
+                    productData = productDoc.data() as Product;
                 }
             } catch (e) {
-                console.error("Error fetching product image for addon:", addon.id, e);
+                console.error("Error fetching product details for addon:", addon.id, e);
             }
-            return { ...addon, imageUrl: undefined }; // Ensure imageUrl is at least undefined
+            return { 
+              ...addon, 
+              imageUrl: productData?.imageUrl || addon.imageUrl,
+              barcode: productData?.barcode || null,
+            };
         }));
 
-        setAddons(addonsWithImages);
+        setAddons(addonsWithDetails);
         setIsLoading(false);
     }, (error) => {
         console.error("[AddonsPOSModal] Query error:", error);
@@ -213,12 +216,29 @@ function POSContent({
     }
   };
 
+  const handleBarcodeScanned = async (code: string) => {
+    setIsScannerOpen(false);
+
+    const foundAddon = addons.find(addon => addon.barcode === code);
+    
+    if (foundAddon) {
+        handleSelectAddon(foundAddon);
+        toast({ title: "Item Found", description: `Selected: ${foundAddon.name}`});
+    } else {
+        toast({ variant: "destructive", title: "Not Found", description: "No add-on with this barcode was found in the store's active items."});
+    }
+  };
+
   return (
+    <>
     <div className="flex flex-col h-[80vh] sm:h-[70vh]">
         <div className="p-4 border-b">
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search items..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9"/>
+            <div className="flex gap-2">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Search items..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9"/>
+                </div>
+                <Button variant="outline" onClick={() => setIsScannerOpen(true)}><ScanLine className="mr-2"/> Scan Item</Button>
             </div>
             <ScrollArea className="w-full mt-2">
                  <div className="flex space-x-2 pb-2">
@@ -272,6 +292,12 @@ function POSContent({
             <Button onClick={onClose} className="w-full">Done</Button>
         </div>
     </div>
+    <SingleScanBarcodeScanner 
+        open={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleBarcodeScanned}
+    />
+    </>
   )
 }
 

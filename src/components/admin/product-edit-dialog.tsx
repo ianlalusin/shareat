@@ -47,7 +47,7 @@ type ProductFormValues = z.infer<typeof formSchema>;
 interface ProductEditDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: ProductFormValues) => void;
+  onSave: (data: ProductFormValues & { imageUrl?: string | null }) => void;
   product: Product | null;
   isSubmitting: boolean;
 }
@@ -112,7 +112,10 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   }, []);
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!product) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!product?.id) {
         toast({
             variant: "destructive",
             title: "Save Product First",
@@ -120,8 +123,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         });
         return;
     }
-    const file = event.target.files?.[0];
-    if (!file) return;
 
     setIsUploading(true);
     try {
@@ -140,7 +141,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   };
 
   const handleBarcodeScanned = (barcode: string) => {
-    form.setValue("barcode", barcode);
+    form.setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
     setIsScannerOpen(false);
     toast({
         title: "Barcode Scanned",
@@ -150,7 +151,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
 
   const onSubmit = (data: ProductFormValues) => {
-    onSave({ ...data, subCategory: subCategoryInput });
+    onSave({ ...data, subCategory: subCategoryInput, imageUrl });
   };
 
   const dialogTitle = product ? "Edit Product" : "Create New Product";
@@ -178,7 +179,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                                 <Package className="h-10 w-10 text-muted-foreground" />
                             )}
                         </div>
-                        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!product || isUploading}>
+                        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                             {isUploading ? (
                                 <Loader2 className="mr-2 animate-spin" />
                             ) : (
@@ -274,6 +275,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                                 </FormControl>
                                 <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}><ScanLine/></Button>
                             </div>
+                            <FormDescription className="text-xs">Optional. Used for quick scan in POS.</FormDescription>
                             <FormMessage />
                         </FormItem>
                         )}
@@ -314,13 +316,11 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {isScannerOpen && (
-        <SingleScanBarcodeScanner
-            open={isScannerOpen}
-            onClose={() => setIsScannerOpen(false)}
-            onScan={handleBarcodeScanned}
-        />
-    )}
+    <SingleScanBarcodeScanner
+        open={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleBarcodeScanned}
+    />
     </>
   );
 }
