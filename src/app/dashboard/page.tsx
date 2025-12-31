@@ -81,8 +81,9 @@ const PaymentMix = ({ tally, isLoading, activeMop, onMopSelect }: { tally: Recor
 type RecentReceipt = { id: string; receiptNumber?: string; customerName?: string | null; tableNumber?: string | null; sessionMode?: 'package_dinein' | 'alacarte'; total: number; createdAtClientMs: number; };
 
 const RecentReceiptsList = ({ receipts, onSelect, isLoading, selectedId }: { receipts: RecentReceipt[], onSelect: (id: string) => void, isLoading: boolean, selectedId: string | null }) => {
-    if (isLoading) return <Skeleton className="h-48 w-full" />;
+    if (isLoading && receipts.length === 0) return <Skeleton className="h-48 w-full" />;
     if (receipts.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No receipts match the current filters.</p>;
+    
     return (
         <div className="space-y-2">
             {receipts.map((r) => {
@@ -306,7 +307,7 @@ export default function DashboardPage() {
     }, [filteredReceipts, selectedReceiptId]);
 
 
-    const { stats, mopTotals, recentReceipts } = useMemo(() => {
+    const { stats, mopTotals } = useMemo(() => {
         let totalSales = 0;
         let discountsTotal = 0;
         const mop: Record<string, number> = {};
@@ -355,17 +356,21 @@ export default function DashboardPage() {
         return {
             stats: { totalSales, receiptsCount, avgBasket, discountsTotal },
             mopTotals: mop,
-            recentReceipts: filteredReceipts.slice(0, 10).map(r => ({
-                id: r.id,
-                receiptNumber: r.receiptNumber,
-                total: toNum(r.analytics?.grandTotal ?? r.total),
-                customerName: r.customerName,
-                tableNumber: r.tableNumber,
-                sessionMode: r.sessionMode,
-                createdAtClientMs: r.createdAtClientMs
-            }))
         };
     }, [filteredReceipts]);
+
+    const recentReceipts = useMemo(() => {
+       return filteredReceipts.map(r => ({
+            id: r.id,
+            receiptNumber: r.receiptNumber,
+            total: toNum(r.analytics?.grandTotal ?? r.total),
+            customerName: r.customerName,
+            tableNumber: r.tableNumber,
+            sessionMode: r.sessionMode,
+            createdAtClientMs: r.createdAtClientMs
+        }))
+    }, [filteredReceipts]);
+
 
     const handleMopSelect = (mopName: string) => {
         setActiveMop(prev => prev === mopName ? null : mopName);
@@ -502,7 +507,7 @@ export default function DashboardPage() {
                             <Card>
                                 <CardHeader>
                                     <div className="flex justify-between items-center">
-                                        <CardTitle>Recent Receipts</CardTitle>
+                                        <CardTitle>Receipts</CardTitle>
                                         {activeMop && (
                                             <Badge variant="secondary" className="flex items-center gap-2">
                                                 MOP: {activeMop}
@@ -583,3 +588,5 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
+    
