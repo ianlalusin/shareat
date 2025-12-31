@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { KitchenTicket } from "@/lib/types";
@@ -9,6 +10,7 @@ import { Timestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "../ui/badge";
+import { computeSessionLabel } from "@/lib/utils/session";
 
 
 interface ReadyToServeProps {
@@ -59,6 +61,11 @@ function TimeAgo({ date }: { date: any }) {
 
 export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServeProps) {
     
+    const itemsWithLabels = items.map(item => ({
+        ...item,
+        sessionLabel: computeSessionLabel(item),
+    }));
+
     return (
         <Card>
             <CardHeader>
@@ -69,12 +76,11 @@ export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServePro
                 <CardDescription>Items waiting for server pickup.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 max-h-[70vh] overflow-y-auto">
-                 {items.length === 0 ? (
+                 {itemsWithLabels.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No items are ready.</p>
                 ) : (
-                    items.map(item => {
-                        const isAlaCarte = item.sessionMode === 'alacarte';
-                        const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
+                    itemsWithLabels.map(item => {
+                        const displayLocation = item.sessionLabel;
                         
                         return (
                           <Card key={item.id} className="p-0">
