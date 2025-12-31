@@ -1,4 +1,5 @@
 
+
 import type { MenuSchedule } from "@/lib/types";
 
 const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

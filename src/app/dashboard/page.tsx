@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -14,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
-import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
+import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
 import type { ModeOfPayment } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
@@ -183,6 +182,11 @@ function getReceiptMopLinesForDisplay(receipt: any, mopIdToName: Record<string,s
   })).filter(x => x.amount > 0);
 }
 
+// Extend the base receipt data type for the dashboard's needs
+type ReceiptData = BaseReceiptData & {
+  analytics?: any;
+};
+
 
 export default function DashboardPage() {
     const { appUser } = useAuthContext();
@@ -284,7 +288,7 @@ export default function DashboardPage() {
             const newLiveReceipts = snapshot.docs.map(mapDocToReceipt);
             setLiveReceipts(newLiveReceipts);
 
-            if (olderReceiptsRef.current.length === 0) {
+            if (olderCountRef.current === 0) {
                 const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
                 setLastDoc(newLastDoc);
             }
@@ -734,5 +738,3 @@ export default function DashboardPage() {
 }
 
     
-
-
