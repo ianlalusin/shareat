@@ -159,6 +159,7 @@ export type StoreAddon = {
     kitchenLocationId?: string | null;
     kitchenLocationName?: string | null;
     imageUrl?: string;
+    barcode?: string;
 };
 
 export type PendingSession = {
