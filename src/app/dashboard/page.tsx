@@ -212,7 +212,7 @@ export default function DashboardPage() {
         
         const mop: Record<string, number> = {};
         receipts.forEach(r => {
-            if (r.analytics?.mop) {
+            if (r.analytics?.mop && typeof r.analytics.mop === 'object') {
                 for (const [method, amount] of Object.entries(r.analytics.mop)) {
                     const amt = typeof amount === 'number' ? amount : Number(amount) || 0;
                     mop[method] = (mop[method] || 0) + amt;
@@ -375,3 +375,5 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
+    
