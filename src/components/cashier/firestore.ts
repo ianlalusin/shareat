@@ -298,7 +298,7 @@ export async function completePayment(
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(receiptRef),
-        tx.get(settingsRef),
+        tx.get(settingsSnap),
         tx.get(counterRef),
     ]);
 
