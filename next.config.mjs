@@ -1,9 +1,9 @@
-import type { NextConfig } from "next";
+/** @type {import('next').NextConfig} */
 
 const isCI = process.env.CI === "true";
 const isProd = process.env.NODE_ENV === "production";
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   typescript: {
     // ✅ fail builds in prod/CI
     ignoreBuildErrors: !(isCI || isProd),
