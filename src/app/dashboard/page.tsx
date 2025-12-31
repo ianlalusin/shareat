@@ -74,8 +74,15 @@ export default function DashboardPage() {
             receiptsData.forEach(r => {
                 if (r.analytics?.mop) {
                   for (const [method, amount] of Object.entries(r.analytics.mop)) {
-                    tally[method] = (tally[method] || 0) + (amount as number);
+                    const amt = typeof amount === "number" ? amount : Number(amount) || 0;
+                    tally[method] = (tally[method] || 0) + amt;
                   }
+                } else if (Array.isArray(r.payments)) {
+                    r.payments.forEach((payment: any) => {
+                        const method = payment.methodId || 'unknown';
+                        const amt = typeof payment.amount === "number" ? payment.amount : Number(payment.amount) || 0;
+                        tally[method] = (tally[method] || 0) + amt;
+                    });
                 }
             });
             setPaymentTally(tally);
