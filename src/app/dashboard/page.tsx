@@ -185,11 +185,19 @@ export default function DashboardPage() {
         
         const mop: Record<string, number> = {};
         receipts.forEach(r => {
-            if (r.analytics?.mop && typeof r.analytics.mop === 'object') {
-                for (const [method, amount] of Object.entries(r.analytics.mop)) {
-                    const amt = typeof amount === 'number' ? amount : Number(amount) || 0;
-                    mop[method] = (mop[method] || 0) + amt;
-                }
+            const mopAny = r.analytics?.mop;
+            if (!mopAny || typeof mopAny !== "object") return;
+          
+            for (const [methodKey, amount] of Object.entries(mopAny as Record<string, unknown>)) {
+              const amt = typeof amount === "number" ? amount : Number(amount) || 0;
+          
+              const method =
+                typeof amount === "object" && amount
+                  ? String((amount as any).name ?? methodKey)
+                  : methodKey;
+          
+              const finalMethod = method.trim() || methodKey;
+              mop[finalMethod] = (mop[finalMethod] || 0) + amt;
             }
         });
 
