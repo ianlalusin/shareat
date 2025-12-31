@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
-import { ReceiptSettings, receiptSettingsSchema } from "@/components/manager/store-settings/receipt-settings";
+import { ReceiptSettings, receiptSettingsSchema } from "@/components/manager/receipt-settings/receipt-settings";
 import { useStoreContext } from "@/context/store-context";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,12 +17,13 @@ import { Printer } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { doc, onSnapshot, setDoc, serverTimestamp, updateDoc, increment } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp, updateDoc, increment, collection, query, where, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ModeOfPayment } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -39,6 +40,7 @@ export default function ReceiptSettingsPage() {
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
     const [isPrinting, setIsPrinting] = useState(false);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
+    const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
 
     const form = useForm({
         resolver: zodResolver(receiptSettingsSchema),
@@ -105,7 +107,22 @@ export default function ReceiptSettingsPage() {
                 setPaperWidth(data.paperWidth || "80mm");
             }
         });
-        return () => unsubscribe();
+        
+        const mopRef = collection(db, "stores", activeStore.id, "storeModesOfPayment");
+        const mopQuery = query(
+            mopRef, 
+            where("isArchived", "==", false),
+            orderBy("sortOrder", "asc")
+        );
+        const unsubMop = onSnapshot(mopQuery, (snapshot) => {
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
+        });
+
+        return () => {
+            unsubscribe();
+            unsubMop();
+        };
+
     }, [activeStore, form]);
 
     const handlePrint = async (receiptId: string | undefined) => {
@@ -249,7 +266,7 @@ export default function ReceiptSettingsPage() {
                         </CardHeader>
                         <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                         {selectedRecentReceipt ? (
-                                <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />
+                                <ReceiptView data={selectedRecentReceipt} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />
                         ) : (
                             <div className="flex items-center justify-center h-96 text-muted-foreground">
                                 <p>Select a recent receipt to preview.</p>

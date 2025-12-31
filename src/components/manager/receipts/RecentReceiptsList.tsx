@@ -49,7 +49,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
         const receiptsRef = collection(db, "stores", store.id, "receipts");
         const q = query(
             receiptsRef, 
-            orderBy("createdAtClientMs", "desc"), 
+            orderBy("createdAt", "desc"), 
             limit(20)
         );
 

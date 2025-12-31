@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, increment } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, increment, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -16,6 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import type { ModeOfPayment } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -34,7 +35,8 @@ export default function ReceiptPage() {
     const [error, setError] = useState<string | null>(null);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
     const { toast } = useToast();
-    
+    const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
     const shouldAutoPrint = searchParams.get('autoprint') === '1';
 
      const storageKey = useMemo(
@@ -51,6 +53,22 @@ export default function ReceiptPage() {
         }
     }, [storageKey, receiptData]);
 
+
+    useEffect(() => {
+        if (!activeStoreId) return;
+
+        const mopRef = collection(db, "stores", activeStoreId, "storeModesOfPayment");
+        const mopQuery = query(
+            mopRef, 
+            where("isArchived", "==", false),
+            orderBy("sortOrder", "asc")
+        );
+        const unsubscribe = onSnapshot(mopQuery, (snapshot) => {
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
+        });
+
+        return () => unsubscribe();
+    }, [activeStoreId]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -211,7 +229,7 @@ export default function ReceiptPage() {
                     </Accordion>
                 </div>
                  <div id="print-receipt-area">
-                    {receiptData ? <ReceiptView data={receiptData} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
+                    {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
                 </div>
             </div>
         </RoleGuard>
