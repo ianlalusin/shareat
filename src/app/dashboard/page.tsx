@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, getDocs, updateDoc, increment, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Loader2, Receipt, Users, Basket, Percent, Printer } from "lucide-react";
+import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -309,7 +309,7 @@ export default function DashboardPage() {
                             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                                 <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground">₱</span>} isLoading={isLoading} format="currency" />
                                 <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isLoading} />
-                                <StatCard title="Avg Basket" value={stats.avgBasket} icon={<Basket />} isLoading={isLoading} format="currency" />
+                                <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isLoading} format="currency" />
                                 <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isLoading} format="currency" />
                             </div>
                             <Card>
@@ -350,5 +350,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
-    
