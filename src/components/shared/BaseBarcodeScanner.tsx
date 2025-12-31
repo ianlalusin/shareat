@@ -24,33 +24,7 @@ export function useBarcodeScanner({ onScan, scanMode, dedupeMs = 1000 }: UseBarc
     const codeReader = new BrowserMultiFormatReader();
     codeReaderRef.current = codeReader;
     
-    try {
-      const videoInputDevices = await codeReader.listVideoInputDevices();
-      if (videoInputDevices.length === 0) {
-        throw new Error("No video input devices found.");
-      }
-
-      // Prefer back camera
-      const rearCamera = videoInputDevices.find(device => 
-          device.label.toLowerCase().includes("back") || 
-          device.label.toLowerCase().includes("rear")
-      );
-      const selectedDeviceId = rearCamera ? rearCamera.deviceId : videoInputDevices[0].deviceId;
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: selectedDeviceId, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      
-      setHasCameraPermission(true);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-        };
-      }
-
-      codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
+    const decodeCallback = (result: any, err: any) => {
         if (result) {
           const now = Date.now();
           const lastScan = lastScanRef.current;
@@ -66,18 +40,52 @@ export function useBarcodeScanner({ onScan, scanMode, dedupeMs = 1000 }: UseBarc
           console.error("Barcode scanning error:", err);
           setError("An unexpected error occurred during scanning.");
         }
-      });
-
+    };
+    
+    try {
+      // First attempt: ideal "environment" facing mode for mobile back camera
+      await codeReader.decodeFromConstraints(
+        { video: { facingMode: { ideal: "environment" } } },
+        videoRef.current!,
+        decodeCallback
+      );
+      setHasCameraPermission(true);
     } catch (err: any) {
-      console.error("Error accessing camera:", err);
-      let errorMessage = "An unexpected error occurred.";
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMessage = "Camera access was denied. Please enable camera permissions in your browser settings.";
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        errorMessage = "No camera was found on your device.";
-      }
-      setError(errorMessage);
-      setHasCameraPermission(false);
+        console.warn("Failed to start with ideal facingMode, falling back to device list.", err);
+        // Fallback to listing devices if the ideal mode fails
+        try {
+            const videoInputDevices = await codeReader.listVideoInputDevices();
+            if (videoInputDevices.length === 0) {
+                throw new Error("No video input devices found.");
+            }
+
+            // Prioritize back camera, then last device, then first device
+            const rearCamera = videoInputDevices.find(device => device.label.toLowerCase().includes("back") || device.label.toLowerCase().includes("rear"));
+            const selectedDeviceId = rearCamera 
+                ? rearCamera.deviceId 
+                : videoInputDevices.length > 1 
+                    ? videoInputDevices[videoInputDevices.length - 1].deviceId // Often the back camera
+                    : videoInputDevices[0].deviceId;
+
+            await codeReader.decodeFromStream(
+                await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: selectedDeviceId, width: { ideal: 1280 }, height: { ideal: 720 } },
+                }),
+                videoRef.current!,
+                decodeCallback
+            );
+            setHasCameraPermission(true);
+        } catch (finalErr: any) {
+            console.error("Error accessing camera after fallback:", finalErr);
+            let errorMessage = "An unexpected error occurred.";
+            if (finalErr.name === 'NotAllowedError' || finalErr.name === 'PermissionDeniedError') {
+                errorMessage = "Camera access was denied. Please enable camera permissions in your browser settings.";
+            } else if (finalErr.name === 'NotFoundError' || finalErr.name === 'DevicesNotFoundError') {
+                errorMessage = "No camera was found on your device.";
+            }
+            setError(errorMessage);
+            setHasCameraPermission(false);
+        }
     }
   };
 
