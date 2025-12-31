@@ -108,12 +108,14 @@ export type KitchenLocation = {
 export type MenuSchedule = {
   id: string;
   name: string;
+  isActive: boolean;
+  isArchived?: boolean;
   days: string[];
   startTime: string;
   endTime: string;
-  isActive: boolean;
-  createdAt: any;
-  updatedAt: any;
+  timezone?: string;
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "void";

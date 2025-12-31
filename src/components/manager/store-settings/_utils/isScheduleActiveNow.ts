@@ -1,5 +1,6 @@
 
-import { MenuSchedule } from "../schedules-settings";
+
+import type { MenuSchedule } from "@/lib/types";
 
 const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -15,12 +16,24 @@ export function isScheduleActiveNow(schedule: MenuSchedule, now = new Date()): b
     }
 
     const currentDayName = daysOfWeek[now.getDay()];
-    if (!schedule.days.includes(currentDayName)) {
+    // If no days are specified, assume it's active every day (if the schedule itself is active).
+    if (schedule.days && schedule.days.length > 0 && !schedule.days.includes(currentDayName)) {
         return false;
+    }
+
+    // Safe fallback for missing times: treat as active all day if day matches.
+    if (!schedule.startTime || !schedule.endTime || !schedule.startTime.includes(':') || !schedule.endTime.includes(':')) {
+        return true;
     }
 
     const [startHour, startMinute] = schedule.startTime.split(':').map(Number);
     const [endHour, endMinute] = schedule.endTime.split(':').map(Number);
+
+    // Additional safe fallback for parsing errors
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) {
+        return true;
+    }
+    
     const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
     const startTimeInMinutes = startHour * 60 + startMinute;
     const endTimeInMinutes = endHour * 60 + endMinute;
