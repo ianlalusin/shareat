@@ -67,7 +67,7 @@ export function AddonsSettings({ store }: { store: Store }) {
             }));
             
             setStoreAddons(addonsWithDetails);
-        });
+        }));
 
         const unsubKitchenLocations = onSnapshot(query(collection(db, "stores", store.id, "kitchenLocations"), where("isActive", "==", true)), (snapshot) => {
             setKitchenLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenLocation)));

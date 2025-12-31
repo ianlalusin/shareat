@@ -300,4 +300,20 @@ export type StoreTable = {
     status: 'available' | 'occupied' | 'reserved' | 'out_of_order';
     currentSessionId: string | null;
 };
+
+export type InventoryItem = {
+  id: string;
+  productId: string;
+  name: string;
+  variant?: string;
+  category?: string;
+  subCategory?: string;
+  uom: string;
+  cost: number;
+  sellingPrice: number;
+  taxId?: string;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
     
