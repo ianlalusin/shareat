@@ -49,6 +49,7 @@ export default function KitchenPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
+  const [isServing, setIsServing] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!activeStore) {
@@ -256,7 +257,7 @@ export default function KitchenPage() {
                  </Tabs>
             </div>
             <div className="lg:col-span-1 space-y-4">
-                <ReadyToServe items={readyItems} onMarkServed={updateTicketStatus} />
+                <ReadyToServe items={readyItems} onMarkServed={updateTicketStatus} isServing={isServing} />
                 <HistoryView items={historyItems} />
             </div>
         </div>

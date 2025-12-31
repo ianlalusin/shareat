@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { KitchenTicket } from "@/lib/types";
@@ -15,7 +14,6 @@ import { Badge } from "../ui/badge";
 interface ReadyToServeProps {
     items: KitchenTicket[];
     onMarkServed: (ticketId: string, sessionId: string, newStatus: "served") => void;
-    onViewTimeline: (sessionId: string) => void;
     isServing: Record<string, boolean>;
 }
 
@@ -59,7 +57,7 @@ function TimeAgo({ date }: { date: any }) {
     );
 }
 
-export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }: ReadyToServeProps) {
+export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServeProps) {
     
     return (
         <Card>
@@ -86,9 +84,6 @@ export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }:
                                     <TimeAgo date={item.preparedAt} />
                                  </div>
                                  <div className="flex items-center gap-1">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewTimeline(item.sessionId)}>
-                                        <History className="h-4 w-4" />
-                                    </Button>
                                     <Button size="sm" onClick={() => onMarkServed(item.id, item.sessionId, 'served')} disabled={isServing[item.id]} className="h-8">
                                         {isServing[item.id] ? <Loader2 className="animate-spin"/> : <Send />}
                                     </Button>
