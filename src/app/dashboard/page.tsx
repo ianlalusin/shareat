@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -13,6 +14,7 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
+import type { ModeOfPayment } from "@/lib/types";
 
 // --- Sub-components for Dashboard ---
 
@@ -43,18 +45,32 @@ const StatCard = ({ title, value, icon, isLoading, format = "number" }: { title:
     );
 };
 
-const PaymentMix = ({ tally, isLoading }: { tally: Record<string, number>, isLoading: boolean }) => {
-    const sortedTally = useMemo(() => Object.entries(tally).sort(([, a], [, b]) => b - a), [tally]);
+const PaymentMix = ({ tally, mopNameMap, isLoading }: { tally: Record<string, number>, mopNameMap: Record<string, {name: string, sortOrder: number}>, isLoading: boolean }) => {
+    const sortedTally = useMemo(() => {
+        return Object.entries(tally).sort(([idA], [idB]) => {
+            const sortA = mopNameMap[idA]?.sortOrder ?? 999;
+            const sortB = mopNameMap[idB]?.sortOrder ?? 999;
+            if (sortA !== sortB) return sortA - sortB;
+            const nameA = mopNameMap[idA]?.name || idA;
+            const nameB = mopNameMap[idB]?.name || idB;
+            return nameA.localeCompare(nameB);
+        });
+    }, [tally, mopNameMap]);
+
     if (isLoading) return <Skeleton className="h-24 w-full" />;
     if (sortedTally.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No payment data for this period.</p>;
+    
     return (
         <div className="space-y-2 text-sm">
-            {sortedTally.map(([method, amount]) => (
-                <div key={method} className="flex justify-between items-center">
-                    <span className="font-medium capitalize">{method}</span>
-                    <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-            ))}
+            {sortedTally.map(([methodId, amount]) => {
+                const displayName = mopNameMap[methodId]?.name || methodId;
+                return (
+                    <div key={methodId} className="flex justify-between items-center">
+                        <span className="font-medium capitalize">{displayName}</span>
+                        <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                )
+            })}
         </div>
     );
 };
@@ -102,6 +118,7 @@ export default function DashboardPage() {
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     
     const [receipts, setReceipts] = useState<any[]>([]);
+    const [mopNameMap, setMopNameMap] = useState<Record<string, { name: string; sortOrder: number }>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +128,22 @@ export default function DashboardPage() {
     const [isPrinting, setIsPrinting] = useState(false);
 
     // --- Data Fetching and Processing ---
+
+    // Fetch Modes of Payment for display names
+    useEffect(() => {
+        if (!activeStore?.id) return;
+        const mopRef = collection(db, "stores", activeStore.id, "storeModesOfPayment");
+        const mopQuery = query(mopRef, where("isArchived", "==", false));
+        const unsubscribe = onSnapshot(mopQuery, (snapshot) => {
+            const nameMap: Record<string, { name: string, sortOrder: number }> = {};
+            snapshot.docs.forEach(doc => {
+                const data = doc.data() as ModeOfPayment;
+                nameMap[doc.id] = { name: data.name, sortOrder: data.sortOrder || 999 };
+            });
+            setMopNameMap(nameMap);
+        });
+        return () => unsubscribe();
+    }, [activeStore?.id]);
 
     useEffect(() => {
         if (!activeStore?.id) {
@@ -184,6 +217,12 @@ export default function DashboardPage() {
                     const amt = typeof amount === 'number' ? amount : Number(amount) || 0;
                     mop[method] = (mop[method] || 0) + amt;
                 }
+            } else if (Array.isArray(r.payments)) {
+                r.payments.forEach((p: any) => {
+                    const method = String(p.methodId || 'unknown').toLowerCase();
+                    const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
+                    mop[method] = (mop[method] || 0) + amt;
+                })
             }
         });
 
@@ -300,7 +339,7 @@ export default function DashboardPage() {
                             </div>
                             <Card>
                                 <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} /></CardContent>
+                                <CardContent><PaymentMix tally={mopTotals} mopNameMap={mopNameMap} isLoading={isLoading} /></CardContent>
                             </Card>
                             <Card>
                                 <CardHeader><CardTitle>Recent Receipts</CardTitle></CardHeader>
