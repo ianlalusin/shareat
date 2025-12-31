@@ -84,7 +84,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         paymentsData: any[],
         activityLogsData: any[]
     ) => {
-        let allEvents: TimelineEvent[] = [];
+        let allEvents: (TimelineEvent | null)[] = [];
 
         // 1. Session Start/End
         if (sessionData?.startedAt) {
@@ -230,9 +230,9 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
             });
         });
 
-        // Sort and set
-        allEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-        setEvents(allEvents);
+        const validEvents = allEvents.filter(event => event !== null && event.timestamp instanceof Date) as TimelineEvent[];
+        validEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        setEvents(validEvents);
         setLoading(false);
     };
 
