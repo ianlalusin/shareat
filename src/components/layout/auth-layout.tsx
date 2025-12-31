@@ -12,7 +12,7 @@ function combineUser(
   firebaseUser: FirebaseUser | null,
   appUser: AppUser | null
 ): AppUser | null {
-  if (!firebaseUser) return null;
+  if (!firebaseUser || !appUser) return null;
   
   // Spread the Firestore data first, then override with fresh auth data.
   // This ensures uid, email, etc., are always from the source of truth (Firebase Auth)
@@ -20,7 +20,7 @@ function combineUser(
   return {
     ...appUser,
     uid: firebaseUser.uid,
-    email: firebaseUser.email,
+    email: firebaseUser.email ?? null,
     displayName: firebaseUser.displayName || appUser?.displayName || appUser?.name,
     photoURL: firebaseUser.photoURL || appUser?.photoURL,
     status: appUser?.status || "pending", // Ensure status has a fallback
@@ -47,7 +47,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   if (showMainLayout) {
     return (
       <div className="flex min-h-screen w-full flex-col">
-        <Header user={combinedUser} />
+        <Header user={combinedUser as any} />
         <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8 mt-14">
           {children}
         </main>
