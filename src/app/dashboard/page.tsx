@@ -150,6 +150,39 @@ function mopToString(mop: any) {
     return parts.join("|");
 }
 
+function isLikelyId(k: string) {
+  return /^[A-Za-z0-9]{16,}$/.test(k); // simple Firestore-id-ish check
+}
+
+function getReceiptMopLinesForDisplay(receipt: any, mopIdToName: Record<string,string>) {
+  const a = receipt?.analytics;
+
+  // Prefer name-keyed analytics.mop
+  if (a?.mop && typeof a.mop === "object") {
+    const keys = Object.keys(a.mop);
+    const hasHumanKey = keys.some(k => !isLikelyId(k));
+    if (hasHumanKey) {
+      return Object.entries(a.mop).map(([name, amt]) => ({
+        name: String(name),
+        amount: toNum(amt),
+      })).filter(x => x.amount > 0);
+    }
+  }
+
+  // Fallback: use id-keyed map (mopIds first, then receipt.mop, then a.mop even if id-keyed)
+  const idMap =
+    (a?.mopIds && typeof a.mopIds === "object" ? a.mopIds : null) ??
+    (receipt?.mop && typeof receipt.mop === "object" ? receipt.mop : null) ??
+    (a?.mop && typeof a.mop === "object" ? a.mop : null);
+
+  if (!idMap) return [];
+
+  return Object.entries(idMap).map(([id, amt]) => ({
+    name: mopIdToName[id] ?? id,
+    amount: toNum(amt),
+  })).filter(x => x.amount > 0);
+}
+
 
 export default function DashboardPage() {
     const { appUser } = useAuthContext();
@@ -166,7 +199,7 @@ export default function DashboardPage() {
     const [hasMore, setHasMore] = useState(true);
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
     const olderCountRef = useRef(0);
-    useEffect(() => { olderCountRef.current = olderReceipts.length; }, [olderReceipts.length]);
+    useEffect(() => { olderCountRef.current = olderReceipts.length; }, [olderReceipts]);
     
     const [error, setError] = useState<string | null>(null);
 
@@ -446,6 +479,7 @@ export default function DashboardPage() {
                 receiptCreatedAt: receiptDocData.createdAt,
                 createdByUsername: receiptDocData.createdByUsername,
                 receiptNumber: receiptDocData.receiptNumber,
+                analytics: receiptDocData.analytics,
             });
         } catch (err) {
             console.error("Error loading receipt preview:", err);
@@ -700,4 +734,5 @@ export default function DashboardPage() {
 }
 
     
+
 
