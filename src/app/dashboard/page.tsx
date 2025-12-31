@@ -154,6 +154,7 @@ function isLikelyId(k: string) {
 }
 
 function getReceiptMopLinesForDisplay(receipt: any, mopIdToName: Record<string,string>) {
+  if (!mopIdToName) return [];
   const a = receipt?.analytics;
 
   // Prefer name-keyed analytics.mop
@@ -194,6 +195,7 @@ export default function DashboardPage() {
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+    const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
     
     // Pagination states
     const [liveReceipts, setLiveReceipts] = useState<ReceiptType[]>([]);
@@ -219,6 +221,20 @@ export default function DashboardPage() {
     const [activeMop, setActiveMop] = useState<string | null>(null);
 
     // --- Data Fetching and Processing ---
+    
+    useEffect(() => {
+        if (!activeStore?.id) return;
+        const mopRef = collection(db, "stores", activeStore.id, "storeModesOfPayment");
+        const mopQuery = query(
+            mopRef, 
+            where("isArchived", "==", false),
+            orderBy("sortOrder", "asc")
+        );
+        const unsubscribe = onSnapshot(mopQuery, (snapshot) => {
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
+        });
+        return () => unsubscribe();
+    }, [activeStore?.id]);
 
     const { start, end } = useMemo(() => {
         const now = new Date();
@@ -719,7 +735,7 @@ export default function DashboardPage() {
                                     {isLoadingPreview ? (
                                         <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-muted-foreground" /></div>
                                     ) : selectedReceiptData ? (
-                                        <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} paymentMethods={[]} /></div>
+                                        <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} /></div>
                                     ) : (
                                         <div className="flex items-center justify-center h-full text-muted-foreground"><p>Select a receipt to preview.</p></div>
                                     )}
@@ -731,10 +747,8 @@ export default function DashboardPage() {
                  {error && <Card className="mt-6"><CardContent className="p-10 text-center text-destructive">{error}</CardContent></Card>}
             </div>
             <div className="hidden print-block">
-                {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={[]} />}
+                {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
         </RoleGuard>
     );
 }
-
-    

@@ -99,7 +99,7 @@ function POSContent({
             return { 
               ...addon, 
               imageUrl: productData?.imageUrl || addon.imageUrl,
-              barcode: productData?.barcode || null,
+              barcode: productData?.barcode || undefined,
             };
         }));
 
