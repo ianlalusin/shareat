@@ -6,7 +6,7 @@ import { StoreSwitcher } from './store-switcher'
 import type { User } from '@/lib/types'
 import { Button } from '../ui/button'
 import { PanelLeft } from 'lucide-react'
-import { Sheet, SheetContent, SheetTrigger } from '../ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet'
 import { cn } from '@/lib/utils'
 
 export default function Header({ user }: { user: User }) {
@@ -23,6 +23,9 @@ export default function Header({ user }: { user: User }) {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="sm:max-w-xs bg-destructive text-destructive-foreground border-destructive-foreground/20">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation Menu</SheetTitle>
+          </SheetHeader>
           <nav className="grid gap-6 text-lg font-medium">
              <Link
                 href="/dashboard"
@@ -51,5 +54,3 @@ export default function Header({ user }: { user: User }) {
     </header>
   )
 }
-
-    
