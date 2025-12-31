@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, getDocs, updateDoc, increment, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, getDocs, updateDoc, increment, serverTimestamp, Timestamp, QueryDocumentSnapshot, DocumentData, startAfter } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer, XIcon } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -110,12 +110,15 @@ const presets: { label: string, value: DatePreset }[] = [
     { label: "This Week", value: "week" },
     { label: "This Month", value: "month" },
 ];
+const PAGE_SIZE = 10;
 
 function getUsername(appUser: any) {
     return (appUser?.displayName?.trim()) || (appUser?.name?.trim()) || (appUser?.email ? String(appUser.email).split("@")[0] : "") || (appUser?.uid ? String(appUser.uid).slice(0, 6) : "unknown");
 }
 
 const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || 0);
+
+type ReceiptType = { id: string, createdAtClientMs: number, [key: string]: any };
 
 export default function DashboardPage() {
     const { appUser } = useAuthContext();
@@ -124,8 +127,14 @@ export default function DashboardPage() {
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
     
-    const [receipts, setReceipts] = useState<any[]>([]);
+    // Pagination states
+    const [liveReceipts, setLiveReceipts] = useState<ReceiptType[]>([]);
+    const [olderReceipts, setOlderReceipts] = useState<ReceiptType[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+    
     const [error, setError] = useState<string | null>(null);
 
     const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
@@ -141,73 +150,126 @@ export default function DashboardPage() {
 
     // --- Data Fetching and Processing ---
 
+    const { start, end } = useMemo(() => {
+        const now = new Date();
+        let s = new Date();
+        let e = new Date();
+
+        switch (datePreset) {
+            case "today":
+                s.setHours(0, 0, 0, 0);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "yesterday":
+                s.setDate(now.getDate() - 1);
+                s.setHours(0, 0, 0, 0);
+                e.setDate(now.getDate() - 1);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "week":
+                s.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+                s.setHours(0, 0, 0, 0);
+                break;
+            case "month":
+                s = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case "custom":
+                if (customRange) {
+                    s = startOfDay(customRange.start);
+                    e = endOfDay(customRange.end);
+                } else {
+                    s.setHours(0, 0, 0, 0);
+                    e.setHours(23, 59, 59, 999);
+                }
+                break;
+        }
+        return { start: s, end: e };
+    }, [datePreset, customRange]);
+
+    // Live listener for the first page
     useEffect(() => {
         if (!activeStore?.id) {
             setIsLoading(false);
             return;
         }
         setIsLoading(true);
+        // Reset pagination state when date range changes
+        setOlderReceipts([]);
+        setLastDoc(null);
+        setHasMore(true);
 
-        const now = new Date();
-        let start = new Date();
-        let end = new Date();
+        const mapDocToReceipt = (doc: DocumentData): ReceiptType => ({ id: doc.id, ...doc.data() });
 
-        switch (datePreset) {
-            case "today":
-                start.setHours(0, 0, 0, 0);
-                end.setHours(23, 59, 59, 999);
-                break;
-            case "yesterday":
-                start.setDate(now.getDate() - 1);
-                start.setHours(0, 0, 0, 0);
-                end.setDate(now.getDate() - 1);
-                end.setHours(23, 59, 59, 999);
-                break;
-            case "week":
-                start.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
-                start.setHours(0, 0, 0, 0);
-                break;
-            case "month":
-                start = new Date(now.getFullYear(), now.getMonth(), 1);
-                break;
-            case "custom":
-                if (customRange) {
-                    start = startOfDay(customRange.start);
-                    end = endOfDay(customRange.end);
-                } else {
-                    start.setHours(0, 0, 0, 0);
-                    end.setHours(23, 59, 59, 999);
-                }
-                break;
-        }
-
-        const daySpan = (end.getTime() - start.getTime()) / 86400000;
-        let limitCount = 1500;
-        if (datePreset === 'today' || datePreset === 'yesterday' || (datePreset === 'custom' && daySpan <= 1)) {
-            limitCount = 500;
-        }
-
-        const receiptsQuery = query(
+        const firstPageQuery = query(
             collection(db, "stores", activeStore.id, "receipts"),
             where("createdAtClientMs", ">=", start.getTime()),
             where("createdAtClientMs", "<=", end.getTime()),
             orderBy("createdAtClientMs", "desc"),
-            limit(limitCount)
+            limit(PAGE_SIZE)
         );
 
-        const unsubscribe = onSnapshot(receiptsQuery, (snapshot) => {
-            setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const unsubscribe = onSnapshot(firstPageQuery, (snapshot) => {
+            const newLiveReceipts = snapshot.docs.map(mapDocToReceipt);
+            setLiveReceipts(newLiveReceipts);
+
+            const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+            setLastDoc(newLastDoc);
+            setHasMore(snapshot.docs.length === PAGE_SIZE);
+
             setIsLoading(false);
             setError(null);
         }, (err) => {
-            console.error("Dashboard receipt fetch error:", err);
-            setError("Failed to load dashboard data.");
+            console.error("Dashboard onSnapshot error:", err);
+            setError("Failed to load real-time dashboard data.");
             setIsLoading(false);
         });
 
         return () => unsubscribe();
-    }, [activeStore, datePreset, customRange]);
+    }, [activeStore?.id, start, end]);
+
+    const loadMore = async () => {
+        if (!activeStore || !lastDoc || loadingMore || !hasMore) return;
+        setLoadingMore(true);
+
+        try {
+            const moreQuery = query(
+                collection(db, `stores/${activeStore.id}/receipts`),
+                where("createdAtClientMs", ">=", start.getTime()),
+                where("createdAtClientMs", "<=", end.getTime()),
+                orderBy("createdAtClientMs", "desc"),
+                startAfter(lastDoc),
+                limit(PAGE_SIZE)
+            );
+
+            const snap = await getDocs(moreQuery);
+            const batch = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType));
+            
+            setOlderReceipts(prev => {
+                const seen = new Set(prev.map(x => x.id));
+                const next = [...prev];
+                for (const r of batch) if (!seen.has(r.id)) next.push(r);
+                return next;
+            });
+
+            const newLast = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+            if (newLast) setLastDoc(newLast);
+            setHasMore(snap.docs.length === PAGE_SIZE);
+        } catch (err) {
+            console.error("Error loading more receipts:", err);
+            setError("Failed to load older receipts.");
+        } finally {
+            setLoadingMore(false);
+        }
+    };
     
+    // Combine live and paginated receipts
+    const receipts = useMemo(() => {
+        const byId = new Map<string, ReceiptType>();
+        for (const r of liveReceipts) byId.set(r.id, r);
+        for (const r of olderReceipts) if (!byId.has(r.id)) byId.set(r.id, r);
+        return Array.from(byId.values()).sort((a,b)=> (b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0));
+    }, [liveReceipts, olderReceipts]);
+
     const modeOptions = useMemo(() => {
         const modes = new Set(receipts.map(r => r.sessionMode).filter(Boolean));
         return ["all", ...Array.from(modes).sort()];
@@ -373,6 +435,7 @@ export default function DashboardPage() {
 
         if (preset && preset !== "custom" && presetMap[preset]) {
             setDatePreset(presetMap[preset]);
+            setCustomRange(null);
         } else {
             setCustomRange({ start: range.start, end: range.end });
             setDatePreset("custom");
@@ -402,7 +465,7 @@ export default function DashboardPage() {
                 <PageHeader title="Dashboard" description={`Real-time overview of ${activeStore.name}'s performance.`}>
                     <div className="flex items-center gap-2 rounded-md bg-muted p-1">
                         {presets.map(p => (
-                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => setDatePreset(p.value)} className="h-8">{p.label}</Button>
+                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
                         ))}
                          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                             <PopoverTrigger asChild>
@@ -474,7 +537,21 @@ export default function DashboardPage() {
                                         </Select>
                                      </div>
                                 </CardHeader>
-                                <CardContent><RecentReceiptsList receipts={recentReceipts} onSelect={handleSelectReceipt} isLoading={isLoading} selectedId={selectedReceiptId} /></CardContent>
+                                <CardContent>
+                                    <RecentReceiptsList receipts={recentReceipts} onSelect={handleSelectReceipt} isLoading={isLoading} selectedId={selectedReceiptId} />
+                                    {olderReceipts.length > 0 && <p className="text-xs text-center text-muted-foreground mt-2">Showing {receipts.length} loaded receipts.</p>}
+                                    {hasMore && (
+                                        <Button
+                                            variant="outline"
+                                            className="w-full mt-4"
+                                            onClick={loadMore}
+                                            disabled={loadingMore}
+                                        >
+                                            {loadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
+                                            {loadingMore ? "Loading..." : "Load older"}
+                                        </Button>
+                                    )}
+                                </CardContent>
                             </Card>
                         </div>
                         <div className="lg:col-span-1">
@@ -506,4 +583,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
