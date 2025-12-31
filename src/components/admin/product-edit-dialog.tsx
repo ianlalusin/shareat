@@ -25,7 +25,7 @@ import Image from "next/image";
 import { Package } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import type { Product } from "@/lib/types";
-import { BarcodeScanner } from "../BarcodeScanner";
+import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 
 type AddonCategory = {
     id: string;
@@ -315,8 +315,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
       </DialogContent>
     </Dialog>
     {isScannerOpen && (
-        <BarcodeScanner
-            isOpen={isScannerOpen}
+        <SingleScanBarcodeScanner
+            open={isScannerOpen}
             onClose={() => setIsScannerOpen(false)}
             onScan={handleBarcodeScanned}
         />
