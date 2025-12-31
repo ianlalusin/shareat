@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, getDocs, updateDoc, increment, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer } from "lucide-react";
+import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer, XIcon } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 // --- HELPERS ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
@@ -53,7 +54,7 @@ const StatCard = ({ title, value, icon, isLoading, format = "number" }: { title:
     );
 };
 
-const PaymentMix = ({ tally, isLoading }: { tally: Record<string, number>, isLoading: boolean }) => {
+const PaymentMix = ({ tally, isLoading, activeMop, onMopSelect }: { tally: Record<string, number>, isLoading: boolean, activeMop: string | null, onMopSelect: (mop: string) => void }) => {
     const sortedTally = useMemo(() => {
         return Object.entries(tally).sort(([nameA], [nameB]) => nameA.localeCompare(nameB));
     }, [tally]);
@@ -62,12 +63,16 @@ const PaymentMix = ({ tally, isLoading }: { tally: Record<string, number>, isLoa
     if (sortedTally.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No payment data for this period.</p>;
     
     return (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-1 text-sm">
             {sortedTally.map(([methodName, amount]) => (
-                <div key={methodName} className="flex justify-between items-center">
+                <button 
+                    key={methodName} 
+                    className={`flex justify-between items-center w-full p-1.5 rounded-md text-left transition-colors ${activeMop === methodName ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                    onClick={() => onMopSelect(methodName)}
+                >
                     <span className="font-medium capitalize">{methodName}</span>
                     <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+                </button>
             ))}
         </div>
     );
@@ -130,6 +135,7 @@ export default function DashboardPage() {
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<"all" | "final" | "void">("all");
     const [modeFilter, setModeFilter] = useState<string>("all");
+    const [activeMop, setActiveMop] = useState<string | null>(null);
 
     // --- Data Fetching and Processing ---
 
@@ -210,6 +216,14 @@ export default function DashboardPage() {
         return receipts.filter(r => {
             if (statusFilter !== 'all' && r.status !== statusFilter) return false;
             if (modeFilter !== 'all' && r.sessionMode !== modeFilter) return false;
+            
+            if (activeMop) {
+                const mopData = r.analytics?.mop;
+                if (!mopData || typeof mopData !== 'object' || !(activeMop in mopData) || !((mopData as any)[activeMop] > 0)) {
+                    return false;
+                }
+            }
+
             if (searchQuery) {
                 const receiptNumMatch = r.receiptNumber?.toLowerCase().includes(searchQuery);
                 const tableNumMatch = r.tableNumber?.toLowerCase().includes(searchQuery);
@@ -218,7 +232,7 @@ export default function DashboardPage() {
             }
             return true;
         });
-    }, [receipts, search, statusFilter, modeFilter]);
+    }, [receipts, search, statusFilter, modeFilter, activeMop]);
 
     useEffect(() => {
         if (selectedReceiptId && !filteredReceipts.some(r => r.id === selectedReceiptId)) {
@@ -269,6 +283,10 @@ export default function DashboardPage() {
             }))
         };
     }, [filteredReceipts]);
+
+    const handleMopSelect = (mopName: string) => {
+        setActiveMop(prev => prev === mopName ? null : mopName);
+    }
 
     // --- Receipt Preview Logic ---
     const handleSelectReceipt = useCallback(async (receiptId: string) => {
@@ -395,11 +413,21 @@ export default function DashboardPage() {
                             </div>
                             <Card>
                                 <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} /></CardContent>
+                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Recent Receipts</CardTitle>
+                                    <div className="flex justify-between items-center">
+                                        <CardTitle>Recent Receipts</CardTitle>
+                                        {activeMop && (
+                                            <Badge variant="secondary" className="flex items-center gap-2">
+                                                MOP: {activeMop}
+                                                <button onClick={() => setActiveMop(null)} className="rounded-full hover:bg-muted-foreground/20 p-0.5">
+                                                    <XIcon className="h-3 w-3" />
+                                                </button>
+                                            </Badge>
+                                        )}
+                                    </div>
                                     <CardDescription>Filter and browse receipts from the selected period.</CardDescription>
                                      <div className="grid sm:grid-cols-[1fr,120px,120px] gap-2 pt-2">
                                         <Input 
