@@ -45,7 +45,7 @@ export function ServedHistory({ servedItems }: ServedHistoryProps) {
             <div className="space-y-2">
                 {currentItems.map(item => {
                     const isAlaCarte = item.sessionMode === 'alacarte';
-                    const displayLocation = isAlaCarte ? `Ala Carte - ${item.customerName || 'Walk-in'}` : `Table ${item.tableNumber}`;
+                    const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
                     return (
                     <div key={item.docId} className="border rounded-lg p-3 text-sm">
                         <div className="flex justify-between items-center">

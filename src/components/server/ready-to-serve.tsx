@@ -88,7 +88,7 @@ export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }:
         {items.length === 0 && <p className="text-muted-foreground text-center py-4">No items ready to serve.</p>}
         {items.map(item => {
             const isAlaCarte = item.sessionMode === 'alacarte';
-            const displayLocation = isAlaCarte ? `Ala Carte - ${item.customerName || 'Walk-in'}` : `Table ${item.tableNumber}`;
+            const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
             return (
           <Card key={item.docId} className="p-0">
              <CardHeader className="flex flex-row items-center justify-between p-3">

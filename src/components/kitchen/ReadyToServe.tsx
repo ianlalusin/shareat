@@ -74,7 +74,7 @@ export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServePro
                 ) : (
                     items.map(item => {
                         const isAlaCarte = item.sessionMode === 'alacarte';
-                        const displayLocation = isAlaCarte ? `Ala Carte - ${item.customerName || 'Walk-in'}` : `Table ${item.tableNumber}`;
+                        const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
                         
                         return (
                           <Card key={item.id} className="p-0">
