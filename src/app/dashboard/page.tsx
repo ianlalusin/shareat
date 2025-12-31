@@ -46,6 +46,10 @@ export default function DashboardPage() {
         const unsubReceipts = onSnapshot(receiptsQuery, (snapshot) => {
             const receiptsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
             
+            console.log("DASH receipts sample:", receiptsData[0]);
+            console.log("DASH sample analytics:", receiptsData[0]?.analytics);
+            console.log("DASH sample payments:", receiptsData[0]?.payments);
+
             const getReceiptTotal = (r: any) => {
                 const v = r?.analytics?.grandTotal ?? r?.total ?? 0;
                 return typeof v === "number" ? v : Number(v) || 0;
