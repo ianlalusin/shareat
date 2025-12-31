@@ -115,6 +115,8 @@ function getUsername(appUser: any) {
     return (appUser?.displayName?.trim()) || (appUser?.name?.trim()) || (appUser?.email ? String(appUser.email).split("@")[0] : "") || (appUser?.uid ? String(appUser.uid).slice(0, 6) : "unknown");
 }
 
+const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || 0);
+
 export default function DashboardPage() {
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
@@ -243,39 +245,58 @@ export default function DashboardPage() {
 
 
     const { stats, mopTotals, recentReceipts } = useMemo(() => {
-        const getReceiptTotal = (r: any) => {
-            const v = r?.analytics?.grandTotal ?? r?.total ?? 0;
-            return typeof v === "number" ? v : Number(v) || 0;
-        };
-        const totalSales = filteredReceipts.reduce((sum, r) => sum + getReceiptTotal(r), 0);
-        const discountsTotal = filteredReceipts.reduce((sum, r) => sum + (r.analytics?.discountsTotal || 0), 0);
+        let totalSales = 0;
+        let discountsTotal = 0;
+        const mop: Record<string, number> = {};
+
+        filteredReceipts.forEach(r => {
+            totalSales += toNum(r.analytics?.grandTotal);
+            discountsTotal += toNum(r.analytics?.discountsTotal);
+
+            const tenderedMop = r.analytics?.mop;
+            if (tenderedMop && typeof tenderedMop === 'object') {
+                const netMop = { ...tenderedMop };
+                const change = toNum(r.analytics?.change);
+
+                if (change > 0) {
+                    const cashKey = Object.keys(netMop).find(k => k.toLowerCase().includes('cash'));
+
+                    if (cashKey && toNum(netMop[cashKey]) > 0) {
+                        netMop[cashKey] = Math.max(0, toNum(netMop[cashKey]) - change);
+                    } else {
+                        // Fallback: deduct from largest payment method if no cash
+                        let maxKey = '';
+                        let maxAmount = 0;
+                        for (const [key, value] of Object.entries(netMop)) {
+                           const amount = toNum(value);
+                           if (amount > maxAmount) {
+                               maxAmount = amount;
+                               maxKey = key;
+                           }
+                        }
+                        if (maxKey) {
+                            netMop[maxKey] = Math.max(0, toNum(netMop[maxKey]) - change);
+                        }
+                    }
+                }
+                
+                for (const [methodKey, amount] of Object.entries(netMop)) {
+                     const amt = toNum(amount);
+                     mop[methodKey] = (mop[methodKey] || 0) + amt;
+                }
+            }
+        });
+
         const receiptsCount = filteredReceipts.length;
         const avgBasket = receiptsCount > 0 ? totalSales / receiptsCount : 0;
         
-        const mop: Record<string, number> = {};
-        filteredReceipts.forEach(r => {
-            const mopAny = r.analytics?.mop;
-            if (!mopAny || typeof mopAny !== "object") return;
-          
-            for (const [methodKey, amount] of Object.entries(mopAny as Record<string, unknown>)) {
-              const amt = typeof amount === "number" ? amount : Number(amount) || 0;
-          
-              const method =
-                typeof amount === "object" && amount
-                  ? String((amount as any).name ?? methodKey)
-                  : methodKey;
-          
-              const finalMethod = method.trim() || methodKey;
-              mop[finalMethod] = (mop[finalMethod] || 0) + amt;
-            }
-        });
         return {
             stats: { totalSales, receiptsCount, avgBasket, discountsTotal },
             mopTotals: mop,
             recentReceipts: filteredReceipts.slice(0, 10).map(r => ({
                 id: r.id,
                 receiptNumber: r.receiptNumber,
-                total: getReceiptTotal(r),
+                total: toNum(r.analytics?.grandTotal ?? r.total),
                 customerName: r.customerName,
                 tableNumber: r.tableNumber,
                 sessionMode: r.sessionMode,
