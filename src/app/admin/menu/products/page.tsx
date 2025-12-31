@@ -84,7 +84,7 @@ export default function ProductManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSaveProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'category'> & { category?: string }) => {
+  const handleSaveProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'category' | 'imageUrl'> & { category?: string; imageUrl?: string | null }) => {
     if (!appUser) return;
     setIsSubmitting(true);
     
@@ -92,6 +92,7 @@ export default function ProductManagementPage() {
     
     const dataToSave = {
         ...productData,
+        imageUrl: productData.imageUrl || undefined, // Normalize null to undefined
         category: "Add-on", // Always default to "Add-on"
     };
 
