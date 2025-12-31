@@ -5,6 +5,7 @@ import { useAuthContext } from "@/context/auth-context";
 import Header from "./header";
 import { AppUser } from "@/context/auth-context";
 import { User as FirebaseUser } from "firebase/auth";
+import { BrandLoader } from "@/components/ui/BrandLoader";
 
 // This is a helper function to merge FirebaseUser and AppUser
 function combineUser(
@@ -37,8 +38,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <BrandLoader />
       </div>
     );
   }
