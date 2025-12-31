@@ -8,7 +8,7 @@ export function BrandLoader() {
         <div className="absolute inset-0 rounded-full border-4 border-muted border-t-foreground animate-spin" />
 
         {/* logo */}
-        <div className="absolute inset-2 rounded-full overflow-hidden bg-black/10 flex items-center justify-center">
+        <div className="absolute inset-1 rounded-full overflow-hidden bg-red/10 flex items-center justify-center">
           <img
             src="/logo.png"
             alt="SharEat"

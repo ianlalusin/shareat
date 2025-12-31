@@ -83,11 +83,6 @@ export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServePro
                                     <CardTitle className="text-lg">{displayLocation}</CardTitle>
                                     <TimeAgo date={item.preparedAt} />
                                  </div>
-                                 <div className="flex items-center gap-1">
-                                    <Button size="sm" onClick={() => onMarkServed(item.id, item.sessionId, 'served')} disabled={isServing[item.id]} className="h-8">
-                                        {isServing[item.id] ? <Loader2 className="animate-spin"/> : <Send />}
-                                    </Button>
-                                </div>
                              </CardHeader>
                              <CardContent className="p-3 pt-0">
                                  <p className="font-medium text-base">{item.itemName}</p>
