@@ -145,6 +145,7 @@ export type KitchenTicket = {
     initialFlavorNames?: string[];
     sessionMode?: 'package_dinein' | 'alacarte';
     customerName?: string | null;
+    sessionLabel?: string;
 };
 
 export type StoreAddon = {

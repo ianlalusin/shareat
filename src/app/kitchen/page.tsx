@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReadyToServe } from "@/components/kitchen/ReadyToServe";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket } from "@/lib/types";
+import { computeSessionLabel } from "@/lib/utils/session";
 
 export type KitchenStation = {
     id: string;
@@ -29,6 +30,9 @@ export type KitchenStation = {
 type Session = {
     id: string;
     initialFlavorIds?: string[];
+    customerName?: string | null;
+    tableNumber?: string | null;
+    sessionMode?: 'package_dinein' | 'alacarte';
 };
 
 type Flavor = {
@@ -139,6 +143,11 @@ export default function KitchenPage() {
         return {
             ...ticket,
             initialFlavorNames: flavorNames,
+            sessionLabel: computeSessionLabel({ 
+              sessionMode: ticket.sessionMode, 
+              customerName: ticket.customerName, 
+              tableNumber: ticket.tableNumber 
+            }),
         };
     });
   }, [tickets, sessionsMap, flavorsMap]);
