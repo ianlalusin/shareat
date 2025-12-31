@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useMemo, useState } from "react";
@@ -201,7 +202,7 @@ export default function CompactCalendar({
         <button
           type="button"
           onClick={prevMonth}
-          className="rounded-md px-2 py-1 hover:bg-black/5 active:bg-black/10"
+          className="rounded-md px-2 py-1 text-lg font-bold hover:bg-black/5 active:bg-black/10"
           aria-label="Previous month"
           style={{ color: "var(--accent)", fontWeight: 400 }}
         >
@@ -245,7 +246,7 @@ export default function CompactCalendar({
         <button
           type="button"
           onClick={nextMonth}
-          className="rounded-md px-2 py-1 hover:bg-black/5 active:bg-black/10"
+          className="rounded-md px-2 py-1 text-lg font-bold hover:bg-black/5 active:bg-black/10"
           aria-label="Next month"
           style={{ color: "var(--accent)", fontWeight: 400 }}
         >
