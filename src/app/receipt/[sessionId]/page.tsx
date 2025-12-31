@@ -97,15 +97,17 @@ export default function ReceiptPage() {
                     : null;
                     
                 const receiptCreatedAt =
-                    receiptDocData?.createdAt ?? receiptSnap.createTime ?? sessionSnap.updateTime ?? null;
+                    receiptDocData?.createdAt ??
+                    (sessionData.closedAt ? (sessionData.closedAt.toDate ? sessionData.closedAt.toDate() : new Date(sessionData.closedAt)) : null) ??
+                    (receiptDocData?.createdAtClientMs ? new Date(receiptDocData.createdAtClientMs) : null);
                     
-                const cashierName = receiptDocData?.createdByUsername || sessionData.startedByName || sessionData.startedByUid.substring(0, 6);
+                const cashierName = receiptDocData?.createdByUsername || sessionData.startedByName || (sessionData.startedByUid || "").substring(0, 6);
 
 
                 setReceiptData({
                     session: { 
                         ...sessionData, 
-                        closedAt: sessionData?.closedAt ?? sessionSnap.updateTime,
+                        closedAt: sessionData?.closedAt,
                         cashierName,
                     } as any,
                     billables: billablesSnap.docs.map(d => d.data()) as any[],
