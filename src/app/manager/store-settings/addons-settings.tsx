@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
-import { StoreAddonEditDialog } from "./StoreAddonEditDialog";
+import { StoreAddonEditDialog } from "@/components/manager/store-settings/StoreAddonEditDialog";
 import Image from "next/image";
 import type { Store, InventoryItem, KitchenLocation, Product, StoreAddon } from "@/lib/types";
 
@@ -93,7 +93,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     const availableInventoryItems = useMemo(() => {
         const storeAddonIds = new Set(storeAddons.map(s => s.id));
         return inventoryItems
-            .filter(item => !storeAddonIds.has(item.productId));
+            .filter(item => item.productId && !storeAddonIds.has(item.productId));
     }, [inventoryItems, storeAddons]);
 
     const handleToggleEnabled = async (addon: StoreAddon) => {
@@ -110,7 +110,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     };
     
     const handleAddAddon = async (inventoryItem: InventoryItem) => {
-        if (!appUser) return;
+        if (!appUser || !inventoryItem.productId) return;
         
         const addonId = inventoryItem.productId;
         const docRef = doc(db, "stores", store.id, "storeAddons", addonId);
