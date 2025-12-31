@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
@@ -59,6 +59,7 @@ export default function DashboardPage() {
                 id: r.id,
                 receiptNumber: r.receiptNumber,
                 total: r.total,
+                createdAtClientMs: r.createdAtClientMs
             })));
             
             const tally: PaymentMethodTally = {};

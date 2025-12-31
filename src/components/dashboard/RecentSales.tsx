@@ -11,11 +11,16 @@ import { Printer } from "lucide-react";
 import { doc, getDoc, collection, getDocs, query, orderBy, updateDoc, increment, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
+import { format } from "date-fns";
 
 export type Sale = {
     id: string;
     receiptNumber?: string;
+    customerName?: string | null;
+    tableNumber?: string | null;
+    sessionMode?: 'package_dinein' | 'alacarte';
     total: number;
+    createdAtClientMs: number;
 };
 
 interface RecentSalesProps {
@@ -108,18 +113,21 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
     return (
         <>
             <div className="space-y-4">
-                {sales.map((sale) => (
-                    <button key={sale.id} onClick={() => handleSelectReceipt(sale)} className="flex items-center w-full text-left hover:bg-muted/50 p-2 rounded-md">
-                        <Avatar className="h-9 w-9">
-                            <AvatarFallback>{sale.receiptNumber?.charAt(0) || 'R'}</AvatarFallback>
-                        </Avatar>
-                        <div className="ml-4 space-y-1">
-                            <p className="text-sm font-medium leading-none">{sale.receiptNumber || `ID: ${sale.id.substring(0, 6)}`}</p>
-                            <p className="text-sm text-muted-foreground">Receipt</p>
-                        </div>
-                        <div className="ml-auto font-medium">₱{sale.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    </button>
-                ))}
+                {sales.map((sale) => {
+                    const primaryId = sale.receiptNumber ?? (sale.sessionMode === 'alacarte' ? sale.customerName : `Table ${sale.tableNumber}`);
+                    return (
+                        <button key={sale.id} onClick={() => handleSelectReceipt(sale)} className="flex items-center w-full text-left hover:bg-muted/50 p-2 rounded-md">
+                            <Avatar className="h-9 w-9">
+                                <AvatarFallback>{primaryId?.charAt(0) || 'R'}</AvatarFallback>
+                            </Avatar>
+                            <div className="ml-4 space-y-1">
+                                <p className="text-sm font-medium leading-none">{primaryId}</p>
+                                <p className="text-sm text-muted-foreground">{format(new Date(sale.createdAtClientMs), "p")}</p>
+                            </div>
+                            <div className="ml-auto font-medium">₱{sale.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </button>
+                    )
+                })}
             </div>
             
             <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
