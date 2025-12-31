@@ -20,11 +20,12 @@ import { Badge } from "../ui/badge";
 import { DialogDescription } from "../ui/dialog";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud, ScanLine } from "lucide-react";
 import Image from "next/image";
 import { Package } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import type { Product } from "@/lib/types";
+import { BarcodeScanner } from "../BarcodeScanner";
 
 type AddonCategory = {
     id: string;
@@ -58,6 +59,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [isUploading, setIsUploading] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(formSchema),
@@ -137,6 +139,15 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     }
   };
 
+  const handleBarcodeScanned = (barcode: string) => {
+    form.setValue("barcode", barcode);
+    setIsScannerOpen(false);
+    toast({
+        title: "Barcode Scanned",
+        description: `Set barcode to: ${barcode}`,
+    });
+  }
+
 
   const onSubmit = (data: ProductFormValues) => {
     onSave({ ...data, subCategory: subCategoryInput });
@@ -146,6 +157,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const dialogDescription = product ? "Update the details of this product." : "Fill in the details to create a new global product.";
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
         <DialogHeader className="p-6 pb-0">
@@ -256,9 +268,12 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                         render={({ field }) => (
                         <FormItem>
                             <FormLabel>Barcode</FormLabel>
-                            <FormControl>
-                            <Input placeholder="Optional" {...field} />
-                            </FormControl>
+                             <div className="flex gap-2">
+                                <FormControl>
+                                <Input placeholder="Optional" {...field} />
+                                </FormControl>
+                                <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}><ScanLine/></Button>
+                            </div>
                             <FormMessage />
                         </FormItem>
                         )}
@@ -299,5 +314,13 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {isScannerOpen && (
+        <BarcodeScanner
+            isOpen={isScannerOpen}
+            onClose={() => setIsScannerOpen(false)}
+            onScan={handleBarcodeScanned}
+        />
+    )}
+    </>
   );
 }
