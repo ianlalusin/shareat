@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
-import type { BillableItem } from "@/lib/types";
+import type { BillableItem, ModeOfPayment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 // Define types based on your Firestore structure
@@ -23,6 +23,7 @@ export type Session = {
         grandTotal: number;
         totalPaid: number;
         change: number;
+        printedCount?: number;
     };
     closedAt: Timestamp | { toDate: () => Date } | Date | { seconds: number, nanoseconds: number };
     startedByUid: string;
@@ -65,6 +66,7 @@ export type ReceiptData = {
 
 interface ReceiptViewProps {
     data: ReceiptData;
+    paymentMethods?: ModeOfPayment[];
     forcePaperWidth?: "58mm" | "80mm" | "A4";
 }
 
@@ -78,9 +80,11 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
     );
 }
 
-export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
+export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: ReceiptViewProps) {
     const { session, billables, payments, settings, createdByUsername } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
+
+    const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
     const groupedItems = useMemo(() => {
         const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percent' }>();
@@ -207,7 +211,7 @@ export function ReceiptView({ data, forcePaperWidth }: ReceiptViewProps) {
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
                 {payments.map((p, i) => (
-                    <ReceiptRow key={i} label={p.methodId.toUpperCase()} value={p.amount.toFixed(2)} />
+                    <ReceiptRow key={i} label={(paymentMethodMap.get(p.methodId) || p.methodId).toUpperCase()} value={p.amount.toFixed(2)} />
                 ))}
                  <ReceiptRow label="Total Paid" value={session.paymentSummary.totalPaid.toFixed(2)} />
                  <ReceiptRow label="CHANGE" value={session.paymentSummary.change.toFixed(2)} isBold={true} isEmphasized={true} />

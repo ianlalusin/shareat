@@ -10,11 +10,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { RecentReceiptsList } from "@/components/manager/receipts/RecentReceiptsList";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
 import { Button } from "@/components/ui/button";
-import { doc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, increment, serverTimestamp, collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ModeOfPayment } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -31,6 +32,21 @@ export default function CashierReceiptsPage() {
     const [selectedRecentReceipt, setSelectedRecentReceipt] = useState<ReceiptData | null>(null);
     const [isPrinting, setIsPrinting] = useState(false);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
+    const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
+    useEffect(() => {
+        if (!activeStore?.id) return;
+        const mopRef = collection(db, "stores", activeStore.id, "storeModesOfPayment");
+        const mopQuery = query(
+            mopRef, 
+            where("isArchived", "==", false),
+            orderBy("sortOrder", "asc")
+        );
+        const unsubscribe = onSnapshot(mopQuery, (snapshot) => {
+            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
+        });
+        return () => unsubscribe();
+    }, [activeStore?.id]);
 
     const storageKey = useMemo(
         () => `receiptPaperWidth:${activeStore?.id ?? "nostore"}:${appUser?.uid ?? "nouser"}`,
@@ -120,7 +136,7 @@ export default function CashierReceiptsPage() {
                         </CardHeader>
                         <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
                         {selectedRecentReceipt ? (
-                                <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />
+                                <ReceiptView data={selectedRecentReceipt} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />
                         ) : (
                             <div className="flex items-center justify-center h-96 text-muted-foreground">
                                 <p>Select a recent receipt to preview.</p>
@@ -131,7 +147,7 @@ export default function CashierReceiptsPage() {
                 </div>
             </div>
              <div className="hidden print-block">
-                {selectedRecentReceipt && <ReceiptView data={selectedRecentReceipt} forcePaperWidth={paperWidth} />}
+                {selectedRecentReceipt && <ReceiptView data={selectedRecentReceipt} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />}
              </div>
         </RoleGuard>
     );
