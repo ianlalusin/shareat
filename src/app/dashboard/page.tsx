@@ -17,6 +17,8 @@ import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view
 import type { ModeOfPayment } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // --- HELPERS ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
@@ -75,7 +77,7 @@ type RecentReceipt = { id: string; receiptNumber?: string; customerName?: string
 
 const RecentReceiptsList = ({ receipts, onSelect, isLoading, selectedId }: { receipts: RecentReceipt[], onSelect: (id: string) => void, isLoading: boolean, selectedId: string | null }) => {
     if (isLoading) return <Skeleton className="h-48 w-full" />;
-    if (receipts.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No receipts for this period.</p>;
+    if (receipts.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No receipts match the current filters.</p>;
     return (
         <div className="space-y-2">
             {receipts.map((r) => {
@@ -123,6 +125,11 @@ export default function DashboardPage() {
     const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
+
+    // Filter states
+    const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "final" | "void">("all");
+    const [modeFilter, setModeFilter] = useState<string>("all");
 
     // --- Data Fetching and Processing ---
 
@@ -192,19 +199,47 @@ export default function DashboardPage() {
 
         return () => unsubscribe();
     }, [activeStore, datePreset, customRange]);
+    
+    const modeOptions = useMemo(() => {
+        const modes = new Set(receipts.map(r => r.sessionMode).filter(Boolean));
+        return ["all", ...Array.from(modes).sort()];
+    }, [receipts]);
+
+    const filteredReceipts = useMemo(() => {
+        const searchQuery = search.trim().toLowerCase();
+        return receipts.filter(r => {
+            if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+            if (modeFilter !== 'all' && r.sessionMode !== modeFilter) return false;
+            if (searchQuery) {
+                const receiptNumMatch = r.receiptNumber?.toLowerCase().includes(searchQuery);
+                const tableNumMatch = r.tableNumber?.toLowerCase().includes(searchQuery);
+                const customerNameMatch = typeof r.customerName === 'string' && r.customerName.toLowerCase().includes(searchQuery);
+                if (!receiptNumMatch && !tableNumMatch && !customerNameMatch) return false;
+            }
+            return true;
+        });
+    }, [receipts, search, statusFilter, modeFilter]);
+
+    useEffect(() => {
+        if (selectedReceiptId && !filteredReceipts.some(r => r.id === selectedReceiptId)) {
+            setSelectedReceiptId(null);
+            setSelectedReceiptData(null);
+        }
+    }, [filteredReceipts, selectedReceiptId]);
+
 
     const { stats, mopTotals, recentReceipts } = useMemo(() => {
         const getReceiptTotal = (r: any) => {
             const v = r?.analytics?.grandTotal ?? r?.total ?? 0;
             return typeof v === "number" ? v : Number(v) || 0;
         };
-        const totalSales = receipts.reduce((sum, r) => sum + getReceiptTotal(r), 0);
-        const discountsTotal = receipts.reduce((sum, r) => sum + (r.analytics?.discountsTotal || 0), 0);
-        const receiptsCount = receipts.length;
+        const totalSales = filteredReceipts.reduce((sum, r) => sum + getReceiptTotal(r), 0);
+        const discountsTotal = filteredReceipts.reduce((sum, r) => sum + (r.analytics?.discountsTotal || 0), 0);
+        const receiptsCount = filteredReceipts.length;
         const avgBasket = receiptsCount > 0 ? totalSales / receiptsCount : 0;
         
         const mop: Record<string, number> = {};
-        receipts.forEach(r => {
+        filteredReceipts.forEach(r => {
             const mopAny = r.analytics?.mop;
             if (!mopAny || typeof mopAny !== "object") return;
           
@@ -223,7 +258,7 @@ export default function DashboardPage() {
         return {
             stats: { totalSales, receiptsCount, avgBasket, discountsTotal },
             mopTotals: mop,
-            recentReceipts: receipts.slice(0, 10).map(r => ({
+            recentReceipts: filteredReceipts.slice(0, 10).map(r => ({
                 id: r.id,
                 receiptNumber: r.receiptNumber,
                 total: getReceiptTotal(r),
@@ -233,7 +268,7 @@ export default function DashboardPage() {
                 createdAtClientMs: r.createdAtClientMs
             }))
         };
-    }, [receipts]);
+    }, [filteredReceipts]);
 
     // --- Receipt Preview Logic ---
     const handleSelectReceipt = useCallback(async (receiptId: string) => {
@@ -353,7 +388,7 @@ export default function DashboardPage() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
                         <div className="lg:col-span-2 space-y-6">
                             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                                <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground">₱</span>} isLoading={isLoading} format="currency" />
+                                <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground font-bold">₱</span>} isLoading={isLoading} format="currency" />
                                 <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isLoading} />
                                 <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isLoading} format="currency" />
                                 <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isLoading} format="currency" />
@@ -363,7 +398,33 @@ export default function DashboardPage() {
                                 <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} /></CardContent>
                             </Card>
                             <Card>
-                                <CardHeader><CardTitle>Recent Receipts</CardTitle></CardHeader>
+                                <CardHeader>
+                                    <CardTitle>Recent Receipts</CardTitle>
+                                    <CardDescription>Filter and browse receipts from the selected period.</CardDescription>
+                                     <div className="grid sm:grid-cols-[1fr,120px,120px] gap-2 pt-2">
+                                        <Input 
+                                            placeholder="Search receipt #, table, customer..."
+                                            value={search}
+                                            onChange={e => setSearch(e.target.value)}
+                                        />
+                                        <Select value={statusFilter} onValueChange={v => setStatusFilter(v as any)}>
+                                            <SelectTrigger><SelectValue/></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Statuses</SelectItem>
+                                                <SelectItem value="final">Final</SelectItem>
+                                                <SelectItem value="void">Void</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <Select value={modeFilter} onValueChange={setModeFilter}>
+                                            <SelectTrigger><SelectValue/></SelectTrigger>
+                                            <SelectContent>
+                                                {modeOptions.map(mode => (
+                                                     <SelectItem key={mode} value={mode} className="capitalize">{mode === 'all' ? 'All Modes' : mode.replace('_', ' ')}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                     </div>
+                                </CardHeader>
                                 <CardContent><RecentReceiptsList receipts={recentReceipts} onSelect={handleSelectReceipt} isLoading={isLoading} selectedId={selectedReceiptId} /></CardContent>
                             </Card>
                         </div>
@@ -396,3 +457,4 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
