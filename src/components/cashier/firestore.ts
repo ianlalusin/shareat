@@ -374,9 +374,11 @@ export async function completePayment(
 
         const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
         const chargesTotal = billingSummary.adjustmentsTotal || 0;
+        
         const mop = payments.reduce((acc, p) => {
           const k = String(p.methodId || "unknown").toLowerCase();
-          acc[k] = (acc[k] || 0) + (p.amount || 0);
+          const amt = typeof p.amount === "number" ? p.amount : Number(p.amount) || 0;
+          acc[k] = (acc[k] || 0) + amt;
           return acc;
         }, {} as Record<string, number>);
 
