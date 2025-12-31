@@ -320,8 +320,8 @@ export async function completePayment(
     }
     
     // --- VALIDATION AND PREPARATION ---
-    const totalPaid = payments.reduce((s,p)=> s + (typeof p.amount==="number" ? p.amount : Number(p.amount)||0), 0);
     const grandTotal = billingSummary.grandTotal || 0;
+    const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
     if (totalPaid < grandTotal) {
       throw new Error("Cannot complete payment: balance is not zero.");
@@ -377,7 +377,7 @@ export async function completePayment(
         const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
         const chargesTotal = billingSummary.adjustmentsTotal || 0;
         const change = Math.max(0, totalPaid - grandTotal);
-
+        
         const mop = payments.reduce((acc, p) => {
           const key = String(p.methodId || "unknown").toLowerCase();
           const amt = typeof p.amount === "number" ? p.amount : Number(p.amount) || 0;
