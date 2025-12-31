@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, getDocs, updateDoc, increment, serverTimestamp, Timestamp, QueryDocumentSnapshot, DocumentData, startAfter } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer, XIcon } from "lucide-react";
+import { Loader2, Receipt, Users, ShoppingBasket, Percent, Printer, XIcon, Download } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -122,6 +122,35 @@ const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || 0);
 
 type ReceiptType = { id: string, createdAtClientMs: number, [key: string]: any };
 
+function csvEscape(val: any) {
+    const s = val == null ? "" : String(val);
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+function formatLocal(dtMs?: number) {
+    if (!dtMs) return "";
+    return new Date(dtMs).toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function mopToString(mop: any) {
+    if (!mop || typeof mop !== "object") return "";
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(mop)) {
+        const amt = toNum(v);
+        if (!k) continue;
+        parts.push(`${k}:${amt}`);
+    }
+    return parts.join("|");
+}
+
+
 export default function DashboardPage() {
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
@@ -136,6 +165,8 @@ export default function DashboardPage() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+    const olderCountRef = useRef(0);
+    useEffect(() => { olderCountRef.current = olderReceipts.length; }, [olderReceipts.length]);
     
     const [error, setError] = useState<string | null>(null);
 
@@ -243,6 +274,7 @@ export default function DashboardPage() {
         setLoadingMore(true);
 
         try {
+            const mapDocToReceipt = (doc: DocumentData): ReceiptType => ({ id: doc.id, ...doc.data() });
             const moreQuery = query(
                 collection(db, `stores/${activeStore.id}/receipts`),
                 where("createdAtClientMs", ">=", start.getTime()),
@@ -253,7 +285,7 @@ export default function DashboardPage() {
             );
 
             const snap = await getDocs(moreQuery);
-            const batch = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType));
+            const batch = snap.docs.map(mapDocToReceipt);
             
             setOlderReceipts(prev => {
                 const seen = new Set(prev.map(x => x.id));
@@ -458,6 +490,68 @@ export default function DashboardPage() {
         setIsCalendarOpen(false);
     };
 
+    function exportCsv() {
+        const rows = filteredReceipts.map(r => {
+            const a = r.analytics || {};
+            const grandTotal = toNum(a.grandTotal);
+            const discountsTotal = toNum(a.discountsTotal);
+            const chargesTotal = toNum(a.chargesTotal);
+            const totalPaid = toNum(a.totalPaid);
+            const change = toNum(a.change);
+            const netCollected = totalPaid - change;
+
+            return [
+                formatLocal(r.createdAtClientMs),
+                r.receiptNumber ?? "",
+                r.sessionMode ?? "",
+                r.tableNumber ?? "",
+                r.customerName ?? "",
+                grandTotal,
+                discountsTotal,
+                chargesTotal,
+                totalPaid,
+                change,
+                netCollected,
+                mopToString(a.mop),
+            ];
+        });
+
+        const header = [
+            "DateTime",
+            "ReceiptNumber",
+            "SessionMode",
+            "TableNumber",
+            "CustomerName",
+            "GrandTotal",
+            "DiscountsTotal",
+            "ChargesTotal",
+            "TotalPaid",
+            "Change",
+            "NetCollected",
+            "PaymentMix",
+        ];
+
+        const csv = [
+            header.map(csvEscape).join(","),
+            ...rows.map(row => row.map(csvEscape).join(",")),
+        ].join("\n");
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+
+        const from = start.toISOString().slice(0,10);
+        const to = end.toISOString().slice(0,10);
+        const filename = `dashboard_${from}_to_${to}.csv`;
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
 
     // --- Render Logic ---
     if (storeLoading) {
@@ -478,24 +572,30 @@ export default function DashboardPage() {
         <RoleGuard allow={["admin", "manager", "cashier", "server", "kitchen"]}>
             <div className="print:hidden">
                 <PageHeader title="Dashboard" description={`Real-time overview of ${activeStore.name}'s performance.`}>
-                    <div className="flex items-center gap-2 rounded-md bg-muted p-1">
-                        {presets.map(p => (
-                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                        ))}
-                         <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                            <PopoverTrigger asChild>
-                                 <Button
-                                    variant={datePreset === "custom" ? "default" : "ghost"}
-                                    size="sm"
-                                    className="h-8 min-w-[100px]"
-                                >
-                                    {customBtnLabel(customRange, datePreset === "custom")}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                                <CompactCalendar onChange={handleCalendarChange}/>
-                            </PopoverContent>
-                        </Popover>
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 rounded-md bg-muted p-1">
+                            {presets.map(p => (
+                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                            ))}
+                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant={datePreset === "custom" ? "default" : "ghost"}
+                                        size="sm"
+                                        className="h-8 min-w-[100px]"
+                                    >
+                                        {customBtnLabel(customRange, datePreset === "custom")}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                    <CompactCalendar onChange={handleCalendarChange}/>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredReceipts.length === 0}>
+                            <Download />
+                            Export CSV
+                        </Button>
                     </div>
                 </PageHeader>
 
@@ -600,3 +700,4 @@ export default function DashboardPage() {
 }
 
     
+
