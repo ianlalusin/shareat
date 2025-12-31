@@ -46,7 +46,12 @@ export default function DashboardPage() {
         const unsubReceipts = onSnapshot(receiptsQuery, (snapshot) => {
             const receiptsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
             
-            const totalSales = receiptsData.reduce((sum, receipt) => sum + (receipt.analytics?.grandTotal || 0), 0);
+            const getReceiptTotal = (r: any) => {
+                const v = r?.analytics?.grandTotal ?? r?.total ?? 0;
+                return typeof v === "number" ? v : Number(v) || 0;
+            };
+
+            const totalSales = receiptsData.reduce((sum, r) => sum + getReceiptTotal(r), 0);
             const totalTransactions = receiptsData.length;
             
             setStats({
@@ -58,7 +63,7 @@ export default function DashboardPage() {
             setRecentSales(receiptsData.slice(0, 10).map(r => ({
                 id: r.id,
                 receiptNumber: r.receiptNumber,
-                total: r.analytics?.grandTotal || r.total,
+                total: getReceiptTotal(r),
                 customerName: r.customerName,
                 tableNumber: r.tableNumber,
                 sessionMode: r.sessionMode,
