@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import type { InventoryItem } from "@/app/manager/inventory/page";
+import type { InventoryItem } from "@/lib/types";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),

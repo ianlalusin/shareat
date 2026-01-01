@@ -20,7 +20,7 @@ import { InventoryItem } from "@/app/manager/inventory/page";
 import { StoreAddonEditDialog } from "./StoreAddonEditDialog";
 import type { KitchenLocation } from "@/lib/types";
 import Image from "next/image";
-import { Product } from "@/app/admin/menu/products/page";
+import type { Product } from "@/lib/types";
 import type { StoreAddon } from "@/lib/types";
 
 export function AddonsSettings({ store }: { store: Store }) {
