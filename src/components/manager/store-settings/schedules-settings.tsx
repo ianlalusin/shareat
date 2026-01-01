@@ -155,7 +155,7 @@ export function SchedulesSettings() {
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.startTime} - {item.endTime}</TableCell>
-                    <TableCell className="max-w-xs truncate">{item.days.join(', ')}</TableCell>
+                    <TableCell className="max-w-xs truncate">{(item.days ?? []).join(', ')}</TableCell>
                     <TableCell>
                       <Badge variant={item.isActive ? "default" : "secondary"}>
                         {item.isActive ? "Active" : "Inactive"}
