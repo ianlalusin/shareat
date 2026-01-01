@@ -20,7 +20,7 @@ function combineUser(
   return {
     ...appUser,
     uid: firebaseUser.uid,
-    email: firebaseUser.email ?? null,
+    email: appUser?.email ?? null,
     displayName: firebaseUser.displayName || appUser?.displayName || appUser?.name,
     photoURL: firebaseUser.photoURL || appUser?.photoURL,
     status: appUser?.status || "pending", // Ensure status has a fallback

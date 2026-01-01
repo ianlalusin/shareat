@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthContext } from "@/context/auth-context";
+import { useStoreContext } from "@/context/store-context";
 import { BrandLoader } from "@/components/ui/BrandLoader";
 
 function roleHome(role?: string) {
@@ -23,14 +24,16 @@ function roleHome(role?: string) {
   }
 }
 
-const PUBLIC = ["/", "/signup"];
+const PUBLIC = ["/", "/signup", "/forgot-password"];
 const PENDING_ALLOWED = ["/pending", "/support"];
 const NEEDS_PROFILE_ALLOWED = ["/signup", "/support"];
 
 export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
-  const { user, appUser, loading } = useAuthContext();
+  const { user, appUser, loading: authLoading } = useAuthContext();
+  const { activeStoreId, loading: storeLoading } = useStoreContext();
   const router = useRouter();
   const pathname = usePathname();
+  const loading = authLoading || storeLoading;
 
   useEffect(() => {
     // Safety reset after actions that trigger dialogs + rerenders
@@ -70,13 +73,14 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     }
 
     // active -> if trying to access public/pending pages, route to role home
-    if (isPublic || pathname === "/pending") {
+    // CRITICAL: Also wait for activeStoreId to be available to prevent race conditions.
+    if ((isPublic || pathname === "/pending") && appUser.role && activeStoreId) {
       router.replace(roleHome(appUser.role));
       return;
     }
 
     // otherwise allow page
-  }, [user, appUser, loading, pathname, router]);
+  }, [user, appUser, loading, pathname, router, activeStoreId]);
 
   if (loading) {
     return (
@@ -116,7 +120,7 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
         redirectTo = "/pending";
       }
     } else { // active user
-      if (isPublic || pathname === "/pending") {
+      if ((isPublic || pathname === "/pending") && activeStoreId) {
         redirectTo = roleHome(appUser.role);
       }
     }

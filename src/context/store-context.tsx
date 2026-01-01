@@ -53,14 +53,15 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
   // 3. Resolve active store and handle auto-selection
   useEffect(() => {
-    if (!appUser || allowedStores.length === 0) return;
+    // Wait for all data to be loaded
+    if (!appUser || authLoading || loadingStores || allowedStores.length === 0) return;
 
     const currentActiveId = appUser.storeId;
     const isActiveStoreAllowed = allowedStores.some(store => store.id === currentActiveId);
 
     // If current active store is not valid or not set, and there are allowed stores,
     // auto-select the first one.
-    if (!isActiveStoreAllowed) {
+    if (!currentActiveId || !isActiveStoreAllowed) {
       const firstStoreId = allowedStores[0].id;
       const userDocRef = doc(db, "users", appUser.uid);
       updateDoc(userDocRef, {
@@ -68,7 +69,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
         updatedAt: serverTimestamp(),
       }).catch(err => console.error("Failed to auto-set active store:", err));
     }
-  }, [appUser, allowedStores]);
+  }, [appUser, allowedStores, authLoading, loadingStores]);
   
 
   const setActiveStore = async (storeId: string) => {
@@ -82,7 +83,8 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   };
 
   const activeStore = useMemo(() => {
-    return allowedStores.find(store => store.id === appUser?.storeId) || null;
+    if (!appUser?.storeId || allowedStores.length === 0) return null;
+    return allowedStores.find(store => store.id === appUser.storeId) || null;
   }, [allowedStores, appUser?.storeId]);
 
   const value = useMemo(() => ({

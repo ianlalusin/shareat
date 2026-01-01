@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -14,6 +15,7 @@ import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { AppUser } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { BrandLoader } from "@/components/ui/BrandLoader";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -56,19 +58,7 @@ export default function LoginPage() {
   if (isRedirecting) {
     return (
         <div className="w-full min-h-screen flex items-center justify-center bg-background">
-            <Card className="mx-auto max-w-sm w-full">
-                <CardHeader className="text-center">
-                    <div className="flex justify-center items-center gap-2 mb-4">
-                        <Logo className="h-8 w-8 text-destructive" />
-                        <h1 className="text-3xl font-bold font-serif text-destructive">SharEat Hub</h1>
-                    </div>
-                </CardHeader>
-                <CardContent className="text-center space-y-4">
-                    <Loader2 className="mx-auto h-12 w-12 animate-spin text-destructive" />
-                    <h2 className="text-xl font-semibold">Logging you in, {firstName}...</h2>
-                    <p className="text-muted-foreground">Please wait while we prepare your dashboard.</p>
-                </CardContent>
-            </Card>
+            <BrandLoader />
         </div>
     );
   }
