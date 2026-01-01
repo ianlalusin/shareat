@@ -34,6 +34,11 @@ export function AddonsSettings({ store }: { store: Store }) {
     const [selectedAddon, setSelectedAddon] = useState<StoreAddon | null>(null);
 
     useEffect(() => {
+        if (!store?.id) {
+            setIsLoading(false);
+            return;
+        }
+
         const unsubInventory = onSnapshot(
             query(collection(db, "stores", store.id, "inventory"), where("category", "==", "Add-on")), 
             (snap) => setInventoryItems(snap.docs.map(d => ({id: d.id, ...d.data()} as InventoryItem)))
@@ -80,7 +85,7 @@ export function AddonsSettings({ store }: { store: Store }) {
             unsubStoreAddons();
             unsubKitchenLocations();
         }
-    }, [store.id]);
+    }, [store?.id]);
 
     const filteredStoreAddons = useMemo(() => {
         return storeAddons.filter(item => 
@@ -154,6 +159,18 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
     }
 
+    if (!store) {
+        return (
+             <Card>
+                <CardHeader>
+                    <CardTitle>Store Add-ons</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground text-center">Please select a store to see add-on settings.</p>
+                </CardContent>
+            </Card>
+        )
+    }
     if (isLoading) return <div className="flex justify-center p-8"><Loader className="animate-spin" /></div>;
 
     return (

@@ -4,7 +4,6 @@
 import * as React from "react"
 import { format } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
-import { type DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -15,12 +14,18 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
+// Infer the type from the CompactCalendar's onChange prop
+type CalendarRange = Parameters<
+  React.ComponentProps<typeof CompactCalendar>["onChange"]
+>[0]
+
 export function DateRangePicker({
   className,
 }: React.HTMLAttributes<HTMLDivElement>) {
-  const [date, setDate] = React.useState<DateRange | undefined>({
-    from: new Date(),
-    to: new Date(),
+  // Use the inferred type for the state
+  const [date, setDate] = React.useState<CalendarRange | undefined>({
+    start: new Date(),
+    end: new Date(),
   })
 
   return (
@@ -36,14 +41,14 @@ export function DateRangePicker({
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {date?.from ? (
-              date.to ? (
+            {date?.start ? (
+              date.end ? (
                 <>
-                  {format(date.from, "LLL dd, y")} -{" "}
-                  {format(date.to, "LLL dd, y")}
+                  {format(date.start, "LLL dd, y")} -{" "}
+                  {format(date.end, "LLL dd, y")}
                 </>
               ) : (
-                format(date.from, "LLL dd, y")
+                format(date.start, "LLL dd, y")
               )
             ) : (
               <span>Pick a date</span>
@@ -51,15 +56,16 @@ export function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-            <CompactCalendar
-              onChange={(range) => {
-                if (!range?.from || !range?.to) {
-                  setDate(undefined);
-                  return;
-                }
-                setDate(range);
-              }}
-            />
+          <CompactCalendar
+            onChange={(range) => {
+              // Safely handle potentially incomplete ranges
+              if (!range?.start || !range?.end) {
+                setDate(undefined)
+                return
+              }
+              setDate(range)
+            }}
+          />
         </PopoverContent>
       </Popover>
     </div>
