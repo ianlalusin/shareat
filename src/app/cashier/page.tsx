@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 
 function CashierPageContent() {
   const searchParams = useSearchParams();
-  const sessionId = searchParams.get('sessionId');
+  const sessionId = searchParams?.get('sessionId') ?? null;
 
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -27,3 +27,4 @@ export default function CashierPage() {
     </Suspense>
   )
 }
+
