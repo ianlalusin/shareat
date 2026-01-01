@@ -14,15 +14,16 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-// Infer the type from the CompactCalendar's onChange prop
-type CalendarRange = Parameters<
+// Safely infer the type of the 'onChange' prop, accounting for it being optional.
+type CalendarOnChange = NonNullable<
   React.ComponentProps<typeof CompactCalendar>["onChange"]
->[0]
+>;
+type CalendarRange = Parameters<CalendarOnChange>[0];
+
 
 export function DateRangePicker({
   className,
 }: React.HTMLAttributes<HTMLDivElement>) {
-  // Use the inferred type for the state
   const [date, setDate] = React.useState<CalendarRange | undefined>({
     start: new Date(),
     end: new Date(),
@@ -58,12 +59,12 @@ export function DateRangePicker({
         <PopoverContent className="w-auto p-0" align="start">
           <CompactCalendar
             onChange={(range) => {
-              // Safely handle potentially incomplete ranges
+              // Safely handle potentially incomplete ranges from the calendar component.
               if (!range?.start || !range?.end) {
-                setDate(undefined)
-                return
+                setDate(undefined);
+                return;
               }
-              setDate(range)
+              setDate(range);
             }}
           />
         </PopoverContent>
