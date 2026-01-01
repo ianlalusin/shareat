@@ -66,7 +66,14 @@ function POSContent({
         where("isEnabled", "==", true),
         orderBy("sortOrder", "asc")
     );
-    unsubs.push(onSnapshot(storeRefillsQuery, (snapshot) => setStoreRefills(snapshot.docs.map(d => ({...d.data(), id: d.id}) as StoreRefill))));
+    unsubs.push(onSnapshot(storeRefillsQuery, (snapshot) => {
+        setStoreRefills(
+          snapshot.docs.map((d) => {
+            const data = d.data() as Omit<StoreRefill, "id">;
+            return { ...data, id: d.id };
+          })
+        );
+    }));
     
     const globalRefillsQuery = query(collection(db, "refills"), where("isActive", "==", true));
     unsubs.push(onSnapshot(globalRefillsQuery, (snapshot) => setGlobalRefills(snapshot.docs.map(d => d.data() as Refill))));

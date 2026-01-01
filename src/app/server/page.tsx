@@ -22,7 +22,7 @@ import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 
 export default function ServerPage() {
   const { appUser } = useAuthContext();
-  const { activeStore } = useStoreContext();
+  const { activeStore, loading: storeLoading } = useStoreContext();
   const { toast } = useToast();
 
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
@@ -207,7 +207,7 @@ export default function ServerPage() {
 
   const sessionForRequestWithStore = sessionForRequest && activeStore ? { ...sessionForRequest, storeId: activeStore.id } : null;
 
-  if (isLoading) {
+  if (isLoading || storeLoading) {
       return (
           <div className="flex items-center justify-center h-full">
               <Loader className="animate-spin" size={48} />
