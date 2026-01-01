@@ -26,7 +26,9 @@ function getUsername(appUser: any) {
 }
 
 export default function ReceiptPage() {
-    const { sessionId } = useParams();
+    const params = useParams();
+    const rawSessionId = params?.["sessionId"];
+    const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
     const searchParams = useSearchParams();
     const { appUser } = useAuthContext();
     const { activeStoreId, activeStore } = useStoreContext();
