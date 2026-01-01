@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -121,7 +122,7 @@ const SidebarProvider = React.forwardRef<
         state,
         open,
         setOpen,
-        isMobile,
+        isMobile: !!isMobile,
         openMobile,
         setOpenMobile,
         toggleSidebar,

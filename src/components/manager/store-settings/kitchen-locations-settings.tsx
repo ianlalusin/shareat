@@ -32,7 +32,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
             setLocations([]);
             return;
         }
-
         const locationsRef = collection(db, "stores", store.id, "kitchenLocations");
         const q = query(locationsRef, orderBy("sortOrder", "asc"), orderBy("name", "asc"));
         
@@ -95,6 +94,17 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
         toast({ title: "Status Updated" });
         await logActivity(appUser, `kitchen_location_${action.toLowerCase()}`, `${action}d location: ${location.name}`);
     };
+
+    if (!store) {
+        return (
+            <Card>
+                <CardHeader><CardTitle>Kitchen Locations</CardTitle></CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground text-center">Please select a store to manage kitchen locations.</p>
+                </CardContent>
+            </Card>
+        );
+    }
 
     return (
         <>
