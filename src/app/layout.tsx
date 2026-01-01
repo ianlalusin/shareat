@@ -1,13 +1,9 @@
 import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/toaster';
-import Header from '@/components/layout/header';
 import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
-import { AuthContextProvider } from '@/context/auth-context';
-import { FirstLoginGuard } from '@/components/auth/first-login-guard';
-import AuthLayout from '@/components/layout/auth-layout';
-import { StoreContextProvider } from '@/context/store-context';
+import { Providers } from './providers';
 
 
 const fontSans = Poppins({
@@ -40,15 +36,9 @@ export default function RootLayout({
           fontSans.variable,
           fontSerif.variable
         )}>
-        <AuthContextProvider>
-          <StoreContextProvider>
-            <FirstLoginGuard>
-              <AuthLayout>
-                {children}
-              </AuthLayout>
-            </FirstLoginGuard>
-          </StoreContextProvider>
-        </AuthContextProvider>
+        <Providers>
+          {children}
+        </Providers>
         <Toaster />
       </body>
     </html>
