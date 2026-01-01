@@ -51,7 +51,15 @@ export function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-            <CompactCalendar onChange={(range) => setDate(range)} />
+            <CompactCalendar
+              onChange={(range) => {
+                if (!range?.from || !range?.to) {
+                  setDate(undefined);
+                  return;
+                }
+                setDate(range);
+              }}
+            />
         </PopoverContent>
       </Popover>
     </div>
