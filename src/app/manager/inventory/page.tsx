@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -19,22 +18,7 @@ import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-
-export type InventoryItem = {
-  id: string;
-  productId: string;
-  name: string;
-  variant?: string;
-  category?: string;
-  subCategory?: string;
-  uom: string;
-  cost: number;
-  sellingPrice: number;
-  taxId?: string;
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+import type { InventoryItem } from "@/lib/types";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();

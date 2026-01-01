@@ -1,5 +1,3 @@
-
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -108,14 +106,12 @@ export type KitchenLocation = {
 export type MenuSchedule = {
   id: string;
   name: string;
-  isActive: boolean;
+  isActive?: boolean;
   isArchived?: boolean;
-  days: string[];
-  startTime: string;
-  endTime: string;
+  days?: string[];
+  startTime?: string;
+  endTime?: string;
   timezone?: string;
-  createdAt?: any;
-  updatedAt?: any;
 };
 
 export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "void";
@@ -318,4 +314,3 @@ export type InventoryItem = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
-    

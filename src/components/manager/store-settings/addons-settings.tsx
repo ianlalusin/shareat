@@ -18,7 +18,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { InventoryItem } from "@/app/manager/inventory/page";
 import { StoreAddonEditDialog } from "./StoreAddonEditDialog";
-import { KitchenLocation } from "./kitchen-locations-settings";
+import type { KitchenLocation } from "@/lib/types";
 import Image from "next/image";
 import { Product } from "@/app/admin/menu/products/page";
 import type { StoreAddon } from "@/lib/types";
