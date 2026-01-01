@@ -213,6 +213,7 @@ export type BillableItem = {
   lineDiscountType: "percent" | "fixed";
   lineDiscountValue: number;
   isFree: boolean;
+  notes?: string;
   status?: OrderItemStatus; // Optional as it comes from a separate doc
   createdAt: any; // Ideally Timestamp, but any for flexibility
   updatedAt: any;

@@ -31,6 +31,14 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     const [editingValues, setEditingValues] = useState<Partial<StoreRefill>>({});
 
     useEffect(() => {
+        if (!store?.id) {
+            setIsLoading(false);
+            setGlobalRefills([]);
+            setStoreRefills(new Map());
+            setKitchenLocations([]);
+            return;
+        }
+
         const unsubGlobal = onSnapshot(query(collection(db, "refills"), where("isActive", "==", true)), (snap) => {
             setGlobalRefills(snap.docs.map(d => d.data() as Refill));
         });
@@ -51,7 +59,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             unsubStore();
             unsubKitchen();
         }
-    }, [store.id]);
+    }, [store?.id]);
 
     const combinedRefills = useMemo(() => {
         return globalRefills.map(gRefill => {
@@ -68,7 +76,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     }, [globalRefills, storeRefills]);
 
     const handleSync = async () => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         setIsSyncing(true);
         toast({ title: "Syncing...", description: "Adding new global refills to your store settings." });
 
@@ -106,7 +114,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     }
     
     const handleToggleEnabled = async (refillId: string, currentStatus: boolean) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const refill = combinedRefills.find(f => f.refillId === refillId);
         if (!refill) return;
 
@@ -128,7 +136,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     }
 
     const handleSave = async (refillId: string) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const docRef = doc(db, "stores", store.id, "storeRefills", refillId);
         
         const kitchenLocationName = kitchenLocations.find(k => k.id === editingValues.kitchenLocationId)?.name || null;
@@ -145,6 +153,19 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
              toast({ variant: 'destructive', title: "Save Failed", description: error.message });
         }
     };
+
+    if (!store) {
+        return (
+            <Card>
+                <CardHeader>
+                    <CardTitle>Store Refills</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground text-center">Please select a store to see refill settings.</p>
+                </CardContent>
+            </Card>
+        )
+    }
 
     if (isLoading) return <Loader className="animate-spin" />;
 
