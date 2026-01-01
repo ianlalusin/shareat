@@ -12,7 +12,7 @@ function roleHome(role?: string) {
     case "admin":
       return "/admin";
     case "manager":
-      return "/manager";
+      return "/admin";
     case "cashier":
       return "/cashier";
     case "kitchen":
