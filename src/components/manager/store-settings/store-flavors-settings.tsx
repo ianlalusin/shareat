@@ -2,10 +2,9 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, setDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { Loader, Edit, Power, PowerOff, Save } from "lucide-react";
@@ -15,8 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { logActivity } from "@/lib/firebase/activity-log";
-import { Flavor } from "@/app/admin/menu/flavors/page";
-import type { StoreFlavor } from "@/lib/types";
+import type { Flavor, Store, StoreFlavor } from "@/lib/types";
 
 
 export function StoreFlavorsSettings({ store }: { store: Store }) {
@@ -35,6 +33,13 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
 
     // Fetch global and store-specific flavors
     useEffect(() => {
+        if (!store?.id) {
+            setIsLoading(false);
+            setGlobalFlavors([]);
+            setStoreFlavors(new Map());
+            return;
+        }
+
         const unsubGlobal = onSnapshot(query(collection(db, "flavors"), where("isActive", "==", true)), (snap) => {
             setGlobalFlavors(snap.docs.map(d => d.data() as Flavor));
         });
@@ -50,7 +55,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
             unsubGlobal();
             unsubStore();
         }
-    }, [store.id]);
+    }, [store?.id]);
 
     const combinedFlavors = useMemo(() => {
         return globalFlavors.map(gFlavor => {
@@ -65,7 +70,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
     }, [globalFlavors, storeFlavors]);
 
     const handleSync = async () => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         setIsSyncing(true);
         toast({ title: "Syncing...", description: "Adding new global flavors to your store settings." });
 
@@ -101,7 +106,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
     }
     
     const handleToggleEnabled = async (flavorId: string, currentStatus: boolean) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const flavor = combinedFlavors.find(f => f.flavorId === flavorId);
         if (!flavor) return;
 
@@ -118,7 +123,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
     };
     
     const handleSaveSortOrder = async (flavorId: string) => {
-        if (!appUser) return;
+        if (!appUser || !store) return;
         const flavor = combinedFlavors.find(f => f.flavorId === flavorId);
         if (!flavor) return;
 

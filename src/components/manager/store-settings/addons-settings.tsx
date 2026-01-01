@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { Store } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, updateDoc, setDoc, getDoc, orderBy } from "firebase/firestore";
@@ -16,12 +15,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { logActivity } from "@/lib/firebase/activity-log";
-import { InventoryItem } from "@/app/manager/inventory/page";
-import { StoreAddonEditDialog } from "./StoreAddonEditDialog";
-import type { KitchenLocation } from "@/lib/types";
+import { StoreAddonEditDialog } from "@/components/manager/store-settings/StoreAddonEditDialog";
 import Image from "next/image";
-import type { Product } from "@/lib/types";
-import type { StoreAddon } from "@/lib/types";
+import type { Store, InventoryItem, KitchenLocation, Product, StoreAddon } from "@/lib/types";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -97,7 +93,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     const availableInventoryItems = useMemo(() => {
         const storeAddonIds = new Set(storeAddons.map(s => s.id));
         return inventoryItems
-            .filter(item => !storeAddonIds.has(item.productId));
+            .filter(item => item.productId && !storeAddonIds.has(item.productId));
     }, [inventoryItems, storeAddons]);
 
     const handleToggleEnabled = async (addon: StoreAddon) => {
@@ -114,7 +110,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     };
     
     const handleAddAddon = async (inventoryItem: InventoryItem) => {
-        if (!appUser) return;
+        if (!appUser || !inventoryItem.productId) return;
         
         const addonId = inventoryItem.productId;
         const docRef = doc(db, "stores", store.id, "storeAddons", addonId);

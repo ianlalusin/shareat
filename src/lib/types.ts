@@ -1,3 +1,4 @@
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -33,6 +34,22 @@ export type Product = {
   uom: string;
   barcode?: string;
   imageUrl?: string;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type InventoryItem = {
+  id: string;
+  productId: string;
+  name: string;
+  variant?: string;
+  category?: string;
+  subCategory?: string;
+  uom: string;
+  cost: number;
+  sellingPrice: number;
+  taxId?: string;
   isActive: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -297,20 +314,4 @@ export type StoreTable = {
     isActive: boolean;
     status: 'available' | 'occupied' | 'reserved' | 'out_of_order';
     currentSessionId: string | null;
-};
-
-export type InventoryItem = {
-  id: string;
-  productId: string;
-  name: string;
-  variant?: string;
-  category?: string;
-  subCategory?: string;
-  uom: string;
-  cost: number;
-  sellingPrice: number;
-  taxId?: string;
-  isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
 };
