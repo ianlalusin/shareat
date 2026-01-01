@@ -82,7 +82,14 @@ function POSContent({
         collection(db, "stores", storeId, "storeFlavors"),
         where("isEnabled", "==", true),
     );
-    unsubs.push(onSnapshot(flavorsQuery, (snapshot) => setStoreFlavors(snapshot.docs.map(d => ({...d.data(), id: d.id}) as StoreFlavor))));
+    unsubs.push(onSnapshot(flavorsQuery, (snapshot) => {
+        setStoreFlavors(
+          snapshot.docs.map((d) => {
+            const data = d.data() as Omit<StoreFlavor, "id">;
+            return { ...data, id: d.id };
+          })
+        );
+    }));
 
     if (session.packageOfferingId) {
         const packageRef = doc(db, "stores", storeId, "storePackages", session.packageOfferingId);
@@ -333,3 +340,5 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
+
+    
