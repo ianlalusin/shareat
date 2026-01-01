@@ -6,7 +6,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Logo } from "@/components/icons";
+import Image from "next/image";
 
 export default function PendingPage() {
   const router = useRouter();
@@ -20,8 +20,15 @@ export default function PendingPage() {
     <div className="w-full min-h-screen flex items-center justify-center bg-background">
        <Card className="mx-auto max-w-md w-full">
          <CardHeader className="text-center">
-           <div className="flex justify-center items-center gap-2 mb-4">
-              <Logo className="h-8 w-8 text-destructive" />
+           <div className="flex flex-col justify-center items-center gap-4 mb-4">
+              <Image 
+                src="/logo.png"
+                alt="SharEat"
+                width={128}
+                height={128}
+                priority
+                className="object-contain rounded-md"
+              />
               <h1 className="text-3xl font-bold font-serif text-destructive">SharEat Hub</h1>
             </div>
           <CardTitle className="text-xl">Account Creation Successful</CardTitle>

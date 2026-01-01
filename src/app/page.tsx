@@ -5,10 +5,10 @@ import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase/client";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Logo } from "@/components/icons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { logActivity } from "@/lib/firebase/activity-log";
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
@@ -67,8 +67,15 @@ export default function LoginPage() {
     <div className="w-full min-h-screen flex items-center justify-center bg-background">
       <Card className="mx-auto max-w-sm w-full bg-card">
         <CardHeader className="text-center">
-            <div className="flex justify-center items-center gap-2 mb-4">
-              <Logo className="h-8 w-8 text-destructive" />
+            <div className="flex flex-col justify-center items-center gap-4 mb-4">
+              <Image 
+                src="/logo.png"
+                alt="SharEat"
+                width={128}
+                height={128}
+                priority
+                className="object-contain rounded-md"
+              />
               <h1 className="text-3xl font-bold font-serif text-destructive">SharEat Hub</h1>
             </div>
           <CardDescription>
