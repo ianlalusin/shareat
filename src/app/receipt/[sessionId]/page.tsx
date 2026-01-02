@@ -39,8 +39,7 @@ export default function ReceiptPage() {
     const { toast } = useToast();
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
 
-    const shouldAutoPrint = searchParams.get('autoprint') === '1';
-
+    const shouldAutoPrint = searchParams?.get("autoprint") === "1";
      const storageKey = useMemo(
         () => `receiptPaperWidth:${activeStore?.id ?? "nostore"}:${appUser?.uid ?? "nouser"}`,
         [activeStore?.id, appUser?.uid]

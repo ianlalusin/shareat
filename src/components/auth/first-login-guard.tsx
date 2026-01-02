@@ -47,7 +47,7 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
 
-    const isPublic = PUBLIC.includes(pathname);
+    const isPublic = PUBLIC.includes(pathname ?? "");
 
     // not logged in -> only allow public pages
     if (!user) {
@@ -62,13 +62,13 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
 
     // needs_profile -> allow only signup/support
     if (status === "needs_profile") {
-      if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) router.replace("/signup");
+      if (!NEEDS_PROFILE_ALLOWED.includes(pathname ?? "")) router.replace("/signup");
       return;
     }
 
     // pending/disabled -> allow only pending/support
     if (status && status !== "active") {
-      if (!PENDING_ALLOWED.includes(pathname)) router.replace("/pending");
+      if (!PENDING_ALLOWED.includes(pathname ?? "")) router.replace("/pending");
       return;
     }
 
@@ -103,7 +103,7 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   // Synchronously determine if a redirect will occur. If so, render the loader
   // to prevent the current page from flashing while the useEffect hook triggers.
   let redirectTo: string | null = null;
-  const isPublic = PUBLIC.includes(pathname);
+  const isPublic = PUBLIC.includes(pathname ?? "");
 
   if (!user) {
     if (!isPublic) {
@@ -112,11 +112,11 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   } else if (appUser) {
     const status = appUser.status;
     if (status === "needs_profile") {
-      if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+      if (!NEEDS_PROFILE_ALLOWED.includes(pathname ?? "")) {
         redirectTo = "/signup";
       }
     } else if (status && status !== "active") {
-      if (!PENDING_ALLOWED.includes(pathname)) {
+      if (!PENDING_ALLOWED.includes(pathname ?? "")) {
         redirectTo = "/pending";
       }
     } else { // active user
