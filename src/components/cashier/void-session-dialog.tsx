@@ -25,7 +25,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user }: VoidSessio
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isLocked = session.status === 'closed' || session.isPaid;
+  const isLocked = session.isPaid;
 
   const handleConfirm = async () => {
     if (!reason.trim()) {
