@@ -3,8 +3,8 @@ import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
-import { Providers } from './providers';
-
+import { AuthContextProvider } from '@/context/auth-context';
+import AuthLayout from '@/components/layout/auth-layout';
 
 const fontSans = Poppins({
   subsets: ["latin"],
@@ -36,9 +36,11 @@ export default function RootLayout({
           fontSans.variable,
           fontSerif.variable
         )}>
-        <Providers>
-          {children}
-        </Providers>
+        <AuthContextProvider>
+            <AuthLayout>
+              {children}
+            </AuthLayout>
+        </AuthContextProvider>
         <Toaster />
       </body>
     </html>
