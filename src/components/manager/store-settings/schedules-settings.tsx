@@ -13,7 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { ScheduleEditDialog } from "./schedule-edit-dialog";
 import type { MenuSchedule } from "@/lib/types";
 
@@ -66,7 +65,6 @@ export function SchedulesSettings() {
       if (editingSchedule) {
         const docRef = doc(db, "stores", activeStore.id, "menuSchedules", editingSchedule.id);
         await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "schedule_updated", `Updated schedule: ${data.name}`);
         toast({ title: "Schedule Updated" });
       } else {
         const newDocRef = doc(collection(db, "stores", activeStore.id, "menuSchedules"));
@@ -76,7 +74,6 @@ export function SchedulesSettings() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, "schedule_created", `Created new schedule: ${data.name}`);
         toast({ title: "Schedule Created" });
       }
       handleCloseDialog();
@@ -100,7 +97,6 @@ export function SchedulesSettings() {
     try {
         const docRef = doc(db, "stores", activeStore.id, "menuSchedules", item.id);
         await updateDoc(docRef, { isActive: newStatus, updatedAt: serverTimestamp() });
-        await logActivity(appUser, newStatus ? "schedule_activated" : "schedule_deactivated", `${action}d schedule: ${item.name}`);
         toast({ title: "Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
@@ -119,7 +115,6 @@ export function SchedulesSettings() {
 
     try {
         await deleteDoc(doc(db, "stores", activeStore.id, "menuSchedules", item.id));
-        await logActivity(appUser, "schedule_deleted", `Deleted schedule: ${item.name}`);
         toast({ title: "Schedule Deleted" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Delete Failed", description: error.message });

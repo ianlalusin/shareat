@@ -15,7 +15,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { UserDetailsModal, type StoreOption } from "@/components/admin/user-details-modal";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
 import { UserRole } from "@/lib/types";
@@ -145,12 +144,6 @@ export default function UserManagementPage() {
             });
             console.log("AFTER APPROVE AUTH:", auth.currentUser?.uid, auth.currentUser?.email);
             
-            await logActivity(appUser, "user_approved", `Approved user: ${user.email}`, {
-                approvedUid: user.uid,
-                role: roleToAssign,
-                stores: storesToAssign,
-            });
-
             toast({
                 title: "User Approved",
                 description: `${user.name || user.email} has been activated.`,
@@ -181,7 +174,6 @@ export default function UserManagementPage() {
             if (!confirmed) return;
             
             await handleUpdateUserStatus(user.uid, 'disabled');
-            await logActivity(appUser, "user_rejected", `Rejected user: ${user.email}`);
         } finally {
             cleanupRadixOverlays();
         }

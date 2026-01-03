@@ -14,7 +14,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff, Sparkles } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { FlavorEditDialog } from "@/components/admin/menu/flavor-edit-dialog";
 import type { Flavor } from "@/lib/types";
 
@@ -63,7 +62,6 @@ export default function FlavorsManagementPage() {
       if (editingFlavor) {
         const docRef = doc(db, "flavors", editingFlavor.id);
         await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "flavor_updated", `Updated flavor: ${data.name}`);
         toast({ title: "Flavor Updated" });
       } else {
         const newDocRef = doc(collection(db, "flavors"));
@@ -73,7 +71,6 @@ export default function FlavorsManagementPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }).commit();
-        await logActivity(appUser, "flavor_created", `Created new flavor: ${data.name}`);
         toast({ title: "Flavor Created" });
       }
       handleCloseDialog();
@@ -97,7 +94,6 @@ export default function FlavorsManagementPage() {
 
     try {
         await updateDoc(doc(db, "flavors", item.id), { isActive: newStatus, updatedAt: serverTimestamp() });
-        await logActivity(appUser, newStatus ? "flavor_activated" : "flavor_deactivated", `${action}d flavor: ${item.name}`);
         toast({ title: "Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });

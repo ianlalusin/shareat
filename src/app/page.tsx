@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { AppUser } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +37,6 @@ export default function LoginPage() {
 
       if (userDoc.exists()) {
         const appUser = { uid: userCredential.user.uid, ...userDoc.data() } as AppUser;
-        await logActivity(appUser, "login", "Logged in");
         const name = appUser.name || appUser.displayName;
         if (name) {
           setFirstName(name.split(" ")[0]);

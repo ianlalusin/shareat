@@ -12,7 +12,6 @@ import { Loader, PlusCircle, Power, PowerOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { ChargeEditDialog } from "./ChargeEditDialog";
 import type { Store, Charge } from "@/lib/types";
 
@@ -77,12 +76,10 @@ export function ChargesSettings({ store }: { store: Store }) {
           updatedAt: serverTimestamp(),
         });
         await updateDoc(docRef, { id: docRef.id }); // Add the ID to the document
-        await logActivity(appUser, "charge_created", `Created charge: ${data.name}`);
         toast({ title: "Charge Created" });
       } else if (editingCharge) {
         const docRef = doc(db, "stores", store.id, "storeCharges", editingCharge.id);
         await updateDoc(docRef, { ...data, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "charge_updated", `Updated charge: ${data.name}`);
         toast({ title: "Charge Updated" });
       }
       setIsDialogOpen(false);
@@ -101,7 +98,6 @@ export function ChargesSettings({ store }: { store: Store }) {
     const docRef = doc(db, "stores", store.id, "storeCharges", charge.id);
     await updateDoc(docRef, { isEnabled: newStatus, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
     toast({ title: "Status Updated" });
-    await logActivity(appUser, `charge_${action.toLowerCase()}`, `${action}d charge: ${charge.name}`);
   };
 
   const handleArchive = async (charge: Charge) => {
@@ -122,7 +118,6 @@ export function ChargesSettings({ store }: { store: Store }) {
       updatedAt: serverTimestamp() 
     });
     toast({ title: "Charge Archived" });
-    await logActivity(appUser, 'charge_archived', `Archived charge: ${charge.name}`);
   };
 
   if (isLoading) {

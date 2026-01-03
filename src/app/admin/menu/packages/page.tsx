@@ -14,7 +14,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff, Box } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
 import type { Refill, Package } from "@/lib/types";
 
@@ -70,7 +69,6 @@ export default function PackagesManagementPage() {
       if (editingPackage) {
         const docRef = doc(db, "packages", editingPackage.id);
         await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "package_updated", `Updated package: ${data.name}`);
         toast({ title: "Package Updated" });
       } else {
         const newDocRef = doc(collection(db, "packages"));
@@ -80,7 +78,6 @@ export default function PackagesManagementPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }).commit();
-        await logActivity(appUser, "package_created", `Created new package: ${data.name}`);
         toast({ title: "Package Created" });
       }
       handleCloseDialog();
@@ -104,7 +101,6 @@ export default function PackagesManagementPage() {
 
     try {
         await updateDoc(doc(db, "packages", item.id), { isActive: newStatus, updatedAt: serverTimestamp() });
-        await logActivity(appUser, newStatus ? "package_activated" : "package_deactivated", `${action}d package: ${item.name}`);
         toast({ title: "Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });

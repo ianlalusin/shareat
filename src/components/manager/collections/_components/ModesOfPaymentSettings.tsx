@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ModeOfPaymentEditDialog } from "./ModeOfPaymentEditDialog";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Store, ModeOfPayment } from "@/lib/types";
 
@@ -86,12 +85,10 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, "mop_created", `Created payment mode: ${data.name}`);
         toast({ title: "Mode of Payment Created" });
       } else if (editingMode) {
         const docRef = doc(db, "stores", store.id, "storeModesOfPayment", editingMode.id);
         await updateDoc(docRef, { ...data, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "mop_updated", `Updated payment mode: ${data.name}`);
         toast({ title: "Mode of Payment Updated" });
       }
       setIsDialogOpen(false);
@@ -110,7 +107,6 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
     const docRef = doc(db, "stores", store.id, "storeModesOfPayment", mode.id);
     await updateDoc(docRef, { isActive: newStatus, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
     toast({ title: "Status Updated" });
-    await logActivity(appUser, `mop_${action.toLowerCase()}`, `${action}d payment mode: ${mode.name}`);
   };
 
   const handleArchive = async (mode: ModeOfPayment) => {
@@ -131,7 +127,6 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
       updatedAt: serverTimestamp() 
     });
     toast({ title: "Mode Archived" });
-    await logActivity(appUser, 'mop_archived', `Archived payment mode: ${mode.name}`);
   };
 
   if (isLoading) {

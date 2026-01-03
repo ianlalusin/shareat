@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { KitchenLocationEditDialog } from "@/components/manager/store-settings/kitchen-location-edit-dialog";
 import type { Store, KitchenLocation } from "@/lib/types";
@@ -62,7 +61,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                 const docRef = doc(db, "stores", store.id, "kitchenLocations", editingLocation.id);
                 await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
                 toast({ title: "Location Updated" });
-                await logActivity(appUser, "kitchen_location_updated", `Updated location: ${data.name}`);
             } else { // Create
                 const newDocRef = doc(collection(db, "stores", store.id, "kitchenLocations"));
                 await writeBatch(db).set(newDocRef, {
@@ -74,7 +72,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                     updatedAt: serverTimestamp(),
                 }).commit();
                 toast({ title: "Location Created" });
-                await logActivity(appUser, "kitchen_location_created", `Created new location: ${data.name}`);
             }
             handleCloseDialog();
         } catch (error: any) {
@@ -92,7 +89,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "kitchenLocations", location.id);
         await updateDoc(docRef, { isActive: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Status Updated" });
-        await logActivity(appUser, `kitchen_location_${action.toLowerCase()}`, `${action}d location: ${location.name}`);
     };
 
     if (!store) {

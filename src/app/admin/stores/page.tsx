@@ -15,7 +15,6 @@ import { Loader, PlusCircle, Power, PowerOff, Download, ImageIcon } from "lucide
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreEditDialog } from "@/components/admin/store-edit-dialog";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { format } from "date-fns";
 import { StoreDetailsModal } from "@/components/admin/store-details-modal";
 import type { Store } from "@/lib/types";
@@ -127,7 +126,6 @@ export default function StoreManagementPage() {
           logoUrl: storeData.logoUrl,
           updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, "store_updated", `Updated store: ${storeData.name}`);
         toast({ title: "Store Updated", description: "The store details have been saved." });
       } else {
         // Create new store using a write batch for atomicity
@@ -143,7 +141,6 @@ export default function StoreManagementPage() {
         });
 
         await batch.commit();
-        await logActivity(appUser, "store_created", `Created new store: ${storeData.name}`);
         toast({ title: "Store Created", description: "The new store has been added." });
       }
       handleCloseDialog();
@@ -179,7 +176,6 @@ export default function StoreManagementPage() {
             isActive: newStatus,
             updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, newStatus ? "store_activated" : "store_deactivated", `${action}d store: ${store.name}`);
         toast({ title: "Store Status Updated", description: `${store.name} has been ${action.toLowerCase()}d.` });
     } catch (error: any) {
         toast({

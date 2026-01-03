@@ -14,7 +14,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff, UtensilsCrossed } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
 import type { Flavor, Refill } from "@/lib/types";
 
@@ -66,7 +65,6 @@ export default function RefillsManagementPage() {
       if (editingRefill) {
         const docRef = doc(db, "refills", editingRefill.id);
         await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "refill_updated", `Updated refill: ${data.name}`);
         toast({ title: "Refill Updated" });
       } else {
         const newDocRef = doc(collection(db, "refills"));
@@ -76,7 +74,6 @@ export default function RefillsManagementPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }).commit();
-        await logActivity(appUser, "refill_created", `Created new refill: ${data.name}`);
         toast({ title: "Refill Created" });
       }
       handleCloseDialog();
@@ -96,7 +93,6 @@ export default function RefillsManagementPage() {
 
     try {
         await updateDoc(doc(db, "refills", item.id), { isActive: newStatus, updatedAt: serverTimestamp() });
-        await logActivity(appUser, newStatus ? "refill_activated" : "refill_deactivated", `${action}d refill: ${item.name}`);
         toast({ title: "Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });

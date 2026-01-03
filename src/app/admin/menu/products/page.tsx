@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -14,7 +15,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { ProductEditDialog } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { slugify } from "@/lib/utils/slugify";
@@ -103,7 +103,6 @@ export default function ProductManagementPage() {
           ...dataToSave,
           updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, "product_updated", `Updated product: ${dataToSave.name}`);
         toast({ title: "Product Updated", description: "The product details have been saved." });
       } else {
         // Create new product
@@ -115,7 +114,6 @@ export default function ProductManagementPage() {
             updatedAt: serverTimestamp(),
         });
 
-        await logActivity(appUser, "product_created", `Created new product: ${dataToSave.name}`);
         toast({ title: "Product Created", description: "The new product has been added." });
       }
       
@@ -169,7 +167,6 @@ export default function ProductManagementPage() {
             isActive: newStatus,
             updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, newStatus ? "product_activated" : "product_deactivated", `${action}d product: ${product.name}`);
         toast({ title: "Product Status Updated", description: `${product.name} has been ${action.toLowerCase()}d.` });
     } catch (error: any) {
         toast({
