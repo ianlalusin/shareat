@@ -20,6 +20,8 @@ import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
+
 
 // --- HELPERS ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
@@ -668,6 +670,7 @@ export default function DashboardPage() {
                                 <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
                                 <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
+                            <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
                             <Card>
                                 <CardHeader>
                                     <div className="flex justify-between items-center">

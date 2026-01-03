@@ -560,6 +560,15 @@
             "reason": { "type": ["string", "null"] },
             "reasonNote": { "type": ["string", "null"] }
           }
+        },
+        "servedRefillsTotal": {
+            "type": "number",
+            "description": "Total count of served refill items for this session."
+        },
+        "servedRefillsByName": {
+            "type": "object",
+            "description": "A map of refill names to their served counts for this session.",
+            "additionalProperties": { "type": "number" }
         }
       },
       "required": ["id", "storeId", "tableId", "status", "startedAt", "startedByUid", "guestCountCashierInitial", "packageOfferingId", "packageSnapshot"]

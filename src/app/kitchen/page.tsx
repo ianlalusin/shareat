@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, increment } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -158,61 +158,67 @@ export default function KitchenPage() {
         return;
     }
 
-    const ticket = tickets.find(t => t.id === ticketId);
-    if (!ticket) {
-        toast({ variant: "destructive", title: "Error", description: "Ticket data not found." });
-        return;
-    }
-
-    const batch = writeBatch(db);
-    
-    const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
-    const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
-
-    const updatePayload: any = { status: newStatus };
-    
-    if (newStatus === 'ready') {
-        updatePayload.preparedAt = serverTimestamp();
-        updatePayload.preparedByUid = appUser.uid;
-    } else if (newStatus === 'served') {
-        updatePayload.servedAt = serverTimestamp();
-        updatePayload.servedByUid = appUser.uid;
-    } else { // cancelled or void
-        updatePayload.cancelledAt = serverTimestamp();
-        updatePayload.cancelledByUid = appUser.uid;
-        updatePayload.cancelReason = reason;
-        
-        const billableDoc = await getDoc(billableRef);
-        if (billableDoc.exists()) {
-            batch.update(billableRef, { status: newStatus, updatedAt: serverTimestamp() });
-        }
-    }
-    batch.update(ticketRef, updatePayload);
-    
-    const logRef = doc(collection(db, "stores", activeStore.id, "activityLogs"));
-    const logPayload = stripUndefined({
-        type: "kitchen_ticket_update",
-        action: newStatus,
-        sessionId: sessionId,
-        ticketId: ticketId,
-        tableId: ticket.tableId,
-        tableNumber: ticket.tableNumber,
-        kitchenLocationId: ticket.kitchenLocationId,
-        performedByUid: appUser.uid,
-        reason: reason || null,
-        createdAt: serverTimestamp(),
-    });
-
-    batch.set(logRef, logPayload);
-
     try {
-        await batch.commit();
-        toast({ title: `Ticket ${newStatus}`, description: `${ticket.itemName} for Table ${ticket.tableNumber || 'N/A'} is ${newStatus}.` });
+        await runTransaction(db, async (transaction) => {
+            const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
+            const ticketSnap = await transaction.get(ticketRef);
+            
+            if (!ticketSnap.exists()) {
+                throw new Error("Ticket not found.");
+            }
+
+            const ticket = ticketSnap.data() as KitchenTicket;
+            
+            // Idempotency check for refill counting
+            if (newStatus === 'served' && ticket.type === 'refill' && ticket.servedCounted) {
+                console.log(`Refill ticket ${ticketId} already counted. Skipping.`);
+                return; // Already processed
+            }
+
+            const updatePayload: any = { status: newStatus };
+            
+            if (newStatus === 'ready') {
+                updatePayload.preparedAt = serverTimestamp();
+                updatePayload.preparedByUid = appUser.uid;
+            } else if (newStatus === 'served') {
+                updatePayload.servedAt = serverTimestamp();
+                updatePayload.servedByUid = appUser.uid;
+
+                if (ticket.type === 'refill') {
+                    const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
+                    const refillName = ticket.itemName || "Refill";
+                    const qty = ticket.qty || 1;
+                    
+                    updatePayload.servedCounted = true; // Mark as counted
+
+                    transaction.update(sessionRef, {
+                        servedRefillsTotal: increment(qty),
+                        [`servedRefillsByName.${refillName}`]: increment(qty),
+                    });
+                }
+            } else { // cancelled or void
+                updatePayload.cancelledAt = serverTimestamp();
+                updatePayload.cancelledByUid = appUser.uid;
+                updatePayload.cancelReason = reason;
+                
+                const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
+                const billableDoc = await transaction.get(billableRef);
+                if (billableDoc.exists()) {
+                    transaction.update(billableRef, { status: newStatus, updatedAt: serverTimestamp() });
+                }
+            }
+            transaction.update(ticketRef, updatePayload);
+        });
+
+        const ticket = tickets.find(t => t.id === ticketId);
+        toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
+
     } catch (error: any) {
-        console.error(`Failed to update ticket status to ${newStatus}:`, (error as any).code, (error as any).message);
+        console.error(`Failed to update ticket status to ${newStatus}:`, error);
         toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
     }
   };
+
 
   const preparingItems = ticketsWithData.filter(t => t.status === 'preparing');
   const readyItems = ticketsWithData.filter(t => t.status === 'ready');
@@ -266,7 +272,7 @@ export default function KitchenPage() {
                  </Tabs>
             </div>
             <div className="lg:col-span-1 space-y-4">
-                <ReadyToServe items={readyItems} onMarkServed={updateTicketStatus} isServing={isServing} />
+                <ReadyToServe items={readyItems} onMarkServed={(item) => updateTicketStatus(item.id, item.sessionId, 'served')} isServing={isServing} />
                 <HistoryView items={historyItems} />
             </div>
         </div>

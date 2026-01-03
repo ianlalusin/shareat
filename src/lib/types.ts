@@ -155,6 +155,7 @@ export type KitchenTicket = {
     preparedAt?: any | null;
     servedByUid?: string | null;
     servedAt?: any | null;
+    servedCounted?: boolean;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
     initialFlavorIds?: string[];
@@ -200,6 +201,9 @@ export type PendingSession = {
   // Change Request Models
   guestCountChange?: { status: string };
   packageChange?: { status: string };
+  // Analytics
+  servedRefillsTotal?: number;
+  servedRefillsByName?: Record<string, number>;
 };
 
 export type BillableItem = {
