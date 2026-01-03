@@ -1,6 +1,7 @@
 {
   "name": "culinaryflow",
   "version": "0.1.0",
+  "description": "The complete solution for restaurant management.",
   "private": true,
   "scripts": {
     "dev": "next dev --port 9002 --hostname 0.0.0.0",
