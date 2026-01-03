@@ -5,13 +5,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRouter } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useState, useEffect } from "react";
-import { Clock } from "lucide-react";
+import { Clock, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { toJsDate } from "@/lib/utils/date";
+import { useAuthContext } from "@/context/auth-context";
+import { VoidSessionDialog } from "./void-session-dialog"; // New import
+import { Button } from "../ui/button";
 
 export type ActiveSession = {
     id: string;
+    storeId: string;
     tableNumber: string;
     status: 'active' | 'pending_verification';
     sessionMode: 'package_dinein' | 'alacarte';
@@ -23,6 +27,7 @@ export type ActiveSession = {
     guestCountCashier?: number;
     guestCountServer?: number;
     guestCountFinal?: number;
+    isPaid?: boolean; // Added for validation
 };
 
 const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
@@ -70,8 +75,19 @@ const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
 
 export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) {
     const router = useRouter();
+    const { appUser } = useAuthContext();
+    const [voidingSession, setVoidingSession] = useState<ActiveSession | null>(null);
 
-    if (sessions.length === 0) {
+    const canVoid = appUser?.role === 'admin' || appUser?.role === 'manager';
+
+    const handleVoidClick = (e: React.MouseEvent, session: ActiveSession) => {
+        e.stopPropagation(); // Prevent navigation
+        setVoidingSession(session);
+    };
+
+    const activeAndPendingSessions = sessions.filter(s => s.status === 'active' || s.status === 'pending_verification');
+
+    if (activeAndPendingSessions.length === 0) {
         return (
             <Card>
                 <CardHeader>
@@ -85,54 +101,75 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Active Sessions</CardTitle>
-                <CardDescription>Click a session to view its bill. Red-bordered sessions are pending verification.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sessions.map(session => {
-                    const isAlaCarte = session.sessionMode === 'alacarte';
-                    const title = isAlaCarte ? (session.customer?.name || 'Ala Carte') : `Table ${session.tableNumber}`;
-                    const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
-                    
-                    const final = Number(session.guestCountFinal ?? NaN);
-                    const cashier = Number(session.guestCountCashier ?? 0);
-                    const server = Number(session.guestCountServer ?? 0);
-                    const guests = Number.isFinite(final) ? final : Math.max(cashier, server);
+        <>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Active Sessions</CardTitle>
+                    <CardDescription>Click a session to view its bill. Red-bordered sessions are pending verification.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {activeAndPendingSessions.map(session => {
+                        const isAlaCarte = session.sessionMode === 'alacarte';
+                        const title = isAlaCarte ? (session.customer?.name || 'Ala Carte') : `Table ${session.tableNumber}`;
+                        const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
+                        
+                        const final = Number(session.guestCountFinal ?? NaN);
+                        const cashier = Number(session.guestCountCashier ?? 0);
+                        const server = Number(session.guestCountServer ?? 0);
+                        const guests = Number.isFinite(final) ? final : Math.max(cashier, server);
 
-                    const isPending = session.status === 'pending_verification';
-                    
-                    return (
-                    <Card
-                        key={session.id}
-                        className={cn(
-                            "transition-colors",
-                            isPending 
-                                ? "border-red-500 cursor-not-allowed opacity-90" 
-                                : "cursor-pointer hover:bg-muted/50"
-                        )}
-                        onClick={() => {
-                            if (isPending) return;
-                            router.push(`/cashier?sessionId=${session.id}`)
-                        }}
-                    >
-                        <CardHeader>
-                            <div className="flex justify-between items-center">
-                                <CardTitle className="text-xl truncate">{title}</CardTitle>
-                                <TimeElapsed startTime={session.startedAt} />
-                            </div>
-                            <CardDescription className="truncate">{subtitle}</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex justify-between items-center">
-                            {!isAlaCarte ? (
-                                <p className="text-sm font-medium">{guests} Guests</p>
-                            ): <div></div>}
-                            {isPending && <Badge variant="outline" className="border-red-500 text-red-500">Pending</Badge>}
-                        </CardContent>
-                    </Card>
-                )})}
-            </CardContent>
-        </Card>
+                        const isPending = session.status === 'pending_verification';
+                        
+                        return (
+                        <div key={session.id} className="relative group">
+                            <Card
+                                className={cn(
+                                    "transition-colors h-full",
+                                    isPending 
+                                        ? "border-red-500 cursor-not-allowed opacity-90" 
+                                        : "cursor-pointer hover:bg-muted/50"
+                                )}
+                                onClick={() => {
+                                    if (isPending) return;
+                                    router.push(`/cashier?sessionId=${session.id}`)
+                                }}
+                            >
+                                <CardHeader>
+                                    <div className="flex justify-between items-center">
+                                        <CardTitle className="text-xl truncate">{title}</CardTitle>
+                                        <TimeElapsed startTime={session.startedAt} />
+                                    </div>
+                                    <CardDescription className="truncate">{subtitle}</CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex justify-between items-center">
+                                    {!isAlaCarte ? (
+                                        <p className="text-sm font-medium">{guests} Guests</p>
+                                    ): <div></div>}
+                                    {isPending && <Badge variant="outline" className="border-red-500 text-red-500">Pending</Badge>}
+                                </CardContent>
+                            </Card>
+                            {canVoid && (
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => handleVoidClick(e, session)}
+                                >
+                                    <Ban className="mr-2" /> Void
+                                </Button>
+                            )}
+                        </div>
+                    )})}
+                </CardContent>
+            </Card>
+            {voidingSession && appUser && (
+                <VoidSessionDialog
+                    isOpen={!!voidingSession}
+                    onClose={() => setVoidingSession(null)}
+                    session={voidingSession}
+                    user={appUser}
+                />
+            )}
+        </>
     );
 }

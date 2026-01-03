@@ -1,5 +1,4 @@
 
-
 {
   "entities": {
     "Store": {
@@ -501,7 +500,7 @@
         "id": { "type": "string" },
         "storeId": { "type": "string" },
         "tableId": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending_verification", "active", "closed"] },
+        "status": { "type": "string", "enum": ["pending_verification", "active", "closed", "voided"] },
         "sessionMode": { "type": "string", "enum": ["package_dinein", "alacarte"] },
         "startedAt": { "type": "string", "format": "date-time" },
         "startedByUid": { "type": "string" },

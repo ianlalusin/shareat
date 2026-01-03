@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -14,6 +13,8 @@ import {
   setDoc,
   updateDoc,
   runTransaction,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
@@ -443,4 +444,78 @@ export async function completePayment(
       }
     }
   });
+}
+
+export async function voidSession({
+  storeId,
+  sessionId,
+  reason,
+  actor,
+}: {
+  storeId: string;
+  sessionId: string;
+  reason: string;
+  actor: AppUser;
+}) {
+  const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
+  const sessionDoc = await getDoc(sessionRef);
+
+  if (!sessionDoc.exists()) {
+    throw new Error("Session not found.");
+  }
+
+  const sessionData = sessionDoc.data();
+  if (sessionData.status === "closed" || sessionData.status === "voided" || sessionData.isPaid) {
+    throw new Error("Session is already finalized and cannot be voided.");
+  }
+
+  const batch = writeBatch(db);
+
+  // 1. Update session doc
+  batch.update(sessionRef, {
+    status: "voided",
+    voidedAt: serverTimestamp(),
+    voidedByUid: actor.uid,
+    voidedByUsername: getActorStamp(actor).username,
+    voidReason: reason,
+    updatedAt: serverTimestamp(),
+  });
+
+  // 2. Free up table if applicable
+  if (sessionData.tableId && sessionData.tableId !== "alacarte") {
+    const tableRef = doc(db, "stores", storeId, "tables", sessionData.tableId);
+    batch.update(tableRef, {
+      status: "available",
+      currentSessionId: null,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  // 3. Cancel outstanding kitchen tickets
+  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+  const ticketsQuery = query(ticketsRef, where("status", "in", ["preparing", "ready"]));
+  const ticketsSnap = await getDocs(ticketsQuery);
+  ticketsSnap.forEach(ticketDoc => {
+    batch.update(ticketDoc.ref, {
+      status: "cancelled",
+      cancelReason: "SESSION_VOIDED",
+      cancelledAt: serverTimestamp(),
+      cancelledByUid: actor.uid,
+      updatedAt: serverTimestamp(),
+    });
+  });
+  
+  // 4. Mark all billables as cancelled
+  const billablesRef = collection(db, "stores", storeId, "sessions", sessionId, "billables");
+  const billablesSnap = await getDocs(billablesRef);
+  billablesSnap.forEach(billableDoc => {
+      batch.update(billableDoc.ref, {
+        status: "cancelled",
+        cancelReason: "SESSION_VOIDED",
+        updatedAt: serverTimestamp()
+      });
+  });
+
+
+  await batch.commit();
 }
