@@ -17,7 +17,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem } from "@/lib/types";
 
@@ -118,7 +117,6 @@ export default function InventoryManagementPage() {
     try {
       await batch.commit();
       if (addedCount > 0) {
-        await logActivity(appUser, "inventory_add", `Added ${addedCount} item(s) to inventory.`);
         toast({ title: "Inventory Updated", description: `${addedCount} new item(s) have been added.` });
       }
       if (skippedCount > 0) {
@@ -141,7 +139,6 @@ export default function InventoryManagementPage() {
             ...data,
             updatedAt: serverTimestamp(),
         });
-        await logActivity(appUser, "inventory_edit", `Edited pricing for ${item.name}`);
         toast({ title: "Item Updated", description: `${item.name} details have been saved.`});
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
@@ -167,7 +164,6 @@ export default function InventoryManagementPage() {
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
     try {
         await updateDoc(itemDocRef, { isActive: newStatus, updatedAt: serverTimestamp() });
-        await logActivity(appUser, newStatus ? 'inventory_item_enabled' : 'inventory_item_disabled', `${action}d ${item.name}`);
         toast({ title: "Item Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });

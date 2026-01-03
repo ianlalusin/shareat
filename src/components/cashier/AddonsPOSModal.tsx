@@ -14,7 +14,6 @@ import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp,
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { Product, StoreAddon, PendingSession } from "@/lib/types";
@@ -207,7 +206,6 @@ function POSContent({
         }
         
         await batch.commit();
-        await logActivity(appUser, "addon_ordered_pos", `Ordered ${quantity}x ${selectedAddon.name}`, { count: quantity });
         toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});
         setSelectedAddon(null);
     } catch(e: any) {
