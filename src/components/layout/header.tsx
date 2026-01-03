@@ -13,7 +13,7 @@ import Image from 'next/image'
 export default function Header({ user }: { user: User }) {
   return (
     <header className={cn(
-      "fixed top-0 z-30 flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6",
+      "fixed top-0 z-50 flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6",
       "border-b bg-destructive text-destructive-foreground"
     )}>
       <div className="flex items-center gap-4">
