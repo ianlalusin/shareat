@@ -27,7 +27,7 @@ export default function Header({ user }: { user: User }) {
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
-        <div className="relative flex-1 md:grow-0">
+        <div className="relative flex-1 md:grow-0 hidden md:block">
           <StoreSwitcher />
         </div>
         <UserNav user={user} />
@@ -35,16 +35,13 @@ export default function Header({ user }: { user: User }) {
         {/* Mobile Navigation Trigger */}
         <Sheet>
           <SheetTrigger asChild>
-            <Button size="icon" variant="outline" className="md:hidden bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+            <Button size="icon" variant="outline" className="md:hidden bg-destructive hover:bg-destructive/90 text-destructive-foreground shrink-0">
               <PanelLeft className="h-5 w-5" />
               <span className="sr-only">Toggle Menu</span>
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="sm:max-w-xs bg-destructive text-destructive-foreground border-destructive-foreground/20">
-            <SheetHeader className="sr-only">
-              <SheetTitle>Navigation Menu</SheetTitle>
-            </SheetHeader>
-            <nav className="grid gap-6 text-lg font-medium mt-8">
+            <SheetHeader className="p-4 flex flex-row items-center gap-4">
                <Link
                   href="/dashboard"
                   className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
@@ -52,6 +49,12 @@ export default function Header({ user }: { user: User }) {
                   <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-5 w-5 transition-all group-hover:scale-110" />
                   <span className="sr-only">SharEat Hub</span>
               </Link>
+               <SheetTitle className="text-white">SharEat Hub</SheetTitle>
+            </SheetHeader>
+             <div className="p-4 border-y border-white/20">
+                <StoreSwitcher />
+             </div>
+            <nav className="grid gap-6 text-lg font-medium p-4">
               <MainNav role={user.role} isMobile={true} />
             </nav>
           </SheetContent>
