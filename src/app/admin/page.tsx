@@ -28,6 +28,24 @@ const managerTools = [
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/manager/reports", icon: LineChart },
 ]
 
+function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
+    return (
+        <Link href={href}>
+            <Card className="h-full hover:bg-muted/50 transition-colors">
+                <CardHeader>
+                    <div className="flex items-center gap-4">
+                        <Icon className="h-6 w-6 text-muted-foreground" />
+                        <div>
+                            <CardTitle>{title}</CardTitle>
+                            <CardDescription>{description}</CardDescription>
+                        </div>
+                    </div>
+                </CardHeader>
+            </Card>
+        </Link>
+    )
+}
+
 
 export default function AdminPage() {
     const { appUser } = useAuthContext();
@@ -45,19 +63,7 @@ export default function AdminPage() {
                             </CardHeader>
                             <CardContent className="grid gap-4 md:grid-cols-2">
                                 {adminTools.map(tool => (
-                                    <Link href={tool.href} key={tool.title}>
-                                        <Card className="h-full hover:bg-muted/50 transition-colors">
-                                            <CardHeader>
-                                                <div className="flex items-center gap-4">
-                                                    <tool.icon className="h-6 w-6 text-muted-foreground" />
-                                                    <div>
-                                                        <CardTitle>{tool.title}</CardTitle>
-                                                        <CardDescription>{tool.description}</CardDescription>
-                                                    </div>
-                                                </div>
-                                            </CardHeader>
-                                        </Card>
-                                    </Link>
+                                    <ToolCard key={tool.title} {...tool} />
                                 ))}
                             </CardContent>
                         </Card>
@@ -68,19 +74,7 @@ export default function AdminPage() {
                             </CardHeader>
                             <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                                 {menuTools.map(tool => (
-                                    <Link href={tool.href} key={tool.title}>
-                                        <Card className="h-full hover:bg-muted/50 transition-colors">
-                                            <CardHeader>
-                                                <div className="flex items-center gap-4">
-                                                    <tool.icon className="h-6 w-6 text-muted-foreground" />
-                                                    <div>
-                                                        <CardTitle>{tool.title}</CardTitle>
-                                                        <CardDescription>{tool.description}</CardDescription>
-                                                    </div>
-                                                </div>
-                                            </CardHeader>
-                                        </Card>
-                                    </Link>
+                                    <ToolCard key={tool.title} {...tool} />
                                 ))}
                             </CardContent>
                         </Card>
@@ -96,19 +90,7 @@ export default function AdminPage() {
                             </CardHeader>
                             <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                                 {managerTools.map(tool => (
-                                    <Link href={tool.href} key={tool.title}>
-                                        <Card className="h-full hover:bg-muted/50 transition-colors">
-                                            <CardHeader>
-                                                <div className="flex items-center gap-4">
-                                                    {tool.icon && <tool.icon className="h-6 w-6 text-muted-foreground" />}
-                                                    <div>
-                                                        <CardTitle>{tool.title}</CardTitle>
-                                                        <CardDescription>{tool.description}</CardDescription>
-                                                    </div>
-                                                </div>
-                                            </CardHeader>
-                                        </Card>
-                                    </Link>
+                                    <ToolCard key={tool.title} {...tool} />
                                 ))}
                             </CardContent>
                         </Card>
