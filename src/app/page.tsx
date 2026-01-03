@@ -67,15 +67,14 @@ export default function LoginPage() {
       <Card className="mx-auto max-w-sm w-full bg-card">
         <CardHeader className="text-center">
             <div className="flex flex-col justify-center items-center gap-4 mb-4">
-              <div className="relative h-32 w-32">
-                <Image 
+              <Image 
                   src="/logo.png"
                   alt="SharEat"
-                  fill
+                  width={128}
+                  height={128}
                   priority
                   className="object-contain"
                 />
-              </div>
               <h1 className="text-3xl font-bold font-serif text-destructive">SharEat Hub</h1>
             </div>
           <CardDescription>
