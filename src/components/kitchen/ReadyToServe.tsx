@@ -15,7 +15,7 @@ import { computeSessionLabel } from "@/lib/utils/session";
 
 interface ReadyToServeProps {
     items: KitchenTicket[];
-    onMarkServed: (ticketId: string, sessionId: string, newStatus: "served") => void;
+    onMarkServed: (item: KitchenTicket) => void;
     isServing: Record<string, boolean>;
 }
 

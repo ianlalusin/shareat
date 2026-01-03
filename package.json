@@ -2,6 +2,7 @@
   "name": "culinaryflow",
   "version": "0.1.0",
   "private": true,
+  "description": "A comprehensive POS and ERP solution for restaurants.",
   "scripts": {
     "dev": "next dev --port 9002 --hostname 0.0.0.0",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
