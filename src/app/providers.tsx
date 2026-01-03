@@ -13,9 +13,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             <AuthContextProvider>
             <StoreContextProvider>
                 <FirstLoginGuard>
-                <AuthLayout>
                     {children}
-                </AuthLayout>
                 </FirstLoginGuard>
             </StoreContextProvider>
             </AuthContextProvider>
