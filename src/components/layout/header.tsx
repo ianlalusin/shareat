@@ -9,6 +9,7 @@ import { Button } from '../ui/button'
 import { PanelLeft } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 
 export default function Header({ user }: { user: User }) {
   return (
@@ -17,7 +18,7 @@ export default function Header({ user }: { user: User }) {
       "border-b bg-destructive text-destructive-foreground"
     )}>
       <Link href="/dashboard" className="flex items-center gap-2 font-serif text-xl font-semibold mr-4">
-        <Logo className="h-6 w-6" />
+        <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-6 w-6" />
         <span className="hidden sm:inline-block">SharEat Hub</span>
       </Link>
       
@@ -48,7 +49,7 @@ export default function Header({ user }: { user: User }) {
                   href="/dashboard"
                   className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
                   >
-                  <Logo className="h-5 w-5 transition-all group-hover:scale-110" />
+                  <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-5 w-5 transition-all group-hover:scale-110" />
                   <span className="sr-only">SharEat Hub</span>
               </Link>
               <MainNav role={user.role} isMobile={true} />

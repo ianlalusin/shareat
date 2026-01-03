@@ -15,12 +15,14 @@ const navLinks = [
 ]
 
 interface MainNavProps {
-  role: UserRole;
+  role?: UserRole | null;
   isMobile?: boolean;
 }
 
 export function MainNav({ role, isMobile = false }: MainNavProps) {
   const pathname = usePathname()
+
+  if (!role) return null;
 
   const accessibleLinks = navLinks.filter(link => link.roles.includes(role))
 
@@ -34,8 +36,8 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
           key={href}
           href={href}
           className={cn(
-            'text-sm font-medium transition-colors hover:text-white/80 text-white rounded-md px-3 py-2',
-            pathname === href ? 'bg-black' : 'text-white/90',
+            'text-sm font-medium transition-colors hover:text-white/80',
+            pathname?.startsWith(href) ? 'text-white' : 'text-white/70',
             isMobile && 'text-lg'
           )}
         >
