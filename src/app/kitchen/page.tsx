@@ -34,6 +34,8 @@ type Session = {
     customerName?: string | null;
     tableNumber?: string | null;
     sessionMode?: 'package_dinein' | 'alacarte';
+    guestCountFinal?: number | null;
+    guestCountCashierInitial?: number;
 };
 
 type Flavor = {
@@ -141,8 +143,10 @@ export default function KitchenPage() {
         const flavorNames = ticket.type === 'package' 
             ? session?.initialFlavorIds?.map(id => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];
+        const finalGuestCount = session?.guestCountFinal ?? session?.guestCountCashierInitial ?? ticket.guestCount;
         return {
             ...ticket,
+            guestCount: finalGuestCount,
             initialFlavorNames: flavorNames,
             sessionLabel: computeSessionLabel({ 
               sessionMode: ticket.sessionMode, 
@@ -290,3 +294,5 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
+
+    
