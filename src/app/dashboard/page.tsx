@@ -15,7 +15,7 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
-import type { ModeOfPayment, Receipt as ReceiptType } from "@/lib/types";
+import type { ModeOfPayment, Receipt as ReceiptType, BillableItem } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
@@ -584,8 +584,14 @@ export default function DashboardPage() {
         setIsCalendarOpen(false);
     };
 
-    function exportCsv() {
-        const rows = filteredReceipts.map(r => {
+    async function exportXlsx() {
+        if (!activeStore) return;
+    
+        const XLSX = await import("xlsx");
+        toast({ title: "Exporting...", description: "Fetching all billable items for the selected range. This may take a moment." });
+    
+        // 1. Build Receipts Sheet
+        const receiptsRows = filteredReceipts.map(r => {
             const a = r.analytics || {};
             const grandTotal = toNum(a.grandTotal);
             const discountsTotal = toNum(a.discountsTotal);
@@ -593,37 +599,94 @@ export default function DashboardPage() {
             const totalPaid = toNum(a.totalPaid);
             const change = toNum(a.change);
             const netCollected = totalPaid - change;
-
-            return [
-                formatLocal(r.createdAtClientMs),
-                r.receiptNumber ?? "",
-                r.sessionMode ?? "",
-                r.tableNumber ?? "",
-                r.customerName ?? "",
-                grandTotal,
-                discountsTotal,
-                chargesTotal,
-                totalPaid,
-                change,
-                netCollected,
-                mopToString(a.mop),
-            ];
+    
+            return {
+                DateTime: formatLocal(r.createdAtClientMs),
+                ReceiptNumber: r.receiptNumber ?? "",
+                SessionMode: r.sessionMode ?? "",
+                TableNumber: r.tableNumber ?? "",
+                CustomerName: r.customerName ?? "",
+                GrandTotal: grandTotal,
+                Discounts: discountsTotal,
+                Charges: chargesTotal,
+                TotalPaid: totalPaid,
+                Change: change,
+                NetCollected: netCollected,
+                PaymentMix: mopToString(a.mop),
+                DiscountsBreakdown: a.discounts ? JSON.stringify(a.discounts) : "",
+                ChargesBreakdown: a.charges ? JSON.stringify(a.charges) : "",
+            };
         });
-
-        const header = [ "DateTime", "ReceiptNumber", "SessionMode", "TableNumber", "CustomerName", "GrandTotal", "DiscountsTotal", "ChargesTotal", "TotalPaid", "Change", "NetCollected", "PaymentMix" ];
-        const csv = [ header.map(csvEscape).join(","), ...rows.map(row => row.map(csvEscape).join(",")), ].join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const from = start.toISOString().slice(0,10);
-        const to = end.toISOString().slice(0,10);
-        const filename = `dashboard_${from}_to_${to}.csv`;
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        const receiptsSheet = XLSX.utils.json_to_sheet(receiptsRows);
+    
+        // 2. Build Items Sheet
+        const itemsRows: any[] = [];
+        const isExcludedStatus = (status?: string) => {
+            if (!status) return false;
+            const lowerStatus = status.toLowerCase();
+            const excluded = ["cancelled", "canceled", "void", "voided", "removed", "deleted"];
+            return excluded.includes(lowerStatus);
+        }
+    
+        for (const receipt of filteredReceipts) {
+            const sessionId = receipt.sessionId ?? receipt.id;
+            const billablesRef = collection(db, `stores/${activeStore.id}/sessions/${sessionId}/billables`);
+            const billablesSnap = await getDocs(query(billablesRef, orderBy("createdAt", "asc")));
+    
+            for (const billableDoc of billablesSnap.docs) {
+                const item = billableDoc.data() as BillableItem;
+    
+                if (item.isFree || isExcludedStatus(item.status)) {
+                    continue;
+                }
+    
+                const qty = toNum(item.qty || 1);
+                const unitPrice = toNum(item.unitPrice || 0);
+                const lineSubtotal = qty * unitPrice;
+    
+                const lineDiscount = item.lineDiscountType === 'percent'
+                    ? lineSubtotal * (toNum(item.lineDiscountValue) / 100)
+                    : Math.min(toNum(item.lineDiscountValue) * qty, lineSubtotal);
+                
+                const lineTotal = lineSubtotal - lineDiscount;
+    
+                const a = receipt.analytics || {};
+                const netCollected = toNum(a.totalPaid) - toNum(a.change);
+    
+                itemsRows.push({
+                    ReceiptNumber: receipt.receiptNumber ?? "",
+                    DateTime: formatLocal(receipt.createdAtClientMs),
+                    SessionMode: receipt.sessionMode ?? "",
+                    TableNumber: receipt.tableNumber ?? "",
+                    CustomerName: receipt.customerName ?? "",
+                    ItemName: item.itemName,
+                    Category: (item as any).category ?? "",
+                    Qty: qty,
+                    UnitPrice: unitPrice,
+                    LineSubtotal: lineSubtotal,
+                    LineDiscount: lineDiscount,
+                    LineTotal: lineTotal,
+                    ReceiptDiscountsTotal: toNum(a.discountsTotal),
+                    ReceiptChargesTotal: toNum(a.chargesTotal),
+                    ReceiptNetCollected: netCollected,
+                    DiscountsBreakdown: a.discounts ? JSON.stringify(a.discounts) : "",
+                    ChargesBreakdown: a.charges ? JSON.stringify(a.charges) : "",
+                });
+            }
+        }
+        const itemsSheet = XLSX.utils.json_to_sheet(itemsRows);
+    
+        // 3. Create and Download Workbook
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, receiptsSheet, "Receipts");
+        XLSX.utils.book_append_sheet(workbook, itemsSheet, "Items");
+    
+        const from = start.toISOString().slice(0, 10);
+        const to = end.toISOString().slice(0, 10);
+        const filename = `dashboard_${from}_to_${to}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+    
+        toast({ title: "Export Complete", description: "Your XLSX file has been downloaded." });
     }
 
     if (storeLoading) {
@@ -652,7 +715,7 @@ export default function DashboardPage() {
                                 <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
                             </Popover>
                         </div>
-                        <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredReceipts.length === 0}><Download />Export CSV</Button>
+                        <Button variant="outline" size="sm" onClick={exportXlsx} disabled={filteredReceipts.length === 0}><Download />Export XLSX</Button>
                     </div>
                 </PageHeader>
 
