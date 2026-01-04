@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
-import type { ModeOfPayment } from "@/lib/types";
+import type { ModeOfPayment, Receipt as ReceiptType } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
+import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 
 
 // --- HELPERS ---
@@ -124,7 +125,6 @@ function getUsername(appUser: any) {
 
 const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || 0);
 
-type ReceiptType = { id: string, createdAtClientMs: number, [key: string]: any };
 
 function csvEscape(val: any) {
     const s = val == null ? "" : String(val);
@@ -299,9 +299,9 @@ export default function DashboardPage() {
 
         const firstPageQuery = query(
             collection(db, "stores", activeStore.id, "receipts"),
-            where("createdAtClientMs", ">=", start.getTime()),
-            where("createdAtClientMs", "<=", end.getTime()),
-            orderBy("createdAtClientMs", "desc"),
+            where("createdAt", ">=", start),
+            where("createdAt", "<=", end),
+            orderBy("createdAt", "desc"),
             limit(PAGE_SIZE)
         );
 
@@ -335,9 +335,9 @@ export default function DashboardPage() {
             const mapDocToReceipt = (doc: DocumentData): ReceiptType => ({ id: doc.id, ...doc.data() });
             const moreQuery = query(
                 collection(db, `stores/${activeStore.id}/receipts`),
-                where("createdAtClientMs", ">=", start.getTime()),
-                where("createdAtClientMs", "<=", end.getTime()),
-                orderBy("createdAtClientMs", "desc"),
+                where("createdAt", ">=", start),
+                where("createdAt", "<=", end),
+                orderBy("createdAt", "desc"),
                 startAfter(lastDoc),
                 limit(PAGE_SIZE)
             );
@@ -413,6 +413,7 @@ export default function DashboardPage() {
         const mop: Record<string, number> = {};
 
         filteredReceipts.forEach(r => {
+            if (r.analytics?.v !== 2) return; // V2 analytics guardrail
             totalSales += toNum(r.analytics?.grandTotal);
             discountsTotal += toNum(r.analytics?.discountsTotal);
 
@@ -676,11 +677,12 @@ export default function DashboardPage() {
                                 </Card>
                                 <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
                             </div>
-                            <div className="grid gap-6 md:grid-cols-2">
+                             <div className="grid gap-6 md:grid-cols-2">
+                                <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />
                                 <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
-                                <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                             </div>
                             <div className="grid gap-6 md:grid-cols-2">
+                                <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                                 <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
                             </div>
                             <Card>
@@ -767,3 +769,4 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
