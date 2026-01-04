@@ -297,8 +297,8 @@ type AnalyticsV2 = {
   totalPaid: number;
   change: number;
   mop: Record<string, number>;
-  salesByCategory: Record<string, { qty: number; amount: number }>;
-  salesByItem: Record<string, { qty: number; amount: number; categoryName: string }>;
+  salesByCategory?: Record<string, { qty: number; amount: number }>;
+  salesByItem?: Record<string, { qty: number; amount: number; categoryName: string }>;
   servedRefillsByName?: Record<string, number>;
   serveCountByType?: Record<string, number>;
   serveTimeMsTotalByType?: Record<string, number>;
@@ -311,7 +311,7 @@ function buildAnalyticsV2(
   billingSummary: BillingSummary,
   payments: Payment[],
   paymentMethods: ModeOfPayment[],
-  addonCategoryMap: Map<string, string>
+  addonMap: Map<string, StoreAddon>
 ): AnalyticsV2 {
 
   const salesByCategory: AnalyticsV2['salesByCategory'] = {};
@@ -319,30 +319,33 @@ function buildAnalyticsV2(
 
   // Process billables
   billables.forEach(item => {
-    if (item.isFree || (item.status !== 'served' && item.type !== 'package')) return;
+    // Only include items that were not cancelled/voided and not free
+    if (item.isFree || item.status === 'cancelled' || item.status === 'void') return;
+    
+    const qty = item.qty || 1;
+    const amount = qty * item.unitPrice;
 
     let categoryName = "Uncategorized";
     if (item.type === 'package') {
       categoryName = "Packages";
-    } else if (item.type === 'addon' && item.addonId) {
-      categoryName = addonCategoryMap.get(item.addonId) || "Uncategorized";
+    } else if (item.addonId) { // Robust check for addons
+      const addonDetails = addonMap.get(item.addonId);
+      categoryName = (item as any).addonCategoryName ?? (item as any).category ?? addonDetails?.category ?? "Uncategorized Addons";
     }
-
-    const amount = (item.qty || 1) * item.unitPrice;
 
     // Aggregate by category
     if (!salesByCategory[categoryName]) {
       salesByCategory[categoryName] = { qty: 0, amount: 0 };
     }
-    salesByCategory[categoryName].qty += (item.qty || 1);
+    salesByCategory[categoryName].qty += qty;
     salesByCategory[categoryName].amount += amount;
 
     // Aggregate by item
-    const itemName = item.itemName || 'Unknown Item';
+    const itemName = item.itemName || addonMap.get(item.addonId || '')?.name || 'Unknown Item';
     if (!salesByItem[itemName]) {
       salesByItem[itemName] = { qty: 0, amount: 0, categoryName };
     }
-    salesByItem[itemName].qty += (item.qty || 1);
+    salesByItem[itemName].qty += qty;
     salesByItem[itemName].amount += amount;
   });
 
@@ -391,9 +394,8 @@ export async function completePayment(
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
-
     // --- PRE-TRANSACTION: Fetch non-transactional data ---
-    const addonCategoryMap = new Map<string, string>();
+    const addonMap = new Map<string, StoreAddon>();
     const addonIds = billables.filter(b => b.type === 'addon' && b.addonId).map(b => b.addonId!);
     const uniqueAddonIds = [...new Set(addonIds)];
 
@@ -402,11 +404,11 @@ export async function completePayment(
         const addonSnaps = await Promise.all(addonRefs.map(ref => getDoc(ref)));
         addonSnaps.forEach(snap => {
             if (snap.exists()) {
-                const addonData = snap.data() as StoreAddon;
-                addonCategoryMap.set(snap.id, addonData.category || 'Uncategorized');
+                addonMap.set(snap.id, snap.data() as StoreAddon);
             }
         });
     }
+
 
   await runTransaction(db, async (tx) => {
     // --- TRANSACTION READ PHASE ---
@@ -494,7 +496,7 @@ export async function completePayment(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-        const analyticsV2 = buildAnalyticsV2(sessionData, billables, billingSummary, payments, paymentMethods, addonCategoryMap);
+        const analyticsV2 = buildAnalyticsV2(sessionData, billables, billingSummary, payments, paymentMethods, addonMap);
 
         const receiptPayload = stripUndefined({
             id: sessionId,
