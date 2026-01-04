@@ -30,6 +30,10 @@ type ItemTally = {
     categoryName: string;
 }
 
+// Local types for stricter analytics data handling
+type CategoryAgg = { qty?: number; amount?: number };
+type SalesByCategory = Record<string, CategoryAgg>;
+
 export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
     const [receipts, setReceipts] = useState<Receipt[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -72,15 +76,15 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         let hasAnalyticsData = false;
 
         receipts.forEach(receipt => {
-            const salesByCategory = receipt.analytics?.salesByCategory;
-            if (salesByCategory && typeof salesByCategory === 'object') {
+            const salesByCategory = (receipt.analytics?.salesByCategory ?? {}) as SalesByCategory;
+            if (Object.keys(salesByCategory).length > 0) {
                 hasAnalyticsData = true;
                 for (const [categoryName, values] of Object.entries(salesByCategory)) {
                     if (!tally[categoryName]) {
                         tally[categoryName] = { qty: 0, amount: 0 };
                     }
-                    tally[categoryName].qty += values.qty || 0;
-                    tally[categoryName].amount += values.amount || 0;
+                    tally[categoryName].qty += values.qty ?? 0;
+                    tally[categoryName].amount += values.amount ?? 0;
                 }
             }
         });
