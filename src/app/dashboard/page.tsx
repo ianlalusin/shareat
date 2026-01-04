@@ -630,7 +630,23 @@ export default function DashboardPage() {
                             <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isLoading} format="currency" />
                         </div>
                         
-                        <Card>
+                        <div className="grid gap-6 md:grid-cols-2">
+                             <Card>
+                                <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
+                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
+                            </Card>
+                            <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
+                        </div>
+                         <div className="grid gap-6 md:grid-cols-2">
+                            <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
+                        </div>
+
+                         <Card>
                             <CardHeader>
                                 <div className="flex justify-between items-center">
                                     <CardTitle>Receipts</CardTitle>
@@ -679,22 +695,6 @@ export default function DashboardPage() {
                                 </div>
                             </CardContent>
                         </Card>
-
-                        <div className="grid gap-6 md:grid-cols-2">
-                             <Card>
-                                <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
-                            </Card>
-                            <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
-                        </div>
-                         <div className="grid gap-6 md:grid-cols-2">
-                            <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />
-                            <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
-                        </div>
-                        <div className="grid gap-6 md:grid-cols-2">
-                            <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
-                            <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
-                        </div>
                     </div>
                 )}
                  {error && <Card className="mt-6"><CardContent className="p-10 text-center text-destructive">{error}</CardContent></Card>}
@@ -705,3 +705,4 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
