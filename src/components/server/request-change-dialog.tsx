@@ -13,14 +13,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Loader2, Minus, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase/client";
 import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAuthContext } from "@/context/auth-context";
 import { type PendingSession } from "./pending-tables";
-import { isScheduleActiveNow } from "../manager/store-settings/utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "../manager/store-settings/_utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { QuantityInput } from "../cashier/quantity-input";
 import type { StorePackage, MenuSchedule } from "@/lib/types";
 
 const REASON_OPTIONS = {
@@ -85,6 +86,7 @@ export function RequestChangeDialog({ isOpen, onClose, session, storeId, storePa
 
   const watchedGuestReason = guestForm.watch("reason");
   const watchedPackageReason = packageForm.watch("reason");
+  const guestCountValue = guestForm.watch("requestedCount");
 
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
@@ -214,7 +216,35 @@ export function RequestChangeDialog({ isOpen, onClose, session, storeId, storePa
               )}
               <div className="space-y-2">
                 <Label htmlFor="requestedCount">New Guest Count</Label>
-                <Input id="requestedCount" type="number" {...guestForm.register("requestedCount")} />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => guestForm.setValue("requestedCount", Math.max(0, guestCountValue - 1))}
+                  >
+                    <Minus />
+                  </Button>
+                  <Controller
+                    name="requestedCount"
+                    control={guestForm.control}
+                    render={({ field }) => (
+                      <QuantityInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        className="w-full text-center"
+                      />
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => guestForm.setValue("requestedCount", guestCountValue + 1)}
+                  >
+                    <Plus />
+                  </Button>
+                </div>
                 {guestForm.formState.errors.requestedCount && <p className="text-sm text-destructive">{guestForm.formState.errors.requestedCount.message}</p>}
               </div>
                <div className="space-y-2">
