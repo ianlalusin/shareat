@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
+import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 
 
 // --- HELPERS ---
@@ -677,6 +678,9 @@ export default function DashboardPage() {
                             </div>
                             <div className="grid gap-6 md:grid-cols-2">
                                 <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
+                                <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            </div>
+                            <div className="grid gap-6 md:grid-cols-2">
                                 <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
                             </div>
                             <Card>
