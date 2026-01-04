@@ -324,7 +324,7 @@ async function buildAnalyticsV2(
 
   if (uniqueAddonIds.length > 0) {
     const addonRefs = uniqueAddonIds.map(id => doc(db, `stores/${storeId}/storeAddons`, id));
-    const addonSnaps = await tx.getAll(...addonRefs);
+    const addonSnaps = await Promise.all(addonRefs.map(ref => tx.get(ref)));
     addonSnaps.forEach(snap => {
       if (snap.exists()) {
         const addonData = snap.data() as StoreAddon;
