@@ -479,68 +479,71 @@ export default function DashboardPage() {
         setActiveMop(prev => prev === mopName ? null : mopName);
     }
     
-    useEffect(() => {
-      const fetchDetailedData = async () => {
-        if (!selectedReceiptId || !activeStore?.id) {
-          setDetailedReceiptData(null);
-          return;
-        }
+   useEffect(() => {
+        const fetchDetailedData = async () => {
+            if (!selectedReceiptId || !activeStore?.id) {
+                setDetailedReceiptData(null);
+                return;
+            }
 
-        setIsLoadingPreview(true);
-        try {
-          // The receipt ID is the session ID.
-          const sessionId = selectedReceiptId;
+            setIsLoadingPreview(true);
+            try {
+                // The receipt's ID is the session ID
+                const sessionId = selectedReceiptId;
 
-          const [receiptSnap, settingsSnap] = await Promise.all([
-            getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId)),
-            getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-          ]);
+                const [receiptSnap, settingsSnap] = await Promise.all([
+                    getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId)),
+                    getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
+                ]);
 
-          if (!receiptSnap.exists()) throw new Error("Receipt not found.");
-          
-          const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-          
-          let sessionData: any = null;
-          let billablesData: any[] = [];
-          let paymentsData: any[] = [];
-          
-          try {
-              const [sessionSnap, billablesSnap, paymentsSnap] = await Promise.all([
-                  getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
-                  getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"), orderBy("createdAt", "asc"))),
-                  getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"), orderBy("createdAt", "asc"))),
-              ]);
-              if (sessionSnap.exists()) {
-                  sessionData = { id: sessionSnap.id, ...sessionSnap.data() };
-                  billablesData = billablesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                  paymentsData = paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-              } else {
-                  console.warn(`Session not found for receipt: ${selectedReceiptId}`);
-              }
-          } catch(sessionError) {
-              console.error(`Error fetching session details for receipt ${selectedReceiptId}:`, sessionError);
-          }
-          
-          setDetailedReceiptData({
-            session: sessionData ?? { id: sessionId, paymentSummary: receiptDocData.analytics },
-            billables: billablesData,
-            payments: paymentsData,
-            settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
-            receiptCreatedAt: receiptDocData.createdAt,
-            createdByUsername: receiptDocData.createdByUsername,
-            receiptNumber: receiptDocData.receiptNumber,
-            analytics: receiptDocData.analytics,
-          });
+                if (!receiptSnap.exists()) {
+                    throw new Error(`Receipt ${selectedReceiptId} does not exist.`);
+                }
+                
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                
+                let sessionData: any = null;
+                let billablesData: any[] = [];
+                let paymentsData: any[] = [];
 
-        } catch (err) {
-          console.error("Error loading receipt preview:", err);
-          setDetailedReceiptData(null);
-        } finally {
-          setIsLoadingPreview(false);
-        }
-      };
+                try {
+                    const [sessionSnap, billablesSnap, paymentsSnap] = await Promise.all([
+                        getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
+                        getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"), orderBy("createdAt", "asc"))),
+                        getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"), orderBy("createdAt", "asc"))),
+                    ]);
+                    if (sessionSnap.exists()) {
+                        sessionData = { id: sessionSnap.id, ...sessionSnap.data() };
+                        billablesData = billablesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        paymentsData = paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    } else {
+                        console.warn(`Session not found for receipt: ${selectedReceiptId}. Preview will be limited.`);
+                    }
+                } catch(sessionError) {
+                    console.error(`Error fetching full session details for receipt ${selectedReceiptId}:`, sessionError);
+                    // Continue with receipt-only data if session fetch fails
+                }
+                
+                setDetailedReceiptData({
+                    session: sessionData ?? { id: sessionId, paymentSummary: receiptDocData.analytics },
+                    billables: billablesData,
+                    payments: paymentsData,
+                    settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
+                    receiptCreatedAt: receiptDocData.createdAt,
+                    createdByUsername: receiptDocData.createdByUsername,
+                    receiptNumber: receiptDocData.receiptNumber,
+                    analytics: receiptDocData.analytics,
+                });
 
-      fetchDetailedData();
+            } catch (err) {
+                console.error("Error loading receipt preview:", err);
+                setDetailedReceiptData(null);
+            } finally {
+                setIsLoadingPreview(false);
+            }
+        };
+
+        fetchDetailedData();
     }, [selectedReceiptId, activeStore?.id]);
 
 
@@ -739,5 +742,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
-    
