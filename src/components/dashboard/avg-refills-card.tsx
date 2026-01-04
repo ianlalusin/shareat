@@ -61,13 +61,14 @@ export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
     }, [storeId, dateRange]);
 
     const analytics = useMemo<AnalyticsTally>(() => {
+        const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
         const tally: AnalyticsTally = {
-            sessionCount: receipts.length,
+            sessionCount: v2Receipts.length,
             overallTotal: 0,
             totalsByName: {},
         };
 
-        receipts.forEach(receipt => {
+        v2Receipts.forEach(receipt => {
             const served = (receipt.analytics?.servedRefillsByName ?? {}) as Record<string, number>;
             for (const [name, count] of Object.entries(served)) {
                 tally.totalsByName[name] = (tally.totalsByName[name] || 0) + count;
@@ -112,7 +113,7 @@ export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
                     <CardTitle>Avg. Refill Count</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-center text-sm text-muted-foreground py-10">No package receipts in this range.</p>
+                    <p className="text-center text-sm text-muted-foreground py-10">No package receipts with v2 analytics in this range.</p>
                 </CardContent>
             </Card>
         )

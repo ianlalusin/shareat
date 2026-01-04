@@ -73,12 +73,14 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
 
         return () => unsubscribe();
     }, [storeId, dateRange]);
+    
+    const v2Receipts = useMemo(() => receipts.filter(r => r.analytics?.v === 2), [receipts]);
 
     const categorySales = useMemo(() => {
         const tally: Record<string, CategoryTally> = {};
         let hasAnalyticsData = false;
 
-        receipts.forEach(receipt => {
+        v2Receipts.forEach(receipt => {
             const salesByCategory = (receipt.analytics?.salesByCategory ?? {}) as SalesByCategory;
             if (Object.keys(salesByCategory).length > 0) {
                 hasAnalyticsData = true;
@@ -94,7 +96,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
 
         const sortedTally = Object.entries(tally).sort(([, a], [, b]) => b.amount - a.amount);
         return { data: sortedTally, hasAnalytics: hasAnalyticsData };
-    }, [receipts]);
+    }, [v2Receipts]);
     
     const aggregatedItems = useMemo(() => {
         if (!selectedCategory || sheetTab !== 'byCategory') return { data: [], hasAnalytics: false };
@@ -102,7 +104,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         const tally: Record<string, ItemTally> = {};
         let hasItemAnalytics = false;
 
-        receipts.forEach(receipt => {
+        v2Receipts.forEach(receipt => {
             const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
             if (salesByItem && typeof salesByItem === 'object') {
                 for (const [itemName, values] of Object.entries(salesByItem)) {
@@ -123,7 +125,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         });
 
         return { data: sorted, hasAnalytics: hasItemAnalytics };
-    }, [receipts, selectedCategory, metric, sheetTab]);
+    }, [v2Receipts, selectedCategory, metric, sheetTab]);
 
     const overallItems = useMemo(() => {
         if (sheetTab !== 'overall') return { data: [], hasAnalytics: false };
@@ -131,7 +133,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         const tally: Record<string, ItemTally> = {};
         let hasItemAnalytics = false;
 
-        receipts.forEach(receipt => {
+        v2Receipts.forEach(receipt => {
             const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
             if (salesByItem && typeof salesByItem === 'object') {
                 hasItemAnalytics = true;
@@ -151,7 +153,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         
         return { data: sorted, hasAnalytics: hasItemAnalytics };
 
-    }, [receipts, sheetTab, metric]);
+    }, [v2Receipts, sheetTab, metric]);
 
     const handleCategoryClick = (categoryName: string) => {
         setSelectedCategory(categoryName);

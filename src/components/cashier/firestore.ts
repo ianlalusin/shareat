@@ -374,9 +374,9 @@ function buildAnalyticsV2(
     mop,
     salesByCategory,
     salesByItem,
-    servedRefillsByName: sessionData.servedRefillsByName,
-    serveCountByType: sessionData.serveCountByType,
-    serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType,
+    servedRefillsByName: sessionData.servedRefillsByName || {},
+    serveCountByType: sessionData.serveCountByType || {},
+    serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
   };
 }
 
