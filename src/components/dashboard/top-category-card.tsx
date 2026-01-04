@@ -24,15 +24,18 @@ type CategoryTally = {
     amount: number;
 };
 
+// Local types for stricter analytics data handling
+type CategoryAgg = { qty?: number; amount?: number };
+type SalesByCategory = Record<string, CategoryAgg>;
+
+type ItemAgg = { qty?: number; amount?: number; categoryName?: string };
+type SalesByItem = Record<string, ItemAgg>;
+
 type ItemTally = {
     qty: number;
     amount: number;
     categoryName: string;
 }
-
-// Local types for stricter analytics data handling
-type CategoryAgg = { qty?: number; amount?: number };
-type SalesByCategory = Record<string, CategoryAgg>;
 
 export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
     const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -100,16 +103,16 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         let hasItemAnalytics = false;
 
         receipts.forEach(receipt => {
-            const salesByItem = receipt.analytics?.salesByItem;
+            const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
             if (salesByItem && typeof salesByItem === 'object') {
                 for (const [itemName, values] of Object.entries(salesByItem)) {
-                    if (values.categoryName === selectedCategory) {
+                    if ((values.categoryName ?? "") === selectedCategory) {
                         hasItemAnalytics = true;
                         if (!tally[itemName]) {
-                            tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
+                            tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName ?? 'Uncategorized' };
                         }
-                        tally[itemName].qty += values.qty || 0;
-                        tally[itemName].amount += values.amount || 0;
+                        tally[itemName].qty += values.qty ?? 0;
+                        tally[itemName].amount += values.amount ?? 0;
                     }
                 }
             }
@@ -129,15 +132,15 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         let hasItemAnalytics = false;
 
         receipts.forEach(receipt => {
-            const salesByItem = receipt.analytics?.salesByItem;
+            const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
             if (salesByItem && typeof salesByItem === 'object') {
                 hasItemAnalytics = true;
                  for (const [itemName, values] of Object.entries(salesByItem)) {
                     if (!tally[itemName]) {
-                        tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
+                        tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName ?? 'Uncategorized' };
                     }
-                    tally[itemName].qty += values.qty || 0;
-                    tally[itemName].amount += values.amount || 0;
+                    tally[itemName].qty += values.qty ?? 0;
+                    tally[itemName].amount += values.amount ?? 0;
                 }
             }
         });
