@@ -20,6 +20,7 @@ import { ReadyToServe } from "@/components/kitchen/ReadyToServe";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { toJsDate } from "@/lib/utils/date";
 
 export type KitchenStation = {
     id: string;
@@ -169,10 +170,10 @@ export default function KitchenPage() {
 
             const ticket = ticketSnap.data() as KitchenTicket;
             
-            // Idempotency check for refill counting
-            if (newStatus === 'served' && ticket.type === 'refill' && ticket.servedCounted) {
-                console.log(`Refill ticket ${ticketId} already counted. Skipping.`);
-                return; // Already processed
+            // Idempotency check
+            if (ticket.status === 'served' || ticket.status === 'cancelled') {
+                console.log(`Ticket ${ticketId} is already finalized. Skipping update.`);
+                return;
             }
 
             const updatePayload: any = { status: newStatus };
@@ -181,21 +182,28 @@ export default function KitchenPage() {
                 updatePayload.preparedAt = serverTimestamp();
                 updatePayload.preparedByUid = appUser.uid;
             } else if (newStatus === 'served') {
+                const nowMs = Date.now();
+                const createdAtMs = toJsDate(ticket.createdAt)?.getTime() ?? nowMs;
+                const durationMs = Math.max(0, nowMs - createdAtMs);
+                
                 updatePayload.servedAt = serverTimestamp();
+                updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
+                
+                const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
+                const sessionUpdate: Record<string, any> = {
+                    [`serveCountByType.${ticket.type}`]: increment(1),
+                    [`serveTimeMsTotalByType.${ticket.type}`]: increment(durationMs),
+                };
 
                 if (ticket.type === 'refill') {
-                    const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                     const refillName = ticket.itemName || "Refill";
                     const qty = ticket.qty || 1;
-                    
-                    updatePayload.servedCounted = true; // Mark as counted
-
-                    transaction.update(sessionRef, {
-                        servedRefillsTotal: increment(qty),
-                        [`servedRefillsByName.${refillName}`]: increment(qty),
-                    });
+                    sessionUpdate.servedRefillsTotal = increment(qty);
+                    sessionUpdate[`servedRefillsByName.${refillName}`] = increment(qty);
                 }
+                transaction.update(sessionRef, sessionUpdate);
+
             } else { // cancelled or void
                 updatePayload.cancelledAt = serverTimestamp();
                 updatePayload.cancelledByUid = appUser.uid;
