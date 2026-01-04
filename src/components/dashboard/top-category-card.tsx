@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowRight } from "lucide-react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Receipt } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -26,16 +26,17 @@ type CategoryTally = {
 type ItemTally = {
     qty: number;
     amount: number;
+    categoryName: string;
 }
 
 export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
     const [receipts, setReceipts] = useState<Receipt[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     
-    // State for drilldown
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [metric, setMetric] = useState<"qty" | "amount">("amount");
+    const [sheetTab, setSheetTab] = useState<'byCategory' | 'overall'>('byCategory');
 
     useEffect(() => {
         if (!storeId) {
@@ -88,7 +89,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
     }, [receipts]);
     
     const aggregatedItems = useMemo(() => {
-        if (!selectedCategory) return { data: [], hasAnalytics: false };
+        if (!selectedCategory || sheetTab !== 'byCategory') return { data: [], hasAnalytics: false };
         
         const tally: Record<string, ItemTally> = {};
         let hasItemAnalytics = false;
@@ -100,7 +101,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                     if (values.categoryName === selectedCategory) {
                         hasItemAnalytics = true;
                         if (!tally[itemName]) {
-                            tally[itemName] = { qty: 0, amount: 0 };
+                            tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
                         }
                         tally[itemName].qty += values.qty || 0;
                         tally[itemName].amount += values.amount || 0;
@@ -114,12 +115,47 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         });
 
         return { data: sorted, hasAnalytics: hasItemAnalytics };
-    }, [receipts, selectedCategory, metric]);
+    }, [receipts, selectedCategory, metric, sheetTab]);
+
+    const overallItems = useMemo(() => {
+        if (sheetTab !== 'overall') return { data: [], hasAnalytics: false };
+
+        const tally: Record<string, ItemTally> = {};
+        let hasItemAnalytics = false;
+
+        receipts.forEach(receipt => {
+            const salesByItem = receipt.analytics?.salesByItem;
+            if (salesByItem && typeof salesByItem === 'object') {
+                hasItemAnalytics = true;
+                 for (const [itemName, values] of Object.entries(salesByItem)) {
+                    if (!tally[itemName]) {
+                        tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
+                    }
+                    tally[itemName].qty += values.qty || 0;
+                    tally[itemName].amount += values.amount || 0;
+                }
+            }
+        });
+        
+        const sorted = Object.entries(tally).sort(([, a], [, b]) => {
+            return metric === 'qty' ? b.qty - a.qty : b.amount - a.amount;
+        });
+        
+        return { data: sorted, hasAnalytics: hasItemAnalytics };
+
+    }, [receipts, sheetTab, metric]);
 
     const handleCategoryClick = (categoryName: string) => {
         setSelectedCategory(categoryName);
+        setSheetTab('byCategory');
         setIsSheetOpen(true);
     };
+
+    const handleViewOverall = () => {
+        setSelectedCategory(null);
+        setSheetTab('overall');
+        setIsSheetOpen(true);
+    }
     
     const topCategories = categorySales.data.slice(0, 8);
 
@@ -150,8 +186,8 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                         <CardTitle>Top Categories</CardTitle>
                         <CardDescription>Based on finalized receipts.</CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => handleCategoryClick("All")}>
-                        View All
+                    <Button variant="outline" size="sm" onClick={handleViewOverall}>
+                        View All Items
                     </Button>
                 </div>
             </CardHeader>
@@ -177,54 +213,91 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
             </CardContent>
         </Card>
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-            <SheetContent className="sm:max-w-lg">
+            <SheetContent className="w-full sm:max-w-lg flex flex-col">
                 <SheetHeader>
-                    <SheetTitle>{selectedCategory === "All" ? "All Categories" : `${selectedCategory} - Top Items`}</SheetTitle>
-                     <SheetDescription>
-                        {selectedCategory === "All" ? "Sales summary for all categories." : "Items sorted by sales within this category."}
+                    <SheetTitle>Sales Drilldown</SheetTitle>
+                    <SheetDescription>
+                        Explore sales by category or view all items.
                     </SheetDescription>
                 </SheetHeader>
-                {selectedCategory !== "All" && (
-                    <Tabs value={metric} onValueChange={(v) => setMetric(v as any)} className="my-4">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="amount">By Amount</TabsTrigger>
-                            <TabsTrigger value="qty">By Quantity</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-                )}
                 
-                {selectedCategory === "All" ? (
-                    <Table>
-                        <TableHeader>
-                            <TableRow><TableHead>Category</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {categorySales.data.map(([name, { qty, amount }]) => (
-                                <TableRow key={name}><TableCell>{name}</TableCell><TableCell className="text-right">{qty}</TableCell><TableCell className="text-right">₱{amount.toFixed(2)}</TableCell></TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                ) : aggregatedItems.hasAnalytics ? (
-                    <Table>
-                        <TableHeader>
-                            <TableRow><TableHead>Item</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
-                        </TableHeader>
-                        <TableBody>
-                             {aggregatedItems.data.map(([name, { qty, amount }]) => (
-                                <TableRow key={name}>
-                                    <TableCell className="font-medium">{name}</TableCell>
-                                    <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty}</TableCell>
-                                    <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toFixed(2)}</TableCell>
-                                </TableRow>
-                             ))}
-                        </TableBody>
-                    </Table>
-                ) : (
-                    <p className="text-center text-muted-foreground pt-10">No itemized sales data available for this category and period.</p>
-                )}
+                <Tabs value={sheetTab} onValueChange={(value) => setSheetTab(value as any)} className="flex-1 flex flex-col overflow-hidden">
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="byCategory">By Category</TabsTrigger>
+                        <TabsTrigger value="overall">Overall Top Items</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="byCategory" className="flex-1 flex flex-col overflow-hidden">
+                         <div className="flex justify-between items-center py-4">
+                            <h3 className="font-semibold">{selectedCategory || "Select a Category"}</h3>
+                            <Tabs value={metric} onValueChange={(v) => setMetric(v as any)} className="w-[180px]">
+                                <TabsList className="grid w-full grid-cols-2 h-8">
+                                    <TabsTrigger value="amount" className="text-xs h-6">By Amount</TabsTrigger>
+                                    <TabsTrigger value="qty" className="text-xs h-6">By Quantity</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                        </div>
+                        {selectedCategory ? (
+                            aggregatedItems.hasAnalytics ? (
+                                <ScrollArea className="flex-1">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow><TableHead>Item</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {aggregatedItems.data.map(([name, { qty, amount }]) => (
+                                            <TableRow key={name}>
+                                                <TableCell className="font-medium">{name}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toFixed(2)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                                </ScrollArea>
+                            ) : (
+                                <p className="text-center text-muted-foreground pt-10">No itemized sales data available for this category and period.</p>
+                            )
+                        ) : (
+                            <p className="text-center text-muted-foreground pt-10">Select a category from the main dashboard to see item details.</p>
+                        )}
+                    </TabsContent>
+                    
+                    <TabsContent value="overall" className="flex-1 flex flex-col overflow-hidden">
+                         <div className="flex justify-between items-center py-4">
+                            <h3 className="font-semibold">Top Items (All Categories)</h3>
+                            <Tabs value={metric} onValueChange={(v) => setMetric(v as any)} className="w-[180px]">
+                                <TabsList className="grid w-full grid-cols-2 h-8">
+                                    <TabsTrigger value="amount" className="text-xs h-6">By Amount</TabsTrigger>
+                                    <TabsTrigger value="qty" className="text-xs h-6">By Quantity</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                         </div>
+                        {overallItems.hasAnalytics ? (
+                            <ScrollArea className="flex-1">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {overallItems.data.map(([name, { qty, amount, categoryName }]) => (
+                                            <TableRow key={name}>
+                                                <TableCell className="font-medium">{name}</TableCell>
+                                                <TableCell className="text-xs text-muted-foreground">{categoryName}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toFixed(2)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </ScrollArea>
+                        ) : (
+                             <p className="text-center text-muted-foreground pt-10">No itemized sales data available for this period.</p>
+                        )}
+                    </TabsContent>
+                </Tabs>
             </SheetContent>
         </Sheet>
         </>
     );
 }
-
