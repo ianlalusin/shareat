@@ -26,6 +26,8 @@ import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 
 // --- HELPERS ---
@@ -202,6 +204,22 @@ export default function DashboardPage() {
     const [statusFilter, setStatusFilter] = useState<"all" | "final" | "void">("all");
     const [modeFilter, setModeFilter] = useState<string>("all");
     const [activeMop, setActiveMop] = useState<string | null>(null);
+    
+    const [autoSelectLatest, setAutoSelectLatest] = useState(true);
+    const autoSelectStorageKey = useMemo(() => `dashboard:autoSelectLatestReceipt:${activeStore?.id}:${appUser?.uid}`, [activeStore?.id, appUser?.uid]);
+
+    useEffect(() => {
+        const savedPref = localStorage.getItem(autoSelectStorageKey);
+        if (savedPref !== null) {
+            setAutoSelectLatest(savedPref === 'true');
+        }
+    }, [autoSelectStorageKey]);
+
+    const handleAutoSelectToggle = (checked: boolean) => {
+        setAutoSelectLatest(checked);
+        localStorage.setItem(autoSelectStorageKey, String(checked));
+    }
+
 
     // --- Data Fetching and Processing ---
     
@@ -369,13 +387,21 @@ export default function DashboardPage() {
             return true;
         });
     }, [receipts, search, statusFilter, modeFilter, activeMop]);
-
+    
+    // Auto-select logic
     useEffect(() => {
-        if (selectedReceiptId && !filteredReceipts.some(r => r.id === selectedReceiptId)) {
+        const shouldAutoSelect = autoSelectLatest && (
+            selectedReceiptId === null || 
+            !filteredReceipts.some(r => r.id === selectedReceiptId)
+        );
+
+        if (shouldAutoSelect && filteredReceipts.length > 0) {
+            handleSelectReceipt(filteredReceipts[0].id);
+        } else if (filteredReceipts.length === 0) {
             setSelectedReceiptId(null);
             setSelectedReceiptData(null);
         }
-    }, [filteredReceipts, selectedReceiptId]);
+    }, [filteredReceipts, autoSelectLatest, selectedReceiptId]);
 
 
     const { stats, mopTotals } = useMemo(() => {
@@ -627,7 +653,9 @@ export default function DashboardPage() {
                                     <Card className="h-full">
                                         <CardHeader className="flex flex-row items-center justify-between">
                                             <CardTitle>Receipt Preview</CardTitle>
-                                            <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting} size="sm">{isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2" />} Print</Button>
+                                            {selectedReceiptData && (
+                                                <Button onClick={handlePrint} disabled={isPrinting} size="sm">{isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2" />} Print</Button>
+                                            )}
                                         </CardHeader>
                                         <CardContent className="bg-muted/30 p-2 min-h-[440px]">
                                             {isLoadingPreview ? (
@@ -637,7 +665,14 @@ export default function DashboardPage() {
                                                   <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} /></div>
                                                 </ScrollArea>
                                             ) : (
-                                                <div className="flex items-center justify-center h-full text-muted-foreground"><p>Select a receipt to preview.</p></div>
+                                                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground p-4">
+                                                    <h3 className="text-lg font-semibold text-foreground">Select a receipt</h3>
+                                                    <p className="mb-4">Choose one from the list to preview and print.</p>
+                                                    <div className="flex items-center space-x-2">
+                                                        <Switch id="auto-select-toggle" checked={autoSelectLatest} onCheckedChange={handleAutoSelectToggle} />
+                                                        <Label htmlFor="auto-select-toggle">Auto-select latest</Label>
+                                                    </div>
+                                                </div>
                                             )}
                                         </CardContent>
                                     </Card>
@@ -670,4 +705,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
