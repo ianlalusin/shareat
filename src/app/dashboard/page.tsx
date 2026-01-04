@@ -194,8 +194,12 @@ export default function DashboardPage() {
     
     const [error, setError] = useState<string | null>(null);
 
+    // Single source of truth for selection
     const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
-    const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
+    
+    // Derived state for the detailed preview data
+    const [detailedReceiptData, setDetailedReceiptData] = useState<ReceiptData | null>(null);
+    
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
 
@@ -396,10 +400,9 @@ export default function DashboardPage() {
         );
 
         if (shouldAutoSelect && filteredReceipts.length > 0) {
-            handleSelectReceipt(filteredReceipts[0].id);
+            setSelectedReceiptId(filteredReceipts[0].id);
         } else if (filteredReceipts.length === 0) {
             setSelectedReceiptId(null);
-            setSelectedReceiptData(null);
         }
     }, [filteredReceipts, autoSelectLatest, selectedReceiptId]);
 
@@ -474,50 +477,58 @@ export default function DashboardPage() {
     const handleMopSelect = (mopName: string) => {
         setActiveMop(prev => prev === mopName ? null : mopName);
     }
+    
+    // New effect to fetch detailed data when selectedReceiptId changes
+    useEffect(() => {
+        const fetchDetailedData = async () => {
+            if (!selectedReceiptId || !activeStore?.id) {
+                setDetailedReceiptData(null);
+                return;
+            }
 
-    const handleSelectReceipt = useCallback(async (receiptId: string) => {
-        setSelectedReceiptId(receiptId);
-        setIsLoadingPreview(true);
-        setSelectedReceiptData(null);
-        if (!activeStore?.id) return;
-        
-        try {
-            const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-                getDoc(doc(db, "stores", activeStore.id, "sessions", receiptId)),
-                getDocs(query(collection(db, "stores", activeStore.id, "sessions", receiptId, "billables"), orderBy("createdAt", "asc"))),
-                getDocs(query(collection(db, "stores", activeStore.id, "sessions", receiptId, "payments"), orderBy("createdAt", "asc"))),
-                getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-                getDoc(doc(db, "stores", activeStore.id, "receipts", receiptId))
-            ]);
-            
-            if (!receiptSnap.exists()) throw new Error("Receipt not found.");
+            setIsLoadingPreview(true);
+            try {
+                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
+                    getDoc(doc(db, "stores", activeStore.id, "sessions", selectedReceiptId)),
+                    getDocs(query(collection(db, "stores", activeStore.id, "sessions", selectedReceiptId, "billables"), orderBy("createdAt", "asc"))),
+                    getDocs(query(collection(db, "stores", activeStore.id, "sessions", selectedReceiptId, "payments"), orderBy("createdAt", "asc"))),
+                    getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
+                    getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId))
+                ]);
+                
+                if (!receiptSnap.exists()) throw new Error("Receipt not found.");
 
-            const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
 
-            setSelectedReceiptData({
-                session: sessionSnap.data() as any,
-                billables: billablesSnap.docs.map(d => d.data()) as any[],
-                payments: paymentsSnap.docs.map(d => d.data()) as any[],
-                settings: settingsSnap.exists() ? settingsSnap.data() as any : {},
-                receiptCreatedAt: receiptDocData.createdAt,
-                createdByUsername: receiptDocData.createdByUsername,
-                receiptNumber: receiptDocData.receiptNumber,
-                analytics: receiptDocData.analytics,
-            });
-        } catch (err) {
-            console.error("Error loading receipt preview:", err);
-        } finally {
-            setIsLoadingPreview(false);
-        }
-    }, [activeStore?.id]);
+                setDetailedReceiptData({
+                    session: sessionSnap.data() as any,
+                    billables: billablesSnap.docs.map(d => d.data()) as any[],
+                    payments: paymentsSnap.docs.map(d => d.data()) as any[],
+                    settings: settingsSnap.exists() ? settingsSnap.data() as any : {},
+                    receiptCreatedAt: receiptDocData.createdAt,
+                    createdByUsername: receiptDocData.createdByUsername,
+                    receiptNumber: receiptDocData.receiptNumber,
+                    analytics: receiptDocData.analytics,
+                });
+            } catch (err) {
+                console.error("Error loading receipt preview:", err);
+                setDetailedReceiptData(null); // Clear on error
+            } finally {
+                setIsLoadingPreview(false);
+            }
+        };
+
+        fetchDetailedData();
+    }, [selectedReceiptId, activeStore?.id]);
+
 
     const handlePrint = async () => {
-        if (!selectedReceiptData || !activeStore?.id || !appUser) return;
+        if (!detailedReceiptData || !activeStore?.id || !appUser) return;
         setIsPrinting(true);
         window.requestAnimationFrame(async () => {
             window.print();
             try {
-                const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, selectedReceiptData.session.id);
+                const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, detailedReceiptData.session.id);
                 await updateDoc(receiptRef, {
                     printedCount: increment(1),
                     lastPrintedAt: serverTimestamp(),
@@ -645,7 +656,7 @@ export default function DashboardPage() {
                             <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                             <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
                         </div>
-
+                        
                          <Card>
                             <CardHeader>
                                 <div className="flex justify-between items-center">
@@ -662,23 +673,23 @@ export default function DashboardPage() {
                                         <Select value={modeFilter} onValueChange={setModeFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{modeOptions.map(mode => (<SelectItem key={mode} value={mode} className="capitalize">{mode === 'all' ? 'All Modes' : mode.replace('_', ' ')}</SelectItem>))}</SelectContent></Select>
                                      </div>
                                       <ScrollArea className="h-[420px] pr-4">
-                                        <RecentReceiptsList receipts={recentReceipts} onSelect={handleSelectReceipt} isLoading={isLoading} selectedId={selectedReceiptId} onOlder={loadMore} hasMore={hasMore} loadingMore={loadingMore} />
+                                        <RecentReceiptsList receipts={recentReceipts} onSelect={setSelectedReceiptId} isLoading={isLoading} selectedId={selectedReceiptId} onOlder={loadMore} hasMore={hasMore} loadingMore={loadingMore} />
                                      </ScrollArea>
                                 </div>
                                 <div className="lg:col-span-3">
                                     <Card className="h-full">
                                         <CardHeader className="flex flex-row items-center justify-between">
                                             <CardTitle>Receipt Preview</CardTitle>
-                                            {selectedReceiptData && (
+                                            {detailedReceiptData && (
                                                 <Button onClick={handlePrint} disabled={isPrinting} size="sm">{isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2" />} Print</Button>
                                             )}
                                         </CardHeader>
                                         <CardContent className="bg-muted/30 p-2 min-h-[440px]">
                                             {isLoadingPreview ? (
                                                 <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-muted-foreground" /></div>
-                                            ) : selectedReceiptData ? (
+                                            ) : detailedReceiptData ? (
                                                 <ScrollArea className="h-[440px]">
-                                                  <div id="print-receipt-area-dashboard"><ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} /></div>
+                                                  <div id="print-receipt-area-dashboard"><ReceiptView data={detailedReceiptData} paymentMethods={paymentMethods} /></div>
                                                 </ScrollArea>
                                             ) : (
                                                 <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground p-4">
@@ -700,7 +711,7 @@ export default function DashboardPage() {
                  {error && <Card className="mt-6"><CardContent className="p-10 text-center text-destructive">{error}</CardContent></Card>}
             </div>
             <div className="hidden print-block">
-                {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
+                {detailedReceiptData && <ReceiptView data={detailedReceiptData} paymentMethods={paymentMethods} />}
             </div>
         </RoleGuard>
     );
