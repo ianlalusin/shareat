@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
+import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 
 
 // --- HELPERS ---
@@ -674,7 +675,10 @@ export default function DashboardPage() {
                                 </Card>
                                 <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
                             </div>
-                            <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            <div className="grid gap-6 md:grid-cols-2">
+                                <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
+                                <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            </div>
                             <Card>
                                 <CardHeader>
                                     <div className="flex justify-between items-center">
