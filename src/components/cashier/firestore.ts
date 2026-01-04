@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -417,7 +418,7 @@ export async function completePayment(
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(receiptRef),
-        tx.get(settingsSnap),
+        tx.get(settingsRef),
         tx.get(counterRef),
     ]);
 
