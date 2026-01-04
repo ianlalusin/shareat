@@ -15,6 +15,7 @@ export type Session = {
     tableNumber?: string;
     customer?: { name?: string };
     sessionMode: 'package_dinein' | 'alacarte';
+    guestCountFinal?: number; // Added to ensure it's available
     paymentSummary: {
         subtotal: number;
         lineDiscountsTotal: number;
@@ -88,18 +89,25 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
     const groupedItems = useMemo(() => {
         const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percent' }>();
+        
         billables.forEach(item => {
             if (item.isFree) return;
+
+            // Correctly determine quantity for package items
+            const isPackage = item.type === 'package';
+            const itemQty = isPackage ? (session.guestCountFinal ?? item.qty) : item.qty;
+
             const key = `${item.itemName}@${item.unitPrice.toFixed(2)}`;
             const existing = map.get(key);
+
             if (existing) {
-                existing.qty += item.qty;
-                existing.total += item.qty * item.unitPrice;
+                existing.qty += itemQty;
+                existing.total += itemQty * item.unitPrice;
             } else {
                 map.set(key, { 
-                    qty: item.qty, 
+                    qty: itemQty, 
                     unitPrice: item.unitPrice, 
-                    total: item.qty * item.unitPrice, 
+                    total: itemQty * item.unitPrice, 
                     notes: item.notes,
                     lineDiscountValue: item.lineDiscountValue,
                     lineDiscountType: item.lineDiscountType,
@@ -107,7 +115,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
             }
         });
         return Array.from(map.entries());
-    }, [billables]);
+    }, [billables, session.guestCountFinal]);
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();
