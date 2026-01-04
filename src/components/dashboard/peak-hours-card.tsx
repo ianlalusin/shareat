@@ -20,7 +20,7 @@ interface PeakHoursCardProps {
 
 type Receipt = {
     createdAt: any;
-    analytics?: { v?: number; grandTotal?: number };
+    analytics?: { v?: number; grandTotal?: number, sessionStartedAt?: any, sessionStartedAtClientMs?: number };
     total?: number;
 }
 
@@ -60,7 +60,7 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedReceipts = snapshot.docs.map(doc => doc.data() as Receipt);
-            setReceipts(fetchedReceipts.filter(r => r.analytics?.v === 2));
+            setReceipts(fetchedReceipts);
             setIsLoading(false);
         }, (error) => {
             console.error("Error fetching peak hours data:", error);
@@ -82,7 +82,13 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
         const countByHour = Array(24).fill(0);
 
         receipts.forEach(receipt => {
-            const date = toJsDate(receipt.createdAt);
+            // Prioritize session start time, fallback to receipt creation time
+            const primaryTs = receipt.analytics?.sessionStartedAt;
+            const primaryMs = receipt.analytics?.sessionStartedAtClientMs;
+            const fallbackTs = receipt.createdAt;
+            
+            const date = toJsDate(primaryTs) ?? (primaryMs ? new Date(primaryMs) : toJsDate(fallbackTs));
+
             if (date) {
                 const hour = date.getHours();
                 const amount = receipt.analytics?.grandTotal ?? receipt.total ?? 0;
@@ -147,7 +153,7 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
                 <div className="flex justify-between items-start">
                     <div>
                         <CardTitle>Peak Hours</CardTitle>
-                        <CardDescription>Sales distribution by hour of the day.</CardDescription>
+                        <CardDescription>Based on session start times.</CardDescription>
                     </div>
                      <div className="flex items-center space-x-2">
                         <Label htmlFor="show-all-hours">Show All Hours</Label>

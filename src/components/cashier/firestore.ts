@@ -98,6 +98,7 @@ export async function startSession(
     sessionMode: payload.sessionMode,
     isPaid: false,
     startedAt: serverTimestamp(),
+    startedAtClientMs: Date.now(), // Added client-side timestamp
     startedByUid: user.uid,
     
     // Guest Count Model
@@ -289,6 +290,8 @@ type BillingSummary = {
 
 type AnalyticsV2 = {
   v: 2;
+  sessionStartedAt: Timestamp | null;
+  sessionStartedAtClientMs: number | null;
   subtotal: number;
   discountsTotal: number;
   chargesTotal: number;
@@ -297,8 +300,8 @@ type AnalyticsV2 = {
   totalPaid: number;
   change: number;
   mop: Record<string, number>;
-  salesByCategory?: Record<string, { qty: number; amount: number }>;
-  salesByItem?: Record<string, { qty: number; amount: number; categoryName: string }>;
+  salesByCategory: Record<string, { qty: number; amount: number }>;
+  salesByItem: Record<string, { qty: number; amount: number; categoryName: string }>;
   servedRefillsByName?: Record<string, number>;
   serveCountByType?: Record<string, number>;
   serveTimeMsTotalByType?: Record<string, number>;
@@ -364,6 +367,8 @@ function buildAnalyticsV2(
 
   return {
     v: 2,
+    sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
+    sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
     subtotal: billingSummary.subtotal || 0,
     discountsTotal,
     chargesTotal: billingSummary.adjustmentsTotal || 0,

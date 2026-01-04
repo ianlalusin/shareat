@@ -325,6 +325,8 @@ export type StoreTable = {
 
 export type ReceiptAnalyticsV2 = {
   v: 2;
+  sessionStartedAt: any | null;
+  sessionStartedAtClientMs: number | null;
   subtotal: number;
   discountsTotal: number;
   chargesTotal: number;
