@@ -491,35 +491,47 @@ export default function DashboardPage() {
           // The receipt ID is the session ID.
           const sessionId = selectedReceiptId;
 
-          const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-            getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
-            getDocs(query(
-              collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"),
-              orderBy("createdAt", "asc")
-            )),
-            getDocs(query(
-              collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"),
-              orderBy("createdAt", "asc")
-            )),
+          const [receiptSnap, settingsSnap] = await Promise.all([
+            getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId)),
             getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-            getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId))
           ]);
 
-          if (!sessionSnap.exists()) throw new Error(`Session not found for receipt: ${selectedReceiptId}`);
-          if (!receiptSnap.exists()) throw new Error("Receipt document not found.");
+          if (!receiptSnap.exists()) throw new Error("Receipt not found.");
           
           const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-
+          
+          let sessionData: any = null;
+          let billablesData: any[] = [];
+          let paymentsData: any[] = [];
+          
+          try {
+              const [sessionSnap, billablesSnap, paymentsSnap] = await Promise.all([
+                  getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
+                  getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"), orderBy("createdAt", "asc"))),
+                  getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"), orderBy("createdAt", "asc"))),
+              ]);
+              if (sessionSnap.exists()) {
+                  sessionData = { id: sessionSnap.id, ...sessionSnap.data() };
+                  billablesData = billablesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                  paymentsData = paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              } else {
+                  console.warn(`Session not found for receipt: ${selectedReceiptId}`);
+              }
+          } catch(sessionError) {
+              console.error(`Error fetching session details for receipt ${selectedReceiptId}:`, sessionError);
+          }
+          
           setDetailedReceiptData({
-            session: { id: sessionSnap.id, ...(sessionSnap.data() as any) },
-            billables: billablesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
-            payments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+            session: sessionData ?? { id: sessionId, paymentSummary: receiptDocData.analytics },
+            billables: billablesData,
+            payments: paymentsData,
             settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
             receiptCreatedAt: receiptDocData.createdAt,
             createdByUsername: receiptDocData.createdByUsername,
             receiptNumber: receiptDocData.receiptNumber,
             analytics: receiptDocData.analytics,
           });
+
         } catch (err) {
           console.error("Error loading receipt preview:", err);
           setDetailedReceiptData(null);
@@ -546,6 +558,8 @@ export default function DashboardPage() {
             lastPrintedByUid: appUser.uid,
             lastPrintedByUsername: getUsername(appUser),
           });
+        } catch(e) {
+            console.error("Failed to update print count:", e)
         } finally {
           setIsPrinting(false);
         }
