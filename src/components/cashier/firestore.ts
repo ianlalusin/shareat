@@ -305,34 +305,17 @@ type AnalyticsV2 = {
 };
 
 
-async function buildAnalyticsV2(
-  tx: Transaction,
-  storeId: string,
+function buildAnalyticsV2(
   sessionData: any,
   billables: BillableItem[],
   billingSummary: BillingSummary,
   payments: Payment[],
-  paymentMethods: ModeOfPayment[]
-): Promise<AnalyticsV2> {
+  paymentMethods: ModeOfPayment[],
+  addonCategoryMap: Map<string, string>
+): AnalyticsV2 {
 
   const salesByCategory: AnalyticsV2['salesByCategory'] = {};
   const salesByItem: AnalyticsV2['salesByItem'] = {};
-
-  // Fetch addon details to get categories
-  const addonIds = billables.filter(b => b.type === 'addon' && b.addonId).map(b => b.addonId!);
-  const uniqueAddonIds = [...new Set(addonIds)];
-  const addonCategoryMap = new Map<string, string>();
-
-  if (uniqueAddonIds.length > 0) {
-    const addonRefs = uniqueAddonIds.map(id => doc(db, `stores/${storeId}/storeAddons`, id));
-    const addonSnaps = await Promise.all(addonRefs.map(ref => tx.get(ref)));
-    addonSnaps.forEach(snap => {
-      if (snap.exists()) {
-        const addonData = snap.data() as StoreAddon;
-        addonCategoryMap.set(snap.id, addonData.category || 'Uncategorized');
-      }
-    });
-  }
 
   // Process billables
   billables.forEach(item => {
@@ -408,8 +391,25 @@ export async function completePayment(
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
+
+    // --- PRE-TRANSACTION: Fetch non-transactional data ---
+    const addonCategoryMap = new Map<string, string>();
+    const addonIds = billables.filter(b => b.type === 'addon' && b.addonId).map(b => b.addonId!);
+    const uniqueAddonIds = [...new Set(addonIds)];
+
+    if (uniqueAddonIds.length > 0) {
+        const addonRefs = uniqueAddonIds.map(id => doc(db, `stores/${storeId}/storeAddons`, id));
+        const addonSnaps = await Promise.all(addonRefs.map(ref => getDoc(ref)));
+        addonSnaps.forEach(snap => {
+            if (snap.exists()) {
+                const addonData = snap.data() as StoreAddon;
+                addonCategoryMap.set(snap.id, addonData.category || 'Uncategorized');
+            }
+        });
+    }
+
   await runTransaction(db, async (tx) => {
-    // --- READ PHASE ---
+    // --- TRANSACTION READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
@@ -439,7 +439,7 @@ export async function completePayment(
         tableSnap = await tx.get(tableRef);
     }
     
-    // --- VALIDATION AND PREPARATION ---
+    // --- TRANSACTION VALIDATION AND PREPARATION ---
     const grandTotal = billingSummary.grandTotal || 0;
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
@@ -449,7 +449,7 @@ export async function completePayment(
     const actor = getActorStamp(user);
     const shouldCreateReceipt = !receiptSnap.exists();
 
-    // --- WRITE PHASE ---
+    // --- TRANSACTION WRITE PHASE ---
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
@@ -494,7 +494,7 @@ export async function completePayment(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-        const analyticsV2 = await buildAnalyticsV2(tx, storeId, sessionData, billables, billingSummary, payments, paymentMethods);
+        const analyticsV2 = buildAnalyticsV2(sessionData, billables, billingSummary, payments, paymentMethods, addonCategoryMap);
 
         const receiptPayload = stripUndefined({
             id: sessionId,
