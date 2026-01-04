@@ -276,6 +276,9 @@ export default function ReceiptSettingsPage() {
                     </Card>
                 </div>
             </div>
+             <div className="hidden print-block">
+                {selectedRecentReceipt && <ReceiptView data={selectedRecentReceipt} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />}
+             </div>
         </RoleGuard>
     );
 }

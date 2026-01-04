@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useMemo } from "react";
@@ -14,6 +13,7 @@ export type Session = {
     id: string;
     tableNumber?: string;
     customer?: { name?: string };
+    customerName?: string | null;
     sessionMode: 'package_dinein' | 'alacarte';
     guestCountFinal?: number; // Added to ensure it's available
     paymentSummary: {
@@ -66,7 +66,7 @@ export type ReceiptData = {
 };
 
 interface ReceiptViewProps {
-    data: ReceiptData;
+    data: ReceiptData | null;
     paymentMethods?: ModeOfPayment[];
     forcePaperWidth?: "58mm" | "80mm" | "A4";
 }
@@ -82,6 +82,9 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
 }
 
 export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: ReceiptViewProps) {
+    if (!data || !data.session || !data.billables) {
+        return null;
+    }
     const { session, billables, payments, settings, createdByUsername } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
 
@@ -160,7 +163,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 {settings.showTableOrCustomer && (
                      <ReceiptRow 
                         label={session.sessionMode === 'alacarte' ? "Customer:" : "Table:"} 
-                        value={session.sessionMode === 'alacarte' ? session.customer?.name || 'N/A' : session.tableNumber || 'N/A'}
+                        value={session.sessionMode === 'alacarte' ? (session.customer?.name || session.customerName || 'N/A') : session.tableNumber || 'N/A'}
                      />
                 )}
                 {settings.showCashierName && <ReceiptRow label="Cashier:" value={cashierName} />}
