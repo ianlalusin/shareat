@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
+import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 
 
 // --- HELPERS ---
@@ -666,10 +667,13 @@ export default function DashboardPage() {
                                 <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isLoading} format="currency" />
                                 <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isLoading} format="currency" />
                             </div>
-                            <Card>
-                                <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
-                            </Card>
+                            <div className="grid gap-6 md:grid-cols-2">
+                                <Card>
+                                    <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
+                                    <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
+                                </Card>
+                                <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            </div>
                             <VoidedOrdersCard storeId={activeStore.id} dateRange={{ start, end }} />
                             <Card>
                                 <CardHeader>
