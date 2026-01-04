@@ -44,17 +44,16 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
         }
         setIsLoading(true);
 
-        const ticketsQuery = query(
+        const primaryQuery = query(
             collectionGroup(db, 'kitchentickets'),
             where('storeId', '==', storeId),
-            where('status', '==', 'served'),
             where('servedAt', '>=', Timestamp.fromDate(dateRange.start)),
             where('servedAt', '<=', Timestamp.fromDate(dateRange.end)),
             orderBy('servedAt', 'desc'),
             limit(500)
         );
 
-        const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
+        const unsubscribe = onSnapshot(primaryQuery, (snapshot) => {
             const fetchedTickets = snapshot.docs.map(doc => doc.data() as KitchenTicket);
             setTickets(fetchedTickets);
             setIsLoading(false);

@@ -51,6 +51,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "role", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "kitchentickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "servedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
