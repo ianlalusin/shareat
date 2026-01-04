@@ -204,6 +204,8 @@ export type PendingSession = {
   // Analytics
   servedRefillsTotal?: number;
   servedRefillsByName?: Record<string, number>;
+  serveCountByType?: Record<string, number>;
+  serveTimeMsTotalByType?: Record<string, number>;
 };
 
 export type BillableItem = {
@@ -320,3 +322,42 @@ export type StoreTable = {
     status: 'available' | 'occupied' | 'reserved' | 'out_of_order';
     currentSessionId: string | null;
 };
+
+export type ReceiptAnalyticsV2 = {
+  v: 2;
+  subtotal: number;
+  discountsTotal: number;
+  chargesTotal: number;
+  taxAmount: number;
+  grandTotal: number;
+  totalPaid: number;
+  change: number;
+  mop: Record<string, number>;
+  salesByCategory?: Record<string, { qty: number; amount: number }>;
+  salesByItem?: Record<string, { qty: number; amount: number; categoryName: string }>;
+  servedRefillsByName?: Record<string, number>;
+  serveCountByType?: Record<string, number>;
+  serveTimeMsTotalByType?: Record<string, number>;
+};
+
+export type Receipt = {
+    id: string;
+    storeId: string;
+    sessionId: string;
+    createdAt: any;
+    createdAtClientMs: number;
+    createdByUid: string;
+    createdByUsername: string;
+    sessionMode: 'package_dinein' | 'alacarte';
+    tableId: string | null;
+    tableNumber: string | null;
+    customerName: string | null;
+    total: number;
+    totalPaid: number;
+    change: number;
+    status: 'final' | 'void';
+    receiptSeq: number;
+    receiptNumber: string;
+    receiptNoFormatUsed: string;
+    analytics?: any | ReceiptAnalyticsV2;
+}

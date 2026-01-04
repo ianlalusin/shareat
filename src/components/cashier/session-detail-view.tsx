@@ -244,12 +244,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const allServedItems: BillableItem[] = Array.from(billables.values()).filter(billable => (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled'))).map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
+  const allBillableItems = Array.from(billables.values());
+  const allServedItems: BillableItem[] = allBillableItems.filter(billable => (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled'))).map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
   const subtotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => total + (item.qty * item.unitPrice), 0);
   const lineDiscountsTotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => {
     const lineTotal = item.qty * item.unitPrice;
-    return total + (item.lineDiscountType === 'percent' ? (lineTotal * (item.lineDiscountValue / 100)) : Math.min(item.lineDiscountValue, lineTotal));
+    return total + (item.lineDiscountType === 'percent' ? (lineTotal * (item.lineDiscountValue / 100)) : Math.min(item.lineDiscountValue * item.qty, lineTotal));
   }, 0);
   const discountedSubtotal = subtotal - lineDiscountsTotal;
   const billDiscountAmount = billDiscount ? (billDiscount.type === 'percent' ? discountedSubtotal * (billDiscount.value / 100) : Math.min(billDiscount.value, discountedSubtotal)) : 0;
@@ -293,7 +294,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
         const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal };
-        await completePayment(activeStore.id, sessionId, appUser, normalizedPayments, billingSummary, paymentMethods);
+        await completePayment(activeStore.id, sessionId, appUser, normalizedPayments, allBillableItems, billingSummary, paymentMethods);
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
         toast({ title: "Payment complete", description: "Session closed successfully." });
@@ -363,5 +364,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    

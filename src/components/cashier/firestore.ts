@@ -15,11 +15,12 @@ import {
   runTransaction,
   query,
   where,
+  type Transaction,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
 import type { StorePackage, BillableItem } from '@/lib/types';
-import type { Payment, ModeOfPayment } from '@/lib/types';
+import type { Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 
@@ -285,6 +286,113 @@ type BillingSummary = {
   grandTotal: number;
 }
 
+type AnalyticsV2 = {
+  v: 2;
+  subtotal: number;
+  discountsTotal: number;
+  chargesTotal: number;
+  taxAmount: number;
+  grandTotal: number;
+  totalPaid: number;
+  change: number;
+  mop: Record<string, number>;
+  salesByCategory: Record<string, { qty: number; amount: number }>;
+  salesByItem: Record<string, { qty: number; amount: number; categoryName: string }>;
+  servedRefillsByName?: Record<string, number>;
+  serveCountByType?: Record<string, number>;
+  serveTimeMsTotalByType?: Record<string, number>;
+};
+
+
+async function buildAnalyticsV2(
+  tx: Transaction,
+  storeId: string,
+  sessionData: any,
+  billables: BillableItem[],
+  billingSummary: BillingSummary,
+  payments: Payment[],
+  paymentMethods: ModeOfPayment[]
+): Promise<AnalyticsV2> {
+
+  const salesByCategory: AnalyticsV2['salesByCategory'] = {};
+  const salesByItem: AnalyticsV2['salesByItem'] = {};
+
+  // Fetch addon details to get categories
+  const addonIds = billables.filter(b => b.type === 'addon' && b.addonId).map(b => b.addonId!);
+  const uniqueAddonIds = [...new Set(addonIds)];
+  const addonCategoryMap = new Map<string, string>();
+
+  if (uniqueAddonIds.length > 0) {
+    const addonRefs = uniqueAddonIds.map(id => doc(db, `stores/${storeId}/storeAddons`, id));
+    const addonSnaps = await tx.getAll(...addonRefs);
+    addonSnaps.forEach(snap => {
+      if (snap.exists()) {
+        const addonData = snap.data() as StoreAddon;
+        addonCategoryMap.set(snap.id, addonData.category || 'Uncategorized');
+      }
+    });
+  }
+
+  // Process billables
+  billables.forEach(item => {
+    if (item.isFree || (item.status !== 'served' && item.type !== 'package')) return;
+
+    let categoryName = "Uncategorized";
+    if (item.type === 'package') {
+      categoryName = "Packages";
+    } else if (item.type === 'addon' && item.addonId) {
+      categoryName = addonCategoryMap.get(item.addonId) || "Uncategorized";
+    }
+
+    const amount = (item.qty || 1) * item.unitPrice;
+
+    // Aggregate by category
+    if (!salesByCategory[categoryName]) {
+      salesByCategory[categoryName] = { qty: 0, amount: 0 };
+    }
+    salesByCategory[categoryName].qty += (item.qty || 1);
+    salesByCategory[categoryName].amount += amount;
+
+    // Aggregate by item
+    const itemName = item.itemName || 'Unknown Item';
+    if (!salesByItem[itemName]) {
+      salesByItem[itemName] = { qty: 0, amount: 0, categoryName };
+    }
+    salesByItem[itemName].qty += (item.qty || 1);
+    salesByItem[itemName].amount += amount;
+  });
+
+  const grandTotal = billingSummary.grandTotal || 0;
+  const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0), 0);
+  const change = Math.max(0, totalPaid - grandTotal);
+  const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
+
+  const mopNameMap = new Map(paymentMethods.map(m => [m.id, m.name]));
+  const mop = payments.reduce((acc, p) => {
+    const key = mopNameMap.get(p.methodId) || p.methodId || "unknown";
+    const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
+    acc[key] = (acc[key] || 0) + amt;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return {
+    v: 2,
+    subtotal: billingSummary.subtotal || 0,
+    discountsTotal,
+    chargesTotal: billingSummary.adjustmentsTotal || 0,
+    taxAmount: 0, // Placeholder
+    grandTotal,
+    totalPaid,
+    change,
+    mop,
+    salesByCategory,
+    salesByItem,
+    servedRefillsByName: sessionData.servedRefillsByName,
+    serveCountByType: sessionData.serveCountByType,
+    serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType,
+  };
+}
+
 
 /**
  * Completes a payment and closes the dining session idempotently.
@@ -295,6 +403,7 @@ export async function completePayment(
   sessionId: string,
   user: AppUser,
   payments: Payment[],
+  billables: BillableItem[],
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
@@ -308,7 +417,7 @@ export async function completePayment(
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(receiptRef),
-        tx.get(settingsRef),
+        tx.get(settingsSnap),
         tx.get(counterRef),
     ]);
 
@@ -384,17 +493,7 @@ export async function completePayment(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-        const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
-        const chargesTotal = billingSummary.adjustmentsTotal || 0;
-        const change = Math.max(0, totalPaid - grandTotal);
-        
-        const mopNameMap = new Map(paymentMethods.map(m => [m.id, m.name]));
-        const mop = payments.reduce((acc, p) => {
-          const key = mopNameMap.get(p.methodId) || p.methodId || "unknown";
-          const amt = typeof p.amount === "number" ? p.amount : Number(p.amount) || 0;
-          acc[key] = (acc[key] || 0) + amt;
-          return acc;
-        }, {} as Record<string, number>);
+        const analyticsV2 = await buildAnalyticsV2(tx, storeId, sessionData, billables, billingSummary, payments, paymentMethods);
 
         const receiptPayload = stripUndefined({
             id: sessionId,
@@ -408,22 +507,12 @@ export async function completePayment(
             customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
             total: grandTotal,
             totalPaid,
-            change: change,
+            change: Math.max(0, totalPaid - grandTotal),
             status: "final",
             receiptSeq: nextSeq,
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
-            analytics: {
-              v: 1,
-              subtotal: billingSummary.subtotal || 0,
-              discountsTotal,
-              chargesTotal,
-              taxAmount: 0,
-              grandTotal,
-              totalPaid,
-              change,
-              mop,
-            }
+            analytics: analyticsV2,
         });
 
         tx.set(receiptRef, {
