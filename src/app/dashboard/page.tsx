@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -487,16 +488,10 @@ export default function DashboardPage() {
 
         setIsLoadingPreview(true);
         try {
-          // 1) Always fetch receipt first (it contains sessionId)
-          const receiptRef = doc(db, "stores", activeStore.id, "receipts", selectedReceiptId);
-          const receiptSnap = await getDoc(receiptRef);
-          if (!receiptSnap.exists()) throw new Error("Receipt not found.");
+          // The receipt ID is the session ID.
+          const sessionId = selectedReceiptId;
 
-          const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-          const sessionId = receiptDocData.sessionId ?? selectedReceiptId;
-
-          // 2) Fetch session + subcollections using sessionId
-          const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap] = await Promise.all([
+          const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
             getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
             getDocs(query(
               collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"),
@@ -507,12 +502,15 @@ export default function DashboardPage() {
               orderBy("createdAt", "asc")
             )),
             getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
+            getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId))
           ]);
 
           if (!sessionSnap.exists()) throw new Error(`Session not found for receipt: ${selectedReceiptId}`);
+          if (!receiptSnap.exists()) throw new Error("Receipt document not found.");
+          
+          const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
 
           setDetailedReceiptData({
-            // IMPORTANT: include id in session so ReceiptView/print logic won’t break
             session: { id: sessionSnap.id, ...(sessionSnap.data() as any) },
             billables: billablesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
             payments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
@@ -727,3 +725,5 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
+    
