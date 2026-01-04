@@ -478,69 +478,80 @@ export default function DashboardPage() {
         setActiveMop(prev => prev === mopName ? null : mopName);
     }
     
-    // New effect to fetch detailed data when selectedReceiptId changes
     useEffect(() => {
-        const fetchDetailedData = async () => {
-            if (!selectedReceiptId || !activeStore?.id) {
-                setDetailedReceiptData(null);
-                return;
-            }
+      const fetchDetailedData = async () => {
+        if (!selectedReceiptId || !activeStore?.id) {
+          setDetailedReceiptData(null);
+          return;
+        }
 
-            setIsLoadingPreview(true);
-            try {
-                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-                    getDoc(doc(db, "stores", activeStore.id, "sessions", selectedReceiptId)),
-                    getDocs(query(collection(db, "stores", activeStore.id, "sessions", selectedReceiptId, "billables"), orderBy("createdAt", "asc"))),
-                    getDocs(query(collection(db, "stores", activeStore.id, "sessions", selectedReceiptId, "payments"), orderBy("createdAt", "asc"))),
-                    getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-                    getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId))
-                ]);
-                
-                if (!receiptSnap.exists()) throw new Error("Receipt not found.");
+        setIsLoadingPreview(true);
+        try {
+          // 1) Always fetch receipt first (it contains sessionId)
+          const receiptRef = doc(db, "stores", activeStore.id, "receipts", selectedReceiptId);
+          const receiptSnap = await getDoc(receiptRef);
+          if (!receiptSnap.exists()) throw new Error("Receipt not found.");
 
-                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+          const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+          const sessionId = receiptDocData.sessionId ?? selectedReceiptId;
 
-                setDetailedReceiptData({
-                    session: sessionSnap.data() as any,
-                    billables: billablesSnap.docs.map(d => d.data()) as any[],
-                    payments: paymentsSnap.docs.map(d => d.data()) as any[],
-                    settings: settingsSnap.exists() ? settingsSnap.data() as any : {},
-                    receiptCreatedAt: receiptDocData.createdAt,
-                    createdByUsername: receiptDocData.createdByUsername,
-                    receiptNumber: receiptDocData.receiptNumber,
-                    analytics: receiptDocData.analytics,
-                });
-            } catch (err) {
-                console.error("Error loading receipt preview:", err);
-                setDetailedReceiptData(null); // Clear on error
-            } finally {
-                setIsLoadingPreview(false);
-            }
-        };
+          // 2) Fetch session + subcollections using sessionId
+          const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap] = await Promise.all([
+            getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
+            getDocs(query(
+              collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"),
+              orderBy("createdAt", "asc")
+            )),
+            getDocs(query(
+              collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"),
+              orderBy("createdAt", "asc")
+            )),
+            getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
+          ]);
 
-        fetchDetailedData();
+          if (!sessionSnap.exists()) throw new Error(`Session not found for receipt: ${selectedReceiptId}`);
+
+          setDetailedReceiptData({
+            // IMPORTANT: include id in session so ReceiptView/print logic won’t break
+            session: { id: sessionSnap.id, ...(sessionSnap.data() as any) },
+            billables: billablesSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+            payments: paymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+            settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
+            receiptCreatedAt: receiptDocData.createdAt,
+            createdByUsername: receiptDocData.createdByUsername,
+            receiptNumber: receiptDocData.receiptNumber,
+            analytics: receiptDocData.analytics,
+          });
+        } catch (err) {
+          console.error("Error loading receipt preview:", err);
+          setDetailedReceiptData(null);
+        } finally {
+          setIsLoadingPreview(false);
+        }
+      };
+
+      fetchDetailedData();
     }, [selectedReceiptId, activeStore?.id]);
 
 
     const handlePrint = async () => {
-        if (!detailedReceiptData || !activeStore?.id || !appUser) return;
-        setIsPrinting(true);
-        window.requestAnimationFrame(async () => {
-            window.print();
-            try {
-                const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, detailedReceiptData.session.id);
-                await updateDoc(receiptRef, {
-                    printedCount: increment(1),
-                    lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: appUser.uid,
-                    lastPrintedByUsername: getUsername(appUser),
-                });
-            } catch (e) {
-                console.warn("Print audit tracking failed:", e);
-            } finally {
-                setIsPrinting(false);
-            }
-        });
+      if (!detailedReceiptData || !activeStore?.id || !appUser || !selectedReceiptId) return;
+
+      setIsPrinting(true);
+      window.requestAnimationFrame(async () => {
+        window.print();
+        try {
+          const receiptRef = doc(db, "stores", activeStore.id, "receipts", selectedReceiptId);
+          await updateDoc(receiptRef, {
+            printedCount: increment(1),
+            lastPrintedAt: serverTimestamp(),
+            lastPrintedByUid: appUser.uid,
+            lastPrintedByUsername: getUsername(appUser),
+          });
+        } finally {
+          setIsPrinting(false);
+        }
+      });
     };
 
     const handleCalendarChange = (range: {start: Date, end: Date}, preset: string | null) => {
@@ -716,4 +727,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
