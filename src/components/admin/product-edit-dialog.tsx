@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "../ui/textarea";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, orderBy, doc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase/client";
 import { slugify } from "@/lib/utils/slugify";
 import { Badge } from "../ui/badge";
@@ -47,7 +47,7 @@ type ProductFormValues = z.infer<typeof formSchema>;
 interface ProductEditDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: ProductFormValues & { imageUrl?: string | null }) => void;
+  onSave: (data: ProductFormValues & { imageUrl?: string | null, imageFile?: File | null }) => void;
   product: Product | null;
   isSubmitting: boolean;
 }
@@ -58,6 +58,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   
@@ -86,6 +87,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         });
         setSubCategoryInput(product.subCategory || "");
         setImageUrl(product.imageUrl || null);
+        setImageFile(null);
       } else {
         form.reset({
           name: "",
@@ -97,6 +99,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         });
         setSubCategoryInput("");
         setImageUrl(null);
+        setImageFile(null);
       }
     }
   }, [product, isOpen, form]);
@@ -111,33 +114,12 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     }
   }, []);
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!product?.id) {
-        toast({
-            variant: "destructive",
-            title: "Save Product First",
-            description: "Please save the new product before uploading an image.",
-        });
-        return;
-    }
-
-    setIsUploading(true);
-    try {
-        const url = await uploadProductImage(product.id, file);
-        setImageUrl(url);
-        toast({ title: "Image Uploaded" });
-    } catch (error: any) {
-        toast({
-            variant: "destructive",
-            title: "Upload Failed",
-            description: error.message || "Could not upload the image.",
-        });
-    } finally {
-        setIsUploading(false);
-    }
+    setImageFile(file);
+    setImageUrl(URL.createObjectURL(file)); // Show a local preview
   };
 
   const handleBarcodeScanned = (barcode: string) => {
@@ -151,7 +133,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
 
   const onSubmit = (data: ProductFormValues) => {
-    onSave({ ...data, subCategory: subCategoryInput, imageUrl });
+    onSave({ ...data, subCategory: subCategoryInput, imageUrl, imageFile });
   };
 
   const dialogTitle = product ? "Edit Product" : "Create New Product";
@@ -187,7 +169,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                             )}
                             Upload
                         </Button>
-                        <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                        <input type="file" ref={fileInputRef} onChange={handleImageSelection} className="hidden" accept="image/*" />
                     </div>
                 </div>
 

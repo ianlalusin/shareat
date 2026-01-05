@@ -2,8 +2,8 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect, useMemo } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc } from "firebase/firestore";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -12,13 +12,15 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ProductEditDialog } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
+import { uploadProductImage } from "@/lib/firebase/client";
+import * as XLSX from "xlsx";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -30,6 +32,7 @@ export default function ProductManagementPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const { confirm, Dialog } = useConfirmDialog();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!appUser) return;
@@ -83,64 +86,45 @@ export default function ProductManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSaveProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'category' | 'imageUrl'> & { category?: string; imageUrl?: string | null }) => {
+  const handleSaveProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'category' | 'imageUrl'> & { category?: string; imageUrl?: string | null, imageFile?: File | null }) => {
     if (!appUser) return;
     setIsSubmitting(true);
     
-    const batch = writeBatch(db);
-    
-    const dataToSave = {
-        ...productData,
-        imageUrl: productData.imageUrl || undefined, // Normalize null to undefined
-        category: "Add-on", // Always default to "Add-on"
-    };
+    const { imageFile, ...dataToSave } = productData;
+    dataToSave.category = "Add-on";
 
     try {
-      if (editingProduct) {
-        // Update existing product
-        const productDocRef = doc(db, "products", editingProduct.id);
-        batch.update(productDocRef, {
-          ...dataToSave,
-          updatedAt: serverTimestamp(),
-        });
-        toast({ title: "Product Updated", description: "The product details have been saved." });
-      } else {
-        // Create new product
-        const newDocRef = doc(collection(db, "products"));
-        batch.set(newDocRef, {
-            ...dataToSave,
-            id: newDocRef.id,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-        });
+      const batch = writeBatch(db);
+      let productDocRef;
+      let finalImageUrl = dataToSave.imageUrl;
 
-        toast({ title: "Product Created", description: "The new product has been added." });
+      if (editingProduct) {
+        productDocRef = doc(db, "products", editingProduct.id);
+        batch.update(productDocRef, { ...dataToSave, updatedAt: serverTimestamp() });
+      } else {
+        productDocRef = doc(collection(db, "products"));
+        batch.set(productDocRef, { ...dataToSave, id: productDocRef.id, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       }
       
-      // Upsert addonCategory if applicable
+      if (imageFile) {
+        finalImageUrl = await uploadProductImage(productDocRef.id, imageFile);
+        batch.update(productDocRef, { imageUrl: finalImageUrl });
+      }
+      
       if (dataToSave.category === 'Add-on' && dataToSave.subCategory) {
           const subCategorySlug = slugify(dataToSave.subCategory);
           const categoryRef = doc(db, "addonCategories", subCategorySlug);
-          
           batch.set(categoryRef, {
-              id: categoryRef.id,
-              name: dataToSave.subCategory,
-              slug: subCategorySlug,
-              isActive: true,
-              sortOrder: 0, // You might want a better way to manage this
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
+              id: categoryRef.id, name: dataToSave.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0, 
+              createdAt: serverTimestamp(), updatedAt: serverTimestamp()
           }, { merge: true });
       }
 
       await batch.commit();
+      toast({ title: editingProduct ? "Product Updated" : "Product Created" });
       handleCloseDialog();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Save Failed",
-        description: error.message || "Could not save the product details.",
-      });
+      toast({ variant: "destructive", title: "Save Failed", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -183,13 +167,82 @@ export default function ProductManagementPage() {
     setSelectedProduct(null);
     handleOpenDialog(product);
   };
+  
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !appUser) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const data = e.target?.result;
+        if (!data) {
+            toast({ variant: "destructive", title: "File Read Error" });
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+            const productsRef = collection(db, "products");
+            const categoriesRef = collection(db, "addonCategories");
+            const existingProductsSnap = await getDocs(productsRef);
+            const existingProductNames = new Set(existingProductsSnap.docs.map(doc => doc.data().name.toLowerCase()));
+            const batch = writeBatch(db);
+            let importedCount = 0;
+
+            for (const item of json) {
+                if (!item.name || !item.uom) continue;
+                if (existingProductNames.has(item.name.toLowerCase())) continue;
+
+                const newProductRef = doc(productsRef);
+                batch.set(newProductRef, {
+                    id: newProductRef.id,
+                    name: item.name,
+                    variant: item.variant || "",
+                    uom: item.uom,
+                    category: "Add-on", // Default to Add-on
+                    subCategory: item.subCategory || "Uncategorized",
+                    barcode: item.barcode || "",
+                    isActive: item.isActive !== undefined ? item.isActive : true,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                });
+                
+                if (item.subCategory) {
+                    const subCategorySlug = slugify(item.subCategory);
+                    const categoryRef = doc(categoriesRef, subCategorySlug);
+                    batch.set(categoryRef, { id: categoryRef.id, name: item.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+                }
+
+                importedCount++;
+            }
+
+            await batch.commit();
+            toast({ title: "Import Complete", description: `${importedCount} new products were imported.` });
+        } catch (error: any) {
+            toast({ variant: "destructive", title: "Import Failed", description: error.message });
+        } finally {
+            setIsSubmitting(false);
+            if(fileInputRef.current) fileInputRef.current.value = "";
+        }
+    };
+    reader.readAsBinaryString(file);
+  };
+
 
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
+        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
+        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isSubmitting}>
+            <Upload className="mr-2" /> Import
+        </Button>
         <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" />
-          New Product
+          <PlusCircle className="mr-2" /> New Product
         </Button>
       </PageHeader>
       <Card>
