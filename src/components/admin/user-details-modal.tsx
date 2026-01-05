@@ -178,7 +178,6 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent
-                                  portal={false}
                                   side="bottom"
                                   align="start"
                                   sideOffset={8}
