@@ -6,7 +6,7 @@ import { StoreSwitcher } from './store-switcher'
 import type { User } from '@/lib/types'
 import { Button } from '../ui/button'
 import { PanelLeft } from 'lucide-react'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet'
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 
@@ -42,16 +42,22 @@ export default function Header({ user }: { user: User }) {
           </SheetTrigger>
           <SheetContent side="left" className="sm:max-w-xs bg-destructive text-destructive-foreground border-destructive-foreground/20">
             <SheetHeader className="p-4 flex flex-row items-center gap-4">
-               <Link
-                  href="/dashboard"
-                  className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
-                  >
-                  <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-5 w-5 transition-all group-hover:scale-110" />
-                  <span className="sr-only">SharEat Hub</span>
-              </Link>
+              <SheetClose asChild>
+                <Link
+                    href="/dashboard"
+                    className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
+                    >
+                    <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-5 w-5 transition-all group-hover:scale-110" />
+                    <span className="sr-only">SharEat Hub</span>
+                </Link>
+              </SheetClose>
                <SheetTitle className="text-white">SharEat Hub</SheetTitle>
             </SheetHeader>
-             <div className="p-4 border-y border-white/20">
+             <div 
+                className="p-4 border-y border-white/20"
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onClickCapture={(e) => e.stopPropagation()}
+             >
                 <StoreSwitcher />
              </div>
             <nav className="grid gap-6 text-lg font-medium p-4">
