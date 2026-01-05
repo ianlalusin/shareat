@@ -46,3 +46,24 @@ export function allowsDecimalQty(uom: unknown): boolean {
   const normalized = normalizeUom(uom);
   return DECIMAL_UOMS.includes(normalized);
 }
+
+/**
+ * Formats a quantity for display, especially in the kitchen.
+ * Shows decimals with UOM (e.g., "0.25 kg") but integers with an "x" (e.g., "x2").
+ * @param qty The quantity number.
+ * @param uom The unit of measurement string.
+ * @returns A formatted string for display.
+ */
+export function formatKitchenQty(qty: number, uom?: string): string {
+  if (qty <= 0) return "";
+
+  const isDecimal = qty % 1 !== 0;
+  const unit = normalizeUom(uom);
+
+  if (isDecimal || allowsDecimalQty(unit)) {
+    const qtyFormatted = qty.toFixed(2).replace(/\.00$/, ''); // 2.00 -> 2, 2.50 -> 2.5
+    return `(${qtyFormatted} ${unit})`;
+  } else {
+    return `(x${Math.round(qty)})`;
+  }
+}

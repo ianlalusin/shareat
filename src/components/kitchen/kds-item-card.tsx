@@ -12,26 +12,12 @@ import { Timestamp } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import type { KitchenTicket } from "@/lib/types";
+import { toJsDate } from "@/lib/utils/date";
+import { formatKitchenQty } from "@/lib/uom";
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled", reason?: string) => void;
-}
-
-function toJsDate(v: any): Date | null {
-  if (!v) return null;
-  if (v instanceof Date) return v;
-  if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate();
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
 }
 
 function CreationTime({ startTime }: { startTime: Timestamp | Date }) {
@@ -80,13 +66,15 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
     
     const identifier = ticket.sessionLabel 
         ?? (isAlaCarte ? (ticket.customerName || "Ala Carte") : `Table ${ticket.tableNumber}`);
+        
+    const qtyLabel = formatKitchenQty(ticket.qty, ticket.uom);
 
     return (
         <>
             <Card className={cn("flex flex-col", ticket.status === 'ready' && 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800')}>
                 <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                         <CardTitle className="text-xl">{ticket.itemName} (x{ticket.qty})</CardTitle>
+                         <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
                          {ticket.status === 'ready' ? (
                             <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Ready</Badge>
                         ) : (
