@@ -99,7 +99,14 @@ export default function StoreManagementPage() {
   }, [appUser, toast]);
 
   const handleOpenDialog = (store: Store | null = null) => {
-    setEditingStore(store);
+    if (store) {
+      setEditingStore({
+        ...store,
+        openingDate: toJsDate(store.openingDate),
+      } as Store);
+    } else {
+      setEditingStore(null);
+    }
     setIsDialogOpen(true);
   };
 
