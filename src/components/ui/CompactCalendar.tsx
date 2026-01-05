@@ -62,11 +62,17 @@ export default function CompactCalendar({
   weekStartsOn = 0,
   accent = "#16a34a", // green-600
   initialPreset = "today",
+  selectionMode = "range",
+  showPresets = true,
+  showActions = true,
   onChange,
 }: {
   weekStartsOn?: 0 | 1;
   accent?: string;
   initialPreset?: Preset;
+  selectionMode?: "range" | "single";
+  showPresets?: boolean;
+  showActions?: boolean;
   onChange?: (range: DateRange, preset: Preset) => void;
 }) {
   const today = useMemo(() => atStartOfDay(new Date()), []);
@@ -101,7 +107,8 @@ export default function CompactCalendar({
     return startOfWeek(firstOfMonth, weekStartsOn);
   }, [displayDate, weekStartsOn]);
 
-  const days = useMemo(() => Array.from({ length: 28 }, (_, i) => addDays(gridStart, i)), [gridStart]);
+  const days = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStart]);
+
 
   const monthIdx = displayDate.getMonth();
   const yearVal = displayDate.getFullYear();
@@ -141,6 +148,20 @@ export default function CompactCalendar({
   }
 
   function onPickDay(d: Date) {
+    if (selectionMode === "single") {
+      const single = atStartOfDay(d);
+      const singleRange = { start: single, end: single };
+      setPendingPreset("custom");
+      setPendingRange(singleRange);
+      // Immediately commit for single mode
+      setRange(singleRange);
+      setPreset("custom");
+      onChange?.(singleRange, "custom");
+      setClickPhase(0);
+      setAnchor(null);
+      return;
+    }
+    
     // Any click forces custom mode
     setPendingPreset("custom");
 
@@ -255,14 +276,17 @@ export default function CompactCalendar({
       </div>
 
       {/* Presets */}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        <PresetBtn label="Yesterday" active={pendingPreset === "yesterday"} onClick={() => applyPreset("yesterday")} />
-        <PresetBtn label="Today" active={pendingPreset === "today"} onClick={() => applyPreset("today")} />
-        <PresetBtn label="Last week" active={pendingPreset === "lastWeek"} onClick={() => applyPreset("lastWeek")} />
-        <PresetBtn label="Last month" active={pendingPreset === "lastMonth"} onClick={() => applyPreset("lastMonth")} />
-        <PresetBtn label="Last year" active={pendingPreset === "lastYear"} onClick={() => applyPreset("lastYear")} />
-        <PresetBtn label="Custom" active={pendingPreset === "custom"} onClick={() => setPendingPreset("custom")} />
-      </div>
+      {showPresets && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+            <PresetBtn label="Yesterday" active={pendingPreset === "yesterday"} onClick={() => applyPreset("yesterday")} />
+            <PresetBtn label="Today" active={pendingPreset === "today"} onClick={() => applyPreset("today")} />
+            <PresetBtn label="Last week" active={pendingPreset === "lastWeek"} onClick={() => applyPreset("lastWeek")} />
+            <PresetBtn label="Last month" active={pendingPreset === "lastMonth"} onClick={() => applyPreset("lastMonth")} />
+            <PresetBtn label="Last year" active={pendingPreset === "lastYear"} onClick={() => applyPreset("lastYear")} />
+            <PresetBtn label="Custom" active={pendingPreset === "custom"} onClick={() => setPendingPreset("custom")} />
+        </div>
+      )}
+      
 
       {/* Calendar */}
       <div className="mt-2">
@@ -306,34 +330,36 @@ export default function CompactCalendar({
         </div>
 
         {/* Apply / Cancel */}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="text-[clamp(10px,1.6vw,12px)] text-black/60" style={{ fontWeight: 400 }}>
-            {pendingRange.start.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })} —{" "}
-            {pendingRange.end.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })}
-            {clickPhase === 1 ? " (tap end date)" : ""}
-          </div>
+        {showActions && (
+            <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="text-[clamp(10px,1.6vw,12px)] text-black/60" style={{ fontWeight: 400 }}>
+                    {pendingRange.start.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })} —{" "}
+                    {pendingRange.end.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })}
+                    {clickPhase === 1 ? " (tap end date)" : ""}
+                </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={cancelPending}
-              className="rounded-md border px-2 py-1 text-[clamp(11px,1.8vw,13px)] hover:bg-black/5 active:bg-black/10"
-              style={{ fontWeight: 400, borderColor: "rgba(0,0,0,0.15)" }}
-              disabled={!canApply}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={applyPending}
-              className="rounded-md px-2 py-1 text-[clamp(11px,1.8vw,13px)] text-white disabled:opacity-50"
-              style={{ fontWeight: 400, background: "var(--accent)" }}
-              disabled={!canApply}
-            >
-              Apply
-            </button>
-          </div>
-        </div>
+                <div className="flex items-center gap-1.5">
+                    <button
+                    type="button"
+                    onClick={cancelPending}
+                    className="rounded-md border px-2 py-1 text-[clamp(11px,1.8vw,13px)] hover:bg-black/5 active:bg-black/10"
+                    style={{ fontWeight: 400, borderColor: "rgba(0,0,0,0.15)" }}
+                    disabled={!canApply}
+                    >
+                    Cancel
+                    </button>
+                    <button
+                    type="button"
+                    onClick={applyPending}
+                    className="rounded-md px-2 py-1 text-[clamp(11px,1.8vw,13px)] text-white disabled:opacity-50"
+                    style={{ fontWeight: 400, background: "var(--accent)" }}
+                    disabled={!canApply}
+                    >
+                    Apply
+                    </button>
+                </div>
+            </div>
+        )}
       </div>
     </div>
   );

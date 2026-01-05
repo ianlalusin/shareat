@@ -21,6 +21,7 @@ import type { Store } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { uploadStoreLogo } from "@/lib/firebase/client";
+import { Timestamp } from "firebase/firestore";
 
 const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),
@@ -45,6 +46,23 @@ interface StoreEditDialogProps {
   isSubmitting: boolean;
 }
 
+function toJsDate(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (v instanceof Timestamp) return v.toDate();
+  if (typeof v?.toDate === "function") return v.toDate(); // Handle other timestamp-like objects
+   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+
 export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }: StoreEditDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,7 +85,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: store.name, code: store.code, address: store.address,
         tin: store.tin || "", isActive: store.isActive,
         email: store.email || "", contactNumber: store.contactNumber || "",
-        openingDate: store.openingDate ? store.openingDate.toDate() : null,
+        openingDate: toJsDate(store.openingDate),
         logoUrl: store.logoUrl || null,
         vatType: store.vatType || "NON_VAT",
       });
@@ -147,6 +165,9 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                                     </PopoverTrigger>
                                     <PopoverContent className="w-auto p-0" align="start">
                                         <CompactCalendar
+                                            selectionMode="single"
+                                            showPresets={false}
+                                            showActions={false}
                                             onChange={(range) => {
                                                 field.onChange(range.start);
                                                 setIsCalendarOpen(false);
