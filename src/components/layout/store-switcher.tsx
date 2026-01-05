@@ -85,7 +85,7 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -99,7 +99,11 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
           <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0">
+      <PopoverContent
+          className="w-[200px] p-0 z-[9999]"
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onClickCapture={(e) => e.stopPropagation()}
+      >
         <Command>
           <CommandList>
             <CommandInput placeholder="Search store..." />
@@ -108,7 +112,8 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
               {allowedStores.map((store) => (
                 <CommandItem
                   key={store.id}
-                  onSelect={() => handleStoreSelect(store.id)}
+                  value={store.id}
+                  onSelect={(value) => handleStoreSelect(value)}
                   className="text-sm"
                 >
                   <Store className="mr-2 h-4 w-4" />

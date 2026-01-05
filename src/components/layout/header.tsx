@@ -53,8 +53,10 @@ export default function Header({ user }: { user: User }) {
               </SheetClose>
                <SheetTitle className="text-white">SharEat Hub</SheetTitle>
             </SheetHeader>
-             <div 
+             <div
                 className="p-4 border-y border-white/20"
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onClickCapture={(e) => e.stopPropagation()}
              >
                 <StoreSwitcher />
              </div>
