@@ -16,7 +16,6 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import type { Store } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -66,7 +65,6 @@ function toJsDate(v: any): Date | null {
 export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }: StoreEditDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(formSchema),
@@ -119,6 +117,27 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const onSubmit = (data: StoreFormValues) => {
     onSave(data);
   };
+
+  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: any) => {
+    let value = e.target.value.replace(/[^0-9]/g, '');
+    if (value.length > 2 && value.length <= 4) {
+      value = `${value.slice(0, 2)}/${value.slice(2)}`;
+    } else if (value.length > 4) {
+      value = `${value.slice(0, 2)}/${value.slice(2, 4)}/${value.slice(4, 8)}`;
+    }
+    e.target.value = value;
+    
+    if (value.length === 10) {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+            field.onChange(date);
+        } else {
+            field.onChange(null);
+        }
+    } else {
+        field.onChange(null);
+    }
+  };
   
   const dialogTitle = store ? "Edit Store" : "Create New Store";
   const dialogDescription = store ? "Update the details of this store." : "Fill in the details to create a new store.";
@@ -154,28 +173,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                         render={({ field }) => (
                             <FormItem className="flex flex-col">
                                 <FormLabel>Opening Date</FormLabel>
-                                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                                    <PopoverTrigger asChild>
-                                        <FormControl>
-                                            <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
-                                                {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                            </Button>
-                                        </FormControl>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                        <Calendar
-                                            mode="single"
-                                            selected={field.value ?? undefined}
-                                            onSelect={(d) => {
-                                                if (!d) return;
-                                                field.onChange(d);
-                                                setIsCalendarOpen(false);
-                                            }}
-                                            initialFocus
-                                        />
-                                    </PopoverContent>
-                                </Popover>
+                                <FormControl>
+                                    <Input 
+                                      placeholder="MM/DD/YYYY"
+                                      defaultValue={field.value ? format(field.value, 'MM/dd/yyyy') : ''}
+                                      onChange={(e) => handleDateInputChange(e, field)}
+                                    />
+                                </FormControl>
                                 <FormMessage />
                             </FormItem>
                         )}
