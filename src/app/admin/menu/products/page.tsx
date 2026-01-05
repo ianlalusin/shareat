@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ProductEditDialog } from "@/components/admin/product-edit-dialog";
@@ -96,22 +96,31 @@ export default function ProductManagementPage() {
     try {
       const batch = writeBatch(db);
       let productDocRef;
-      let finalImageUrl = dataToSave.imageUrl;
+      let finalImageUrl = editingProduct?.imageUrl || null;
 
       if (editingProduct) {
         productDocRef = doc(db, "products", editingProduct.id);
-        batch.update(productDocRef, { ...dataToSave, updatedAt: serverTimestamp() });
       } else {
         productDocRef = doc(collection(db, "products"));
-        batch.set(productDocRef, { ...dataToSave, id: productDocRef.id, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       }
-      
+
       if (imageFile) {
         finalImageUrl = await uploadProductImage(productDocRef.id, imageFile);
-        batch.update(productDocRef, { imageUrl: finalImageUrl });
       }
       
-      if (dataToSave.category === 'Add-on' && dataToSave.subCategory) {
+      const payload = { 
+        ...dataToSave, 
+        imageUrl: finalImageUrl,
+        updatedAt: serverTimestamp() 
+      };
+
+      if (editingProduct) {
+        batch.update(productDocRef, payload);
+      } else {
+        batch.set(productDocRef, { ...payload, id: productDocRef.id, createdAt: serverTimestamp() });
+      }
+      
+      if (dataToSave.subCategory) {
           const subCategorySlug = slugify(dataToSave.subCategory);
           const categoryRef = doc(db, "addonCategories", subCategorySlug);
           batch.set(categoryRef, {
@@ -232,12 +241,45 @@ export default function ProductManagementPage() {
     };
     reader.readAsBinaryString(file);
   };
+  
+  const handleDownloadTemplate = () => {
+    const headers = ["name", "uom", "subCategory", "variant", "barcode", "isActive"];
+    const sampleData = [
+        {
+            name: "Sample Product Name",
+            uom: "pcs",
+            subCategory: "Sample Category",
+            variant: "Large",
+            barcode: "1234567890123",
+            isActive: "TRUE"
+        }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData, { header: headers });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
+
+    // Set column widths
+    worksheet["!cols"] = [
+        { wch: 30 }, // name
+        { wch: 10 }, // uom
+        { wch: 20 }, // subCategory
+        { wch: 20 }, // variant
+        { wch: 20 }, // barcode
+        { wch: 10 }, // isActive
+    ];
+    
+    XLSX.writeFile(workbook, "product_import_template.xlsx");
+};
 
 
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
+        <Button variant="outline" onClick={handleDownloadTemplate} disabled={isSubmitting}>
+            <Download className="mr-2" /> Template
+        </Button>
         <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isSubmitting}>
             <Upload className="mr-2" /> Import
         </Button>
