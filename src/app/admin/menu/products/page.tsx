@@ -94,48 +94,68 @@ export default function ProductManagementPage() {
     dataToSave.category = "Add-on";
 
     try {
-      const batch = writeBatch(db);
-      let productDocRef;
-      let finalImageUrl = editingProduct?.imageUrl || null;
+        if (editingProduct) { // --- UPDATE EXISTING PRODUCT ---
+            const batch = writeBatch(db);
+            const productDocRef = doc(db, "products", editingProduct.id);
+            let finalImageUrl = editingProduct.imageUrl || null;
 
-      if (editingProduct) {
-        productDocRef = doc(db, "products", editingProduct.id);
-      } else {
-        productDocRef = doc(collection(db, "products"));
-      }
+            if (imageFile) {
+                finalImageUrl = await uploadProductImage(productDocRef.id, imageFile);
+            }
 
-      if (imageFile) {
-        finalImageUrl = await uploadProductImage(productDocRef.id, imageFile);
-      }
-      
-      const payload = { 
-        ...dataToSave, 
-        imageUrl: finalImageUrl,
-        updatedAt: serverTimestamp() 
-      };
+            const payload = { ...dataToSave, imageUrl: finalImageUrl, updatedAt: serverTimestamp() };
+            batch.update(productDocRef, payload);
 
-      if (editingProduct) {
-        batch.update(productDocRef, payload);
-      } else {
-        batch.set(productDocRef, { ...payload, id: productDocRef.id, createdAt: serverTimestamp() });
-      }
-      
-      if (dataToSave.subCategory) {
-          const subCategorySlug = slugify(dataToSave.subCategory);
-          const categoryRef = doc(db, "addonCategories", subCategorySlug);
-          batch.set(categoryRef, {
-              id: categoryRef.id, name: dataToSave.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0, 
-              createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-          }, { merge: true });
-      }
+            if (dataToSave.subCategory) {
+                const subCategorySlug = slugify(dataToSave.subCategory);
+                const categoryRef = doc(db, "addonCategories", subCategorySlug);
+                batch.set(categoryRef, {
+                    id: categoryRef.id, name: dataToSave.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0,
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }, { merge: true });
+            }
 
-      await batch.commit();
-      toast({ title: editingProduct ? "Product Updated" : "Product Created" });
-      handleCloseDialog();
+            await batch.commit();
+            toast({ title: "Product Updated" });
+        } else { // --- CREATE NEW PRODUCT ---
+            const batch = writeBatch(db);
+            const productDocRef = doc(collection(db, "products"));
+            
+            // Create the product first without the image URL
+            const initialPayload = {
+                ...dataToSave,
+                id: productDocRef.id,
+                imageUrl: null, // Set to null initially
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+            batch.set(productDocRef, initialPayload);
+            
+            // Manage sub-category
+            if (dataToSave.subCategory) {
+                const subCategorySlug = slugify(dataToSave.subCategory);
+                const categoryRef = doc(db, "addonCategories", subCategorySlug);
+                batch.set(categoryRef, {
+                    id: categoryRef.id, name: dataToSave.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0,
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }, { merge: true });
+            }
+            
+            await batch.commit(); // Commit the initial product creation
+
+            // If there's an image, upload it now and update the document
+            if (imageFile) {
+                await uploadProductImage(productDocRef.id, imageFile);
+            }
+            
+            toast({ title: "Product Created" });
+        }
+        
+        handleCloseDialog();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Save Failed", description: error.message });
+        toast({ variant: "destructive", title: "Save Failed", description: error.message });
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
   };
 
@@ -375,3 +395,5 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
+
+    
