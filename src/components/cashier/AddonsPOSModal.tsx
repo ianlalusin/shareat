@@ -132,8 +132,9 @@ function POSContent({
   }, [addons, search, activeCategory]);
 
   const handleSelectAddon = (addon: StoreAddon) => {
+    const allowDecimal = allowsDecimalQty(addon.uom);
     setSelectedAddon(addon);
-    setQuantity(1);
+    setQuantity(allowDecimal ? 0.1 : 1);
   };
   
   const handleAddToOrder = async () => {
@@ -167,6 +168,7 @@ function POSContent({
         const allowDecimal = allowsDecimalQty(selectedAddon.uom);
         const loopQty = allowDecimal ? 1 : quantity;
         const ticketQty = allowDecimal ? quantity : 1;
+        const toastQtyString = allowDecimal ? `${quantity} ${selectedAddon.uom}` : `${quantity}x`;
 
         for (let i = 0; i < loopQty; i++) {
             const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
@@ -214,7 +216,7 @@ function POSContent({
         }
         
         await batch.commit();
-        toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});
+        toast({ title: "Added to Order", description: `${toastQtyString} ${selectedAddon.name} sent to kitchen.`});
         setSelectedAddon(null);
     } catch(e: any) {
         console.error("Order Failed:", e);
@@ -238,6 +240,24 @@ function POSContent({
   };
 
   const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
+  const qtyStep = allowDecimal ? 0.1 : 1;
+  const qtyMin = allowDecimal ? 0.01 : 1;
+  
+  const handleQtyChange = (val: number) => {
+      if (allowDecimal) {
+          setQuantity(parseFloat(val.toFixed(2)));
+      } else {
+          setQuantity(Math.floor(val));
+      }
+  }
+
+  const decrementQty = () => {
+      setQuantity(q => parseFloat(Math.max(qtyMin, q - qtyStep).toFixed(2)));
+  }
+
+  const incrementQty = () => {
+      setQuantity(q => parseFloat((q + qtyStep).toFixed(2)));
+  }
 
   return (
     <>
@@ -285,13 +305,18 @@ function POSContent({
                         <p className="text-sm text-muted-foreground">₱{(selectedAddon.price || 0).toFixed(2)}</p>
                     </div>
                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => Math.max(1, q - 1))}><Minus/></Button>
-                        <QuantityInput value={quantity} onChange={setQuantity} className="w-20 h-8 text-center" allowDecimal={allowDecimal}/>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => q + 1)}><Plus/></Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={decrementQty}><Minus/></Button>
+                        <QuantityInput 
+                            value={quantity} 
+                            onChange={handleQtyChange}
+                            className="w-20 h-8 text-center" 
+                            allowDecimal={allowDecimal}
+                        />
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={incrementQty}><Plus/></Button>
                      </div>
                      <div className="flex items-center gap-2">
                         <Button variant="ghost" size="sm" onClick={() => setSelectedAddon(null)}>Cancel</Button>
-                        <Button size="sm" onClick={handleAddToOrder} disabled={isSubmitting || quantity < 1 || !selectedAddon.kitchenLocationId || sessionIsLocked}>
+                        <Button size="sm" onClick={handleAddToOrder} disabled={isSubmitting || quantity <= 0 || !selectedAddon.kitchenLocationId || sessionIsLocked}>
                            {isSubmitting ? <Loader2 className="animate-spin" /> : `Add (₱${((selectedAddon.price || 0) * quantity).toFixed(2)})`}
                         </Button>
                      </div>
