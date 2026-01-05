@@ -16,7 +16,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import CompactCalendar from "@/components/ui/CompactCalendar";
+import { Calendar } from "@/components/ui/calendar";
 import type { Store } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -164,14 +164,15 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                                         </FormControl>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-auto p-0" align="start">
-                                        <CompactCalendar
-                                            selectionMode="single"
-                                            showPresets={false}
-                                            showActions={false}
-                                            onChange={(range) => {
-                                                field.onChange(range.start);
+                                        <Calendar
+                                            mode="single"
+                                            selected={field.value ?? undefined}
+                                            onSelect={(d) => {
+                                                if (!d) return;
+                                                field.onChange(d);
                                                 setIsCalendarOpen(false);
                                             }}
+                                            initialFocus
                                         />
                                     </PopoverContent>
                                 </Popover>
