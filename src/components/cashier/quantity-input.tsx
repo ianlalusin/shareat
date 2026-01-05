@@ -10,9 +10,10 @@ interface QuantityInputProps {
   onChange: (value: number) => void;
   className?: string;
   disabled?: boolean;
+  allowDecimal?: boolean;
 }
 
-export function QuantityInput({ value, onChange, className, disabled }: QuantityInputProps) {
+export function QuantityInput({ value, onChange, className, disabled, allowDecimal = false }: QuantityInputProps) {
   const [displayValue, setDisplayValue] = useState(value.toString());
 
   useEffect(() => {
@@ -24,31 +25,30 @@ export function QuantityInput({ value, onChange, className, disabled }: Quantity
   }, [value]);
 
   const handleFocus = () => {
-    if (displayValue === "0") {
+    if (parseFloat(displayValue) === 0) {
       setDisplayValue("");
     }
   };
 
   const handleBlur = () => {
-    let numericValue = parseInt(displayValue, 10);
+    let numericValue = allowDecimal ? parseFloat(displayValue) : parseInt(displayValue, 10);
     if (isNaN(numericValue) || displayValue.trim() === "") {
       numericValue = 0;
     }
-    // Normalize value (e.g., remove leading zeros like '005' -> '5')
     setDisplayValue(String(numericValue)); 
     onChange(numericValue);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
-    // Allow only digits, and allow an empty string for clearing the input
-    if (/^\d*$/.test(rawValue)) {
+    const regex = allowDecimal ? /^\d*\.?\d*$/ : /^\d*$/;
+    if (regex.test(rawValue)) {
       setDisplayValue(rawValue);
     }
   };
 
   const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const numericValue = parseInt(displayValue, 10);
+    const numericValue = allowDecimal ? parseFloat(displayValue) : parseInt(displayValue, 10);
     if (!isNaN(numericValue)) {
       onChange(numericValue);
     }
@@ -56,9 +56,9 @@ export function QuantityInput({ value, onChange, className, disabled }: Quantity
 
   return (
     <Input
-      id={`quantity-input-${value}`} // A semi-stable ID for focus check
-      type="text" // Use text to allow empty string during editing
-      inputMode="numeric" // Hint for mobile keyboards
+      id={`quantity-input-${value}`}
+      type="text"
+      inputMode={allowDecimal ? "decimal" : "numeric"}
       value={displayValue}
       onChange={handleChange}
       onFocus={handleFocus}

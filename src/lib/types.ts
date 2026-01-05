@@ -149,6 +149,7 @@ export type KitchenTicket = {
     kitchenLocationName?: string;
     notes?: string;
     qty: number;
+    uom?: string;
     createdByUid: string;
     createdAt: any;
     preparedByUid?: string | null;
@@ -215,6 +216,7 @@ export type BillableItem = {
   addonId?: string;
   itemName: string;
   qty: number;
+  uom?: string;
   unitPrice: number;
   lineDiscountType: "percent" | "fixed";
   lineDiscountValue: number;

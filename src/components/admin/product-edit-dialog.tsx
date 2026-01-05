@@ -26,6 +26,7 @@ import { Package } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import type { Product } from "@/lib/types";
 import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
+import { UOM_OPTIONS, normalizeUom } from "@/lib/uom";
 
 type AddonCategory = {
     id: string;
@@ -81,7 +82,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
           name: product.name,
           variant: product.variant || "",
           subCategory: product.subCategory || "",
-          uom: product.uom,
+          uom: normalizeUom(product.uom),
           barcode: product.barcode || "",
           isActive: product.isActive,
         });
@@ -238,9 +239,16 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                         render={({ field }) => (
                         <FormItem>
                             <FormLabel>UOM</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g., pcs, kg, g" {...field} />
-                            </FormControl>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {UOM_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <FormMessage />
                         </FormItem>
                         )}

@@ -19,6 +19,7 @@ import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem } from "@/lib/types";
+import { normalizeUom } from "@/lib/uom";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -104,7 +105,7 @@ export default function InventoryManagementPage() {
         variant: product.variant || "",
         category: product.category || "",
         subCategory: product.subCategory || "",
-        uom: product.uom,
+        uom: normalizeUom(product.uom),
         cost: 0,
         sellingPrice: 0,
         isActive: true,

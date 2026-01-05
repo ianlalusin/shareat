@@ -19,6 +19,8 @@ import { stripUndefined } from "@/lib/firebase/utils";
 import type { Product, StoreAddon, PendingSession } from "@/lib/types";
 import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { QuantityInput } from "./quantity-input";
+import { allowsDecimalQty } from "@/lib/uom";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -97,6 +99,7 @@ function POSContent({
             }
             return { 
               ...addon, 
+              uom: productData?.uom || addon.uom,
               imageUrl: productData?.imageUrl || addon.imageUrl,
               barcode: productData?.barcode || undefined,
             };
@@ -161,8 +164,11 @@ function POSContent({
     
     const batch = writeBatch(db);
     try {
-        
-        for (let i = 0; i < quantity; i++) {
+        const allowDecimal = allowsDecimalQty(selectedAddon.uom);
+        const loopQty = allowDecimal ? 1 : quantity;
+        const ticketQty = allowDecimal ? quantity : 1;
+
+        for (let i = 0; i < loopQty; i++) {
             const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
             const billableRef = doc(collection(db, "stores", storeId, "sessions", session.id, "billables"), ticketRef.id);
             const itemName = selectedAddon.name;
@@ -171,7 +177,8 @@ function POSContent({
                 id: ticketRef.id,
                 type: "addon",
                 itemName: itemName,
-                qty: 1, // Always 1 for a new ticket
+                qty: ticketQty,
+                uom: selectedAddon.uom,
                 kitchenLocationId: selectedAddon.kitchenLocationId,
                 kitchenLocationName: selectedAddon.kitchenLocationName,
                 status: "preparing",
@@ -193,7 +200,8 @@ function POSContent({
                 type: "addon",
                 addonId: selectedAddon.id,
                 itemName: itemName,
-                qty: 1,
+                qty: ticketQty,
+                uom: selectedAddon.uom,
                 unitPrice: selectedAddon.price || 0,
                 lineDiscountType: "fixed",
                 lineDiscountValue: 0,
@@ -228,6 +236,8 @@ function POSContent({
         toast({ variant: "destructive", title: "Not Found", description: "No add-on with this barcode was found in the store's active items."});
     }
   };
+
+  const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
 
   return (
     <>
@@ -276,7 +286,7 @@ function POSContent({
                     </div>
                      <div className="flex items-center gap-2">
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => Math.max(1, q - 1))}><Minus/></Button>
-                        <Input type="number" value={quantity} onChange={e => setQuantity(parseInt(e.target.value))} className="w-16 h-8 text-center" />
+                        <QuantityInput value={quantity} onChange={setQuantity} className="w-20 h-8 text-center" allowDecimal={allowDecimal}/>
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => q + 1)}><Plus/></Button>
                      </div>
                      <div className="flex items-center gap-2">
