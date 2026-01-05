@@ -19,7 +19,7 @@ export function QuantityInput({ value, onChange, className, disabled, allowDecim
   useEffect(() => {
     // Update display value when the external value prop changes
     // But only if the input is not currently focused, to avoid interrupting user input.
-    if (document.activeElement !== document.getElementById(`quantity-input-${value}`)) {
+    if (document.activeElement?.id !== `quantity-input-${value}`) {
          setDisplayValue(value.toString());
     }
   }, [value]);
