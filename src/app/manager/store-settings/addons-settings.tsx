@@ -125,7 +125,7 @@ export function AddonsSettings({ store }: { store: Store }) {
             const productDoc = await getDoc(doc(db, "products", addonId));
             const imageUrl = productDoc.exists() ? productDoc.data().imageUrl : null;
             
-            await setDoc(docRef, {
+            const newAddonData: StoreAddon = {
                 id: addonId,
                 name: inventoryItem.name,
                 category: inventoryItem.subCategory,
@@ -137,11 +137,21 @@ export function AddonsSettings({ store }: { store: Store }) {
                 kitchenLocationId: null,
                 kitchenLocationName: null,
                 imageUrl: imageUrl,
+            };
+
+            await setDoc(docRef, {
+                ...newAddonData,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
+
             toast({ title: "Add-on Added", description: "Please confirm the price and kitchen location." });
             await logActivity(appUser, 'store_addon_added', `Added addon ID ${addonId} to store.`);
+            
+            // Auto-open the dialog for the new addon
+            setSelectedAddon(newAddonData);
+            setEditDialogOpen(true);
+
         } catch (error: any) {
             toast({ variant: "destructive", title: "Add Failed", description: error.message });
         }
