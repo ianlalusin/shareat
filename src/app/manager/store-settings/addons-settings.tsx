@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, updateDoc, setDoc, getDoc, orderBy } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, MoreHorizontal } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { logActivity } from "@/lib/firebase/activity-log";
 import { StoreAddonEditDialog } from "@/components/manager/store-settings/StoreAddonEditDialog";
 import Image from "next/image";
 import type { Store, InventoryItem, KitchenLocation, Product, StoreAddon } from "@/lib/types";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -33,6 +35,11 @@ export function AddonsSettings({ store }: { store: Store }) {
     const [selectedAddon, setSelectedAddon] = useState<StoreAddon | null>(null);
 
     useEffect(() => {
+        if (!store?.id) {
+            setIsLoading(false);
+            return;
+        }
+
         const unsubInventory = onSnapshot(
             query(collection(db, "stores", store.id, "inventory"), where("category", "==", "Add-on")), 
             (snap) => setInventoryItems(snap.docs.map(d => ({id: d.id, ...d.data()} as InventoryItem)))
@@ -79,7 +86,7 @@ export function AddonsSettings({ store }: { store: Store }) {
             unsubStoreAddons();
             unsubKitchenLocations();
         }
-    }, [store.id]);
+    }, [store?.id]);
 
     const filteredStoreAddons = useMemo(() => {
         return storeAddons.filter(item => 
@@ -194,28 +201,36 @@ export function AddonsSettings({ store }: { store: Store }) {
                         <TableBody>
                             {filteredStoreAddons.map(item => (
                                 <TableRow key={item.id}>
-                                    <TableCell className="font-medium flex items-center gap-2">
-                                        <div className="w-10 h-10 rounded-md bg-muted relative">
+                                    <TableCell className="font-medium flex items-center gap-2 py-1.5">
+                                        <div className="w-8 h-8 rounded-md bg-muted relative flex-shrink-0">
                                         {item.imageUrl && (
                                             <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" className="rounded-md" />
                                         )}
                                         </div>
-                                        {item.name}
+                                        <span className="truncate">{item.name}</span>
                                     </TableCell>
-                                    <TableCell><Badge variant="outline">{item.kitchenLocationName || 'N/A'}</Badge></TableCell>
-                                    <TableCell>₱{(item.price || 0).toFixed(2)}</TableCell>
-                                    <TableCell>
+                                    <TableCell className="py-1.5"><Badge variant="outline">{item.kitchenLocationName || 'N/A'}</Badge></TableCell>
+                                    <TableCell className="py-1.5">₱{(item.price || 0).toFixed(2)}</TableCell>
+                                    <TableCell className="py-1.5">
                                         <Badge variant={item.isEnabled ? 'default' : 'outline'}>
                                             {item.isEnabled ? "Enabled" : "Disabled"}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" onClick={() => { setSelectedAddon(item); setEditDialogOpen(true); }}>
-                                            <Edit className="h-4 w-4"/>
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(item)}>
-                                            {item.isEnabled ? <PowerOff className="h-4 w-4 text-destructive" /> : <Power className="h-4 w-4" />}
-                                        </Button>
+                                    <TableCell className="text-right py-1.5">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon"><MoreHorizontal /></Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent>
+                                                <DropdownMenuItem onSelect={() => { setSelectedAddon(item); setEditDialogOpen(true); }}>
+                                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => handleToggleEnabled(item)}>
+                                                    {item.isEnabled ? <PowerOff className="mr-2 h-4 w-4 text-destructive" /> : <Power className="mr-2 h-4 w-4" />}
+                                                    {item.isEnabled ? "Disable" : "Enable"}
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </TableCell>
                                 </TableRow>
                             ))}
