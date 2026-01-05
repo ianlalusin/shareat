@@ -63,6 +63,41 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     };
   }, [loading]);
 
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      if (!PUBLIC.includes(pathname)) {
+        router.replace("/");
+      }
+      return;
+    }
+
+    if (!appUser) {
+      // Still waiting for appUser, do nothing yet
+      return;
+    }
+
+    if (appUser.status === "needs_profile") {
+      if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+        router.replace("/signup");
+      }
+      return;
+    }
+
+    if (appUser.status !== "active") {
+      if (!PENDING_ALLOWED.includes(pathname)) {
+        router.replace("/pending");
+      }
+      return;
+    }
+    
+    // User is active and fully authenticated
+    if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname)) {
+      router.replace(roleHome(appUser.role));
+    }
+  }, [loading, user, appUser, pathname, router]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -70,65 +105,39 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+  
+  // Determine if the current page is the correct one, if not, show loader while redirecting
+  let shouldRenderChildren = false;
 
-  // User is not logged in
   if (!user) {
     if (PUBLIC.includes(pathname)) {
-      return <>{children}</>;
+      shouldRenderChildren = true;
     }
-    router.replace("/");
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <BrandLoader />
-      </div>
-    );
-  }
-
-  // User is logged in, but we are waiting for the appUser profile from Firestore
-  if (!appUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-         {stuck ? <StuckComponent /> : <BrandLoader />}
-      </div>
-    );
-  }
-
-  // User needs to complete their profile
-  if (appUser.status === "needs_profile") {
-    if (NEEDS_PROFILE_ALLOWED.includes(pathname)) {
-      return <>{children}</>;
+  } else if (appUser) {
+    if (appUser.status === "needs_profile") {
+      if (NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+        shouldRenderChildren = true;
+      }
+    } else if (appUser.status !== 'active') {
+       if (PENDING_ALLOWED.includes(pathname)) {
+        shouldRenderChildren = true;
+      }
+    } else { // Active user
+        if (!PUBLIC.includes(pathname) && !PENDING_ALLOWED.includes(pathname)) {
+            shouldRenderChildren = true;
+        }
     }
-    router.replace("/signup");
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <BrandLoader />
-      </div>
-    );
   }
 
-  // User is pending or disabled
-  if (appUser.status && appUser.status !== "active") {
-    if (PENDING_ALLOWED.includes(pathname)) {
-      return <>{children}</>;
-    }
-    router.replace("/pending");
-     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <BrandLoader />
-      </div>
-    );
-  }
-  
-  // User is active and fully authenticated
-  if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname)) {
-    router.replace(roleHome(appUser.role));
-     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <BrandLoader />
-      </div>
-    );
+
+  if (shouldRenderChildren) {
+    return <>{children}</>;
   }
 
-  // If none of the above conditions met, render the requested page
-  return <>{children}</>;
+  // Fallback to loader while redirect effect runs
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <BrandLoader />
+    </div>
+  );
 }
