@@ -27,9 +27,12 @@ import { useRouter } from 'next/navigation';
 
 type PopoverTriggerProps = React.ComponentPropsWithoutRef<typeof PopoverTrigger>
 
-interface StoreSwitcherProps extends PopoverTriggerProps {}
+interface StoreSwitcherProps extends PopoverTriggerProps {
+  variant?: "desktop" | "mobileSheet";
+  onSelected?: () => void;
+}
 
-export function StoreSwitcher({ className }: StoreSwitcherProps) {
+export function StoreSwitcher({ className, variant = "desktop", onSelected }: StoreSwitcherProps) {
   const { appUser } = useAuthContext();
   const { activeStore, allowedStores, setActiveStore, loading } = useStoreContext();
   const router = useRouter();
@@ -47,6 +50,7 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
             title: "Store Switched",
             description: `You are now managing ${selectedStore?.name}.`,
         });
+        onSelected?.();
     } catch (error) {
         toast({
             variant: 'destructive',
@@ -59,6 +63,7 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
   const handleCreateStore = () => {
     setOpen(false);
     router.push('/admin/stores');
+    onSelected?.();
   };
   
   if (loading || !appUser || allowedStores.length === 0) {
@@ -80,12 +85,33 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
 
   // Hide switcher if there's only one store and the user isn't an admin
   // who might need to create more.
-  if (allowedStores.length <= 1 && appUser.role !== 'admin') {
+  if (allowedStores.length <= 1 && appUser.role !== 'admin' && variant === 'desktop') {
       return null;
+  }
+  
+  if (variant === "mobileSheet") {
+    return (
+       <div className={cn("w-full", className)}>
+         <label className="text-xs text-white/80">Store</label>
+         <select
+           className="mt-2 w-full rounded-md bg-white text-black px-3 py-2"
+           value={activeStore?.id ?? ""}
+           onChange={(e) => {
+             const id = e.target.value;
+             if (!id) return;
+             handleStoreSelect(id);
+           }}
+         >
+           {allowedStores.map(s => (
+             <option key={s.id} value={s.id}>{s.name}</option>
+           ))}
+         </select>
+       </div>
+     );
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -100,9 +126,7 @@ export function StoreSwitcher({ className }: StoreSwitcherProps) {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-          className="w-[200px] p-0 z-[9999]"
-          onPointerDownCapture={(e) => e.stopPropagation()}
-          onClickCapture={(e) => e.stopPropagation()}
+          className="w-[200px] p-0"
       >
         <Command>
           <CommandList>

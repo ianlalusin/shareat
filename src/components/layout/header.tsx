@@ -9,8 +9,10 @@ import { PanelLeft } from 'lucide-react'
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
+import { useState } from 'react'
 
 export default function Header({ user }: { user: User }) {
+  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
   return (
     <header className={cn(
       "fixed top-0 z-50 flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6",
@@ -33,7 +35,7 @@ export default function Header({ user }: { user: User }) {
         <UserNav user={user} />
         
         {/* Mobile Navigation Trigger */}
-        <Sheet>
+        <Sheet open={isMobileSheetOpen} onOpenChange={setIsMobileSheetOpen}>
           <SheetTrigger asChild>
             <Button size="icon" variant="outline" className="md:hidden bg-destructive hover:bg-destructive/90 text-destructive-foreground shrink-0">
               <PanelLeft className="h-5 w-5" />
@@ -53,13 +55,9 @@ export default function Header({ user }: { user: User }) {
               </SheetClose>
                <SheetTitle className="text-white">SharEat Hub</SheetTitle>
             </SheetHeader>
-             <div
-                className="p-4 border-y border-white/20"
-                onPointerDownCapture={(e) => e.stopPropagation()}
-                onClickCapture={(e) => e.stopPropagation()}
-             >
-                <StoreSwitcher />
-             </div>
+            <div className="p-4 border-y border-white/20">
+                <StoreSwitcher variant="mobileSheet" onSelected={() => setIsMobileSheetOpen(false)} />
+            </div>
             <nav className="grid gap-6 text-lg font-medium p-4">
               <MainNav role={user.role} isMobile={true} />
             </nav>
