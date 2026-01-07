@@ -59,6 +59,14 @@
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "servedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "packages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "isArchived", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
