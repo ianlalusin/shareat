@@ -4,7 +4,17 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  setDoc,
+  updateDoc,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
@@ -14,6 +24,17 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Flavor, Store, StoreFlavor } from "@/lib/types";
+
+function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
+  const data = d.data() ?? {};
+  return {
+    id: d.id,
+    flavorId: (data.flavorId as string) ?? d.id,
+    flavorName: (data.flavorName as string) ?? (data.name as string) ?? "",
+    isEnabled: typeof data.isEnabled === "boolean" ? data.isEnabled : true,
+    sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : 0,
+  };
+}
 
 export function StoreFlavorsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -48,7 +69,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
 
         const unsubStore = onSnapshot(collection(db, "stores", store.id, "storeFlavors"), (snap) => {
             const map = new Map<string, StoreFlavor>();
-            snap.forEach(doc => map.set(doc.id, {id: doc.id, ...doc.data()} as StoreFlavor));
+            snap.forEach(doc => map.set(doc.id, coerceStoreFlavor(doc)));
             setStoreFlavors(map);
         });
 
