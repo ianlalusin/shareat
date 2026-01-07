@@ -2,11 +2,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { Store } from "@/lib/types";
+import type { Store, Package } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff, Check, X } from "lucide-react";
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs, writeBatch, setDoc, deleteDoc } from "firebase/firestore";
+import { Loader, Edit, Power, PowerOff, Check, X, RefreshCw, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "@/components/manager/store-settings/_utils/isScheduleActiveNow";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
 export function StorePackagesSettings({ store }: { store: Store }) {
@@ -25,7 +26,8 @@ export function StorePackagesSettings({ store }: { store: Store }) {
     const { toast } = useToast();
     const { confirm, Dialog } = useConfirmDialog();
 
-    const [packages, setPackages] = useState<StorePackage[]>([]);
+    const [globalPackages, setGlobalPackages] = useState<Package[]>([]);
+    const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     const [refills, setRefills] = useState<StoreRefill[]>([]);
     const [flavors, setFlavors] = useState<StoreFlavor[]>([]);
@@ -39,14 +41,15 @@ export function StorePackagesSettings({ store }: { store: Store }) {
     useEffect(() => {
         const unsubs: (()=>void)[] = [];
         
+        unsubs.push(onSnapshot(query(collection(db, "packages"), where("isActive", "==", true)), (snap) => {
+            setGlobalPackages(snap.docs.map(d => d.data() as Package));
+        }));
+
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storePackages"), orderBy("sortOrder", "asc")), (snapshot) => {
-            setPackages(snapshot.docs.map(doc => ({ ...doc.data() } as StorePackage)));
+            setStorePackages(snapshot.docs.map(doc => ({ ...doc.data() } as StorePackage)));
         }));
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "kitchenLocations"), where("isActive", "==", true)), (snapshot) => {
             setKitchenLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenLocation)));
-        }, (error) => {
-            console.error("Failed to load kitchen locations:", error);
-            toast({ variant: "destructive", title: "Error", description: "Could not fetch kitchen locations." });
         }));
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storeRefills"), where("isEnabled", "==", true)), (snapshot) => {
             setRefills(snapshot.docs.map(doc => ({ ...doc.data() } as StoreRefill)));
@@ -55,7 +58,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
             setFlavors(snapshot.docs.map(doc => ({ ...doc.data() } as StoreFlavor)));
         }));
         
-        // Fetch all schedules at once from the store's subcollection
         const schedulesQuery = query(collection(db, "stores", store.id, "menuSchedules"), where("isActive", "==", true));
         unsubs.push(onSnapshot(schedulesQuery, (snapshot) => {
             const schedulesMap = new Map<string, MenuSchedule>();
@@ -69,15 +71,20 @@ export function StorePackagesSettings({ store }: { store: Store }) {
 
     const filteredPackages = useMemo(() => {
         if (!availableNowFilter) {
-            return packages;
+            return storePackages;
         }
-        return packages.filter(pkg => {
+        return storePackages.filter(pkg => {
             if (!pkg.menuScheduleId) return true; // Always available if no schedule
             const schedule = schedules.get(pkg.menuScheduleId);
             if (!schedule) return false; // Fail closed if schedule not found yet.
             return isScheduleActiveNow(schedule);
         });
-    }, [packages, schedules, availableNowFilter]);
+    }, [storePackages, schedules, availableNowFilter]);
+    
+    const availableGlobalPackages = useMemo(() => {
+        const storePackageIds = new Set(storePackages.map(p => p.packageId));
+        return globalPackages.filter(p => !storePackageIds.has(p.id));
+    }, [globalPackages, storePackages]);
 
     const handleOpenDialog = (pkg: StorePackage) => {
         setEditingPackage(pkg);
@@ -113,61 +120,130 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         await logActivity(appUser, `store_package_${newStatus ? 'enabled' : 'disabled'}`, `${pkg.packageName} was ${newStatus ? 'enabled' : 'disabled'}`);
     };
 
+    const handleAddPackage = async (gPackage: Package) => {
+        if (!appUser) return;
+        const docRef = doc(db, "stores", store.id, "storePackages", gPackage.id);
+        
+        try {
+             const newStorePackage: StorePackage = {
+                packageId: gPackage.id,
+                packageName: gPackage.name,
+                isEnabled: false, // Default to disabled
+                pricePerHead: 0,
+                sortOrder: 1000,
+                kitchenLocationId: null,
+                kitchenLocationName: null,
+                refillsAllowed: gPackage.allowedRefillIds || [],
+                flavorsAllowed: [],
+                menuScheduleId: null,
+            };
+            await setDoc(docRef, newStorePackage);
+            toast({ title: "Package Added", description: `"${gPackage.name}" added to your store. Please edit to set a price and enable it.`});
+            await logActivity(appUser, 'store_package_added', `Added package: ${gPackage.name}`);
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: "Failed to Add", description: error.message });
+        }
+    };
+
+    const handleDelete = async (pkg: StorePackage) => {
+        if (!appUser) return;
+        if (!(await confirm({ 
+            title: `Delete ${pkg.packageName}?`,
+            description: "This will permanently remove the package from this store's menu. This cannot be undone.",
+            confirmText: "Yes, Delete",
+            destructive: true,
+        }))) return;
+
+        const docRef = doc(db, "stores", store.id, "storePackages", pkg.packageId);
+        try {
+            await deleteDoc(docRef);
+            toast({ title: "Package Deleted" });
+            await logActivity(appUser, 'store_package_deleted', `Deleted package: ${pkg.packageName}`);
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
+        }
+    };
+
+
     if (isLoading) return <Loader className="animate-spin" />;
 
     return (
         <>
-            <Card>
-                <CardHeader>
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <CardTitle>Store Packages</CardTitle>
-                            <CardDescription>Manage packages available for sale in this store.</CardDescription>
+            <div className="grid md:grid-cols-3 gap-6">
+                <Card className="md:col-span-2">
+                    <CardHeader>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <CardTitle>Store Packages</CardTitle>
+                                <CardDescription>Manage packages available for sale in this store.</CardDescription>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Switch id="available-now-filter" checked={availableNowFilter} onCheckedChange={setAvailableNowFilter}/>
+                                <Label htmlFor="available-now-filter">Available Now</Label>
+                            </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                            <Switch id="available-now-filter" checked={availableNowFilter} onCheckedChange={setAvailableNowFilter}/>
-                            <Label htmlFor="available-now-filter">Available Now</Label>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Sort</TableHead>
-                                <TableHead>Package Name</TableHead>
-                                <TableHead>Price/Head</TableHead>
-                                <TableHead>Schedule</TableHead>
-                                <TableHead>Enabled</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredPackages.map(pkg => (
-                                <TableRow key={pkg.packageId} className={!pkg.isEnabled ? "text-muted-foreground" : ""}>
-                                    <TableCell>{pkg.sortOrder}</TableCell>
-                                    <TableCell className="font-medium">{pkg.packageName}</TableCell>
-                                    <TableCell>₱{pkg.pricePerHead.toFixed(2)}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className="font-normal">
-                                            {schedules.get(pkg.menuScheduleId || "")?.name || "Always On"}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        {pkg.isEnabled ? <Check className="text-green-500"/> : <X className="text-destructive"/>}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(pkg)}><Edit className="h-4 w-4" /></Button>
-                                        <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(pkg)}>
-                                            {pkg.isEnabled ? <PowerOff className="h-4 w-4 text-destructive" /> : <Power className="h-4 w-4" />}
-                                        </Button>
-                                    </TableCell>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Package Name</TableHead>
+                                    <TableHead>Price/Head</TableHead>
+                                    <TableHead>Schedule</TableHead>
+                                    <TableHead>Enabled</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredPackages.map(pkg => (
+                                    <TableRow key={pkg.packageId} className={!pkg.isEnabled ? "text-muted-foreground" : ""}>
+                                        <TableCell className="font-medium">{pkg.packageName}</TableCell>
+                                        <TableCell>₱{pkg.pricePerHead.toFixed(2)}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className="font-normal">
+                                                {schedules.get(pkg.menuScheduleId || "")?.name || "Always On"}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            {pkg.isEnabled ? <Check className="text-green-500"/> : <X className="text-destructive"/>}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(pkg)}><Edit className="h-4 w-4" /></Button>
+                                            {appUser?.role === 'admin' && (
+                                                <Button variant="ghost" size="icon" onClick={() => handleDelete(pkg)}>
+                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                </Button>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Add from Global Packages</CardTitle>
+                        <CardDescription>Select global packages to make them available in this store.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-96">
+                            {availableGlobalPackages.length > 0 ? (
+                                <div className="space-y-2">
+                                    {availableGlobalPackages.map(gPackage => (
+                                        <div key={gPackage.id} className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
+                                            <span className="font-medium">{gPackage.name}</span>
+                                            <Button size="sm" onClick={() => handleAddPackage(gPackage)}>Add</Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-center text-sm text-muted-foreground py-10">All global packages have been added.</p>
+                            )}
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
+            </div>
             {isDialogOpen && editingPackage && (
                 <StorePackageEditDialog
                     isOpen={isDialogOpen}
