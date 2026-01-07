@@ -138,7 +138,7 @@ export function AddonsSettings({ store }: { store: Store }) {
                 sortOrder: 1000,
                 kitchenLocationId: null,
                 kitchenLocationName: null,
-                imageUrl: product.imageUrl || null,
+                imageUrl: product.imageUrl ?? undefined,
             };
 
             await setDoc(docRef, {

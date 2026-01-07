@@ -26,11 +26,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     const [editingLocation, setEditingLocation] = useState<KitchenLocation | null>(null);
 
     useEffect(() => {
-        if (!store?.id) {
-            setIsLoading(false);
-            setLocations([]);
-            return;
-        }
         const locationsRef = collection(db, "stores", store.id, "kitchenLocations");
         const q = query(locationsRef, orderBy("sortOrder", "asc"), orderBy("name", "asc"));
         
@@ -40,7 +35,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
         });
         
         return () => unsubscribe();
-    }, [store?.id]);
+    }, [store.id]);
 
     const handleOpenDialog = (location: KitchenLocation | null = null) => {
         setEditingLocation(location);
@@ -53,7 +48,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     }
 
     const handleSave = async (data: Partial<Omit<KitchenLocation, 'id' | 'createdAt' | 'updatedAt'>>) => {
-        if (!appUser || !store) return;
+        if (!appUser) return;
         const maxSortOrder = locations.reduce((max, loc) => Math.max(max, loc.sortOrder || 0), 0);
 
         try {
@@ -80,7 +75,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
     };
     
     const handleToggleActive = async (location: KitchenLocation) => {
-        if (!appUser || !store) return;
+        if (!appUser) return;
         const newStatus = !location.isActive;
         const action = newStatus ? "Activate" : "Deactivate";
         
@@ -90,17 +85,6 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
         await updateDoc(docRef, { isActive: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Status Updated" });
     };
-
-    if (!store) {
-        return (
-            <Card>
-                <CardHeader><CardTitle>Kitchen Locations</CardTitle></CardHeader>
-                <CardContent>
-                    <p className="text-muted-foreground text-center">Please select a store to manage kitchen locations.</p>
-                </CardContent>
-            </Card>
-        );
-    }
 
     return (
         <>

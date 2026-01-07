@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -42,10 +41,21 @@ export function TablesSettings({ store }: { store: Store }) {
 
     useEffect(() => {
         const tablesRef = collection(db, "stores", store.id, "tables");
-        const q = query(tablesRef, orderBy("tableNumber", "asc"));
+        const q = query(tablesRef);
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setTables(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StoreTable)));
+            const fetchedTables = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StoreTable));
+            // Sort numerically on the client side
+            fetchedTables.sort((a, b) => {
+                const numA = parseInt(a.tableNumber, 10);
+                const numB = parseInt(b.tableNumber, 10);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return numA - numB;
+                }
+                // Fallback for non-numeric table numbers
+                return a.tableNumber.localeCompare(b.tableNumber);
+            });
+            setTables(fetchedTables);
             setIsLoading(false);
         });
         
@@ -62,7 +72,6 @@ export function TablesSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "tables", tableId);
         try {
             await updateDoc(docRef, { displayName: editingName, updatedAt: serverTimestamp() });
-            await logActivity(appUser, "table_renamed", `Renamed table ${tableId} to ${editingName}`);
             toast({ title: "Table Renamed" });
         } catch(e: any) {
             toast({ variant: "destructive", title: "Save Failed", description: e.message });
@@ -81,7 +90,6 @@ export function TablesSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "tables", table.id);
         await updateDoc(docRef, { isActive: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Status Updated" });
-        await logActivity(appUser, `table_${action.toLowerCase()}`, `${action}d table: ${table.displayName}`);
     };
 
     const handleGenerateTables = async () => {
@@ -146,7 +154,6 @@ export function TablesSettings({ store }: { store: Store }) {
         
         try {
             if (batchCount > 0) await batch.commit();
-            await logActivity(appUser, "tables_generated", `Generated tables from ${startNum} to ${endNum}`);
             toast({ title: "Tables Generated Successfully" });
         } catch (error: any) {
             toast({ variant: "destructive", title: "Generation Failed", description: error.message });

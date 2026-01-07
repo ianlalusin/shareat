@@ -11,7 +11,6 @@ import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp,
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import { Label } from "../ui/label";
@@ -193,7 +192,6 @@ function POSContent({
         batch.set(ticketRef, ticketPayload);
 
         await batch.commit();
-        await logActivity(appUser, "refill_ordered", `Ordered ${itemName}`, { notes: finalNotes });
         toast({ title: "Refill Ordered", description: `${itemName} sent to kitchen.`});
         handleReset();
     } catch(e: any) {
@@ -340,5 +338,3 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
-
-    

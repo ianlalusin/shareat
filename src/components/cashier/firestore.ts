@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -264,18 +263,6 @@ export async function updateKitchenTicketStatus(
         ticketUpdate.cancelReason = reason || 'Voided by cashier';
     }
     batch.update(ticketRef, stripUndefined(ticketUpdate));
-
-    // 2. Log the activity
-    const logRef = doc(collection(db, "stores", storeId, "activityLogs"));
-    batch.set(logRef, stripUndefined({
-        type: 'cashier_ticket_override',
-        action: newStatus,
-        sessionId,
-        ticketId: ticketId,
-        performedByUid: user.uid,
-        reason: reason || null,
-        createdAt: serverTimestamp()
-    }));
 
     await batch.commit();
 }

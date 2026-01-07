@@ -15,7 +15,8 @@ import { Loader2, Receipt } from "lucide-react";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { ActiveSessionsGrid, type ActiveSession } from "@/components/cashier/active-sessions-grid";
 import { PastSessionsCard, type PastSession } from "@/components/cashier/past-sessions-card";
-import { isScheduleActiveNow } from "@/components/manager/store-settings/utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
+
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
 
