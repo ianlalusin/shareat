@@ -12,6 +12,10 @@ import { cn } from "@/lib/utils";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { BillableItemActionDialog } from "./billable-item-action-dialog";
 import type { OrderItemStatus, BillableItem, GroupedBillableItem, Discount, PendingSession } from "@/lib/types";
+import { VoidItemDialog } from "./VoidItemDialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
+import { format } from "date-fns";
+import { toJsDate } from "@/lib/utils/date";
 
 interface BillableItemsProps {
   groupedItems: GroupedBillableItem[];
@@ -22,6 +26,7 @@ interface BillableItemsProps {
   onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
   onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>;
+  onVoidItem: (ticketId: string, reason: string, note?: string) => void;
   isLocked?: boolean;
 }
 
@@ -33,6 +38,7 @@ function GroupedBillableItemRow({
     onApplyDiscount,
     onApplyFree,
     onStatusUpdate,
+    onVoidItem,
     discounts,
     isLocked 
 }: { 
@@ -41,12 +47,13 @@ function GroupedBillableItemRow({
     onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void,
     onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
     onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>,
+    onVoidItem: (ticketId: string, reason: string, note?: string) => void,
     discounts: Discount[],
     isLocked?: boolean 
 }) {
     const [action, setAction] = useState<ActionType | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
-    const { confirm, Dialog } = useConfirmDialog();
+    const [isVoiding, setIsVoiding] = useState(false);
 
     const getStatusVariant = (status: OrderItemStatus) => {
         switch(status) {
@@ -59,30 +66,6 @@ function GroupedBillableItemRow({
             default: return 'secondary';
         }
     }
-    
-    const handleStatusUpdate = async (newStatus: 'served' | 'void' | 'cancelled') => {
-        if (isProcessing) return;
-
-        if (newStatus === 'cancelled' || newStatus === 'void') {
-            const confirmed = await confirm({
-                title: `Cancel item: ${group.itemName}?`,
-                description: 'This action cannot be undone.',
-                confirmText: "Yes, cancel item",
-                destructive: true,
-            });
-            if (!confirmed) return;
-        }
-
-        setIsProcessing(true);
-        try {
-            // Apply status update to all tickets in the group
-            for (const ticketId of group.ticketIds) {
-                 await onStatusUpdate(ticketId, newStatus, 'Voided by cashier');
-            }
-        } finally {
-            setIsProcessing(false);
-        }
-    };
     
     const canPerformAction = (group.status === 'preparing' || group.status === 'ready');
     const canDiscount = group.servedQty > 0 && !group.isFree;
@@ -106,6 +89,12 @@ function GroupedBillableItemRow({
         }
     }
 
+    const handleVoidClick = () => {
+      // For now, voiding one item from a group voids the first ticket ID.
+      // A more complex implementation could allow selecting which one.
+      setIsVoiding(true);
+    }
+
     return (
         <>
             <div className="flex flex-col border-b last:border-b-0">
@@ -127,36 +116,33 @@ function GroupedBillableItemRow({
                          {group.isFree && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free</Badge>}
                          {group.lineDiscountValue > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted</Badge>}
                     </div>
-                    {!isLocked && !isServed && (
+                    {!isLocked && (
                         <div className="flex items-center gap-2">
-                            {canPerformAction && (
+                            {isServed ? (
                                 <>
-                                    <Button variant="ghost" size="icon" className="text-green-600 h-8 w-8" onClick={() => handleStatusUpdate('served')} disabled={isProcessing}>
-                                        {isProcessing ? <Loader2 className="animate-spin"/> : <Check />}
+                                    <Button variant="outline" size="sm" onClick={() => setAction("discount")} disabled={!canDiscount}>
+                                        <Percent className="mr-2"/>
+                                        Discount
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleStatusUpdate('cancelled')} disabled={isProcessing}>
-                                        {isProcessing ? <Loader2 className="animate-spin"/> : <X className="h-4 w-4" />}
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={handleFreeClick}
+                                        disabled={!canFree && !group.isFree}
+                                        className={cn(group.isFree && 'bg-yellow-400 text-black hover:bg-yellow-400/90')}
+                                    >
+                                        <Gift className="mr-2"/>
+                                        Free
+                                    </Button>
+                                     <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={handleVoidClick}>
+                                        <X className="h-4 w-4" />
                                     </Button>
                                 </>
+                            ) : (
+                                <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={handleVoidClick} disabled={isProcessing}>
+                                    {isProcessing ? <Loader2 className="animate-spin"/> : <X className="h-4 w-4" />}
+                                </Button>
                             )}
-                        </div>
-                    )}
-                    {!isLocked && isServed && (
-                        <div className="flex items-center gap-2">
-                             <Button variant="outline" size="sm" onClick={() => setAction("discount")} disabled={!canDiscount}>
-                                <Percent className="mr-2"/>
-                                Discount
-                            </Button>
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={handleFreeClick}
-                                disabled={!canFree && !group.isFree}
-                                className={cn(group.isFree && 'bg-yellow-400 text-black hover:bg-yellow-400/90')}
-                            >
-                                <Gift className="mr-2"/>
-                                Free
-                            </Button>
                         </div>
                     )}
                 </div>
@@ -172,7 +158,18 @@ function GroupedBillableItemRow({
                     onApplyFree={(ticketIds, qty) => onApplyFree(ticketIds, qty, false)}
                 />
             )}
-            {Dialog}
+            {isVoiding && (
+                <VoidItemDialog
+                    isOpen={isVoiding}
+                    onClose={() => setIsVoiding(false)}
+                    itemName={group.itemName}
+                    onConfirm={(reason, note) => {
+                        // Apply void to the first available ticket in the group
+                        const ticketToVoid = group.ticketIds[0];
+                        onVoidItem(ticketToVoid, reason, note);
+                    }}
+                />
+            )}
         </>
     )
 }
@@ -186,14 +183,15 @@ export function BillableItems({
     onApplyDiscount, 
     onApplyFree, 
     onStatusUpdate, 
+    onVoidItem,
     isLocked = false 
 }: BillableItemsProps) {
   
-  const activeItems = groupedItems.filter(item => item.status !== 'void' && item.status !== 'cancelled');
-  const voidedItems = groupedItems.filter(item => item.status === 'void' || item.status === 'cancelled');
+  const activeItems = groupedItems.filter(item => !item.isVoided && item.status !== 'cancelled');
+  const voidedItems = groupedItems.filter(item => item.isVoided);
 
   const packageGroups = activeItems.filter(item => item.type === 'package');
-  const addonGroups = activeItems.filter(item => item.type === 'addon');
+  const addonGroups = activeItems.filter(item => item.type === 'addon' || item.type === 'refill');
 
   return (
     <>
@@ -220,6 +218,7 @@ export function BillableItems({
                                     onApplyDiscount={onApplyDiscount}
                                     onApplyFree={onApplyFree}
                                     onStatusUpdate={onStatusUpdate}
+                                    onVoidItem={onVoidItem}
                                     discounts={discounts}
                                     isLocked={isLocked}
                                 />
@@ -230,7 +229,7 @@ export function BillableItems({
 
                 {addonGroups.length > 0 && (
                      <div>
-                        <h3 className="text-sm font-semibold my-2 px-4">Add-ons</h3>
+                        <h3 className="text-sm font-semibold my-2 px-4">Add-ons & Refills</h3>
                          <div className="divide-y border-t">
                             {addonGroups.map(group => (
                                 <GroupedBillableItemRow 
@@ -240,12 +239,41 @@ export function BillableItems({
                                     onApplyDiscount={onApplyDiscount}
                                     onApplyFree={onApplyFree}
                                     onStatusUpdate={onStatusUpdate}
+                                    onVoidItem={onVoidItem}
                                     discounts={discounts}
                                     isLocked={isLocked}
                                 />
                             ))}
                          </div>
                     </div>
+                )}
+
+                {voidedItems.length > 0 && (
+                     <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="voided-items" className="border-t">
+                            <AccordionTrigger className="px-4 text-muted-foreground">
+                                Voided Items ({voidedItems.length})
+                            </AccordionTrigger>
+                            <AccordionContent className="px-4">
+                                <div className="divide-y">
+                                {voidedItems.map(item => (
+                                    <div key={item.key} className="py-2">
+                                        <div className="flex justify-between">
+                                            <p className="font-medium text-muted-foreground line-through">{item.itemName}</p>
+                                            <p className="text-muted-foreground line-through">₱{item.unitPrice.toFixed(2)}</p>
+                                        </div>
+                                        <p className="text-xs text-destructive">
+                                            Voided by {item.voidedByUid?.substring(0, 6)} at {item.voidedAt ? format(toJsDate(item.voidedAt)!, 'p') : ''}
+                                        </p>
+                                        <p className="text-xs text-destructive italic">
+                                            Reason: {item.voidReason}{item.voidNote ? ` - ${item.voidNote}` : ''}
+                                        </p>
+                                    </div>
+                                ))}
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                     </Accordion>
                 )}
             </div>
         </CardContent>

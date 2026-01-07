@@ -139,7 +139,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const groups: Record<string, GroupedBillableItem> = {};
     mergedItems.forEach(item => {
         const discountKey = item.isFree ? 'free' : `${item.lineDiscountType}-${item.lineDiscountValue}`;
-        const key = `${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discountKey}`;
+        const voidKey = item.isVoided ? 'voided' : 'active';
+        const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discountKey}`;
         
         if (!groups[key]) {
             groups[key] = { ...item, key, isGrouped: false, totalQty: 0, servedQty: 0, pendingQty: 0, cancelledQty: 0, ticketIds: [], createdAtMin: item.createdAt };
@@ -245,7 +246,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }
 
   const allBillableItems = Array.from(billables.values());
-  const allServedItems: BillableItem[] = allBillableItems.filter(billable => (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled'))).map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
+  const allServedItems: BillableItem[] = allBillableItems
+    .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
+    .map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
   const subtotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => total + (item.qty * item.unitPrice), 0);
   const lineDiscountsTotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => {

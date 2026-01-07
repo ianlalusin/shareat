@@ -310,7 +310,7 @@ function buildAnalyticsV2(
   const billablesForRevenue = billables.filter(item => 
       (item.type === 'package' || item.type === 'addon') &&
       !item.isFree &&
-      item.status !== 'voided' &&
+      !item.isVoided &&
       item.status !== 'cancelled'
   );
 
@@ -330,7 +330,8 @@ function buildAnalyticsV2(
 
     if (item.type === 'package') {
         categoryName = "Packages";
-        itemKey = `pkg:${(item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
+        const normalizedItemName = (item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-');
+        itemKey = `pkg:${normalizedItemName}`;
     } else if (item.type === 'addon' && item.addonId) {
         const addonDetails = addonMap.get(item.addonId);
         categoryName = addonDetails?.category || "Uncategorized Addons";

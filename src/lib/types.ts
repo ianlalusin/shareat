@@ -111,6 +111,7 @@ export type StoreRefill = {
     kitchenLocationId: string | null;
     kitchenLocationName: string | null;
     flavorsAllowed?: string[] | null;
+    menuScheduleId?: string | null;
 };
 
 export type KitchenLocation = {
@@ -226,7 +227,8 @@ export type BillableItem = {
   createdAt: any; 
   updatedAt: any;
   createdByUid: string;
-  // Voiding fields
+  // Voiding fields (billing-only)
+  isVoided?: boolean;
   voidedAt?: Timestamp | null;
   voidedByUid?: string | null;
   voidReason?: string | null;
