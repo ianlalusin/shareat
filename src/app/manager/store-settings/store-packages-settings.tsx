@@ -16,7 +16,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "./_utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
