@@ -16,7 +16,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "@/components/manager/store-settings/_utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
@@ -41,7 +41,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         const unsubs: (()=>void)[] = [];
         
         unsubs.push(onSnapshot(query(collection(db, "packages"), where("isActive", "==", true), where("isArchived", "!=", true)), (snap) => {
-            setGlobalPackages(snap.docs.map(d => d.data() as Package));
+            setGlobalPackages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Package)));
         }));
 
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storePackages"), orderBy("sortOrder", "asc")), (snapshot) => {
