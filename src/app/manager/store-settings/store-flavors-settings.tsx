@@ -12,6 +12,8 @@ import {
   doc,
   setDoc,
   updateDoc,
+  serverTimestamp,
+  orderBy,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -28,11 +30,10 @@ import type { Flavor, Store, StoreFlavor } from "@/lib/types";
 function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
   const data = d.data() ?? {};
   return {
-    id: d.id,
     flavorId: (data.flavorId as string) ?? d.id,
     flavorName: (data.flavorName as string) ?? (data.name as string) ?? "",
     isEnabled: typeof data.isEnabled === "boolean" ? data.isEnabled : true,
-    sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : 0,
+    sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : 1000,
   };
 }
 
@@ -69,7 +70,9 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
 
         const unsubStore = onSnapshot(collection(db, "stores", store.id, "storeFlavors"), (snap) => {
             const map = new Map<string, StoreFlavor>();
-            snap.forEach(doc => map.set(doc.id, coerceStoreFlavor(doc)));
+            snap.forEach((d) => {
+                map.set(d.id, coerceStoreFlavor(d)); // key = doc.id (same as global flavor id)
+            });
             setStoreFlavors(map);
         });
 
