@@ -4,10 +4,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader, Edit, Save, PlusCircle } from "lucide-react";
+import { Loader, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Refill, Store, StoreRefill, KitchenLocation } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
 
 export function StoreRefillsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -34,13 +35,28 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             return;
         }
 
-        const unsubGlobal = onSnapshot(query(collection(db, "refills"), where("isActive", "==", true), where("isArchived", "==", false)), (snap) => {
-            setGlobalRefills(snap.docs.map(d => d.data() as Refill));
-        });
+        const unsubGlobal = onSnapshot(
+            query(
+                collection(db, "refills"), 
+                where("isActive", "==", true),
+                orderBy("name", "asc")
+            ), 
+            (snap) => {
+                const list = snap.docs
+                    .map((d) => ({ id: d.id, ...(d.data() as any) } as Refill))
+                    .filter((p) => (p as any).isArchived !== true);
+                setGlobalRefills(list);
+            },
+            (err) => {
+                console.error("refills query failed", err);
+                toast({ variant: "destructive", title: "Failed to load global refills" });
+                setGlobalRefills([]);
+            }
+        );
 
         const unsubStore = onSnapshot(collection(db, "stores", store.id, "storeRefills"), (snap) => {
             const map = new Map<string, StoreRefill>();
-            snap.forEach(doc => map.set(doc.id, doc.data() as StoreRefill));
+            snap.forEach(doc => map.set(doc.id, {id: doc.id, ...doc.data()} as StoreRefill));
             setStoreRefills(map);
         });
 
@@ -48,9 +64,12 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             setKitchenLocations(snap.docs.map(d => d.data() as KitchenLocation));
         });
 
-        setIsLoading(false);
+        Promise.all([getDocs(collection(db, "refills")), getDocs(collection(db, "stores", store.id, "storeRefills")), getDocs(query(collection(db, "stores", store.id, "kitchenLocations"), where("isActive", "==", true)))]).then(() => {
+            setIsLoading(false);
+        });
+        
         return () => { unsubGlobal(); unsubStore(); unsubKitchen(); }
-    }, [store?.id]);
+    }, [store?.id, toast]);
 
     const combinedRefills = useMemo(() => {
         const enabledRefills = new Set<string>();
@@ -58,24 +77,21 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             if (sr.isEnabled) enabledRefills.add(sr.refillId);
         });
 
-        return globalRefills
-            .filter(gr => enabledRefills.has(gr.id))
-            .map(gRefill => {
-                const sRefill = storeRefills.get(gRefill.id);
+        return Array.from(storeRefills.values())
+            .map(sRefill => {
                 return {
-                    refillId: gRefill.id,
-                    refillName: gRefill.name,
-                    isEnabled: sRefill?.isEnabled ?? false,
-                    sortOrder: sRefill?.sortOrder ?? 1000,
-                    kitchenLocationId: sRefill?.kitchenLocationId || null,
-                    kitchenLocationName: sRefill?.kitchenLocationName || null,
+                    ...sRefill,
+                    refillName: sRefill.refillName,
+                    isEnabled: sRefill.isEnabled,
+                    sortOrder: sRefill.sortOrder,
+                    kitchenLocationId: sRefill.kitchenLocationId || null,
+                    kitchenLocationName: sRefill.kitchenLocationName || null,
                 }
             }).sort((a,b) => a.sortOrder - b.sortOrder || a.refillName.localeCompare(b.refillName));
-    }, [globalRefills, storeRefills]);
+    }, [storeRefills]);
 
      const availableGlobalRefills = useMemo(() => {
-        const storeRefillIds = new Set(Array.from(storeRefills.values()).filter(sf => sf.isEnabled).map(sf => sf.refillId));
-        return globalRefills.filter(f => !storeRefillIds.has(f.id));
+        return globalRefills.filter(f => !storeRefills.has(f.id));
     }, [globalRefills, storeRefills]);
 
     const handleAddRefill = async (refill: Refill) => {
@@ -96,22 +112,15 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         }
     };
     
-    const handleToggleEnabled = async (refillId: string) => {
+    const handleToggleEnabled = async (refill: StoreRefill) => {
         if (!appUser || !store) return;
-        const sRefill = storeRefills.get(refillId);
-        const gRefill = globalRefills.find(f => f.id === refillId);
-        if (!gRefill) return;
+        const newStatus = !refill.isEnabled;
 
-        const docRef = doc(db, "stores", store.id, "storeRefills", refillId);
+        const docRef = doc(db, "stores", store.id, "storeRefills", refill.refillId);
         try {
-            await setDoc(docRef, {
-                refillId: gRefill.id,
-                refillName: gRefill.name,
-                isEnabled: !sRefill?.isEnabled,
-                sortOrder: sRefill?.sortOrder ?? 1000,
-                kitchenLocationId: sRefill?.kitchenLocationId ?? null,
-                kitchenLocationName: sRefill?.kitchenLocationName ?? null,
-            }, { merge: true });
+            await updateDoc(docRef, { 
+                isEnabled: newStatus,
+            });
             toast({ title: "Status Updated" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Update Failed", description: error.message });
@@ -145,7 +154,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         }
     };
 
-    if (isLoading) return <Loader className="animate-spin" />;
+    if (isLoading) return <Loader2 className="animate-spin" />;
 
     return (
         <div className="grid md:grid-cols-3 gap-6">
@@ -161,12 +170,13 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                 <TableHead>Refill</TableHead>
                                 <TableHead>Kitchen</TableHead>
                                 <TableHead>Sort</TableHead>
+                                <TableHead>Enabled</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {combinedRefills.map(refill => (
-                                <TableRow key={refill.refillId}>
+                                <TableRow key={refill.refillId} className={!refill.isEnabled ? "text-muted-foreground" : ""}>
                                     <TableCell className="font-medium">{refill.refillName}</TableCell>
                                     <TableCell>
                                         {editingId === refill.refillId ? (
@@ -196,6 +206,12 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                             refill.sortOrder
                                         )}
                                     </TableCell>
+                                    <TableCell>
+                                        <Switch 
+                                            checked={refill.isEnabled}
+                                            onCheckedChange={() => handleToggleEnabled(refill)}
+                                        />
+                                    </TableCell>
                                     <TableCell className="text-right">
                                         {editingId === refill.refillId ? (
                                             <>
@@ -206,9 +222,6 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                             <>
                                             <Button variant="ghost" size="icon" onClick={() => handleEdit(refill)}>
                                                 <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(refill.refillId)}>
-                                                <PowerOff className="h-4 w-4 text-destructive" />
                                             </Button>
                                             </>
                                         )}
