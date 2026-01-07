@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import type { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
@@ -16,6 +17,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Refill, Store, StoreRefill, KitchenLocation } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+
+function coerceStoreRefill(d: QueryDocumentSnapshot<DocumentData>): StoreRefill {
+  const data = d.data() ?? {};
+
+  return {
+    refillId: (data.refillId as string) ?? d.id,
+    refillName: (data.refillName as string) ?? (data.name as string) ?? "",
+    isEnabled: typeof data.isEnabled === "boolean" ? data.isEnabled : true,
+    sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : 1000,
+    kitchenLocationId: (data.kitchenLocationId as string) ?? null,
+    kitchenLocationName: (data.kitchenLocationName as string) ?? null,
+    flavorsAllowed: Array.isArray(data.flavorsAllowed) ? data.flavorsAllowed : [],
+  };
+}
 
 export function StoreRefillsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
@@ -59,7 +74,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
 
         const unsubStore = onSnapshot(collection(db, "stores", store.id, "storeRefills"), (snap) => {
             const map = new Map<string, StoreRefill>();
-            snap.forEach(doc => map.set(doc.id, {id: doc.id, ...doc.data()} as StoreRefill));
+            snap.forEach(doc => map.set(doc.id, coerceStoreRefill(doc)));
             setStoreRefills(map);
         });
 
@@ -255,4 +270,3 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         </div>
     );
 }
-
