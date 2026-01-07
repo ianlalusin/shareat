@@ -24,7 +24,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
     const { toast } = useToast();
 
-    const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+    const [inventoryItems, setInventoryItems] = useState<Product[]>([]);
     const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     
@@ -41,8 +41,13 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
 
         const unsubInventory = onSnapshot(
-            query(collection(db, "stores", store.id, "inventory"), where("category", "==", "Add-on")), 
-            (snap) => setInventoryItems(snap.docs.map(d => ({id: d.id, ...d.data()} as InventoryItem)))
+            query(collection(db, "products"), where("category", "==", "Add-on"), where("isActive", "==", true)), 
+            (snap) => {
+                 const list = snap.docs
+                    .map(d => ({id: d.id, ...d.data()} as Product))
+                    .filter(p => (p as any).isArchived !== true);
+                setInventoryItems(list);
+            }
         );
 
         const storeAddonsQuery = query(
@@ -99,7 +104,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     const availableInventoryItems = useMemo(() => {
         const storeAddonIds = new Set(storeAddons.map(s => s.id));
         return inventoryItems
-            .filter(item => item.productId && !storeAddonIds.has(item.productId));
+            .filter(item => item.id && !storeAddonIds.has(item.id));
     }, [inventoryItems, storeAddons]);
 
     const handleToggleEnabled = async (addon: StoreAddon) => {
@@ -115,28 +120,25 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
     };
     
-    const handleAddAddon = async (inventoryItem: InventoryItem) => {
-        if (!appUser || !inventoryItem.productId) return;
+    const handleAddAddon = async (product: Product) => {
+        if (!appUser || !product.id) return;
         
-        const addonId = inventoryItem.productId;
+        const addonId = product.id;
         const docRef = doc(db, "stores", store.id, "storeAddons", addonId);
 
         try {
-            const productDoc = await getDoc(doc(db, "products", addonId));
-            const imageUrl = productDoc.exists() ? productDoc.data().imageUrl : null;
-            
             const newAddonData: StoreAddon = {
                 id: addonId,
-                name: inventoryItem.name,
-                category: inventoryItem.subCategory,
-                uom: inventoryItem.uom,
-                price: inventoryItem.sellingPrice || 0,
+                name: product.name,
+                category: product.subCategory,
+                uom: product.uom,
+                price: 0, // Default price to 0
                 isEnabled: true,
                 isArchived: false,
                 sortOrder: 1000,
                 kitchenLocationId: null,
                 kitchenLocationName: null,
-                imageUrl: imageUrl,
+                imageUrl: product.imageUrl || null,
             };
 
             await setDoc(docRef, {
@@ -251,8 +253,8 @@ export function AddonsSettings({ store }: { store: Store }) {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Add from Inventory</CardTitle>
-                    <CardDescription>Add "Add-on" items from this store's inventory.</CardDescription>
+                    <CardTitle>Add from Global Products</CardTitle>
+                    <CardDescription>Add "Add-on" items from the global product library.</CardDescription>
                 </CardHeader>
                 <CardContent>
                      <ScrollArea className="h-96">
@@ -265,7 +267,7 @@ export function AddonsSettings({ store }: { store: Store }) {
                                 <Button size="sm" onClick={() => handleAddAddon(item)}>Add</Button>
                             </div>
                         )) : (
-                            <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" items from your inventory have been added.</p>
+                            <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" products have been added to this store.</p>
                         )}
                     </ScrollArea>
                 </CardContent>
