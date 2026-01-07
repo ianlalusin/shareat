@@ -2,17 +2,17 @@
 "use client";
 
 import { RoleGuard } from "@/components/guards/RoleGuard";
-import { KitchenLocationsSettings } from "./kitchen-locations-settings";
-import { TablesSettings } from "./tables-settings";
+import { KitchenLocationsSettings } from "@/components/manager/store-settings/kitchen-locations-settings";
+import { TablesSettings } from "@/components/manager/store-settings/tables-settings";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStoreContext } from "@/context/store-context";
 import { Loader } from "lucide-react";
-import { StorePackagesSettings } from "./store-packages-settings";
-import { SchedulesSettings } from "./schedules-settings";
-import { StoreFlavorsSettings } from "./store-flavors-settings";
-import { StoreRefillsSettings } from "./store-refills-settings";
+import { StorePackagesSettings } from "@/components/manager/store-settings/store-packages-settings";
+import { SchedulesSettings } from "@/components/manager/store-settings/schedules-settings";
+import { StoreFlavorsSettings } from "@/components/manager/store-settings/store-flavors-settings";
+import { StoreRefillsSettings } from "@/components/manager/store-settings/store-refills-settings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";

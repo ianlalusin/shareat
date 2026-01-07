@@ -14,17 +14,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import type { Store } from "@/lib/types";
-
-export type StoreTable = {
-    id: string; // T1, T2 etc.
-    code: string;
-    tableNumber: string;
-    displayName: string;
-    isActive: boolean;
-    status: 'available' | 'occupied' | 'reserved' | 'out_of_order';
-    currentSessionId: string | null;
-}
+import type { Store, StoreTable } from "@/lib/types";
 
 export function TablesSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
