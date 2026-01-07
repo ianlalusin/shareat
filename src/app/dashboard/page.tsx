@@ -185,7 +185,11 @@ export default function DashboardPage() {
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
     
-    // Pagination states
+    // State for all receipts in the date range (for stats)
+    const [rangeReceiptsAll, setRangeReceiptsAll] = useState<ReceiptType[]>([]);
+    const [isStatsLoading, setIsStatsLoading] = useState(true);
+
+    // Pagination states for the visible list
     const [liveReceipts, setLiveReceipts] = useState<ReceiptType[]>([]);
     const [olderReceipts, setOlderReceipts] = useState<ReceiptType[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -280,7 +284,7 @@ export default function DashboardPage() {
         return { start: s, end: e };
     }, [datePreset, customRange]);
 
-    // Live listener for the first page
+    // Live listener for the paginated receipt list
     useEffect(() => {
         if (!activeStore?.id) {
             setIsLoading(false);
@@ -323,6 +327,34 @@ export default function DashboardPage() {
         return () => unsubscribe();
     }, [activeStore?.id, start, end]);
 
+    // Listener for ALL receipts in the range (for stats)
+    useEffect(() => {
+        if (!activeStore?.id) {
+            setIsStatsLoading(false);
+            return;
+        }
+        setIsStatsLoading(true);
+
+        const qAll = query(
+            collection(db, "stores", activeStore.id, "receipts"),
+            where("createdAt", ">=", start),
+            where("createdAt", "<=", end)
+        );
+
+        const unsub = onSnapshot(qAll, (snap) => {
+            const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as ReceiptType));
+            setRangeReceiptsAll(all);
+            setIsStatsLoading(false);
+        }, (err) => {
+            console.error("Stats receipts listener failed:", err);
+            setRangeReceiptsAll([]);
+            setIsStatsLoading(false);
+        });
+
+        return () => unsub();
+    }, [activeStore?.id, start, end]);
+
+
     const loadMore = async () => {
         if (!activeStore || !lastDoc || loadingMore || !hasMore) return;
         setLoadingMore(true);
@@ -359,8 +391,8 @@ export default function DashboardPage() {
         }
     };
     
-    // Combine live and paginated receipts
-    const receipts = useMemo(() => {
+    // Combine live and paginated receipts for the list view
+    const paginatedReceipts = useMemo(() => {
         const byId = new Map<string, ReceiptType>();
         for (const r of liveReceipts) byId.set(r.id, r);
         for (const r of olderReceipts) if (!byId.has(r.id)) byId.set(r.id, r);
@@ -368,13 +400,13 @@ export default function DashboardPage() {
     }, [liveReceipts, olderReceipts]);
 
     const modeOptions = useMemo(() => {
-        const modes = new Set(receipts.map(r => r.sessionMode).filter(Boolean));
+        const modes = new Set(paginatedReceipts.map(r => r.sessionMode).filter(Boolean));
         return ["all", ...Array.from(modes).sort()];
-    }, [receipts]);
+    }, [paginatedReceipts]);
 
-    const filteredReceipts = useMemo(() => {
+    const applyFilters = useCallback((list: ReceiptType[]) => {
         const searchQuery = search.trim().toLowerCase();
-        return receipts.filter(r => {
+        return list.filter(r => {
             if (statusFilter !== 'all' && r.status !== statusFilter) return false;
             if (modeFilter !== 'all' && r.sessionMode !== modeFilter) return false;
             
@@ -393,7 +425,13 @@ export default function DashboardPage() {
             }
             return true;
         });
-    }, [receipts, search, statusFilter, modeFilter, activeMop]);
+    }, [search, statusFilter, modeFilter, activeMop]);
+
+    // Derived list for UI display
+    const filteredReceipts = useMemo(() => applyFilters(paginatedReceipts), [paginatedReceipts, applyFilters]);
+    
+    // Derived list for stats calculation
+    const statsReceipts = useMemo(() => applyFilters(rangeReceiptsAll), [rangeReceiptsAll, applyFilters]);
     
     // Auto-select logic
     useEffect(() => {
@@ -411,7 +449,7 @@ export default function DashboardPage() {
 
 
     const { stats, mopTotals } = useMemo(() => {
-        const finalReceipts = filteredReceipts.filter(r => r.status === 'final' && r.analytics?.v === 2);
+        const finalReceipts = statsReceipts.filter(r => r.status === 'final' && r.analytics?.v === 2);
 
         let totalSales = 0;
         let discountsTotal = 0;
@@ -462,7 +500,7 @@ export default function DashboardPage() {
             stats: { totalSales, receiptsCount, avgBasket, discountsTotal },
             mopTotals: mop,
         };
-    }, [filteredReceipts]);
+    }, [statsReceipts]);
 
     const recentReceipts = useMemo(() => {
        return filteredReceipts.map(r => ({
@@ -592,7 +630,7 @@ export default function DashboardPage() {
         toast({ title: "Exporting...", description: "Fetching all billable items for the selected range. This may take a moment." });
     
         // 1. Build Receipts Sheet
-        const receiptsRows = filteredReceipts.map(r => {
+        const receiptsRows = statsReceipts.map(r => {
             const a = r.analytics || {};
             const grandTotal = toNum(a.grandTotal);
             const discountsTotal = toNum(a.discountsTotal);
@@ -629,7 +667,7 @@ export default function DashboardPage() {
             return excluded.includes(lowerStatus);
         }
     
-        for (const receipt of filteredReceipts) {
+        for (const receipt of statsReceipts) {
             const sessionId = receipt.sessionId ?? receipt.id;
             const billablesRef = collection(db, `stores/${activeStore.id}/sessions/${sessionId}/billables`);
             const billablesSnap = await getDocs(query(billablesRef, orderBy("createdAt", "asc")));
@@ -720,7 +758,7 @@ export default function DashboardPage() {
                                 <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
                             </Popover>
                         </div>
-                        <Button variant="outline" size="sm" onClick={exportXlsx} disabled={filteredReceipts.length === 0}><Download />Export XLSX</Button>
+                        <Button variant="outline" size="sm" onClick={exportXlsx} disabled={statsReceipts.length === 0}><Download />Export XLSX</Button>
                     </div>
                 </PageHeader>
 
@@ -729,16 +767,16 @@ export default function DashboardPage() {
                 ) : (
                     <div className="space-y-6 mt-6">
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                            <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground font-bold">₱</span>} isLoading={isLoading} format="currency" />
-                            <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isLoading} />
-                            <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isLoading} format="currency" />
-                            <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isLoading} format="currency" />
+                            <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground font-bold">₱</span>} isLoading={isStatsLoading} format="currency" />
+                            <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isStatsLoading} />
+                            <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isStatsLoading} format="currency" />
+                            <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isStatsLoading} format="currency" />
                         </div>
                         
                         <div className="grid gap-6 md:grid-cols-2">
                              <Card>
                                 <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix tally={mopTotals} isLoading={isLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
+                                <CardContent><PaymentMix tally={mopTotals} isLoading={isStatsLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
                             <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
                         </div>
