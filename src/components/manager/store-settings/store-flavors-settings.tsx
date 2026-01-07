@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -30,7 +29,6 @@ import type { Flavor, Store, StoreFlavor } from "@/lib/types";
 function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
   const data = d.data() ?? {};
   return {
-    id: d.id,
     flavorId: (data.flavorId as string) ?? d.id,
     flavorName: (data.flavorName as string) ?? (data.name as string) ?? "",
     isEnabled: typeof data.isEnabled === "boolean" ? data.isEnabled : true,

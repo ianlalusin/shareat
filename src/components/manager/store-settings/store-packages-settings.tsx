@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
+import { StorePackageEditDialog } from "@/components/manager/store-settings/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
@@ -324,3 +324,5 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         </>
     );
 }
+
+    
