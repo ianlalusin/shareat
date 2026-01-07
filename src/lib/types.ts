@@ -222,10 +222,15 @@ export type BillableItem = {
   lineDiscountValue: number;
   isFree: boolean;
   notes?: string;
-  status?: OrderItemStatus; // Optional as it comes from a separate doc
-  createdAt: any; // Ideally Timestamp, but any for flexibility
+  status?: OrderItemStatus;
+  createdAt: any; 
   updatedAt: any;
   createdByUid: string;
+  // Voiding fields
+  voidedAt?: Timestamp | null;
+  voidedByUid?: string | null;
+  voidReason?: string | null;
+  voidNote?: string | null;
 };
 
 export type GroupedBillableItem = {

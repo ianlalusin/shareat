@@ -326,13 +326,18 @@ function buildAnalyticsV2(
 
     let categoryName = "Uncategorized";
     let itemName = item.itemName || 'Unknown Item';
+    let itemKey: string;
 
     if (item.type === 'package') {
         categoryName = "Packages";
+        itemKey = `pkg:${(item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
     } else if (item.type === 'addon' && item.addonId) {
         const addonDetails = addonMap.get(item.addonId);
         categoryName = addonDetails?.category || "Uncategorized Addons";
         itemName = addonDetails?.name || item.itemName;
+        itemKey = item.addonId;
+    } else {
+        itemKey = `other:${(item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
     }
 
     if (!salesByCategory[categoryName]) {
@@ -341,11 +346,11 @@ function buildAnalyticsV2(
     salesByCategory[categoryName].qty += qty;
     salesByCategory[categoryName].amount += netAmount;
 
-    if (!salesByItem[itemName]) {
-      salesByItem[itemName] = { qty: 0, amount: 0, categoryName };
+    if (!salesByItem[itemKey]) {
+      salesByItem[itemKey] = { qty: 0, amount: 0, categoryName };
     }
-    salesByItem[itemName].qty += qty;
-    salesByItem[itemName].amount += netAmount;
+    salesByItem[itemKey].qty += qty;
+    salesByItem[itemKey].amount += netAmount;
   });
 
   const grandTotal = billingSummary.grandTotal || 0;
@@ -401,13 +406,21 @@ export async function completePayment(
     const uniqueAddonIds = [...new Set(addonIds)];
 
     if (uniqueAddonIds.length > 0) {
-        const addonRefs = uniqueAddonIds.map(id => doc(db, `stores/${storeId}/storeAddons`, id));
-        const addonSnaps = await Promise.all(addonRefs.map(ref => getDoc(ref)));
-        addonSnaps.forEach(snap => {
-            if (snap.exists()) {
-                addonMap.set(snap.id, snap.data() as StoreAddon);
-            }
-        });
+        // Chunk the requests to avoid Firestore's 'in' query limit
+        const idChunks = [];
+        for (let i = 0; i < uniqueAddonIds.length; i += 30) {
+            idChunks.push(uniqueAddonIds.slice(i, i + 30));
+        }
+
+        for (const chunk of idChunks) {
+            const addonQuery = query(collection(db, `stores/${storeId}/storeAddons`), where('id', 'in', chunk));
+            const addonSnaps = await getDocs(addonQuery);
+            addonSnaps.forEach(snap => {
+                if (snap.exists()) {
+                    addonMap.set(snap.id, snap.data() as StoreAddon);
+                }
+            });
+        }
     }
 
 
