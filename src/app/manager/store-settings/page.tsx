@@ -16,7 +16,7 @@ import { StoreRefillsSettings } from "./store-refills-settings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { AddonsSettings } from "./addons-settings";
+import { AddonsSettings } from "@/components/manager/store-settings/addons-settings";
 
 
 const TABS = [

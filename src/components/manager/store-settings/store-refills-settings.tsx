@@ -4,10 +4,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
+import { Loader2, Edit, Save, PlusCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -25,7 +25,6 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     const [storeRefills, setStoreRefills] = useState<Map<string, StoreRefill>>(new Map());
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSyncing, setIsSyncing] = useState(false);
     
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingValues, setEditingValues] = useState<Partial<StoreRefill>>({});
@@ -92,43 +91,6 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
      const availableGlobalRefills = useMemo(() => {
         return globalRefills.filter(f => !storeRefills.has(f.id));
     }, [globalRefills, storeRefills]);
-    
-    const handleSync = async () => {
-        if (!appUser || !store) return;
-        setIsSyncing(true);
-        toast({ title: "Syncing...", description: "Adding new global refills to your store settings." });
-
-        const batch = writeBatch(db);
-        let newCount = 0;
-
-        globalRefills.forEach(gRefill => {
-            if (!storeRefills.has(gRefill.id)) {
-                const docRef = doc(db, "stores", store.id, "storeRefills", gRefill.id);
-                batch.set(docRef, {
-                    refillId: gRefill.id,
-                    refillName: gRefill.name,
-                    isEnabled: false,
-                    sortOrder: 1000,
-                    kitchenLocationId: null,
-                    kitchenLocationName: null,
-                });
-                newCount++;
-            }
-        });
-
-        try {
-            await batch.commit();
-            if (newCount > 0) {
-                toast({ title: "Sync Complete", description: `Added ${newCount} new refill(s).` });
-            } else {
-                toast({ title: "Already Up-to-Date", description: "No new global refills to add." });
-            }
-        } catch (error: any) {
-             toast({ variant: 'destructive', title: "Sync Failed", description: error.message });
-        } finally {
-            setIsSyncing(false);
-        }
-    }
 
     const handleAddRefill = async (refill: Refill) => {
         if (!appUser || !store) return;
@@ -196,16 +158,8 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         <div className="grid md:grid-cols-3 gap-6">
             <Card className="md:col-span-2">
                 <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <CardTitle>Store Refills</CardTitle>
-                            <CardDescription>Manage which global refills are available in this store.</CardDescription>
-                        </div>
-                        <Button onClick={handleSync} disabled={isSyncing}>
-                            {isSyncing ? <Loader2 className="animate-spin mr-2"/> : <RefreshCw className="mr-2"/>}
-                            Sync Global Refills
-                        </Button>
-                    </div>
+                    <CardTitle>Store Refills</CardTitle>
+                    <CardDescription>Manage which global refills are available in this store.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -301,3 +255,4 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         </div>
     );
 }
+

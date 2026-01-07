@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, updateDoc, setDoc, getDoc, orderBy } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff, MoreHorizontal } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, MoreHorizontal, PlusCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -262,7 +262,7 @@ export function AddonsSettings({ store }: { store: Store }) {
                                     <p className="font-medium">{item.name}</p>
                                     <p className="text-xs text-muted-foreground">{item.subCategory}</p>
                                 </div>
-                                <Button size="sm" onClick={() => handleAddAddon(item)}>Add</Button>
+                                <Button size="sm" onClick={() => handleAddAddon(item)}><PlusCircle /></Button>
                             </div>
                         )) : (
                             <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" products have been added to this store.</p>
