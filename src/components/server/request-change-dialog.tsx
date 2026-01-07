@@ -19,7 +19,7 @@ import { db } from "@/lib/firebase/client";
 import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAuthContext } from "@/context/auth-context";
 import { type PendingSession } from "./pending-tables";
-import { isScheduleActiveNow } from "../manager/store-settings/_utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { QuantityInput } from "../cashier/quantity-input";
 import type { StorePackage, MenuSchedule } from "@/lib/types";
