@@ -4,10 +4,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader, Edit, Save, PlusCircle } from "lucide-react";
+import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -32,13 +32,23 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
             return;
         }
 
-        const unsubGlobal = onSnapshot(query(collection(db, "flavors"), where("isActive", "==", true), where("isArchived", "==", false)), (snap) => {
-            setGlobalFlavors(snap.docs.map(d => d.data() as Flavor));
-        });
+        const unsubGlobal = onSnapshot(
+            query(collection(db, "flavors"), where("isActive", "==", true)), 
+            (snap) => {
+                const list = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() } as Flavor))
+                    .filter(f => (f as any).isArchived !== true);
+                setGlobalFlavors(list);
+            },
+            (err) => {
+                console.error("flavors query failed", err);
+                toast({ variant: "destructive", title: "Failed to load global flavors", description: err.message });
+            }
+        );
 
         const unsubStore = onSnapshot(collection(db, "stores", store.id, "storeFlavors"), (snap) => {
             const map = new Map<string, StoreFlavor>();
-            snap.forEach(doc => map.set(doc.id, doc.data() as StoreFlavor));
+            snap.forEach(doc => map.set(doc.id, {id: doc.id, ...doc.data()} as StoreFlavor));
             setStoreFlavors(map);
         });
 
@@ -47,29 +57,22 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
             unsubGlobal();
             unsubStore();
         }
-    }, [store?.id]);
+    }, [store?.id, toast]);
 
     const combinedFlavors = useMemo(() => {
-        const enabledFlavors = new Set<string>();
-        storeFlavors.forEach(sf => {
-            if (sf.isEnabled) enabledFlavors.add(sf.flavorId);
-        });
-
-        return globalFlavors
-            .filter(gF => enabledFlavors.has(gF.id))
-            .map(gFlavor => {
-                const sFlavor = storeFlavors.get(gFlavor.id);
+        return Array.from(storeFlavors.values())
+            .map(sFlavor => {
                 return {
-                    flavorId: gFlavor.id,
-                    flavorName: gFlavor.name,
-                    isEnabled: sFlavor?.isEnabled ?? false,
-                    sortOrder: sFlavor?.sortOrder ?? 1000,
+                    ...sFlavor,
+                    flavorName: sFlavor.flavorName,
+                    isEnabled: sFlavor.isEnabled,
+                    sortOrder: sFlavor.sortOrder,
                 }
             }).sort((a,b) => a.sortOrder - b.sortOrder || a.flavorName.localeCompare(b.flavorName));
-    }, [globalFlavors, storeFlavors]);
+    }, [storeFlavors]);
 
     const availableGlobalFlavors = useMemo(() => {
-        const storeFlavorIds = new Set(Array.from(storeFlavors.values()).filter(sf => sf.isEnabled).map(sf => sf.flavorId));
+        const storeFlavorIds = new Set(Array.from(storeFlavors.keys()));
         return globalFlavors.filter(f => !storeFlavorIds.has(f.id));
     }, [globalFlavors, storeFlavors]);
 
@@ -89,20 +92,13 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         }
     };
     
-    const handleToggleEnabled = async (flavorId: string) => {
+    const handleToggleEnabled = async (flavor: StoreFlavor) => {
         if (!appUser || !store) return;
-        const sFlavor = storeFlavors.get(flavorId);
-        const gFlavor = globalFlavors.find(f => f.id === flavorId);
-        if (!gFlavor) return;
+        const newStatus = !flavor.isEnabled;
 
-        const docRef = doc(db, "stores", store.id, "storeFlavors", flavorId);
+        const docRef = doc(db, "stores", store.id, "storeFlavors", flavor.flavorId);
         try {
-            await setDoc(docRef, {
-                flavorId: gFlavor.id,
-                flavorName: gFlavor.name,
-                isEnabled: !sFlavor?.isEnabled,
-                sortOrder: sFlavor?.sortOrder ?? 1000,
-            }, { merge: true });
+            await updateDoc(docRef, { isEnabled: newStatus });
             toast({ title: "Status Updated" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Update Failed", description: error.message });
@@ -121,7 +117,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         }
     };
 
-    if (isLoading) return <Loader className="animate-spin" />;
+    if (isLoading) return <Loader2 className="animate-spin" />;
 
     return (
          <div className="grid md:grid-cols-3 gap-6">
@@ -136,12 +132,13 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                             <TableRow>
                                 <TableHead>Flavor</TableHead>
                                 <TableHead>Sort Order</TableHead>
+                                <TableHead>Enabled</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {combinedFlavors.map(flavor => (
-                                <TableRow key={flavor.flavorId}>
+                                <TableRow key={flavor.flavorId} className={!flavor.isEnabled ? "text-muted-foreground" : ""}>
                                     <TableCell className="font-medium">{flavor.flavorName}</TableCell>
                                     <TableCell>
                                         {editingId === flavor.flavorId ? (
@@ -155,6 +152,12 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                                             flavor.sortOrder
                                         )}
                                     </TableCell>
+                                    <TableCell>
+                                        <Switch 
+                                            checked={flavor.isEnabled}
+                                            onCheckedChange={() => handleToggleEnabled(flavor)}
+                                        />
+                                    </TableCell>
                                     <TableCell className="text-right">
                                         {editingId === flavor.flavorId ? (
                                             <>
@@ -165,9 +168,6 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                                             <>
                                             <Button variant="ghost" size="icon" onClick={() => {setEditingId(flavor.flavorId); setEditingSortOrder(flavor.sortOrder)}}>
                                                 <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(flavor.flavorId)}>
-                                                <PowerOff className="h-4 w-4 text-destructive" />
                                             </Button>
                                             </>
                                         )}
