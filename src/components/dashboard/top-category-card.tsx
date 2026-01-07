@@ -214,8 +214,8 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                         {topCategories.map(([name, { qty, amount }]) => (
                             <TableRow key={name} className="cursor-pointer" onClick={() => handleCategoryClick(name)}>
                                 <TableCell className="font-medium">{name}</TableCell>
-                                <TableCell className="text-right">{qty}</TableCell>
-                                <TableCell className="text-right">₱{amount.toFixed(2)}</TableCell>
+                                <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
+                                <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
@@ -258,8 +258,8 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                                         {aggregatedItems.data.map(([name, { qty, amount }]) => (
                                             <TableRow key={name}>
                                                 <TableCell className="font-medium">{name}</TableCell>
-                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty}</TableCell>
-                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toFixed(2)}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty.toLocaleString('en-US')}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -294,8 +294,8 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                                             <TableRow key={name}>
                                                 <TableCell className="font-medium">{name}</TableCell>
                                                 <TableCell className="text-xs text-muted-foreground">{categoryName}</TableCell>
-                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty}</TableCell>
-                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toFixed(2)}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'qty' && 'font-bold')}>{qty.toLocaleString('en-US')}</TableCell>
+                                                <TableCell className={cn("text-right", metric === 'amount' && 'font-bold')}>₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
