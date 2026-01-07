@@ -22,7 +22,8 @@ export type ActiveSession = {
     customer?: { name?: string | null };
     customerName?: string | null;
     currentSessionId: string | null;
-    startedAt?: Timestamp;
+    startedAt?: Timestamp | null;
+    startedAtClientMs?: number | null;
     packageName?: string;
     guestCountCashier?: number;
     guestCountServer?: number;
@@ -30,9 +31,9 @@ export type ActiveSession = {
     isPaid?: boolean; // Added for validation
 };
 
-const TimeElapsed = ({ startTime }: { startTime: any }) => {
+const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
     const [elapsed, setElapsed] = useState("...");
-    const jsDate = toJsDate(startTime);
+    const jsDate = startTimeMs ? new Date(startTimeMs) : toJsDate(startTime);
 
     useEffect(() => {
         if (!jsDate) {
@@ -55,7 +56,7 @@ const TimeElapsed = ({ startTime }: { startTime: any }) => {
                 const hours = Math.floor(totalMinutes / 60);
                 const minutes = totalMinutes % 60;
                 const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-                setElapsed(`${hours}:${paddedMinutes}`);
+                setElapsed(`${hours}h ${paddedMinutes}m`);
             }
         };
 
@@ -137,7 +138,7 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
                                 <CardHeader>
                                     <div className="flex justify-between items-center">
                                         <CardTitle className="text-xl truncate">{title}</CardTitle>
-                                        <TimeElapsed startTime={session.startedAt} />
+                                        <TimeElapsed startTime={session.startedAt} startTimeMs={session.startedAtClientMs ?? null} />
                                     </div>
                                     <CardDescription className="truncate">{subtitle}</CardDescription>
                                 </CardHeader>

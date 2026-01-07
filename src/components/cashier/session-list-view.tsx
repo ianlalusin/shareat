@@ -58,7 +58,7 @@ export function SessionListView() {
         // Fetch Packages from store-level collection
         const packagesRef = collection(db, "stores", activeStore.id, "storePackages");
         unsubs.push(onSnapshot(query(packagesRef, where("isEnabled", "==", true), orderBy("sortOrder", "asc")), (snapshot) => {
-            setPackages(snapshot.docs.map(doc => ({ ...doc.data() } as StorePackage)));
+            setPackages(snapshot.docs.map(doc => ({ packageId: doc.id, ...doc.data() } as StorePackage)));
         }));
 
         // Fetch active schedules
@@ -74,10 +74,18 @@ export function SessionListView() {
         const sessionsQuery = query(
             collection(db, "stores", activeStore.id, "sessions"), 
             where("status", "in", ["active", "pending_verification"]),
-            orderBy("startedAt", "asc")
+            orderBy("startedAtClientMs", "asc")
         );
         unsubs.push(onSnapshot(sessionsQuery, (snapshot) => {
-            setSessions(snapshot.docs.map(d => d.data() as ActiveSession))
+            setSessions(snapshot.docs.map(d => {
+                const data = d.data();
+                return { 
+                    id: d.id, 
+                    ...data,
+                    startedAtClientMs: data.startedAtClientMs ?? null,
+                    startedAt: data.startedAt ?? null,
+                } as ActiveSession
+            }));
         }));
 
         // Fetch past sessions for the day
