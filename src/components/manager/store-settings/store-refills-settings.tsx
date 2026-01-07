@@ -3,19 +3,30 @@
 
 import { useState, useEffect, useMemo } from "react";
 import type { QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  orderBy,
+  getDocs,
+} from "firebase/firestore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader2, Edit, Save, PlusCircle } from "lucide-react";
+import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Refill, Store, StoreRefill, KitchenLocation } from "@/lib/types";
+import type { Refill, Store, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 
 function coerceStoreRefill(d: QueryDocumentSnapshot<DocumentData>): StoreRefill {
@@ -82,7 +93,14 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             setKitchenLocations(snap.docs.map(d => d.data() as KitchenLocation));
         });
 
-        Promise.all([getDocs(query(collection(db, "refills"))), getDocs(collection(db, "stores", store.id, "storeRefills"))]).then(() => {
+        // Use getDocs for initial load to set loading state correctly
+        Promise.all([
+            getDocs(query(collection(db, "refills"))), 
+            getDocs(collection(db, "stores", store.id, "storeRefills"))
+        ]).then(() => {
+            setIsLoading(false);
+        }).catch(err => {
+            console.error("Initial data fetch failed:", err);
             setIsLoading(false);
         });
         
