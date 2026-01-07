@@ -6,7 +6,7 @@ import type { Store, Package } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs, writeBatch, setDoc, deleteDoc } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff, Check, X, RefreshCw, Trash2, PlusCircle } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, Check, X, PlusCircle, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "@/components/manager/store-settings/_utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "./_utils/isScheduleActiveNow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
@@ -40,12 +40,29 @@ export function StorePackagesSettings({ store }: { store: Store }) {
     useEffect(() => {
         const unsubs: (()=>void)[] = [];
         
-        unsubs.push(onSnapshot(query(collection(db, "packages"), where("isActive", "==", true), where("isArchived", "!=", true)), (snap) => {
-            setGlobalPackages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Package)));
-        }));
+        unsubs.push(
+          onSnapshot(
+            query(
+              collection(db, "packages"),
+              where("isActive", "==", true),
+              orderBy("updatedAt", "desc")
+            ),
+            (snap) => {
+              const list = snap.docs
+                .map((d) => ({ id: d.id, ...(d.data() as any) } as Package))
+                .filter((p) => (p as any).isArchived !== true);
+              setGlobalPackages(list);
+            },
+            (err) => {
+              console.error("packages query failed", err);
+              toast({ variant: "destructive", title: "Failed to load global packages", description: err.message });
+              setGlobalPackages([]);
+            }
+          )
+        );
 
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storePackages"), orderBy("sortOrder", "asc")), (snapshot) => {
-            setStorePackages(snapshot.docs.map(doc => ({ ...doc.data() } as StorePackage)));
+            setStorePackages(snapshot.docs.map(doc => ({ packageId: doc.id, ...doc.data() } as StorePackage)));
         }));
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "kitchenLocations"), where("isActive", "==", true)), (snapshot) => {
             setKitchenLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenLocation)));
