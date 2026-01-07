@@ -30,7 +30,7 @@ export type ActiveSession = {
     isPaid?: boolean; // Added for validation
 };
 
-const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
+const TimeElapsed = ({ startTime }: { startTime: any }) => {
     const [elapsed, setElapsed] = useState("...");
     const jsDate = toJsDate(startTime);
 
