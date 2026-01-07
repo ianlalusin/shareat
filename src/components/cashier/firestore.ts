@@ -104,6 +104,7 @@ export async function startSession(
     guestCountCashierInitial: payload.guestCount,
     guestCountServerVerified: null,
     guestCountFinal: isAlaCarte ? null : payload.guestCount, // Initially set to cashier's count for package
+
     guestCountVerifyLocked: isAlaCarte, // Lock immediately for ala carte
 
     verifiedAt: null,
@@ -303,40 +304,48 @@ function buildAnalyticsV2(
   paymentMethods: ModeOfPayment[],
   addonMap: Map<string, StoreAddon>
 ): AnalyticsV2 {
-
   const salesByCategory: AnalyticsV2['salesByCategory'] = {};
   const salesByItem: AnalyticsV2['salesByItem'] = {};
 
-  // Process billables
-  billables.forEach(item => {
-    // Only include items that were not cancelled/voided and not free
-    if (item.isFree || item.status === 'cancelled' || item.status === 'void') return;
-    
+  const billablesForRevenue = billables.filter(item => 
+      (item.type === 'package' || item.type === 'addon') &&
+      !item.isFree &&
+      item.status !== 'voided' &&
+      item.status !== 'cancelled'
+  );
+
+  billablesForRevenue.forEach(item => {
     const qty = item.qty || 1;
-    const amount = qty * item.unitPrice;
+    const grossAmount = qty * item.unitPrice;
+    
+    const lineDiscountAmount = item.lineDiscountType === 'percent'
+        ? grossAmount * (item.lineDiscountValue / 100)
+        : Math.min(item.lineDiscountValue * qty, grossAmount);
+
+    const netAmount = Math.max(0, grossAmount - lineDiscountAmount);
 
     let categoryName = "Uncategorized";
+    let itemName = item.itemName || 'Unknown Item';
+
     if (item.type === 'package') {
-      categoryName = "Packages";
-    } else if (item.addonId) { // Robust check for addons
-      const addonDetails = addonMap.get(item.addonId);
-      categoryName = (item as any).addonCategoryName ?? (item as any).category ?? addonDetails?.category ?? "Uncategorized Addons";
+        categoryName = "Packages";
+    } else if (item.type === 'addon' && item.addonId) {
+        const addonDetails = addonMap.get(item.addonId);
+        categoryName = addonDetails?.category || "Uncategorized Addons";
+        itemName = addonDetails?.name || item.itemName;
     }
 
-    // Aggregate by category
     if (!salesByCategory[categoryName]) {
       salesByCategory[categoryName] = { qty: 0, amount: 0 };
     }
     salesByCategory[categoryName].qty += qty;
-    salesByCategory[categoryName].amount += amount;
+    salesByCategory[categoryName].amount += netAmount;
 
-    // Aggregate by item
-    const itemName = item.itemName || addonMap.get(item.addonId || '')?.name || 'Unknown Item';
     if (!salesByItem[itemName]) {
       salesByItem[itemName] = { qty: 0, amount: 0, categoryName };
     }
     salesByItem[itemName].qty += qty;
-    salesByItem[itemName].amount += amount;
+    salesByItem[itemName].amount += netAmount;
   });
 
   const grandTotal = billingSummary.grandTotal || 0;
