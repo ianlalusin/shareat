@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -11,7 +11,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Box } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Box, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
@@ -107,6 +107,23 @@ export default function PackagesManagementPage() {
     }
   };
 
+  const handleDelete = async (item: Package) => {
+    if (!appUser) return;
+    if (!(await confirm({
+        title: `Archive ${item.name}?`,
+        description: "Archived items are hidden but can be recovered. Are you sure?",
+        confirmText: "Yes, Archive",
+        destructive: true,
+    }))) return;
+
+    try {
+        await updateDoc(doc(db, "packages", item.id), { isActive: false, isArchived: true, updatedAt: serverTimestamp() });
+        toast({ title: "Package Archived" });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Archive Failed", description: error.message });
+    }
+  };
+
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Packages" description="Manage global product packages and bundles.">
@@ -128,7 +145,7 @@ export default function PackagesManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {packages.map((item) => (
+                {packages.filter(p => !(p as any).isArchived).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{(item.allowedRefillIds?.length || 0)}</TableCell>
@@ -139,9 +156,12 @@ export default function PackagesManagementPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" onClick={() => handleOpenDialog(item)} className="mr-2">Edit</Button>
-                      <Button variant={item.isActive ? "destructive" : "default"} size="sm" onClick={() => handleToggleActive(item)}>
+                      <Button variant={item.isActive ? "secondary" : "default"} size="sm" onClick={() => handleToggleActive(item)} className="mr-2">
                         {item.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
                         {item.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                       <Button variant="destructive" size="sm" onClick={() => handleDelete(item)}>
+                        <Trash2 />
                       </Button>
                     </TableCell>
                   </TableRow>

@@ -6,18 +6,17 @@ import type { Store, Package } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, where, getDocs, writeBatch, setDoc, deleteDoc } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff, Check, X, RefreshCw, Trash2 } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, Check, X, RefreshCw, Trash2, PlusCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "./_components/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { isScheduleActiveNow } from "@/components/manager/store-settings/_utils/isScheduleActiveNow";
+import { isScheduleActiveNow } from "./_utils/isScheduleActiveNow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
@@ -102,7 +101,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         try {
             await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
             toast({ title: "Package Updated" });
-            await logActivity(appUser, "store_package_updated", `Updated store package: ${editingPackage.packageName}`);
             handleCloseDialog();
         } catch (error: any) {
             toast({ variant: "destructive", title: "Save Failed", description: error.message });
@@ -117,7 +115,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "storePackages", pkg.packageId);
         await updateDoc(docRef, { isEnabled: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Status Updated" });
-        await logActivity(appUser, `store_package_${newStatus ? 'enabled' : 'disabled'}`, `${pkg.packageName} was ${newStatus ? 'enabled' : 'disabled'}`);
     };
 
     const handleAddPackage = async (gPackage: Package) => {
@@ -128,7 +125,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
              const newStorePackage: StorePackage = {
                 packageId: gPackage.id,
                 packageName: gPackage.name,
-                isEnabled: false, // Default to disabled
+                isEnabled: true, // Default to enabled
                 pricePerHead: 0,
                 sortOrder: 1000,
                 kitchenLocationId: null,
@@ -138,8 +135,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                 menuScheduleId: null,
             };
             await setDoc(docRef, newStorePackage);
-            toast({ title: "Package Added", description: `"${gPackage.name}" added to your store. Please edit to set a price and enable it.`});
-            await logActivity(appUser, 'store_package_added', `Added package: ${gPackage.name}`);
+            toast({ title: "Package Added", description: `"${gPackage.name}" added to your store. Please edit to set a price.`});
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Failed to Add", description: error.message });
         }
@@ -158,7 +154,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         try {
             await deleteDoc(docRef);
             toast({ title: "Package Deleted" });
-            await logActivity(appUser, 'store_package_deleted', `Deleted package: ${pkg.packageName}`);
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
         }
@@ -209,6 +204,9 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(pkg)}><Edit className="h-4 w-4" /></Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(pkg)}>
+                                                {pkg.isEnabled ? <PowerOff className="h-4 w-4 text-destructive" /> : <Power className="h-4 w-4" />}
+                                            </Button>
                                             {appUser?.role === 'admin' && (
                                                 <Button variant="ghost" size="icon" onClick={() => handleDelete(pkg)}>
                                                     <Trash2 className="h-4 w-4 text-destructive" />
@@ -233,7 +231,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                                     {availableGlobalPackages.map(gPackage => (
                                         <div key={gPackage.id} className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
                                             <span className="font-medium">{gPackage.name}</span>
-                                            <Button size="sm" onClick={() => handleAddPackage(gPackage)}>Add</Button>
+                                            <Button size="sm" variant="outline" onClick={() => handleAddPackage(gPackage)}><PlusCircle /></Button>
                                         </div>
                                     ))}
                                 </div>
