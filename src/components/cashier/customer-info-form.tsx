@@ -15,7 +15,6 @@ import { useToast } from "@/hooks/use-toast";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import type { PendingSession } from "@/lib/types";
 
 const formSchema = z.object({
@@ -59,7 +58,6 @@ export function CustomerInfoForm({ session }: { session: PendingSession }) {
         "customer.address": data.address || null,
         updatedAt: serverTimestamp(),
       });
-      await logActivity(appUser, "customer_info_updated", `Updated customer info for session ${session.id}`);
       toast({ title: "Customer Info Saved" });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Save Failed", description: error.message });
@@ -129,5 +127,3 @@ export function CustomerInfoForm({ session }: { session: PendingSession }) {
     </div>
   );
 }
-
-    

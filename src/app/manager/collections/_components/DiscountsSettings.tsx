@@ -12,7 +12,6 @@ import { Loader, PlusCircle, Power, PowerOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { DiscountEditDialog } from "./DiscountEditDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Store, Discount } from "@/lib/types";
@@ -86,12 +85,10 @@ export function DiscountsSettings({ store }: { store: Store }) {
         };
         const docRef = await addDoc(discountsRef, newDoc);
         await updateDoc(docRef, { id: docRef.id });
-        await logActivity(appUser, "discount_created", `Created discount: ${data.name}`);
         toast({ title: "Discount Created" });
       } else if (editingDiscount) {
         const docRef = doc(db, "stores", store.id, "storeDiscounts", editingDiscount.id);
         await updateDoc(docRef, { ...data, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
-        await logActivity(appUser, "discount_updated", `Updated discount: ${data.name}`);
         toast({ title: "Discount Updated" });
       }
       setIsDialogOpen(false);
@@ -110,7 +107,6 @@ export function DiscountsSettings({ store }: { store: Store }) {
     const docRef = doc(db, "stores", store.id, "storeDiscounts", discount.id);
     await updateDoc(docRef, { isEnabled: newStatus, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
     toast({ title: "Status Updated" });
-    await logActivity(appUser, `discount_${action.toLowerCase()}`, `${action}d discount: ${discount.name}`);
   };
 
   const handleArchive = async (discount: Discount) => {
@@ -131,7 +127,6 @@ export function DiscountsSettings({ store }: { store: Store }) {
       updatedAt: serverTimestamp() 
     });
     toast({ title: "Discount Archived" });
-    await logActivity(appUser, 'discount_archived', `Archived discount: ${discount.name}`);
   };
 
   if (isLoading) {

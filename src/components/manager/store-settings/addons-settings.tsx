@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, updateDoc, setDoc, getDoc, orderBy } from "firebase/firestore";
-import { Loader, Edit, Power, PowerOff } from "lucide-react";
+import { Loader, Edit, Power, PowerOff, MoreHorizontal } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { logActivity } from "@/lib/firebase/activity-log";
 import { StoreAddonEditDialog } from "@/components/manager/store-settings/StoreAddonEditDialog";
 import Image from "next/image";
 import type { Store, InventoryItem, KitchenLocation, Product, StoreAddon } from "@/lib/types";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
     const { toast } = useToast();
 
-    const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+    const [inventoryItems, setInventoryItems] = useState<Product[]>([]);
     const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     
@@ -40,8 +40,13 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
 
         const unsubInventory = onSnapshot(
-            query(collection(db, "stores", store.id, "inventory"), where("category", "==", "Add-on")), 
-            (snap) => setInventoryItems(snap.docs.map(d => ({id: d.id, ...d.data()} as InventoryItem)))
+            query(collection(db, "products"), where("category", "==", "Add-on"), where("isActive", "==", true)), 
+            (snap) => {
+                 const list = snap.docs
+                    .map(d => ({id: d.id, ...d.data()} as Product))
+                    .filter(p => (p as any).isArchived !== true);
+                setInventoryItems(list);
+            }
         );
 
         const storeAddonsQuery = query(
@@ -98,7 +103,7 @@ export function AddonsSettings({ store }: { store: Store }) {
     const availableInventoryItems = useMemo(() => {
         const storeAddonIds = new Set(storeAddons.map(s => s.id));
         return inventoryItems
-            .filter(item => item.productId && !storeAddonIds.has(item.productId));
+            .filter(item => item.id && !storeAddonIds.has(item.id));
     }, [inventoryItems, storeAddons]);
 
     const handleToggleEnabled = async (addon: StoreAddon) => {
@@ -114,33 +119,39 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
     };
     
-    const handleAddAddon = async (inventoryItem: InventoryItem) => {
-        if (!appUser || !inventoryItem.productId) return;
+    const handleAddAddon = async (product: Product) => {
+        if (!appUser || !product.id) return;
         
-        const addonId = inventoryItem.productId;
+        const addonId = product.id;
         const docRef = doc(db, "stores", store.id, "storeAddons", addonId);
 
         try {
-            const productDoc = await getDoc(doc(db, "products", addonId));
-            const imageUrl = productDoc.exists() ? productDoc.data().imageUrl : null;
-            
-            await setDoc(docRef, {
+            const newAddonData: StoreAddon = {
                 id: addonId,
-                name: inventoryItem.name,
-                category: inventoryItem.subCategory,
-                uom: inventoryItem.uom,
-                price: inventoryItem.sellingPrice || 0,
+                name: product.name,
+                category: product.subCategory,
+                uom: product.uom,
+                price: 0, // Default price to 0
                 isEnabled: true,
                 isArchived: false,
                 sortOrder: 1000,
                 kitchenLocationId: null,
                 kitchenLocationName: null,
-                imageUrl: imageUrl,
+                imageUrl: product.imageUrl ?? undefined,
+            };
+
+            await setDoc(docRef, {
+                ...newAddonData,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
+
             toast({ title: "Add-on Added", description: "Please confirm the price and kitchen location." });
-            await logActivity(appUser, 'store_addon_added', `Added addon ID ${addonId} to store.`);
+            
+            // Auto-open the dialog for the new addon
+            setSelectedAddon(newAddonData);
+            setEditDialogOpen(true);
+
         } catch (error: any) {
             toast({ variant: "destructive", title: "Add Failed", description: error.message });
         }
@@ -159,18 +170,6 @@ export function AddonsSettings({ store }: { store: Store }) {
         }
     }
 
-    if (!store) {
-        return (
-             <Card>
-                <CardHeader>
-                    <CardTitle>Store Add-ons</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-muted-foreground text-center">Please select a store to see add-on settings.</p>
-                </CardContent>
-            </Card>
-        )
-    }
     if (isLoading) return <div className="flex justify-center p-8"><Loader className="animate-spin" /></div>;
 
     return (
@@ -212,28 +211,36 @@ export function AddonsSettings({ store }: { store: Store }) {
                         <TableBody>
                             {filteredStoreAddons.map(item => (
                                 <TableRow key={item.id}>
-                                    <TableCell className="font-medium flex items-center gap-2">
-                                        <div className="w-10 h-10 rounded-md bg-muted relative">
+                                    <TableCell className="font-medium flex items-center gap-2 py-1.5">
+                                        <div className="w-8 h-8 rounded-md bg-muted relative flex-shrink-0">
                                         {item.imageUrl && (
                                             <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" className="rounded-md" />
                                         )}
                                         </div>
-                                        {item.name}
+                                        <span className="truncate">{item.name}</span>
                                     </TableCell>
-                                    <TableCell><Badge variant="outline">{item.kitchenLocationName || 'N/A'}</Badge></TableCell>
-                                    <TableCell>₱{(item.price || 0).toFixed(2)}</TableCell>
-                                    <TableCell>
+                                    <TableCell className="py-1.5"><Badge variant="outline">{item.kitchenLocationName || 'N/A'}</Badge></TableCell>
+                                    <TableCell className="py-1.5">₱{(item.price || 0).toFixed(2)}</TableCell>
+                                    <TableCell className="py-1.5">
                                         <Badge variant={item.isEnabled ? 'default' : 'outline'}>
                                             {item.isEnabled ? "Enabled" : "Disabled"}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" onClick={() => { setSelectedAddon(item); setEditDialogOpen(true); }}>
-                                            <Edit className="h-4 w-4"/>
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => handleToggleEnabled(item)}>
-                                            {item.isEnabled ? <PowerOff className="h-4 w-4 text-destructive" /> : <Power className="h-4 w-4" />}
-                                        </Button>
+                                    <TableCell className="text-right py-1.5">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon"><MoreHorizontal /></Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent>
+                                                <DropdownMenuItem onSelect={() => { setSelectedAddon(item); setEditDialogOpen(true); }}>
+                                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => handleToggleEnabled(item)}>
+                                                    {item.isEnabled ? <PowerOff className="mr-2 h-4 w-4 text-destructive" /> : <Power className="mr-2 h-4 w-4" />}
+                                                    {item.isEnabled ? "Disable" : "Enable"}
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -244,8 +251,8 @@ export function AddonsSettings({ store }: { store: Store }) {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Add from Inventory</CardTitle>
-                    <CardDescription>Add "Add-on" items from this store's inventory.</CardDescription>
+                    <CardTitle>Add from Global Products</CardTitle>
+                    <CardDescription>Add "Add-on" items from the global product library.</CardDescription>
                 </CardHeader>
                 <CardContent>
                      <ScrollArea className="h-96">
@@ -258,7 +265,7 @@ export function AddonsSettings({ store }: { store: Store }) {
                                 <Button size="sm" onClick={() => handleAddAddon(item)}>Add</Button>
                             </div>
                         )) : (
-                            <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" items from your inventory have been added.</p>
+                            <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" products have been added to this store.</p>
                         )}
                     </ScrollArea>
                 </CardContent>
