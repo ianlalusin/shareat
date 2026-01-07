@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy, type QueryDocumentSnapshot, type DocumentData } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
@@ -15,13 +15,13 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Flavor, Store, StoreFlavor } from "@/lib/types";
 
-function coerceStoreFlavor(docSnap: any): StoreFlavor {
-  const data = docSnap.data?.() ?? {};
+function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
+  const data = d.data() ?? {};
   return {
-    id: docSnap.id,
-    flavorId: data.flavorId ?? docSnap.id,           // fallback: doc id
-    flavorName: data.flavorName ?? data.name ?? "",  // fallback empty string
-    isEnabled: data.isEnabled ?? true,               // default enabled
+    id: d.id,
+    flavorId: (data.flavorId as string) ?? d.id,
+    flavorName: (data.flavorName as string) ?? (data.name as string) ?? "",
+    isEnabled: typeof data.isEnabled === "boolean" ? data.isEnabled : true,
     sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : 0,
   };
 }
