@@ -8,9 +8,9 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStoreContext } from "@/context/store-context";
 import { Loader } from "lucide-react";
-import { ModesOfPaymentSettings } from "./_components/ModesOfPaymentSettings";
-import { ChargesSettings } from "./_components/ChargesSettings";
-import { DiscountsSettings } from "./_components/DiscountsSettings";
+import { ModesOfPaymentSettings } from "@/components/manager/collections/_components/ModesOfPaymentSettings";
+import { ChargesSettings } from "@/components/manager/collections/_components/ChargesSettings";
+import { DiscountsSettings } from "@/components/manager/collections/_components/DiscountsSettings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
