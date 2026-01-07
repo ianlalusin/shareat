@@ -7,7 +7,7 @@ import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
-import { Loader, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
+import { Loader2, Edit, Save, PlusCircle, RefreshCw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -32,19 +32,22 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     useEffect(() => {
         if (!store?.id) {
             setIsLoading(false);
+            setGlobalRefills([]);
+            setStoreRefills(new Map());
+            setKitchenLocations([]);
             return;
         }
 
         const unsubGlobal = onSnapshot(
             query(
                 collection(db, "refills"), 
-                where("isActive", "==", true),
-                orderBy("name", "asc")
+                where("isActive", "==", true)
             ), 
             (snap) => {
                 const list = snap.docs
                     .map((d) => ({ id: d.id, ...(d.data() as any) } as Refill))
                     .filter((p) => (p as any).isArchived !== true);
+                list.sort((a, b) => a.name.localeCompare(b.name));
                 setGlobalRefills(list);
             },
             (err) => {
@@ -64,7 +67,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
             setKitchenLocations(snap.docs.map(d => d.data() as KitchenLocation));
         });
 
-        Promise.all([getDocs(collection(db, "refills")), getDocs(collection(db, "stores", store.id, "storeRefills")), getDocs(query(collection(db, "stores", store.id, "kitchenLocations"), where("isActive", "==", true)))]).then(() => {
+        Promise.all([unsubGlobal, unsubStore, unsubKitchen]).then(() => {
             setIsLoading(false);
         });
         
@@ -72,11 +75,6 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
     }, [store?.id, toast]);
 
     const combinedRefills = useMemo(() => {
-        const enabledRefills = new Set<string>();
-        storeRefills.forEach(sr => {
-            if (sr.isEnabled) enabledRefills.add(sr.refillId);
-        });
-
         return Array.from(storeRefills.values())
             .map(sRefill => {
                 return {
