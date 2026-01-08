@@ -66,7 +66,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const unsubscribe = onSnapshot(sessionRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
-            if (data.status === 'closed' && router) {
+            if ((data.status === 'closed' || data.isPaid) && router) {
                 router.replace(`/receipt/${sessionId}`);
                 return;
             }
@@ -208,43 +208,24 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   ) => {
     if (isBillingLocked || !activeStore || !session) return;
   
-    const batch = writeBatch(db);
+    // This quantity is the number of individual items to apply the discount to.
+    const qtyToDiscount = Math.max(1, Math.floor(quantity || 1));
+    const targetIds = ticketIds.slice(0, qtyToDiscount);
   
-    // This logic correctly applies discount to a single doc with qty > 1
-    // or to multiple docs with qty = 1.
-    if (ticketIds.length === 1) {
-      const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
-      batch.update(billableRef, {
-        lineDiscountType: discountType,
-        lineDiscountValue: discountValue,
-        discountQty: quantity,
-        isFree: false, // Applying a discount removes the free status
-        freeQty: 0,
-        updatedAt: serverTimestamp(),
-      });
-    } else if (ticketIds.length > 1) {
-       // Apply to first 'quantity' documents
-      for (let i = 0; i < ticketIds.length; i++) {
-        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[i]);
-        if (i < quantity) {
-          batch.update(billableRef, {
+    const batch = writeBatch(db);
+    
+    // This logic correctly applies discount to N separate documents
+    targetIds.forEach(ticketId => {
+        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
+        batch.update(billableRef, {
             lineDiscountType: discountType,
             lineDiscountValue: discountValue,
-            discountQty: 1,
-            isFree: false,
+            discountQty: 1, // Each doc represents 1 unit being discounted
+            isFree: false, 
             freeQty: 0,
             updatedAt: serverTimestamp(),
-          });
-        } else {
-           // Explicitly clear discount on other items in the group if needed
-          batch.update(billableRef, {
-            lineDiscountValue: 0,
-            discountQty: 0,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-    }
+        });
+    });
   
     try {
       await batch.commit();
@@ -319,7 +300,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (!appUser || !activeStore || !session) return;
     if (isBillingLocked) return;
   
-    // fire-and-forget wrapper (prop expects void return)
     void (async () => {
       try {
         await voidBillableItems(appUser, activeStore.id, session.id, [ticketId], reason, note);
@@ -352,16 +332,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         sub += chargeableQty * item.unitPrice;
 
         if (item.lineDiscountValue > 0) {
-            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? chargeableQty));
+            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? 0));
             if (item.lineDiscountType === 'percent') {
                 lineDisc += (discountableQty * item.unitPrice) * (item.lineDiscountValue / 100);
             } else {
-                lineDisc += Math.min(item.lineDiscountValue * discountableQty, discountableQty * item.unitPrice);
+                lineDisc += item.lineDiscountValue * discountableQty;
             }
         }
     });
     return { subtotal: sub, lineDiscountsTotal: lineDisc };
-  }, [allServedItems]);
+}, [allServedItems]);
   
   const discountedSubtotal = subtotal - lineDiscountsTotal;
   const billDiscountAmount = billDiscount ? (billDiscount.type === 'percent' ? discountedSubtotal * (billDiscount.value / 100) : Math.min(billDiscount.value, discountedSubtotal)) : 0;
@@ -429,7 +409,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" /> View Timeline
             </Button>
-            <Button variant="outline" size="sm" onClick={() => router.push(`/receipt/${sessionId}`)} disabled={session.status !== 'closed'}>
+            <Button variant="outline" size="sm" onClick={() => router.push(`/receipt/${sessionId}`)} disabled={!session.isPaid}>
                 <Receipt className="mr-2 h-4 w-4" /> Receipt
             </Button>
         </div>
@@ -481,3 +461,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    
