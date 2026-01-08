@@ -12,7 +12,9 @@ import {
   runTransaction,
   where,
   getDoc,
-  Transaction,
+  type Transaction,
+  type DocumentReference,
+  type CollectionReference,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import type { BillableItem, BillableLine, KitchenTicket } from '@/lib/types';
@@ -161,9 +163,9 @@ export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string
 
 async function findOrCreateLineByVariant(
     tx: Transaction,
-    linesRef: collection,
+    linesRef: CollectionReference,
     variant: Partial<BillableLine>
-): Promise<{ ref: DocumentReference; data: BillableLine }> {
+): Promise<{ ref: DocumentReference; data: BillableLine, exists: boolean }> {
     const variantKey = makeVariantKey(variant);
     // This is a limitation: we can't query inside a transaction on fields not part of the read set.
     // Instead, we'll create a deterministic ID based on the variant key.
@@ -173,7 +175,7 @@ async function findOrCreateLineByVariant(
     const lineSnap = await tx.get(lineRef);
 
     if (lineSnap.exists()) {
-        return { ref: lineRef, data: lineSnap.data() as BillableLine };
+        return { ref: lineRef, data: lineSnap.data() as BillableLine, exists: true };
     } else {
         const newLineData: BillableLine = {
             id: lineRef.id,
@@ -190,7 +192,7 @@ async function findOrCreateLineByVariant(
             voidReason: variant.voidReason,
             voidNote: variant.voidNote,
         };
-        return { ref: lineRef, data: newLineData };
+        return { ref: lineRef, data: newLineData, exists: false };
     }
 }
 
@@ -230,7 +232,7 @@ export async function moveTicketIdsBetweenLines({
         }
         
         // 3. Find or Create destination line
-        const { ref: toLineRef, data: toLineData } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
+        const { ref: toLineRef, data: toLineData, exists: toLineExists } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
         
         // 4. Update both lines
         const newFromTicketIds = fromLineData.ticketIds.filter(id => !ticketIdsToMove.includes(id));
@@ -242,7 +244,7 @@ export async function moveTicketIdsBetweenLines({
             tx.update(fromLineRef, { ticketIds: newFromTicketIds, qty: newFromTicketIds.length, updatedAt: serverTimestamp() });
         }
 
-        if (toLineSnap.exists()) {
+        if (toLineExists) {
              tx.update(toLineRef, { ticketIds: newToTicketIds, qty: newToTicketIds.length, updatedAt: serverTimestamp() });
         } else {
              tx.set(toLineRef, { ...toLineData, ticketIds: newToTicketIds, qty: newToTicketIds.length, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
