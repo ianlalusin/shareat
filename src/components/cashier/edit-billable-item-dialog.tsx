@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2 } from "lucide-react";
 import type { GroupedBillableItem, Discount } from "@/lib/types";
+import { Separator } from "@/components/ui/separator";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -136,7 +137,7 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                 }
                 const targetIds = group.ticketIds.slice(0, data.voidQty);
                 for (const ticketId of targetIds) {
-                    await handlers.onVoidItem(ticketId, data.voidReason, data.voidNote);
+                    handlers.onVoidItem(ticketId, data.voidReason, data.voidNote);
                 }
             }
             toast({ title: "Changes Applied" });
@@ -173,7 +174,7 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                             {applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
                                      <FormField name="discountId" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
+                                        <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
                                      )} />
                                      <div className="grid grid-cols-2 gap-2">
                                         <FormField name="discountType" control={form.control} render={({ field }) => (
@@ -235,5 +236,3 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
         </Dialog>
     );
 }
-
-    
