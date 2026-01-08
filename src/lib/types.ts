@@ -195,6 +195,32 @@ export type BillableItem = {
   discountQty?: number;
 };
 
+type BillableLineType = "package" | "addon";
+
+export type BillableLine = {
+  id: string;
+  type: BillableLineType;
+  itemId: string;        // addonId or packageId (fallback to normalized itemName if missing)
+  itemName: string;
+  unitPrice: number;
+
+  ticketIds: string[];   // addon ticket ids; for package can be synthetic ids to satisfy qty==ticketIds.length
+  qty: number;           // ALWAYS equals ticketIds.length
+
+  isFree?: boolean;
+  discountType?: "fixed" | "percent";
+  discountValue?: number;
+
+  isVoided?: boolean;
+  voidReason?: string;
+  voidNote?: string;
+  voidedAt?: any;
+  voidedByUid?: string;
+
+  createdAt?: any;
+  updatedAt?: any;
+};
+
 export type GroupedBillableItem = {
     key: string;
     isGrouped: boolean;
@@ -292,6 +318,29 @@ export type StoreTable = {
     currentSessionId: string | null;
 };
 
+export type PendingSession = {
+  id: string;
+  storeId: string; // Added for convenience
+  tableNumber: string;
+  packageName: string;
+  status: 'pending_verification' | 'active' | 'closed';
+  sessionMode: 'package_dinein' | 'alacarte';
+  customerName?: string | null;
+  isPaid?: boolean;
+  packageOfferingId: string;
+  initialFlavorIds?: string[];
+  startedAt: Timestamp;
+  // Guest Count Model
+  guestCountCashierInitial: number;
+  guestCountServerVerified: number | null;
+  guestCountFinal: number | null;
+  guestCountVerifyLocked: boolean;
+  // Change Request Models
+  guestCountChange?: { status: string };
+  packageChange?: { status: string };
+  customer?: { name?: string | null, tin?: string | null, address?: string | null };
+};
+
 export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;
@@ -332,7 +381,3 @@ export type Receipt = {
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
 }
-
-    
-
-      

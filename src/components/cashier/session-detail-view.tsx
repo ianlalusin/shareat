@@ -19,7 +19,8 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import type { KitchenTicket, OrderItemStatus, StoreAddon, ModeOfPayment, PendingSession, StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment } from "@/lib/types";
+import { ensureBillableLinesForSession } from "./billable-lines";
+import type { KitchenTicket, OrderItemStatus, StoreAddon, ModeOfPayment, PendingSession, StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, Adjustment, BillableLine } from "@/lib/types";
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
@@ -34,7 +35,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { activeStore } = useStoreContext();
 
   const [session, setSession] = useState<PendingSession | null>(null);
-  const [billables, setBillables] = useState<Map<string, BillableItem>>(new Map());
+  const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
+  const [legacyBillables, setLegacyBillables] = useState<Map<string, BillableItem>>(new Map());
   const [tickets, setTickets] = useState<Map<string, KitchenTicket>>(new Map());
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
@@ -59,6 +61,37 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (totalPaid < grandTotal) return "Payment is not enough to cover the total.";
     return null;
   }
+
+  useEffect(() => {
+    if (!activeStore) return;
+    
+    // Trigger migration, then set up listeners
+    ensureBillableLinesForSession(activeStore.id, sessionId).then(() => {
+      // New listener for billableLines
+      const billableLinesRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines");
+      const unsubBillableLines = onSnapshot(billableLinesRef, (snapshot) => {
+        const lines = snapshot.docs.map(doc => ({...doc.data(), id: doc.id } as BillableLine));
+        setBillableLines(lines);
+
+        // Fallback for when migration has run but collection is empty (e.g. all refills)
+        if (snapshot.empty) {
+            const legacyBillablesRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
+            const q = query(legacyBillablesRef, orderBy("createdAt", "asc"));
+            const unsubLegacy = onSnapshot(q, (legacySnapshot) => {
+                const billablesMap = new Map<string, BillableItem>();
+                legacySnapshot.docs.forEach(docSnap => {
+                    billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, 'id'>) });
+                });
+                setLegacyBillables(billablesMap);
+            });
+            return () => unsubLegacy();
+        }
+      });
+      return () => unsubBillableLines();
+    });
+
+  }, [sessionId, activeStore]);
+
 
   useEffect(() => {
     if (!activeStore) return;
@@ -97,19 +130,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       return () => unsubscribe();
   }, [sessionId, activeStore]);
 
-  useEffect(() => {
-    if (!activeStore) return;
-    const billablesRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
-    const q = query(billablesRef, orderBy("createdAt", "asc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        const billablesMap = new Map<string, BillableItem>();
-        snapshot.docs.forEach(docSnap => {
-            billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, 'id'>) });
-        });
-        setBillables(billablesMap);
-    });
-    return () => unsubscribe();
-  }, [sessionId, activeStore]);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -130,7 +150,35 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "item")), [discounts]);
 
   const groupedItems = useMemo<GroupedBillableItem[]>(() => {
-    const mergedItems: BillableItem[] = Array.from(billables.values()).map(billable => {
+    const itemsToProcess: BillableItem[] = billableLines.length > 0
+        ? billableLines.map(line => ({ ...line, qty: 1 } as BillableItem)) // Treat each line as a grouped item
+        : Array.from(legacyBillables.values());
+    
+    if (billableLines.length > 0) {
+       return billableLines.map(line => {
+            const servedTicketIds = line.ticketIds.filter(tid => tickets.get(tid)?.status === 'served');
+            const pendingTicketIds = line.ticketIds.filter(tid => tickets.get(tid)?.status === 'preparing' || tickets.get(tid)?.status === 'ready');
+            const cancelledTicketIds = line.ticketIds.filter(tid => tickets.get(tid)?.status === 'cancelled');
+
+            return {
+                ...line,
+                key: line.id,
+                isGrouped: line.qty > 1,
+                totalQty: line.qty,
+                servedQty: servedTicketIds.length,
+                pendingQty: pendingTicketIds.length,
+                cancelledQty: cancelledTicketIds.length,
+                createdAtMin: line.createdAt,
+                // These are now directly on the line item
+                lineDiscountType: line.discountType ?? 'fixed',
+                lineDiscountValue: line.discountValue ?? 0,
+            } as GroupedBillableItem
+       }).sort((a,b) => (a.createdAtMin?.toMillis() ?? 0) - (b.createdAtMin?.toMillis() ?? 0));
+    }
+
+
+    // --- LEGACY FALLBACK ---
+    const mergedItems: BillableItem[] = Array.from(legacyBillables.values()).map(billable => {
         const ticket = tickets.get(billable.id);
         const qty = billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty;
         return { ...billable, qty, status: ticket?.status || 'served' };
@@ -138,8 +186,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
     const groups: Record<string, GroupedBillableItem> = {};
     mergedItems.forEach(item => {
-        const freeKey = `free:${item.freeQty ?? (item.isFree ? item.qty : 0)}`;
-        const discKey = `disc:${item.lineDiscountType}-${item.lineDiscountValue}-q:${item.discountQty ?? 0}`;
+        const freeQty = item.freeQty ?? (item.isFree ? item.qty : 0);
+        const freeKey = `free:${freeQty}`;
+        const discountQty = item.discountQty ?? (item.lineDiscountValue > 0 ? item.qty - freeQty : 0);
+        const discKey = `disc:${item.lineDiscountType}-${item.lineDiscountValue}-q:${discountQty}`;
         const voidKey = item.isVoided ? 'voided' : 'active';
         const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discKey}|${freeKey}`;
         
@@ -171,7 +221,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         const getItemTime = (date: any) => typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
         return getItemTime(a.createdAtMin) - getItemTime(b.createdAtMin);
     });
-  }, [tickets, billables, session]);
+  }, [billableLines, legacyBillables, tickets, session]);
 
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
@@ -204,17 +254,31 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     ticketIds: string[],
     discountType: "fixed" | "percent",
     discountValue: number,
-    quantity: number
+    quantity: number,
   ) => {
     if (isBillingLocked || !activeStore || !session) return;
   
     // This quantity is the number of individual items to apply the discount to.
-    const qtyToDiscount = Math.max(1, Math.floor(quantity || 1));
-    const targetIds = ticketIds.slice(0, qtyToDiscount);
+    const qty = Math.max(1, Math.floor(quantity || 1));
+  
+    // This only works if each doc has qty=1.
+    const targetIds = ticketIds.slice(0, qty);
+  
+    // If we're trying to apply a partial discount to a line item that is stored as a single document with qty > 1, this won't work as expected.
+    if (qty > 1 && ticketIds.length === 1) {
+        const billableDoc = await getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]));
+        if (billableDoc.exists() && billableDoc.data().qty > 1) {
+             toast({
+                variant: "destructive",
+                title: "Cannot apply partial discount",
+                description: "This line item is stored as a single record with qty > 1. Split the item first (future feature).",
+            });
+            return;
+        }
+    }
   
     const batch = writeBatch(db);
     
-    // This logic correctly applies discount to N separate documents
     targetIds.forEach(ticketId => {
         const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
         batch.update(billableRef, {
@@ -241,6 +305,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
     const newIsFree = !currentIsFree;
     
+    // Handle single item doc with qty > 1
     if (ticketIds.length === 1) {
         const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
         batch.update(billableRef, {
@@ -251,6 +316,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             updatedAt: serverTimestamp(),
         });
     } else if (ticketIds.length > 1) {
+         // Handle multiple item docs with qty = 1
          for (let i = 0; i < ticketIds.length; i++) {
             const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[i]);
             if (i < quantity && newIsFree) {
@@ -314,10 +380,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     })();
   };
 
-  const allBillableItems = Array.from(billables.values());
+  const allBillableItems = Array.from(legacyBillables.values());
   const allServedItems: BillableItem[] = allBillableItems
     .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
-    .map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
+    .map(billable => {
+        const qty = billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty;
+        const freeQty = billable.freeQty ?? (billable.isFree ? qty : 0);
+        return {...billable, qty, freeQty };
+    });
   
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
 
@@ -331,12 +401,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
         sub += chargeableQty * item.unitPrice;
 
-        if (item.lineDiscountValue > 0) {
-            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? 0));
+        if (item.lineDiscountValue > 0 && chargeableQty > 0) {
+            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? chargeableQty));
             if (item.lineDiscountType === 'percent') {
                 lineDisc += (discountableQty * item.unitPrice) * (item.lineDiscountValue / 100);
             } else {
-                lineDisc += item.lineDiscountValue * discountableQty;
+                lineDisc += Math.min(item.lineDiscountValue * discountableQty, discountableQty * item.unitPrice);
             }
         }
     });
@@ -461,5 +531,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    
