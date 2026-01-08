@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
 import Image from "next/image";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -195,7 +195,7 @@ function POSContent({
                 isFree: false,
                 isVoided: false,
             };
-            const { ref: lineRef, data: lineData, isNew } = await findOrCreateLineByVariant(tx, linesRef, variant);
+            const { ref: lineRef, data: lineData, exists } = await findOrCreateLineByVariant(tx, linesRef, variant);
             
             const updatedTicketIds = [...new Set([...lineData.ticketIds, ...newTicketIds])];
             
@@ -204,7 +204,7 @@ function POSContent({
                 ticketIds: updatedTicketIds,
                 qty: updatedTicketIds.length,
                 updatedAt: serverTimestamp(),
-                ...(isNew ? { createdAt: serverTimestamp() } : {})
+                ...(!exists ? { createdAt: serverTimestamp() } : {})
             };
             tx.set(lineRef, lineUpdatePayload, { merge: true });
         });
