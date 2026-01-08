@@ -221,17 +221,6 @@ export type BillableLine = {
   updatedAt?: any;
 };
 
-export type GroupedBillableItem = {
-    key: string;
-    isGrouped: boolean;
-    totalQty: number;
-    servedQty: number;
-    pendingQty: number;
-    cancelledQty: number;
-    ticketIds: string[];
-    createdAtMin: any | null; // Timestamp
-} & Omit<BillableItem, 'id' | 'qty'>;
-
 export type Payment = {
     id: string;
     methodId: string;

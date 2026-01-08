@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment } from "@/lib/types";
+import type { ModeOfPayment, BillableLine } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -80,7 +80,7 @@ export default function ReceiptPage() {
             try {
                 const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
                     getDoc(doc(db, "stores", activeStoreId, "sessions", sessionId as string)),
-                    getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "billables"), orderBy("createdAt", "asc"))),
+                    getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "billableLines"), orderBy("createdAt", "asc"))),
                     getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "payments"), orderBy("createdAt", "asc"))),
                     getDoc(doc(db, "stores", activeStoreId, "receiptSettings", "main")),
                     getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string))
@@ -111,7 +111,11 @@ export default function ReceiptPage() {
                         closedAt: sessionData?.closedAt,
                         cashierName,
                     } as any,
-                    billables: billablesSnap.docs.map(d => d.data()) as any[],
+                    billables: billablesSnap.docs.map(d => ({
+                        ...(d.data() as BillableLine),
+                        lineDiscountType: d.data().discountType,
+                        lineDiscountValue: d.data().discountValue,
+                    })) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
                     receiptCreatedAt: receiptCreatedAt,

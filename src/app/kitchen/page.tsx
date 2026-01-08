@@ -212,12 +212,6 @@ export default function KitchenPage() {
                 updatePayload.cancelledAt = serverTimestamp();
                 updatePayload.cancelledByUid = appUser.uid;
                 updatePayload.cancelReason = reason;
-                
-                const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
-                const billableDoc = await transaction.get(billableRef);
-                if (billableDoc.exists()) {
-                    transaction.update(billableRef, { status: newStatus, updatedAt: serverTimestamp() });
-                }
             }
             transaction.update(ticketRef, updatePayload);
         });
@@ -294,5 +288,3 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
-
-    
