@@ -19,33 +19,9 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { ensureBillableLinesForSession, moveTicketIdsBetweenLines, changeLineQty } from "./billable-lines";
+import { ensureBillableLinesForSession, moveTicketIdsBetweenLines, changeLineQty, getEligibleTicketIds } from "./billable-lines";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import type { KitchenTicket, OrderItemStatus, StoreAddon, ModeOfPayment, PendingSession, StorePackage, StoreFlavor, MenuSchedule, Payment, Charge, Discount, BillableItem, GroupedBillableItem, BillableLine } from "@/lib/types";
-
-function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
-    if (!line || !line.ticketIds) return [];
-
-    return line.ticketIds.filter(ticketId => {
-        // For packages, which are synthetic, there's no ticket, so we treat them as "served" for billing purposes.
-        if (line.type === 'package') return mode === 'served' || mode === 'any'; 
-        
-        const ticket = ticketsById.get(ticketId);
-        if (!ticket) return false;
-
-        switch (mode) {
-            case "served":
-                return ticket.status === 'served';
-            case "pending":
-                return ticket.status === 'preparing' || ticket.status === 'ready';
-            case "any":
-                return ticket.status !== 'cancelled' && ticket.status !== 'void';
-            default:
-                return false;
-        }
-    });
-}
-
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
@@ -100,7 +76,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             await ensureBillableLinesForSession(activeStore.id, sessionId);
             if (cancelled) return;
 
-            // BillableLines listener is now the primary source of truth for the UI
             unsubBillableLines = onSnapshot(
                 collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"),
                 (snapshot) => {
@@ -111,15 +86,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
         } catch (e) {
             console.error("BillableLines migration/listen failed, falling back to legacy:", e);
-            // Fallback to legacy listener if migration fails, so cashier can still operate.
-            const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
-            unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
-                const billablesMap = new Map<string, BillableItem>();
-                legacySnap.docs.forEach(docSnap => {
-                    billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
-                });
-                setLegacyBillables(billablesMap);
-            });
+        } finally {
+            // Always listen to legacy billables for now, but UI will prefer billableLines
+             const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
+             unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
+                 const billablesMap = new Map<string, BillableItem>();
+                 legacySnap.docs.forEach(docSnap => {
+                     billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
+                 });
+                 setLegacyBillables(billablesMap);
+             });
         }
     })();
 
@@ -188,14 +164,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "item")), [discounts]);
 
   const groupedItems = useMemo<GroupedBillableItem[]>(() => {
-    // MS-2: billableLines is the source of truth
     if (billableLines.length > 0) {
         return billableLines.map(line => {
             const servedQty = getEligibleTicketIds(line, tickets, "served").length;
             const pendingQty = getEligibleTicketIds(line, tickets, "pending").length;
             
             return {
-                ...line, // Spread all properties from BillableLine
+                ...line,
                 key: line.id,
                 isGrouped: line.qty > 1,
                 totalQty: line.qty,
@@ -205,7 +180,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 createdAtMin: line.createdAt ?? null,
                 lineDiscountType: line.discountType ?? 'fixed',
                 lineDiscountValue: line.discountValue ?? 0,
-            }
+            } as GroupedBillableItem
         });
     }
 
@@ -231,7 +206,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discKey}|${freeKey}`;
         
         if (!groups[key]) {
-            groups[key] = { ...item, key, isGrouped: false, totalQty: 0, servedQty: 0, pendingQty: 0, cancelledQty: 0, ticketIds: [], createdAtMin: item.createdAt };
+            groups[key] = { ...item, key, isGrouped: false, totalQty: 0, servedQty: 0, pendingQty: 0, cancelledQty: 0, ticketIds: [], createdAtMin: item.createdAt } as GroupedBillableItem;
         }
         
         groups[key].totalQty += itemQty;
@@ -270,27 +245,27 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         billableLines.forEach(line => {
             if (line.isVoided || line.isFree) return;
 
-            const servedQty = line.type === 'package' 
+            const lineServedQty = line.type === 'package' 
                 ? (session?.guestCountFinal ?? line.qty) 
                 : getEligibleTicketIds(line, tickets, "served").length;
 
-            if (servedQty > 0) {
-                const chargeableAmount = servedQty * line.unitPrice;
+            if (lineServedQty > 0) {
+                const chargeableAmount = lineServedQty * line.unitPrice;
                 sub += chargeableAmount;
 
                 if ((line.discountValue ?? 0) > 0) {
                     if (line.discountType === 'percent') {
                         lineDisc += chargeableAmount * (line.discountValue! / 100);
                     } else { // fixed
-                        lineDisc += Math.min(line.discountValue! * servedQty, chargeableAmount);
+                        lineDisc += Math.min(line.discountValue! * lineServedQty, chargeableAmount);
                     }
                 }
             }
         });
         return { subtotal: sub, lineDiscountsTotal: lineDisc };
     }
-
-    // Fallback to legacy logic
+    
+    // Fallback legacy logic
     const allServedItems = Array.from(legacyBillables.values())
         .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
         .map(billable => {
@@ -318,14 +293,27 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 }, [billableLines, legacyBillables, tickets, session]);
 
   const handleUpdateQty = async (ticketIds: string[], newQty: number) => {
-    if (isBillingLocked || !activeStore || !session || newQty < 1) return;
-    if (ticketIds.length > 1) {
-        toast({ variant: 'destructive', title: 'Cannot Update', description: 'Quantity can only be changed on single-item lines.' });
-        return;
-    }
-    
+    if (isBillingLocked || !activeStore || !session || newQty < 1 || !appUser) return;
     try {
-        await changeLineQty(activeStore.id, sessionId, ticketIds[0], newQty, appUser!, tickets);
+        if (billableLines.length > 0) {
+            // New logic: Use billable-lines service
+            if (ticketIds.length !== 1) {
+                throw new Error("Quantity can only be changed on single-item lines in this mode.");
+            }
+            const line = billableLines.find(l => l.ticketIds.includes(ticketIds[0]));
+            if (!line) throw new Error("Line item not found.");
+            
+            await changeLineQty(activeStore.id, sessionId, line.id, newQty, appUser, tickets);
+
+        } else {
+            // Legacy logic
+             const batch = writeBatch(db);
+            ticketIds.forEach(id => {
+                const ref = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", id);
+                batch.update(ref, { qty: newQty, updatedAt: serverTimestamp() });
+            });
+            await batch.commit();
+        }
         toast({ title: "Quantity Updated" });
     } catch(e: any) {
          toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -334,13 +322,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const handleUpdateUnitPrice = async (ticketIds: string[], newPrice: number) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
-    if (ticketIds.length > 1) {
-         toast({ variant: 'destructive', title: 'Cannot Update', description: 'Price can only be changed on single-item lines.' });
-        return;
-    }
     try {
-        const line = billableLines.find(l => l.id === ticketIds[0]);
+        const line = billableLines.find(l => l.id === ticketIds[0]); // Here ticketIds[0] is lineId
         if (!line) throw new Error("Line item not found.");
+
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
@@ -356,7 +341,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   };
 
   const handleApplyDiscount = async (
-    ticketIds: string[],
+    ticketIds: string[], // This is the line.id
     discountType: "fixed" | "percent",
     discountValue: number,
     quantity: number
@@ -365,8 +350,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         const line = billableLines.find(l => l.id === ticketIds[0]);
         if (!line) throw new Error("Line item not found.");
-        const eligibleTicketIds = getEligibleTicketIds(line, tickets, "served");
-        const targetIds = eligibleTicketIds.slice(0, quantity);
+        
+        const eligibleIds = getEligibleTicketIds(line, tickets, "served");
+        const targetIds = eligibleIds.slice(0, quantity);
+
+        if(targetIds.length === 0) {
+            toast({ variant: "destructive", title: "No items to discount", description: "There are no served items in this line to apply a discount to."});
+            return;
+        }
 
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
@@ -387,14 +378,20 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         const line = billableLines.find(l => l.id === ticketIds[0]);
         if (!line) throw new Error("Line item not found.");
-        const eligibleTicketIds = getEligibleTicketIds(line, tickets, "served");
-        const targetIds = eligibleTicketIds.slice(0, quantity);
+        
+        const eligibleIds = getEligibleTicketIds(line, tickets, "served");
+        const targetIds = eligibleIds.slice(0, quantity);
+
+        if(targetIds.length === 0) {
+            toast({ variant: "destructive", title: "No items to mark as free", description: "There are no served items in this line."});
+            return;
+        }
 
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
-            toVariant: { ...line, isFree: !currentIsFree, discountValue: 0 },
+            toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: 'fixed' },
             ticketIdsToMove: targetIds,
             actorUid: appUser.uid,
         });
@@ -414,7 +411,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
-            toVariant: { ...line, isFree: false, discountValue: 0 },
+            toVariant: { ...line, isFree: false, discountValue: 0, discountType: 'fixed' },
             ticketIdsToMove: line.ticketIds,
             actorUid: appUser.uid,
         });
@@ -593,3 +590,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    
