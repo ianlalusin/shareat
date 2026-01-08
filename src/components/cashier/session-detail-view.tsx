@@ -149,7 +149,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         groups[key].totalQty += item.qty;
         if (item.status === 'served') groups[key].servedQty += item.qty;
         else if (item.status === 'preparing' || item.status === 'ready') groups[key].pendingQty += item.qty;
-        else if (item.status === 'cancelled' || item.status === 'void') groups[key].cancelledQty += item.qty;
+        else if (item.status === 'cancelled') groups[key].cancelledQty += item.qty;
 
         groups[key].ticketIds.push(item.id);
         
@@ -245,18 +245,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const handleVoidItem = async (ticketIds: string[], reason: string, note?: string) => {
-    if (isBillingLocked || !appUser || !activeStore || !session) return;
-    try {
-        await voidBillableItems(appUser, activeStore.id, sessionId, ticketIds, reason, note);
-        toast({ title: "Item voided" });
-    } catch (e: any) {
-        toast({
-            variant: "destructive",
-            title: "Void failed",
-            description: e?.message ?? "Unknown error",
-        });
-    }
+  const handleVoidItem = (ticketId: string, reason: string, note?: string) => {
+    if (!appUser || !activeStore || !session) return;
+    if (isBillingLocked) return;
+
+    void (async () => {
+        try {
+            await voidBillableItems(appUser, activeStore.id, session.id, [ticketId], reason, note);
+            toast({ title: "Item voided" });
+        } catch (e: any) {
+            toast({
+                variant: "destructive",
+                title: "Void failed",
+                description: e?.message ?? "Unknown error",
+            });
+        }
+    })();
   };
 
   const allBillableItems = Array.from(billables.values());
