@@ -233,6 +233,9 @@ export type BillableItem = {
   voidedByUid?: string | null;
   voidReason?: string | null;
   voidNote?: string | null;
+  // Partial discount/free fields
+  freeQty?: number;
+  discountQty?: number;
 };
 
 export type GroupedBillableItem = {
@@ -374,3 +377,5 @@ export type Receipt = {
 }
 
     
+
+      

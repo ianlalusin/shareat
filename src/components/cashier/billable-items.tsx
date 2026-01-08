@@ -24,7 +24,7 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   onUpdateQty: (ticketIds: string[], newQty: number) => void;
-  onUpdateUnitPrice: (ticketIds: string[], newPrice: number) => void;
+  onUpdateUnitPrice: (ticketIds: string[], newPrice: number) => Promise<void>;
   onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
   onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>;
@@ -56,6 +56,8 @@ function GroupedBillableItemRow({
         }
     }
 
+    const freeQty = group.freeQty ?? (group.isFree ? group.totalQty : 0);
+
     return (
         <>
             <div className="flex flex-col border-b last:border-b-0">
@@ -74,8 +76,8 @@ function GroupedBillableItemRow({
                         >
                           {group.status ?? "preparing"}
                         </Badge>
-                         {group.isFree && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free</Badge>}
-                         {group.lineDiscountValue > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted</Badge>}
+                         {freeQty > 0 && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free ({freeQty})</Badge>}
+                         {group.discountQty > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted ({group.discountQty})</Badge>}
                     </div>
                     {!isLocked && (
                         <div className="flex items-center gap-2">
@@ -206,4 +208,4 @@ export function BillableItems({
   );
 }
 
-    
+      
