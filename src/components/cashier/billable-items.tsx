@@ -100,7 +100,7 @@ function GroupedBillableItemRow({
             <div className="flex flex-col border-b last:border-b-0">
                 <div className="flex items-center gap-4 py-3 px-4">
                     <div className="flex-1">
-                        <p className="font-medium">{group.totalQty}x {group.itemName}</p>
+                        <p className="font-medium">{group.itemName}</p>
                         <div className="text-xs text-muted-foreground">
                             <p>₱{group.unitPrice.toFixed(2)} each = ₱{(group.totalQty * group.unitPrice).toFixed(2)}</p>
                             {(group.servedQty > 0 || group.pendingQty > 0) && (
@@ -118,11 +118,49 @@ function GroupedBillableItemRow({
                     </div>
                     {!isLocked && (
                         <div className="flex items-center gap-2">
-                            {isServed ? (
+                             {group.totalQty > 1 ? (
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        className="h-8 w-8"
+                                        disabled={isLocked}
+                                        onClick={() => onUpdateQty(group.ticketIds, group.totalQty - 1)}
+                                        aria-label="Decrease qty"
+                                    >
+                                        <Minus className="h-4 w-4" />
+                                    </Button>
+
+                                    <div className="min-w-[28px] text-center text-sm font-medium">{group.totalQty}</div>
+
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        className="h-8 w-8"
+                                        disabled={isLocked}
+                                        onClick={() => onUpdateQty(group.ticketIds, group.totalQty + 1)}
+                                        aria-label="Increase qty"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    disabled={isLocked || isProcessing}
+                                    className="text-red-500 hover:text-red-600 h-8 w-8"
+                                    onClick={handleVoidClick}
+                                    aria-label="Void item"
+                                >
+                                    {isProcessing ? <Loader2 className="animate-spin" /> : <X className="h-4 w-4" />}
+                                </Button>
+                            )}
+
+                            {isServed && (
                                 <>
                                     <Button variant="outline" size="sm" onClick={() => setAction("discount")} disabled={!canDiscount}>
                                         <Percent className="mr-2"/>
-                                        Discount
                                     </Button>
                                     <Button 
                                         variant="outline" 
@@ -132,16 +170,8 @@ function GroupedBillableItemRow({
                                         className={cn(group.isFree && 'bg-yellow-400 text-black hover:bg-yellow-400/90')}
                                     >
                                         <Gift className="mr-2"/>
-                                        Free
-                                    </Button>
-                                     <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={handleVoidClick}>
-                                        <X className="h-4 w-4" />
                                     </Button>
                                 </>
-                            ) : (
-                                <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={handleVoidClick} disabled={isProcessing}>
-                                    {isProcessing ? <Loader2 className="animate-spin"/> : <X className="h-4 w-4" />}
-                                </Button>
                             )}
                         </div>
                     )}
