@@ -80,7 +80,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
             try {
                 const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
                     getDoc(doc(db, "stores", store.id, "sessions", selectedSessionId)),
-                    getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "billables"), orderBy("createdAt", "asc"))),
+                    getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "billableLines"), orderBy("createdAt", "asc"))),
                     getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "payments"), orderBy("createdAt", "asc"))),
                     getDoc(doc(db, "stores", store.id, "receiptSettings", "main")),
                     getDoc(doc(db, "stores", store.id, "receipts", selectedSessionId))

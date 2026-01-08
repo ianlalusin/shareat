@@ -15,7 +15,7 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
-import type { ModeOfPayment, Receipt as ReceiptType, BillableItem } from "@/lib/types";
+import type { ModeOfPayment, Receipt as ReceiptType, BillableLine } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
@@ -549,7 +549,7 @@ export default function DashboardPage() {
                 try {
                     const [sessionSnap, billablesSnap, paymentsSnap] = await Promise.all([
                         getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
-                        getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billables"), orderBy("createdAt", "asc"))),
+                        getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"), orderBy("createdAt", "asc"))),
                         getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"), orderBy("createdAt", "asc"))),
                     ]);
                     if (sessionSnap.exists()) {
@@ -669,13 +669,13 @@ export default function DashboardPage() {
     
         for (const receipt of statsReceipts) {
             const sessionId = receipt.sessionId ?? receipt.id;
-            const billablesRef = collection(db, `stores/${activeStore.id}/sessions/${sessionId}/billables`);
+            const billablesRef = collection(db, `stores/${activeStore.id}/sessions/${sessionId}/billableLines`);
             const billablesSnap = await getDocs(query(billablesRef, orderBy("createdAt", "asc")));
     
             for (const billableDoc of billablesSnap.docs) {
-                const item = billableDoc.data() as BillableItem;
+                const item = billableDoc.data() as BillableLine;
     
-                if (item.isFree || isExcludedStatus(item.status)) {
+                if (item.isFree || isExcludedStatus(item.isVoided ? "voided" : "")) {
                     continue;
                 }
     
@@ -683,9 +683,9 @@ export default function DashboardPage() {
                 const unitPrice = toNum(item.unitPrice || 0);
                 const lineSubtotal = qty * unitPrice;
     
-                const lineDiscount = item.lineDiscountType === 'percent'
-                    ? lineSubtotal * (toNum(item.lineDiscountValue) / 100)
-                    : Math.min(toNum(item.lineDiscountValue) * qty, lineSubtotal);
+                const lineDiscount = item.discountType === 'percent'
+                    ? lineSubtotal * (toNum(item.discountValue) / 100)
+                    : Math.min(toNum(item.discountValue) * qty, lineSubtotal);
                 
                 const lineTotal = lineSubtotal - lineDiscount;
     

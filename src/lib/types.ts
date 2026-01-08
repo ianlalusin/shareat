@@ -167,34 +167,6 @@ export type KitchenTicket = {
     sessionLabel?: string;
 };
 
-export type BillableItem = {
-  id: string;
-  type: "package" | "addon" | "refill";
-  source: "auto" | "manual" | "kitchenticket";
-  addonId?: string;
-  itemName: string;
-  qty: number;
-  uom?: string;
-  unitPrice: number;
-  lineDiscountType: "percent" | "fixed";
-  lineDiscountValue: number;
-  isFree: boolean;
-  notes?: string;
-  status?: OrderItemStatus;
-  createdAt: any; 
-  updatedAt: any;
-  createdByUid: string;
-  // Voiding fields (billing-only)
-  isVoided?: boolean;
-  voidedAt?: Timestamp | null;
-  voidedByUid?: string | null;
-  voidReason?: string | null;
-  voidNote?: string | null;
-  // Partial discount/free fields
-  freeQty?: number;
-  discountQty?: number;
-};
-
 export type BillableLineType = "package" | "addon";
 
 export type BillableLine = {

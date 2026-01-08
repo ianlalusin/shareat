@@ -46,7 +46,7 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
     const handleSelectReceipt = async (sale: Sale) => {
         const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
             getDoc(doc(db, "stores", storeId, "sessions", sale.id)),
-            getDocs(query(collection(db, "stores", storeId, "sessions", sale.id, "billables"), orderBy("createdAt", "asc"))),
+            getDocs(query(collection(db, "stores", storeId, "sessions", sale.id, "billableLines"), orderBy("createdAt", "asc"))),
             getDocs(query(collection(db, "stores", storeId, "sessions", sale.id, "payments"), orderBy("createdAt", "asc"))),
             getDoc(doc(db, "stores", storeId, "receiptSettings", "main")),
             getDoc(doc(db, "stores", storeId, "receipts", sale.id))

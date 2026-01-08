@@ -15,10 +15,12 @@ import {
   type Transaction,
   type DocumentReference,
   type CollectionReference,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import type { BillableLine, KitchenTicket } from '@/lib/types';
 import { AppUser } from '@/context/auth-context';
+import { sha1 } from 'js-sha1';
 
 // Helper to create a consistent key for grouping.
 export function normalizeKey(str: string): string {
@@ -36,19 +38,6 @@ export function makeVariantKey(lineLike: Partial<BillableLine>): string {
     `void:${lineLike.isVoided ? 'yes' : 'no'}`,
   ];
   return parts.join('|');
-}
-
-/**
- * This function is now a no-op as the migration period from the legacy
- * /billables collection is complete. The system now exclusively uses
- * /billableLines.
- */
-export async function ensureBillableLinesForSession(
-  storeId: string,
-  sessionId: string
-): Promise<void> {
-  // Migration logic has been removed.
-  return;
 }
 
 export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
@@ -79,10 +68,7 @@ async function findOrCreateLineByVariant(
     variant: Partial<BillableLine>
 ): Promise<{ ref: DocumentReference; data: BillableLine, exists: boolean }> {
     const variantKey = makeVariantKey(variant);
-    // This is a limitation: we can't query inside a transaction on fields not part of the read set.
-    // Instead, we'll create a deterministic ID based on the variant key.
-    // This is generally safe if variant keys are unique enough.
-    const deterministicId = variantKey.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 400);
+    const deterministicId = sha1(variantKey).substring(0, 20);
     const lineRef = doc(linesRef, deterministicId);
     const lineSnap = await tx.get(lineRef);
 
@@ -130,34 +116,37 @@ export async function moveTicketIdsBetweenLines({
         const linesRef = collection(db, `stores/${storeId}/sessions/${sessionId}/billableLines`);
         const fromLineRef = doc(linesRef, fromLineId);
         
+        const { ref: toLineRef, exists: toLineExists } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
+        
+        if(fromLineRef.id === toLineRef.id) {
+            // Trying to move an item to its own variant (e.g. applying same discount twice). This is a no-op.
+            return;
+        }
+
         const fromLineSnap = await tx.get(fromLineRef);
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
+
+        const toLineSnap = await tx.get(toLineRef);
+        const toLineData = toLineSnap.exists() ? toLineSnap.data() as BillableLine : (await findOrCreateLineByVariant(tx, linesRef, toVariant)).data;
+
 
         // Harden: Ensure we only move IDs that actually exist on the source line.
         const toMoveSet = new Set(ticketIdsToMove);
         const validIdsToMove = fromLineData.ticketIds.filter(id => toMoveSet.has(id));
         if (validIdsToMove.length === 0) return; // Nothing to do
 
-        // Find or Create destination line
-        const { ref: toLineRef, data: toLineData, exists: toLineExists } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
-        
-        if (fromLineRef.id === toLineRef.id) {
-            // This is a no-op, trying to move to the same variant.
-            return;
-        }
-
         // Harden: Calculate new arrays using sets to prevent duplicates
         const remainingFromIds = fromLineData.ticketIds.filter(id => !toMoveSet.has(id));
-        const newToIds = [...new Set([...toLineData.ticketIds, ...validIdsToMove])];
+        const newToIds = [...new Set([...(toLineData.ticketIds || []), ...validIdsToMove])];
 
         // Update or delete the 'from' line
-        if (remainingFromIds.length === 0) {
+        if (remainingFromIds.length === 0 && fromLineData.type === 'addon') {
             tx.delete(fromLineRef);
         } else {
             tx.update(fromLineRef, { 
                 ticketIds: remainingFromIds, 
-                qty: remainingFromIds.length, 
+                qty: fromLineData.type === 'package' ? fromLineData.qty : remainingFromIds.length, 
                 updatedAt: serverTimestamp() 
             });
         }

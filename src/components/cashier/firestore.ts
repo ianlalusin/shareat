@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -20,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { StorePackage, BillableLine, BillableItem, Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
+import type { StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { normalizeKey } from './billable-lines';
@@ -188,37 +187,6 @@ export async function startSession(
 
   await batch.commit();
   return newSessionRef.id;
-}
-
-
-/**
- * Updates the status of a kitchen ticket. This is the primary action for cashier overrides.
- */
-export async function updateKitchenTicketStatus(
-    storeId: string,
-    sessionId: string,
-    ticketId: string,
-    newStatus: 'served' | 'void' | 'cancelled',
-    user: AppUser,
-    reason?: string
-) {
-    const batch = writeBatch(db);
-
-    // 1. Update the kitchen ticket - this is the source of truth
-    const ticketRef = doc(db, "stores", storeId, "sessions", sessionId, "kitchentickets", ticketId);
-    const ticketUpdate: any = { status: newStatus };
-    
-    if (newStatus === 'served') {
-        ticketUpdate.servedAt = serverTimestamp();
-        ticketUpdate.servedByUid = user.uid;
-    } else { // 'void' or 'cancelled'
-        ticketUpdate.cancelledAt = serverTimestamp();
-        ticketUpdate.cancelledByUid = user.uid;
-        ticketUpdate.cancelReason = reason || 'Voided by cashier';
-    }
-    batch.update(ticketRef, stripUndefined(ticketUpdate));
-
-    await batch.commit();
 }
 
 type BillingSummary = {
