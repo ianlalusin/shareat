@@ -198,10 +198,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleApplyDiscount = async (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
+  const handleApplyDiscount = async (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number) => {
     if (isBillingLocked || !activeStore || !session) return;
     const batch = writeBatch(db);
-    ticketIds.slice(0, quantity).forEach(ticketId => {
+    // The ticketIds are already sliced by the dialog. Apply to all provided.
+    ticketIds.forEach(ticketId => {
         batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), {
             lineDiscountType: discountType, lineDiscountValue: discountValue, isFree: false, updatedAt: serverTimestamp()
         });
@@ -258,18 +259,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleVoidItem = (ticketId: string, reason: string, note?: string) => {
     if (!appUser || !activeStore || !session) return;
     if (isBillingLocked) return;
-
+  
+    // fire-and-forget wrapper (prop expects void return)
     void (async () => {
-        try {
-            await voidBillableItems(appUser, activeStore.id, session.id, [ticketId], reason, note);
-            toast({ title: "Item voided" });
-        } catch (e: any) {
-            toast({
-                variant: "destructive",
-                title: "Void failed",
-                description: e?.message ?? "Unknown error",
-            });
-        }
+      try {
+        await voidBillableItems(appUser, activeStore.id, session.id, [ticketId], reason, note);
+        toast({ title: "Item voided" });
+      } catch (e: any) {
+        toast({
+          variant: "destructive",
+          title: "Void failed",
+          description: e?.message ?? "Unknown error",
+        });
+      }
     })();
   };
 
@@ -407,5 +409,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    
