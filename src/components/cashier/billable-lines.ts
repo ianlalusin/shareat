@@ -218,36 +218,173 @@ export async function moveTicketIdsBetweenLines({
         const linesRef = collection(db, `stores/${storeId}/sessions/${sessionId}/billableLines`);
         const fromLineRef = doc(linesRef, fromLineId);
         
-        // 1. Read fromLine
         const fromLineSnap = await tx.get(fromLineRef);
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        // 2. Ensure tickets exist in source
-        const fromTicketSet = new Set(fromLineData.ticketIds);
-        for (const ticketId of ticketIdsToMove) {
-            if (!fromTicketSet.has(ticketId)) {
-                throw new Error(`Ticket ${ticketId} not found in source line ${fromLineId}.`);
-            }
-        }
-        
-        // 3. Find or Create destination line
+        // Harden: Ensure we only move IDs that actually exist on the source line.
+        const toMoveSet = new Set(ticketIdsToMove);
+        const validIdsToMove = fromLineData.ticketIds.filter(id => toMoveSet.has(id));
+        if (validIdsToMove.length === 0) return; // Nothing to do
+
+        // Find or Create destination line
         const { ref: toLineRef, data: toLineData, exists: toLineExists } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
         
-        // 4. Update both lines
-        const newFromTicketIds = fromLineData.ticketIds.filter(id => !ticketIdsToMove.includes(id));
-        const newToTicketIds = [...new Set([...toLineData.ticketIds, ...ticketIdsToMove])];
+        // Harden: Calculate new arrays using sets to prevent duplicates
+        const remainingFromIds = fromLineData.ticketIds.filter(id => !toMoveSet.has(id));
+        const newToIds = [...new Set([...toLineData.ticketIds, ...validIdsToMove])];
 
-        if (newFromTicketIds.length === 0) {
+        // Update or delete the 'from' line
+        if (remainingFromIds.length === 0) {
             tx.delete(fromLineRef);
         } else {
-            tx.update(fromLineRef, { ticketIds: newFromTicketIds, qty: newFromTicketIds.length, updatedAt: serverTimestamp() });
+            tx.update(fromLineRef, { 
+                ticketIds: remainingFromIds, 
+                qty: remainingFromIds.length, 
+                updatedAt: serverTimestamp() 
+            });
         }
 
+        // Update or create the 'to' line
         if (toLineExists) {
-             tx.update(toLineRef, { ticketIds: newToTicketIds, qty: newToTicketIds.length, updatedAt: serverTimestamp() });
+             tx.update(toLineRef, { 
+                ticketIds: newToIds, 
+                qty: newToIds.length, 
+                updatedAt: serverTimestamp() 
+            });
         } else {
-             tx.set(toLineRef, { ...toLineData, ticketIds: newToTicketIds, qty: newToTicketIds.length, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+             tx.set(toLineRef, { 
+                ...toLineData, 
+                ticketIds: newToIds, 
+                qty: newToIds.length, 
+                createdAt: serverTimestamp(), 
+                updatedAt: serverTimestamp() 
+            });
         }
     });
 }
+
+export async function updateLineUnitPrice(
+  storeId: string,
+  sessionId: string,
+  lineId: string,
+  newPrice: number,
+  actorUid: string
+) {
+    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, lineId);
+    const lineSnap = await getDoc(lineRef);
+    if (!lineSnap.exists()) throw new Error("Line item not found.");
+    const lineData = lineSnap.data() as BillableLine;
+
+    await moveTicketIdsBetweenLines({
+        storeId,
+        sessionId,
+        fromLineId: lineId,
+        toVariant: { ...lineData, unitPrice: newPrice },
+        ticketIdsToMove: lineData.ticketIds,
+        actorUid: actorUid,
+        logAction: 'change_price'
+    });
+}
+
+
+export async function changeLineQty(
+    storeId: string,
+    sessionId: string,
+    lineId: string,
+    newQty: number,
+    actor: AppUser,
+    tickets: Map<string, KitchenTicket>
+) {
+    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, lineId);
+    
+    await runTransaction(db, async (tx) => {
+        const lineSnap = await tx.get(lineRef);
+        if (!lineSnap.exists()) throw new Error("Line item not found.");
+        const lineData = lineSnap.data() as BillableLine;
+
+        const currentQty = lineData.qty;
+        if (newQty === currentQty) return;
+
+        if (newQty > currentQty) {
+            // INCREASING QTY
+            if (lineData.isVoided || lineData.isFree || (lineData.discountValue ?? 0) > 0) {
+                throw new Error("Quantity can only be increased on regular, non-discounted items.");
+            }
+            if (lineData.type !== 'addon') {
+                throw new Error("Quantity can only be changed for add-on items.");
+            }
+
+            const addonDoc = await getDoc(doc(db, `stores/${storeId}/storeAddons`, lineData.itemId));
+            if (!addonDoc.exists()) throw new Error(`Addon details for ID ${lineData.itemId} not found.`);
+            const addonData = addonDoc.data() as any;
+
+            const sessionDoc = await getDoc(doc(db, `stores/${storeId}/sessions`, sessionId));
+            const sessionData = sessionDoc.data();
+
+            const newTicketIds: string[] = [];
+            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
+
+            for (let i = 0; i < (newQty - currentQty); i++) {
+                const newTicketRef = doc(ticketsColRef);
+                newTicketIds.push(newTicketRef.id);
+                tx.set(newTicketRef, {
+                    id: newTicketRef.id,
+                    type: "addon",
+                    itemName: lineData.itemName,
+                    qty: 1,
+                    kitchenLocationId: addonData.kitchenLocationId,
+                    status: "preparing",
+                    createdAt: serverTimestamp(),
+                    createdByUid: actor.uid,
+                    sessionId: sessionId, 
+                    storeId: storeId,
+                    tableNumber: sessionData?.tableNumber,
+                    sessionLabel: sessionData?.sessionLabel,
+                });
+            }
+            
+            tx.update(lineRef, {
+                ticketIds: [...lineData.ticketIds, ...newTicketIds],
+                qty: newQty,
+                updatedAt: serverTimestamp()
+            });
+
+        } else {
+            // DECREASING QTY
+            const qtyToReduce = currentQty - newQty;
+            const pendingIds = getEligibleTicketIds(lineData, tickets, "pending");
+            const servedIds = getEligibleTicketIds(lineData, tickets, "served");
+
+            const ticketsToCancel = [
+                ...pendingIds.slice(0, qtyToReduce),
+                ...servedIds.slice(0, qtyToReduce - pendingIds.length)
+            ];
+
+            if (ticketsToCancel.length < qtyToReduce) {
+                throw new Error("Cannot reduce quantity below the number of non-cancellable items.");
+            }
+
+            const remainingTicketIds = lineData.ticketIds.filter(id => !ticketsToCancel.includes(id));
+            
+            tx.update(lineRef, {
+                ticketIds: remainingTicketIds,
+                qty: remainingTicketIds.length,
+                updatedAt: serverTimestamp()
+            });
+            
+            // Mark the corresponding kitchen tickets as cancelled
+            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
+            for (const ticketId of ticketsToCancel) {
+                tx.update(doc(ticketsColRef, ticketId), {
+                    status: "cancelled",
+                    cancelReason: "QTY_REDUCED",
+                    cancelledAt: serverTimestamp(),
+                    cancelledByUid: actor.uid
+                });
+            }
+        }
+    });
+}
+
+    
