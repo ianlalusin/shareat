@@ -20,8 +20,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { StorePackage, BillableLine, BillableItem } from '@/lib/types';
-import type { Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
+import type { StorePackage, BillableLine, BillableItem, Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { normalizeKey } from './billable-lines';
@@ -144,15 +143,15 @@ export async function startSession(
       const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
       const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
       
-      const ticketIds = Array.from({ length: payload.guestCount }, (_, i) => `${ticketRef.id}#${i + 1}`);
-
+      // For a package line, qty is guestCount, and ticketIds can be empty or synthetic.
+      // We don't strictly need ticketIds for package billing, as qty is the authority.
       const billableLinePayload: BillableLine = {
           id: billableLineRef.id,
           type: "package",
           itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
           itemName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
-          ticketIds: ticketIds,
+          ticketIds: [], // Not needed for package billing logic
           qty: payload.guestCount,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -191,74 +190,6 @@ export async function startSession(
   return newSessionRef.id;
 }
 
-export async function updateBillableUnitPrice(
-  user: AppUser,
-  storeId: string,
-  sessionId: string,
-  ticketIds: string[],
-  newUnitPrice: number
-) {
-  if (!ticketIds || ticketIds.length === 0) return;
-  const batch = writeBatch(db);
-  const actor = getActorStamp(user);
-
-  for (const ticketId of ticketIds) {
-    const billableRef = doc(db, "stores", storeId, "sessions", sessionId, "billables", ticketId);
-    batch.update(billableRef, {
-        unitPrice: newUnitPrice,
-        updatedAt: serverTimestamp(),
-    });
-  }
-  await batch.commit();
-}
-
-
-/**
- * Updates a billable item and records the change in the bill history.
- */
-export async function updateBillableItem(
-    storeId: string,
-    sessionId: string,
-    itemId: string,
-    updateData: Partial<Omit<BillableItem, 'id'>>,
-    originalData: BillableItem,
-    user: AppUser,
-) {
-    const batch = writeBatch(db);
-
-    // 1. Update the billable item
-    const itemRef = doc(db, "stores", storeId, "sessions", sessionId, "billables", itemId);
-    batch.update(itemRef, stripUndefined({...updateData, updatedAt: serverTimestamp()}));
-
-    // 2. Record the change in history
-    const historyRef = collection(db, "stores", storeId, "sessions", sessionId, "billHistory");
-    const changedFields = Object.keys(updateData).filter(key => 
-        JSON.stringify(updateData[key as keyof typeof updateData]) !== JSON.stringify(originalData[key as keyof typeof originalData])
-    );
-
-    if (changedFields.length > 0) {
-        const before: Record<string, any> = {};
-        const after: Record<string, any> = {};
-        changedFields.forEach(key => {
-            before[key] = originalData[key as keyof typeof originalData];
-            after[key] = updateData[key as keyof typeof updateData];
-        });
-
-        const newHistoryRef = doc(historyRef);
-        batch.set(newHistoryRef, stripUndefined({
-            id: newHistoryRef.id,
-            lineId: itemId,
-            action: "update",
-            before,
-            after,
-            performedByUid: user.uid,
-            createdAt: serverTimestamp(),
-        }));
-    }
-
-    await batch.commit();
-}
-
 
 /**
  * Updates the status of a kitchen ticket. This is the primary action for cashier overrides.
@@ -289,34 +220,6 @@ export async function updateKitchenTicketStatus(
 
     await batch.commit();
 }
-
-export async function voidBillableItems(
-    user: AppUser,
-    storeId: string,
-    sessionId: string,
-    ticketIds: string[],
-    reason: string,
-    note?: string
-) {
-    if (!ticketIds || ticketIds.length === 0) return;
-    const batch = writeBatch(db);
-    const actor = getActorStamp(user);
-
-    for (const ticketId of ticketIds) {
-        const billableRef = doc(db, "stores", storeId, "sessions", sessionId, "billables", ticketId);
-        batch.update(billableRef, {
-            isVoided: true,
-            voidedAt: serverTimestamp(),
-            voidedByUid: actor.uid,
-            voidReason: reason,
-            voidNote: note || null,
-            updatedAt: serverTimestamp(),
-        });
-    }
-
-    await batch.commit();
-}
-
 
 type BillingSummary = {
   subtotal: number;
@@ -437,10 +340,10 @@ function buildAnalyticsV2(
 
 
 /**
- * Completes a payment and closes the dining session idempotently.
+ * Completes a payment and closes the dining session idempotently using `billableLines`.
  * Uses a Firestore transaction to ensure atomicity and prevent race conditions.
  */
-export async function completePayment(
+export async function completePaymentFromBillableLines(
   storeId: string,
   sessionId: string,
   user: AppUser,
@@ -491,9 +394,10 @@ export async function completePayment(
     }
     
     const sessionData = sessionSnap.data();
+    // IDEMPOTENCY GUARD
     if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
-      return; // Idempotent no-op
+      return receiptRef.id; // Return existing receipt ID
     }
     
     let tableRef = null;
@@ -598,6 +502,8 @@ export async function completePayment(
       }
     }
   });
+
+  return sessionId;
 }
 
 export async function voidSession({
@@ -659,17 +565,5 @@ export async function voidSession({
     });
   });
   
-  // 4. Mark all billables as cancelled
-  const billablesRef = collection(db, "stores", storeId, "sessions", sessionId, "billables");
-  const billablesSnap = await getDocs(billablesRef);
-  billablesSnap.forEach(billableDoc => {
-      batch.update(billableDoc.ref, {
-        status: "cancelled",
-        cancelReason: "SESSION_VOIDED",
-        updatedAt: serverTimestamp()
-      });
-  });
-
-
   await batch.commit();
 }

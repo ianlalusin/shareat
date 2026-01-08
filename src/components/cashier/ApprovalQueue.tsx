@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -51,7 +52,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
 
       let userProfiles: Record<string, string> = {};
       if (userIds.size > 0) {
-        const usersQuery = query(collection(db, "users"), where("id", "in", Array.from(userIds)));
+        const usersQuery = query(collection(db, "users"), where("uid", "in", Array.from(userIds)));
         const userSnap = await getDocs(usersQuery);
         userSnap.forEach(doc => userProfiles[doc.id] = doc.data().name || "Unknown");
       }
@@ -111,10 +112,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             isSessionLocked: isLocked,
             onApprove: async () => {
                 const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-                const batch = writeBatch(db);
-
-                // Update session
-                batch.update(sessionRef, {
+                
+                await updateDoc(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
                     "packageChange.status": "approved",
@@ -122,19 +121,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     "packageChange.approvedAt": serverTimestamp(),
                 });
 
-                // Find the existing package billable item and update it
-                const billablesRef = collection(db, "stores", storeId, "sessions", sessionDoc.id, "billables");
-                const qBillables = query(billablesRef, where("type", "==", "package"));
-                const billableSnap = await getDocs(qBillables);
-
-                billableSnap.forEach(billableDoc => {
-                    batch.update(billableDoc.ref, {
-                        itemName: session.packageChange.requestedPackageSnapshot.name,
-                        unitPrice: session.packageChange.requestedPackageSnapshot.pricePerHead,
-                    });
-                });
-
-                await batch.commit();
+                // Since billableLines are now canonical, we don't need to update the legacy billable item.
+                // The UI will react to the session's packageSnapshot change automatically if designed correctly.
             },
             onReject: async () => {
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);

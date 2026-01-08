@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -8,7 +9,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePayment, updateKitchenTicketStatus } from "@/components/cashier/firestore";
+import { completePaymentFromBillableLines } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,9 +20,9 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, getEligibleTicketIds, moveTicketIdsBetweenLines, updateLineUnitPrice } from "./billable-lines";
+import { changeLineQty, getEligibleTicketIds, moveTicketIdsBetweenLines, updateLineUnitPrice, ensureBillableLinesForSession } from "./billable-lines";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine } from "@/lib/types";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, BillableItem } from "@/lib/types";
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
@@ -53,13 +54,15 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const [session, setSession] = useState<PendingSession | null>(null);
   const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
-  const [tickets, setTickets] = useState<Map<string, KitchenTicket>>(new Map());
+  const [ticketsById, setTicketsById] = useState<Map<string, KitchenTicket>>(new Map());
+  
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
+  
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
@@ -90,27 +93,29 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!activeStore) return;
 
-    const unsubLines = onSnapshot(
+    let unsubBillableLines: (() => void) | null = null;
+    let unsubKdsTickets: (() => void) | null = null;
+
+    unsubBillableLines = onSnapshot(
       query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"), orderBy("createdAt", "asc")),
       (snapshot) => {
         const lines = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as BillableLine[];
         setBillableLines(lines);
-      }
+      }, (e) => console.error("billableLines listener failed:", e)
     );
 
-    const ticketsRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets");
-    const q = query(ticketsRef, orderBy("createdAt", "asc"));
-    const unsubTickets = onSnapshot(q, (snapshot) => {
-        const ticketItems = new Map<string, KitchenTicket>();
-        snapshot.docs.forEach(docSnap => {
-          ticketItems.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<KitchenTicket, 'id'>) });
-        });
-        setTickets(ticketItems);
-    });
-    
+    const ticketsQuery = query(collection(db, `stores/${activeStore.id}/sessions/${sessionId}/kitchentickets`));
+    unsubKdsTickets = onSnapshot(ticketsQuery, (snapshot) => {
+      const ticketsMap = new Map<string, KitchenTicket>();
+      snapshot.forEach(doc => {
+        ticketsMap.set(doc.id, { id: doc.id, ...doc.data() } as KitchenTicket);
+      });
+      setTicketsById(ticketsMap);
+    }, (e) => console.error("kdsTickets listener failed:", e));
+
     return () => {
-      unsubLines();
-      unsubTickets();
+      unsubBillableLines?.();
+      unsubKdsTickets?.();
     };
   }, [sessionId, activeStore]);
 
@@ -141,17 +146,15 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     let pendingCount = 0;
 
     billableLines.forEach(line => {
-      if (line.isVoided) return;
+      if (line.isVoided || line.isFree) return;
 
       const servedQty = line.type === 'package'
         ? (session?.guestCountFinal ?? line.qty)
-        : getEligibleTicketIds(line, tickets, "served").length;
+        : getEligibleTicketIds(line, ticketsById, "served").length;
       
-      const pendingQty = line.type === 'package' ? 0 : getEligibleTicketIds(line, tickets, "pending").length;
+      const pendingQty = line.type === 'package' ? 0 : getEligibleTicketIds(line, ticketsById, "pending").length;
       pendingCount += pendingQty;
-
-      if (line.isFree) return;
-
+      
       const chargeableQty = servedQty;
       if (chargeableQty > 0) {
         const grossLineAmount = chargeableQty * line.unitPrice;
@@ -168,22 +171,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     });
 
     return { subtotal: sub, lineDiscountsTotal: lineDisc, pendingItemsCount: pendingCount };
-  }, [billableLines, tickets, session]);
+  }, [billableLines, ticketsById, session]);
 
   const handleUpdateQty = async (lineId: string, newQty: number) => {
     if (isBillingLocked || !activeStore || !session || newQty < 1 || !appUser) return;
     try {
-        await changeLineQty(activeStore.id, sessionId, lineId, newQty, appUser, tickets);
+        await changeLineQty(activeStore.id, sessionId, lineId, newQty, appUser, ticketsById);
         toast({ title: "Quantity Updated" });
     } catch(e: any) {
          toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   };
   
-  const handleUpdateUnitPrice = async (lineId: string, newPrice: number) => {
+  const handleUpdateUnitPrice = async (line: BillableLine, newPrice: number) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
     try {
-        await updateLineUnitPrice(activeStore.id, sessionId, lineId, newPrice, appUser.uid);
+        await updateLineUnitPrice(activeStore.id, sessionId, line.id, newPrice, appUser.uid);
         toast({ title: "Unit Price Updated" });
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -193,7 +196,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleApplyDiscount = async (line: BillableLine, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
     try {
-        const eligibleIds = getEligibleTicketIds(line, tickets, "served");
+        const eligibleIds = getEligibleTicketIds(line, ticketsById, "served");
         const targetIds = eligibleIds.slice(0, quantity);
 
         if(targetIds.length === 0) {
@@ -218,7 +221,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleApplyFree = async (line: BillableLine, quantity: number, currentIsFree: boolean) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
     try {
-        const eligibleIds = getEligibleTicketIds(line, tickets, "served");
+        const eligibleIds = getEligibleTicketIds(line, ticketsById, "served");
         const targetIds = eligibleIds.slice(0, quantity);
 
         if(targetIds.length === 0) {
@@ -260,7 +263,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleVoidItem = async (line: BillableLine, quantity: number, reason: string, note?: string) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
     try {
-      const eligibleIds = getEligibleTicketIds(line, tickets, 'any'); // Can void pending or served
+      const eligibleIds = getEligibleTicketIds(line, ticketsById, 'any'); // Can void pending or served
       const targetIds = eligibleIds.slice(0, quantity);
 
       if (targetIds.length === 0) {
@@ -320,9 +323,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
-        const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal, totalPaid, change };
+        const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal };
         
-        await completePayment(activeStore.id, sessionId, appUser, normalizedPayments, billableLines, billingSummary, paymentMethods);
+        await completePaymentFromBillableLines(activeStore.id, sessionId, appUser, normalizedPayments, billableLines, billingSummary, paymentMethods);
         
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
@@ -370,14 +373,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 
                     lines={billableLines} 
-                    tickets={tickets}
+                    tickets={ticketsById}
                     storeId={activeStore.id} 
                     session={session} 
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
                     onUpdateUnitPrice={handleUpdateUnitPrice}
                     onApplyDiscount={handleApplyDiscount} 
-                    onApplyFree={handleApplyFree}
+                    onApplyFree={handleApplyFree} 
                     onVoidItem={handleVoidItem}
                     isLocked={isBillingLocked} 
                 />
@@ -407,10 +410,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             isOpen={!!editingLine}
             onClose={() => setEditingLine(null)}
             line={editingLine}
-            tickets={tickets}
+            tickets={ticketsById}
             discounts={itemDiscounts}
             isLocked={isBillingLocked}
-            sessionGuestCount={session.guestCountFinal ?? session.guestCountCashierInitial}
             onUpdateQty={handleUpdateQty}
             onUpdateUnitPrice={handleUpdateUnitPrice}
             onApplyDiscount={handleApplyDiscount}
