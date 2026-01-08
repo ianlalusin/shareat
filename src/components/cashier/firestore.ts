@@ -268,6 +268,34 @@ export async function updateKitchenTicketStatus(
     await batch.commit();
 }
 
+export async function voidBillableItems(
+    user: AppUser,
+    storeId: string,
+    sessionId: string,
+    ticketIds: string[],
+    reason: string,
+    note?: string
+) {
+    if (!ticketIds || ticketIds.length === 0) return;
+    const batch = writeBatch(db);
+    const actor = getActorStamp(user);
+
+    for (const ticketId of ticketIds) {
+        const billableRef = doc(db, "stores", storeId, "sessions", sessionId, "billables", ticketId);
+        batch.update(billableRef, {
+            isVoided: true,
+            voidedAt: serverTimestamp(),
+            voidedByUid: actor.uid,
+            voidReason: reason,
+            voidNote: note || null,
+            updatedAt: serverTimestamp(),
+        });
+    }
+
+    await batch.commit();
+}
+
+
 type BillingSummary = {
   subtotal: number;
   lineDiscountsTotal: number;

@@ -8,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePayment, updateKitchenTicketStatus } from "@/components/cashier/firestore";
+import { completePayment, updateKitchenTicketStatus, voidBillableItems } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -245,6 +245,20 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const handleVoidItem = async (ticketIds: string[], reason: string, note?: string) => {
+    if (isBillingLocked || !appUser || !activeStore || !session) return;
+    try {
+        await voidBillableItems(appUser, activeStore.id, sessionId, ticketIds, reason, note);
+        toast({ title: "Item voided" });
+    } catch (e: any) {
+        toast({
+            variant: "destructive",
+            title: "Void failed",
+            description: e?.message ?? "Unknown error",
+        });
+    }
+  };
+
   const allBillableItems = Array.from(billables.values());
   const allServedItems: BillableItem[] = allBillableItems
     .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
@@ -343,7 +357,18 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 <BillAdjustments adjustments={adjustments} billDiscount={billDiscount} charges={charges} discounts={billableDiscounts} onAddAdjustment={addAdjustment} onAddCustomAdjustment={handleAddCustomAdjustment} onRemoveAdjustment={(id) => setAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} isLocked={isBillingLocked} />
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
-                <BillableItems groupedItems={groupedItems} storeId={activeStore.id} session={session} discounts={itemDiscounts} onUpdateQty={handleUpdateQty} onApplyDiscount={handleApplyDiscount} onApplyFree={handleApplyFree} onStatusUpdate={handleCashierItemStatusUpdate} isLocked={isBillingLocked} />
+                <BillableItems 
+                    groupedItems={groupedItems} 
+                    storeId={activeStore.id} 
+                    session={session} 
+                    discounts={itemDiscounts} 
+                    onUpdateQty={handleUpdateQty} 
+                    onApplyDiscount={handleApplyDiscount} 
+                    onApplyFree={handleApplyFree} 
+                    onStatusUpdate={handleCashierItemStatusUpdate} 
+                    onVoidItem={handleVoidItem}
+                    isLocked={isBillingLocked} 
+                />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
                  <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
                     {pendingItems.length > 0 && (
