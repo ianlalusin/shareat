@@ -27,20 +27,15 @@ const VOID_REASONS = {
 };
 
 const formSchema = z.object({
-  // Edits
   qty: z.coerce.number().min(1),
   unitPrice: z.coerce.number().min(0),
-
-  // Actions
   applyDiscount: z.boolean().default(false),
   discountId: z.string().optional(),
   discountType: z.enum(["fixed", "percent"]).default("fixed"),
   discountValue: z.coerce.number().min(0).default(0),
   discountQty: z.coerce.number().min(1),
-  
   applyFree: z.boolean().default(false),
   freeQty: z.coerce.number().min(1),
-
   applyVoid: z.boolean().default(false),
   voidQty: z.coerce.number().min(1),
   voidReason: z.string().optional(),
@@ -67,9 +62,30 @@ function normalizeDiscountType(t: any): "fixed" | "percent" {
     return "fixed";
 }
 
+function QuantityStepper({ label, value, onChange, max, min = 1, description }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string }) {
+    return (
+        <FormItem>
+            <FormLabel>{label}</FormLabel>
+            <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - 1))}><Minus/></Button>
+                <QuantityInput 
+                    value={value}
+                    onChange={onChange}
+                    className="text-center"
+                />
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + 1))}><Plus/></Button>
+            </div>
+            {description && <FormDescription className="text-xs">{description}</FormDescription>}
+             <FormMessage />
+        </FormItem>
+    );
+}
+
+
 export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLocked, ...handlers }: EditBillableItemDialogProps) {
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [actionQty, setActionQty] = useState(group.servedQty || 1);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -77,6 +93,8 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
     
     useEffect(() => {
         if (group) {
+            const defaultActionQty = group.servedQty > 0 ? group.servedQty : 1;
+            setActionQty(defaultActionQty);
             form.reset({
                 qty: group.totalQty,
                 unitPrice: group.unitPrice,
@@ -84,9 +102,9 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                 discountId: 'custom',
                 discountType: 'fixed',
                 discountValue: 0,
-                discountQty: group.servedQty,
+                discountQty: defaultActionQty,
                 applyFree: false,
-                freeQty: group.servedQty,
+                freeQty: defaultActionQty,
                 applyVoid: false,
                 voidQty: 1,
                 voidReason: undefined,
@@ -95,7 +113,21 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
         }
     }, [group, form, isOpen]);
 
-    const { applyDiscount, discountId, applyFree, applyVoid, voidReason } = form.watch();
+    const { applyDiscount, discountId, applyFree, applyVoid, voidReason, discountQty, freeQty, voidQty } = form.watch();
+
+    const handleActionQtyChange = (setter: (val: number) => void, value: number) => {
+        setter(value);
+        setActionQty(value);
+    }
+    
+    useEffect(() => {
+        if (applyDiscount) form.setValue('freeQty', actionQty);
+    }, [applyDiscount, actionQty, form]);
+
+    useEffect(() => {
+        if (applyFree) form.setValue('discountQty', actionQty);
+    }, [applyFree, actionQty, form]);
+
 
     const handleDiscountIdChange = (id: string) => {
         form.setValue("discountId", id);
@@ -114,7 +146,6 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
     const handleSave = async (data: FormValues) => {
         setIsSubmitting(true);
         try {
-            // Apply changes sequentially
             if (data.qty !== group.totalQty) {
                 await handlers.onUpdateQty(group.ticketIds, data.qty);
             }
@@ -160,7 +191,7 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                     <form onSubmit={form.handleSubmit(handleSave)} id="edit-item-form" className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <FormField name="qty" control={form.control} render={({ field }) => (
-                                <FormItem><FormLabel>Quantity</FormLabel><FormControl><Input type="number" {...field} disabled={isLocked}/></FormControl><FormMessage/></FormItem>
+                                <QuantityStepper label="Total Quantity" value={field.value} onChange={field.onChange} max={100} min={1} />
                             )} />
                             <FormField name="unitPrice" control={form.control} render={({ field }) => (
                                 <FormItem><FormLabel>Unit Price</FormLabel><FormControl><Input type="number" step="0.01" {...field} disabled={isLocked}/></FormControl><FormMessage/></FormItem>
@@ -173,6 +204,9 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                             )} />
                             {applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
+                                    <FormField name="discountQty" control={form.control} render={({ field }) => (
+                                        <QuantityStepper label="Apply to" value={field.value} onChange={(v) => handleActionQtyChange(field.onChange, v)} max={group.servedQty} description={`of ${group.servedQty} served items`}/>
+                                     )} />
                                      <FormField name="discountId" control={form.control} render={({ field }) => (
                                         <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
                                      )} />
@@ -184,9 +218,6 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                                             <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
                                         )} />
                                      </div>
-                                     <FormField name="discountQty" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Apply to</FormLabel><FormControl><QuantityInput value={field.value} onChange={field.onChange}/></FormControl><FormDescription>Max: {group.servedQty}</FormDescription><FormMessage/></FormItem>
-                                     )} />
                                 </div>
                             )}
                         </div>
@@ -198,7 +229,7 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                             {applyFree && (
                                  <div className="p-3 border rounded-md">
                                     <FormField name="freeQty" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Apply to</FormLabel><FormControl><QuantityInput value={field.value} onChange={field.onChange}/></FormControl><FormDescription>Max: {group.servedQty}</FormDescription><FormMessage/></FormItem>
+                                       <QuantityStepper label="Apply to" value={field.value} onChange={(v) => handleActionQtyChange(field.onChange, v)} max={group.servedQty} description={`of ${group.servedQty} served items`}/>
                                      )} />
                                  </div>
                             )}
@@ -211,7 +242,7 @@ export function EditBillableItemDialog({ isOpen, onClose, group, discounts, isLo
                             {applyVoid && (
                                  <div className="p-3 border rounded-md space-y-2">
                                      <FormField name="voidQty" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Void Quantity</FormLabel><FormControl><QuantityInput value={field.value} onChange={field.onChange}/></FormControl><FormDescription>Max: {group.totalQty}</FormDescription><FormMessage/></FormItem>
+                                        <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={group.totalQty} description={`of ${group.totalQty} total items`}/>
                                      )} />
                                      <FormField name="voidReason" control={form.control} render={({ field }) => (
                                         <FormItem><FormLabel>Reason</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>
