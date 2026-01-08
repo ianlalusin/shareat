@@ -167,49 +167,6 @@ export type KitchenTicket = {
     sessionLabel?: string;
 };
 
-export type StoreAddon = {
-    id: string; // The document ID, which is the Product ID
-    name: string; // Denormalized name
-    price: number;
-    isEnabled: boolean;
-    sortOrder: number;
-    isArchived: boolean;
-    category?: string;
-    uom?: string;
-    kitchenLocationId?: string | null;
-    kitchenLocationName?: string | null;
-    imageUrl?: string;
-    barcode?: string;
-};
-
-export type PendingSession = {
-  id: string;
-  storeId: string;
-  tableNumber: string;
-  packageName: string;
-  status: 'pending_verification' | 'active' | 'closed';
-  sessionMode: 'package_dinein' | 'alacarte';
-  customerName?: string | null;
-  customer?: { name?: string | null, tin?: string | null, address?: string | null };
-  isPaid?: boolean;
-  packageOfferingId: string;
-  initialFlavorIds?: string[];
-  startedAt: any;
-  // Guest Count Model
-  guestCountCashierInitial: number;
-  guestCountServerVerified: number | null;
-  guestCountFinal: number | null;
-  guestCountVerifyLocked: boolean;
-  // Change Request Models
-  guestCountChange?: { status: string };
-  packageChange?: { status: string };
-  // Analytics
-  servedRefillsTotal?: number;
-  servedRefillsByName?: Record<string, number>;
-  serveCountByType?: Record<string, number>;
-  serveTimeMsTotalByType?: Record<string, number>;
-};
-
 export type BillableItem = {
   id: string;
   type: "package" | "addon" | "refill";

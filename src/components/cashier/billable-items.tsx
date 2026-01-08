@@ -57,6 +57,7 @@ function GroupedBillableItemRow({
     }
 
     const freeQty = group.freeQty ?? (group.isFree ? group.totalQty : 0);
+    const discountQty = group.discountQty ?? (group.lineDiscountValue > 0 ? group.totalQty - freeQty : 0);
 
     return (
         <>
@@ -77,7 +78,7 @@ function GroupedBillableItemRow({
                           {group.status ?? "preparing"}
                         </Badge>
                          {freeQty > 0 && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free ({freeQty})</Badge>}
-                         {group.discountQty > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted ({group.discountQty})</Badge>}
+                         {discountQty > 0 && <Badge variant="outline" className="ml-1 border-blue-500 text-blue-600">Discounted ({discountQty})</Badge>}
                     </div>
                     {!isLocked && (
                         <div className="flex items-center gap-2">
@@ -207,5 +208,3 @@ export function BillableItems({
     </>
   );
 }
-
-      

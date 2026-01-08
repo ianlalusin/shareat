@@ -675,5 +675,3 @@ export async function voidSession({
 
   await batch.commit();
 }
-
-    

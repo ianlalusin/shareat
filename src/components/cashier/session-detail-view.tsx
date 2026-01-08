@@ -138,18 +138,20 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
     const groups: Record<string, GroupedBillableItem> = {};
     mergedItems.forEach(item => {
-        const discountKey = item.isFree ? 'free' : `${item.lineDiscountType}-${item.lineDiscountValue}`;
+        const freeKey = `free:${item.freeQty ?? (item.isFree ? item.qty : 0)}`;
+        const discKey = `disc:${item.lineDiscountType}-${item.lineDiscountValue}-q:${item.discountQty ?? 0}`;
         const voidKey = item.isVoided ? 'voided' : 'active';
-        const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discountKey}`;
+        const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discKey}|${freeKey}`;
         
         if (!groups[key]) {
             groups[key] = { ...item, key, isGrouped: false, totalQty: 0, servedQty: 0, pendingQty: 0, cancelledQty: 0, ticketIds: [], createdAtMin: item.createdAt };
         }
         
-        groups[key].totalQty += item.qty;
-        if (item.status === 'served') groups[key].servedQty += item.qty;
-        else if (item.status === 'preparing' || item.status === 'ready') groups[key].pendingQty += item.qty;
-        else if (item.status === 'cancelled') groups[key].cancelledQty += item.qty;
+        const itemQty = Math.max(1, Number(item.qty) || 1);
+        groups[key].totalQty += itemQty;
+        if (item.status === 'served') groups[key].servedQty += itemQty;
+        else if (item.status === 'preparing' || item.status === 'ready') groups[key].pendingQty += itemQty;
+        else if (item.status === 'cancelled') groups[key].cancelledQty += itemQty;
 
         groups[key].ticketIds.push(item.id);
         
@@ -206,27 +208,43 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   ) => {
     if (isBillingLocked || !activeStore || !session) return;
   
-    const qty = Math.max(1, Math.floor(quantity || 1));
-    const targetIds = ticketIds.slice(0, qty);
-  
-    if (qty > 1 && ticketIds.length === 1) {
-      toast({
-        variant: "destructive",
-        title: "Cannot apply partial discount",
-        description: "This line item is stored as a single record with qty > 1. Please void and re-add items individually to apply discount partially.",
-      });
-      return;
-    }
-  
     const batch = writeBatch(db);
-    targetIds.forEach((ticketId) => {
-      batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), {
+  
+    // This logic correctly applies discount to a single doc with qty > 1
+    // or to multiple docs with qty = 1.
+    if (ticketIds.length === 1) {
+      const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
+      batch.update(billableRef, {
         lineDiscountType: discountType,
         lineDiscountValue: discountValue,
-        isFree: false,
+        discountQty: quantity,
+        isFree: false, // Applying a discount removes the free status
+        freeQty: 0,
         updatedAt: serverTimestamp(),
       });
-    });
+    } else if (ticketIds.length > 1) {
+       // Apply to first 'quantity' documents
+      for (let i = 0; i < ticketIds.length; i++) {
+        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[i]);
+        if (i < quantity) {
+          batch.update(billableRef, {
+            lineDiscountType: discountType,
+            lineDiscountValue: discountValue,
+            discountQty: 1,
+            isFree: false,
+            freeQty: 0,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+           // Explicitly clear discount on other items in the group if needed
+          batch.update(billableRef, {
+            lineDiscountValue: 0,
+            discountQty: 0,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+    }
   
     try {
       await batch.commit();
@@ -239,10 +257,29 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleApplyFree = async (ticketIds: string[], quantity: number, currentIsFree: boolean) => {
     if (isBillingLocked || !activeStore || !session) return;
     const batch = writeBatch(db);
+
     const newIsFree = !currentIsFree;
-    (currentIsFree ? ticketIds : ticketIds.slice(0, quantity)).forEach(ticketId => {
-        batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), { isFree: newIsFree, lineDiscountValue: 0, updatedAt: serverTimestamp() });
-    });
+    
+    if (ticketIds.length === 1) {
+        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
+        batch.update(billableRef, {
+            isFree: newIsFree,
+            freeQty: newIsFree ? quantity : 0,
+            lineDiscountValue: 0,
+            discountQty: 0,
+            updatedAt: serverTimestamp(),
+        });
+    } else if (ticketIds.length > 1) {
+         for (let i = 0; i < ticketIds.length; i++) {
+            const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[i]);
+            if (i < quantity && newIsFree) {
+                batch.update(billableRef, { isFree: true, freeQty: 1, lineDiscountValue: 0, discountQty: 0, updatedAt: serverTimestamp() });
+            } else {
+                batch.update(billableRef, { isFree: false, freeQty: 0, updatedAt: serverTimestamp() });
+            }
+         }
+    }
+
     try {
         await batch.commit();
         toast({ title: newIsFree ? "Item(s) marked as Free" : "Free status removed" });
@@ -251,12 +288,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
+
   const handleRemoveDiscount = async (ticketIds: string[]) => {
     if (isBillingLocked || !activeStore || !session) return;
     const batch = writeBatch(db);
     ticketIds.forEach(ticketId => {
         batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), {
-            lineDiscountType: "fixed", lineDiscountValue: 0, isFree: false, updatedAt: serverTimestamp()
+            lineDiscountType: "fixed", lineDiscountValue: 0, discountQty: 0, isFree: false, freeQty: 0, updatedAt: serverTimestamp()
         });
     });
     try {
@@ -300,12 +338,31 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const allServedItems: BillableItem[] = allBillableItems
     .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
     .map(billable => ({ ...billable, qty: billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty }));
+  
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
-  const subtotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => total + (item.qty * item.unitPrice), 0);
-  const lineDiscountsTotal = allServedItems.filter(item => !item.isFree).reduce((total, item) => {
-    const lineTotal = item.qty * item.unitPrice;
-    return total + (item.lineDiscountType === 'percent' ? (lineTotal * (item.lineDiscountValue / 100)) : Math.min(item.lineDiscountValue * item.qty, lineTotal));
-  }, 0);
+
+  const { subtotal, lineDiscountsTotal } = useMemo(() => {
+    let sub = 0;
+    let lineDisc = 0;
+    allServedItems.forEach(item => {
+        const qty = item.qty;
+        const freeQty = Math.max(0, Math.min(qty, item.freeQty ?? (item.isFree ? qty : 0)));
+        const chargeableQty = qty - freeQty;
+
+        sub += chargeableQty * item.unitPrice;
+
+        if (item.lineDiscountValue > 0) {
+            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? chargeableQty));
+            if (item.lineDiscountType === 'percent') {
+                lineDisc += (discountableQty * item.unitPrice) * (item.lineDiscountValue / 100);
+            } else {
+                lineDisc += Math.min(item.lineDiscountValue * discountableQty, discountableQty * item.unitPrice);
+            }
+        }
+    });
+    return { subtotal: sub, lineDiscountsTotal: lineDisc };
+  }, [allServedItems]);
+  
   const discountedSubtotal = subtotal - lineDiscountsTotal;
   const billDiscountAmount = billDiscount ? (billDiscount.type === 'percent' ? discountedSubtotal * (billDiscount.value / 100) : Math.min(billDiscount.value, discountedSubtotal)) : 0;
   const netSubtotalAfterDiscounts = Math.max(0, discountedSubtotal - billDiscountAmount);
@@ -330,11 +387,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const handleCompletePayment = async () => {
     if (!appUser || !activeStore || !session || isCompletingPayment) return;
-    if (session.status === "closed" || session.isPaid === true) {
-      toast({ title: "Already paid", description: "This session is already closed." });
-      router.push(`/receipt/${sessionId}`);
-      return;
-    }
     const paymentError = validatePayments(payments, grandTotal, paymentMethods);
     if (paymentError) {
         toast({ variant: "destructive", title: "Cannot Complete", description: paymentError });
@@ -355,8 +407,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         router.push(`/receipt/${sessionId}${autoPrint ? "?autoprint=1" : ""}`);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Payment failed", description: err?.message ?? "Something went wrong." });
-    } finally {
-      setIsCompletingPayment(false);
+      setIsCompletingPayment(false); // Only set back to false on failure
     }
   };
   
