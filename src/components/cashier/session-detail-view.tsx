@@ -62,57 +62,57 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return null;
   }
 
-    useEffect(() => {
-        if (!activeStore) return;
-
-        let unsubBillableLines: (() => void) | null = null;
-        let unsubLegacyBillables: (() => void) | null = null;
-        let cancelled = false;
-
-        (async () => {
-            try {
-            await ensureBillableLinesForSession(activeStore.id, sessionId);
-            if (cancelled) return;
-
-            // billableLines listener (kept for migration verification / future MS2)
-            unsubBillableLines = onSnapshot(
-                collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"),
-                (snapshot) => {
-                // safer mapping (no direct casting)
-                const lines = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as BillableLine[];
-                setBillableLines(lines);
-                }
-            );
-
-            // legacy listener (still the source of truth until MS2)
-            const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
-            unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
-                const billablesMap = new Map<string, BillableItem>();
-                legacySnap.docs.forEach(docSnap => {
-                billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
-                });
-                setLegacyBillables(billablesMap);
-            });
-            } catch (e) {
-            console.error("BillableLines migration/listen failed:", e);
-            // still listen to legacy so cashier works
-            const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
-            unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
-                const billablesMap = new Map<string, BillableItem>();
-                legacySnap.docs.forEach(docSnap => {
-                billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
-                });
-                setLegacyBillables(billablesMap);
-            });
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-            unsubBillableLines?.();
-            unsubLegacyBillables?.();
-        };
-    }, [sessionId, activeStore]);
+  useEffect(() => {
+    if (!activeStore) return;
+  
+    let unsubBillableLines: (() => void) | null = null;
+    let unsubLegacyBillables: (() => void) | null = null;
+    let cancelled = false;
+  
+    (async () => {
+      try {
+        await ensureBillableLinesForSession(activeStore.id, sessionId);
+        if (cancelled) return;
+  
+        // billableLines listener (kept for migration verification / future MS2)
+        unsubBillableLines = onSnapshot(
+          collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"),
+          (snapshot) => {
+            // safer mapping (no direct casting)
+            const lines = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as BillableLine[];
+            setBillableLines(lines);
+          }
+        );
+  
+        // legacy listener (still the source of truth until MS2)
+        const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
+        unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
+          const billablesMap = new Map<string, BillableItem>();
+          legacySnap.docs.forEach(docSnap => {
+            billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
+          });
+          setLegacyBillables(billablesMap);
+        });
+      } catch (e) {
+        console.error("BillableLines migration/listen failed:", e);
+        // still listen to legacy so cashier works
+        const legacyRef = collection(db, "stores", activeStore.id, "sessions", sessionId, "billables");
+        unsubLegacyBillables = onSnapshot(query(legacyRef, orderBy("createdAt", "asc")), (legacySnap) => {
+          const billablesMap = new Map<string, BillableItem>();
+          legacySnap.docs.forEach(docSnap => {
+            billablesMap.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<BillableItem, "id">) });
+          });
+          setLegacyBillables(billablesMap);
+        });
+      }
+    })();
+  
+    return () => {
+      cancelled = true;
+      unsubBillableLines?.();
+      unsubLegacyBillables?.();
+    };
+  }, [sessionId, activeStore]);
 
 
   useEffect(() => {
@@ -172,11 +172,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "item")), [discounts]);
 
   const groupedItems = useMemo<GroupedBillableItem[]>(() => {
-    // --- HOTFIX: Always use legacy billables for UI rendering until MS2 ---
     const itemsToProcess: BillableItem[] = Array.from(legacyBillables.values());
     
-    // --- LEGACY FALLBACK ---
-    const mergedItems: BillableItem[] = Array.from(legacyBillables.values()).map(billable => {
+    const mergedItems: BillableItem[] = itemsToProcess.map(billable => {
         const ticket = tickets.get(billable.id);
         const qty = billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : billable.qty;
         return { ...billable, qty, status: ticket?.status || 'served' };
@@ -184,10 +182,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
     const groups: Record<string, GroupedBillableItem> = {};
     mergedItems.forEach(item => {
-        const freeQty = item.freeQty ?? (item.isFree ? item.qty : 0);
+        const itemQty = Math.max(1, Number(item.qty) || 1);
+        const freeQty = Math.max(0, Math.min(itemQty, item.freeQty ?? (item.isFree ? itemQty : 0)));
         const freeKey = `free:${freeQty}`;
-        const discountQty = item.discountQty ?? (item.lineDiscountValue > 0 ? item.qty - freeQty : 0);
+
+        const chargeableQty = itemQty - freeQty;
+        const discountQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? (item.lineDiscountValue > 0 ? chargeableQty : 0)));
         const discKey = `disc:${item.lineDiscountType}-${item.lineDiscountValue}-q:${discountQty}`;
+        
         const voidKey = item.isVoided ? 'voided' : 'active';
         const key = `${voidKey}|${item.status}|${item.type}|${item.itemName}|${item.unitPrice}|${discKey}|${freeKey}`;
         
@@ -195,7 +197,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             groups[key] = { ...item, key, isGrouped: false, totalQty: 0, servedQty: 0, pendingQty: 0, cancelledQty: 0, ticketIds: [], createdAtMin: item.createdAt };
         }
         
-        const itemQty = Math.max(1, Number(item.qty) || 1);
         groups[key].totalQty += itemQty;
         if (item.status === 'served') groups[key].servedQty += itemQty;
         else if (item.status === 'preparing' || item.status === 'ready') groups[key].pendingQty += itemQty;
@@ -259,37 +260,58 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const qty = Math.max(1, Math.floor(quantity || 1));
     const targetIds = ticketIds.slice(0, qty);
   
-    if (quantity > 1 && ticketIds.length === 1) {
-        const billableDoc = await getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]));
-        if (billableDoc.exists() && (billableDoc.data().qty ?? 1) > 1) {
-            const docRef = billableDoc.ref;
-            await updateDoc(docRef, {
+    const batch = writeBatch(db);
+    
+    // Logic for single-doc with qty > 1
+    if (ticketIds.length === 1) {
+        const billableDocRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
+        const billableDocSnap = await getDoc(billableDocRef);
+        if (billableDocSnap.exists() && (billableDocSnap.data().qty ?? 1) > 1) {
+            batch.update(billableDocRef, {
                 lineDiscountType: discountType,
                 lineDiscountValue: discountValue,
-                discountQty: quantity,
-                isFree: false,
+                discountQty: qty,
+                isFree: false, // Ensure isFree is reset
                 freeQty: 0,
                 updatedAt: serverTimestamp(),
             });
-            toast({ title: "Discount Applied" });
-            return;
+             try {
+                await batch.commit();
+                toast({ title: "Discount Applied" });
+                return;
+            } catch (e: any) {
+                toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+                return;
+            }
         }
     }
   
-    const batch = writeBatch(db);
-    
+    // Logic for multiple docs (each with qty=1)
     targetIds.forEach(ticketId => {
         const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
         batch.update(billableRef, {
             lineDiscountType: discountType,
             lineDiscountValue: discountValue,
-            discountQty: 1, // Each doc represents 1 unit being discounted
+            discountQty: 1, // Each doc is one unit
             isFree: false, 
             freeQty: 0,
             updatedAt: serverTimestamp(),
         });
     });
   
+    // Update remaining items in the group to have no discount
+    if (ticketIds.length > qty) {
+      const remainingIds = ticketIds.slice(qty);
+      remainingIds.forEach(ticketId => {
+        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
+        batch.update(billableRef, {
+          lineDiscountValue: 0,
+          discountQty: 0,
+          updatedAt: serverTimestamp(),
+        });
+      });
+    }
+
     try {
       await batch.commit();
       toast({ title: "Discount Applied" });
@@ -305,22 +327,32 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const newIsFree = !currentIsFree;
     const targetIds = ticketIds.slice(0, quantity);
     
-    if (quantity > 1 && ticketIds.length === 1) {
-        const billableDoc = await getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]));
-        if (billableDoc.exists() && (billableDoc.data().qty ?? 1) > 1) {
-            const docRef = billableDoc.ref;
-            await updateDoc(docRef, {
-                isFree: quantity >= (billableDoc.data().qty ?? 1),
-                freeQty: quantity,
-                lineDiscountValue: 0,
+    // Handle single document with qty > 1
+    if (ticketIds.length === 1) {
+        const billableDocRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
+        const billableDocSnap = await getDoc(billableDocRef);
+
+        if (billableDocSnap.exists()) {
+            const currentQty = billableDocSnap.data().qty ?? 1;
+            batch.update(billableDocRef, { 
+                isFree: newIsFree && quantity >= currentQty, 
+                freeQty: newIsFree ? quantity : 0, 
+                lineDiscountValue: 0, 
                 discountQty: 0,
-                updatedAt: serverTimestamp(),
+                updatedAt: serverTimestamp() 
             });
-            toast({ title: newIsFree ? "Item(s) marked as Free" : "Free status removed" });
-            return;
+            try {
+                await batch.commit();
+                toast({ title: newIsFree ? "Item(s) marked as Free" : "Free status removed" });
+                return;
+            } catch (e: any) {
+                toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+                return;
+            }
         }
     }
 
+    // Handle multiple documents (each qty=1)
     targetIds.forEach(ticketId => {
         const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
         batch.update(billableRef, { 
@@ -390,33 +422,32 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     .filter(billable => !billable.isVoided && (tickets.get(billable.id)?.status === 'served' || (billable.type === 'package' && billable.status !== 'void' && billable.status !== 'cancelled')))
     .map(billable => {
         const qty = billable.type === "package" ? (session?.guestCountFinal ?? billable.qty ?? 1) : (billable.qty ?? 1);
-        const freeQty = billable.freeQty ?? (billable.isFree ? qty : 0);
-        return {...billable, qty, freeQty };
+        return {...billable, qty};
     });
   
   const pendingItems = Array.from(tickets.values()).filter(t => t.status === "preparing" || t.status === 'ready');
 
   const { subtotal, lineDiscountsTotal } = useMemo(() => {
-        let sub = 0;
-        let lineDisc = 0;
-        allServedItems.forEach(item => {
-            const qty = item.qty;
-            const freeQty = Math.max(0, Math.min(qty, item.freeQty ?? 0));
-            const chargeableQty = qty - freeQty;
+    let sub = 0;
+    let lineDisc = 0;
+    allServedItems.forEach(item => {
+        const qty = item.qty;
+        const freeQty = Math.max(0, Math.min(qty, item.freeQty ?? (item.isFree ? qty : 0)));
+        const chargeableQty = qty - freeQty;
 
-            sub += chargeableQty * item.unitPrice;
+        sub += chargeableQty * item.unitPrice;
 
-            if ((item.lineDiscountValue ?? 0) > 0 && chargeableQty > 0) {
-                const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? chargeableQty));
-                if (item.lineDiscountType === 'percent') {
-                    lineDisc += (discountableQty * item.unitPrice) * ((item.lineDiscountValue ?? 0) / 100);
-                } else {
-                    lineDisc += Math.min((item.lineDiscountValue ?? 0) * discountableQty, discountableQty * item.unitPrice);
-                }
+        if ((item.lineDiscountValue ?? 0) > 0 && chargeableQty > 0) {
+            const discountableQty = Math.max(0, Math.min(chargeableQty, item.discountQty ?? chargeableQty));
+            if (item.lineDiscountType === 'percent') {
+                lineDisc += (discountableQty * item.unitPrice) * ((item.lineDiscountValue ?? 0) / 100);
+            } else {
+                lineDisc += Math.min((item.lineDiscountValue ?? 0) * discountableQty, discountableQty * item.unitPrice);
             }
-        });
-        return { subtotal: sub, lineDiscountsTotal: lineDisc };
-    }, [allServedItems]);
+        }
+    });
+    return { subtotal: sub, lineDiscountsTotal: lineDisc };
+  }, [allServedItems]);
   
   const discountedSubtotal = subtotal - lineDiscountsTotal;
   const billDiscountAmount = billDiscount ? (billDiscount.type === 'percent' ? discountedSubtotal * (billDiscount.value / 100) : Math.min(billDiscount.value, discountedSubtotal)) : 0;
@@ -539,3 +570,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    
