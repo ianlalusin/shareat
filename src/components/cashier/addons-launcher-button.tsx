@@ -19,7 +19,7 @@ export function AddonsLauncherButton({ storeId, session, sessionIsLocked }: Addo
   return (
     <>
       <Button variant="outline" size="sm" disabled={sessionIsLocked} onClick={() => setIsModalOpen(true)}>
-          <PlusCircle className="mr-2"/> Add Item
+          <PlusCircle className="mr-2"/> Add Add-on
       </Button>
       
       {isModalOpen && (
@@ -34,3 +34,5 @@ export function AddonsLauncherButton({ storeId, session, sessionIsLocked }: Addo
     </>
   );
 }
+
+    

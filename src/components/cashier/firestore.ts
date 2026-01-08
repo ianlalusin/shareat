@@ -190,6 +190,27 @@ export async function startSession(
   return newSessionRef.id;
 }
 
+export async function updateBillableUnitPrice(
+  user: AppUser,
+  storeId: string,
+  sessionId: string,
+  ticketIds: string[],
+  newUnitPrice: number
+) {
+  if (!ticketIds || ticketIds.length === 0) return;
+  const batch = writeBatch(db);
+  const actor = getActorStamp(user);
+
+  for (const ticketId of ticketIds) {
+    const billableRef = doc(db, "stores", storeId, "sessions", sessionId, "billables", ticketId);
+    batch.update(billableRef, {
+        unitPrice: newUnitPrice,
+        updatedAt: serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
 
 /**
  * Updates a billable item and records the change in the bill history.
@@ -654,3 +675,5 @@ export async function voidSession({
 
   await batch.commit();
 }
+
+    

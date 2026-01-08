@@ -8,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePayment, updateKitchenTicketStatus, voidBillableItems } from "@/components/cashier/firestore";
+import { completePayment, updateKitchenTicketStatus, voidBillableItems, updateBillableUnitPrice } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -184,6 +184,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         await batch.commit();
         toast({ title: "Quantity Updated" });
     } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+    }
+  };
+  
+  const handleUpdateUnitPrice = async (ticketIds: string[], newPrice: number) => {
+    if (isBillingLocked || !appUser || !activeStore || !session) return;
+    try {
+        await updateBillableUnitPrice(appUser, activeStore.id, sessionId, ticketIds, newPrice);
+        toast({ title: "Unit Price Updated" });
+    } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   };
@@ -366,7 +376,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     storeId={activeStore.id} 
                     session={session} 
                     discounts={itemDiscounts} 
-                    onUpdateQty={handleUpdateQty} 
+                    onUpdateQty={handleUpdateQty}
+                    onUpdateUnitPrice={handleUpdateUnitPrice}
                     onApplyDiscount={handleApplyDiscount} 
                     onApplyFree={handleApplyFree} 
                     onStatusUpdate={handleCashierItemStatusUpdate} 
@@ -396,3 +407,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    

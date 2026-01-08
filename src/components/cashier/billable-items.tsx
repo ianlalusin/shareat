@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X, PlusCircle, Gift, Percent, Minus, Plus, Check, Loader2 } from "lucide-react";
+import { X, PlusCircle, Gift, Percent, Minus, Plus, Check, Loader2, Edit } from "lucide-react";
 import { useState, useMemo } from "react";
 import { AddonsLauncherButton } from "./addons-launcher-button";
 import { Badge } from "../ui/badge";
@@ -16,6 +16,7 @@ import { VoidItemDialog } from "./VoidItemDialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
+import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 
 interface BillableItemsProps {
   groupedItems: GroupedBillableItem[];
@@ -23,6 +24,7 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   onUpdateQty: (ticketIds: string[], newQty: number) => void;
+  onUpdateUnitPrice: (ticketIds: string[], newPrice: number) => void;
   onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
   onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>;
@@ -34,26 +36,13 @@ type ActionType = "discount" | "free";
 
 function GroupedBillableItemRow({ 
     group, 
-    onUpdateQty,
-    onApplyDiscount,
-    onApplyFree,
-    onStatusUpdate,
-    onVoidItem,
-    discounts,
+    onEdit,
     isLocked 
 }: { 
     group: GroupedBillableItem, 
-    onUpdateQty: (ticketIds: string[], newQty: number) => void,
-    onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void,
-    onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
-    onStatusUpdate: (ticketId: string, newStatus: 'served' | 'void' | 'cancelled', reason?: string) => Promise<void>,
-    onVoidItem: (ticketId: string, reason: string, note?: string) => void,
-    discounts: Discount[],
+    onEdit: (group: GroupedBillableItem) => void,
     isLocked?: boolean 
 }) {
-    const [action, setAction] = useState<ActionType | null>(null);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [isVoiding, setIsVoiding] = useState(false);
 
     const getStatusVariant = (status: OrderItemStatus) => {
         switch(status) {
@@ -66,34 +55,6 @@ function GroupedBillableItemRow({
             default: return 'secondary';
         }
     }
-    
-    const canPerformAction = (group.status === 'preparing' || group.status === 'ready');
-    const canDiscount = group.servedQty > 0 && !group.isFree;
-    const canFree = group.servedQty > 0;
-    const isServed = group.status === 'served';
-
-    const handleFreeClick = () => {
-        if (!canFree && !group.isFree) return;
-        
-        // If the item is already free, we want to undo it.
-        if (group.isFree) {
-            onApplyFree(group.ticketIds, group.totalQty, true);
-        } else {
-            // If there's only one served item, apply directly without dialog
-            if (group.servedQty === 1) {
-                onApplyFree(group.ticketIds, 1, false);
-            } else {
-                // Otherwise, open the dialog to select quantity.
-                setAction("free");
-            }
-        }
-    }
-
-    const handleVoidClick = () => {
-      // For now, voiding one item from a group voids the first ticket ID.
-      // A more complex implementation could allow selecting which one.
-      setIsVoiding(true);
-    }
 
     return (
         <>
@@ -102,7 +63,7 @@ function GroupedBillableItemRow({
                     <div className="flex-1">
                         <p className="font-medium">{group.itemName}</p>
                         <div className="text-xs text-muted-foreground">
-                            <p>₱{group.unitPrice.toFixed(2)} each = ₱{(group.totalQty * group.unitPrice).toFixed(2)}</p>
+                            <p>{group.totalQty} x ₱{group.unitPrice.toFixed(2)} each = ₱{(group.totalQty * group.unitPrice).toFixed(2)}</p>
                             {(group.servedQty > 0 || group.pendingQty > 0) && (
                                 <p>({group.servedQty} served, {group.pendingQty} pending)</p>
                             )}
@@ -118,79 +79,13 @@ function GroupedBillableItemRow({
                     </div>
                     {!isLocked && (
                         <div className="flex items-center gap-2">
-                             {group.totalQty > 1 ? (
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        size="icon"
-                                        variant="outline"
-                                        className="h-8 w-8"
-                                        disabled={isLocked}
-                                        onClick={handleVoidClick}
-                                        aria-label="Decrease qty"
-                                    >
-                                        <Minus className="h-4 w-4" />
-                                    </Button>
-
-                                    <div className="min-w-[28px] text-center text-sm font-medium">{group.totalQty}</div>
-
-                                    {/* The "+" button is removed to prevent logic errors. Users should use "Add Item". */}
-                                </div>
-                            ) : (
-                                <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={isLocked || isProcessing}
-                                    className="text-red-500 hover:text-red-600 h-8 w-8"
-                                    onClick={handleVoidClick}
-                                    aria-label="Void item"
-                                >
-                                    {isProcessing ? <Loader2 className="animate-spin" /> : <X className="h-4 w-4" />}
-                                </Button>
-                            )}
-
-                            {isServed && (
-                                <>
-                                    <Button variant="outline" size="sm" onClick={() => setAction("discount")} disabled={!canDiscount}>
-                                        <Percent className="mr-2"/>
-                                    </Button>
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        onClick={handleFreeClick}
-                                        disabled={!canFree && !group.isFree}
-                                        className={cn(group.isFree && 'bg-yellow-400 text-black hover:bg-yellow-400/90')}
-                                    >
-                                        <Gift className="mr-2"/>
-                                    </Button>
-                                </>
-                            )}
+                           <Button variant="outline" size="sm" onClick={() => onEdit(group)}>
+                                <Edit className="mr-2"/> Edit
+                            </Button>
                         </div>
                     )}
                 </div>
             </div>
-            {action && (
-                <BillableItemActionDialog
-                    isOpen={!!action}
-                    onClose={() => setAction(null)}
-                    group={group}
-                    actionType={action}
-                    discounts={discounts}
-                    onApplyDiscount={onApplyDiscount}
-                    onApplyFree={(ticketIds, qty) => onApplyFree(ticketIds, qty, false)}
-                />
-            )}
-            {isVoiding && (
-                <VoidItemDialog
-                    isOpen={isVoiding}
-                    onClose={() => setIsVoiding(false)}
-                    itemName={group.itemName}
-                    onConfirm={(reason, note) => {
-                        // Apply void to the first available ticket in the group
-                        const ticketToVoid = group.ticketIds[0];
-                        onVoidItem(ticketToVoid, reason, note);
-                    }}
-                />
-            )}
         </>
     )
 }
@@ -201,6 +96,7 @@ export function BillableItems({
     session,
     discounts,
     onUpdateQty, 
+    onUpdateUnitPrice,
     onApplyDiscount, 
     onApplyFree, 
     onStatusUpdate, 
@@ -208,6 +104,8 @@ export function BillableItems({
     isLocked = false 
 }: BillableItemsProps) {
   
+  const [editingGroup, setEditingGroup] = useState<GroupedBillableItem | null>(null);
+
   const activeItems = groupedItems.filter(item => !item.isVoided && item.status !== 'cancelled');
   const voidedItems = groupedItems.filter(item => item.isVoided);
 
@@ -235,12 +133,7 @@ export function BillableItems({
                                 <GroupedBillableItemRow 
                                     key={group.key} 
                                     group={group}
-                                    onUpdateQty={onUpdateQty}
-                                    onApplyDiscount={onApplyDiscount}
-                                    onApplyFree={onApplyFree}
-                                    onStatusUpdate={onStatusUpdate}
-                                    onVoidItem={onVoidItem}
-                                    discounts={discounts}
+                                    onEdit={setEditingGroup}
                                     isLocked={isLocked}
                                 />
                             ))}
@@ -256,12 +149,7 @@ export function BillableItems({
                                 <GroupedBillableItemRow 
                                     key={group.key} 
                                     group={group}
-                                    onUpdateQty={onUpdateQty}
-                                    onApplyDiscount={onApplyDiscount}
-                                    onApplyFree={onApplyFree}
-                                    onStatusUpdate={onStatusUpdate}
-                                    onVoidItem={onVoidItem}
-                                    discounts={discounts}
+                                    onEdit={setEditingGroup}
                                     isLocked={isLocked}
                                 />
                             ))}
@@ -299,6 +187,23 @@ export function BillableItems({
             </div>
         </CardContent>
       </Card>
+      
+      {editingGroup && (
+        <EditBillableItemDialog
+            isOpen={!!editingGroup}
+            onClose={() => setEditingGroup(null)}
+            group={editingGroup}
+            discounts={discounts}
+            isLocked={isLocked}
+            onUpdateQty={onUpdateQty}
+            onUpdateUnitPrice={onUpdateUnitPrice}
+            onApplyDiscount={onApplyDiscount}
+            onApplyFree={onApplyFree}
+            onVoidItem={onVoidItem}
+        />
+      )}
     </>
   );
 }
+
+    

@@ -372,3 +372,5 @@ export type Receipt = {
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
 }
+
+    
