@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -194,6 +195,7 @@ export type BillableItem = {
   freeQty?: number;
   discountQty?: number;
 };
+
 
 type BillableLineType = "package" | "addon";
 

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -19,10 +20,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { StorePackage, BillableItem } from '@/lib/types';
+import type { StorePackage, BillableLine, BillableItem } from '@/lib/types';
 import type { Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
+import { normalizeKey } from './billable-lines';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -132,7 +134,7 @@ export async function startSession(
     });
   }
   
-  // 3. For package dine-in, create initial billable and kitchen ticket
+  // 3. For package dine-in, create initial billableLine and kitchen ticket
   if (payload.sessionMode === 'package_dinein' && payload.package) {
       const stationKey = payload.package.kitchenLocationId;
       if (!stationKey) {
@@ -140,23 +142,22 @@ export async function startSession(
       }
       
       const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
-      const billableRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billables"), ticketRef.id);
+      const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
       
-      const billablePayload = stripUndefined({
-          id: ticketRef.id,
-          source: "kitchenticket",
+      const ticketIds = Array.from({ length: payload.guestCount }, (_, i) => `${ticketRef.id}#${i + 1}`);
+
+      const billableLinePayload: BillableLine = {
+          id: billableLineRef.id,
           type: "package",
+          itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
           itemName: payload.package.packageName,
-          qty: payload.guestCount,
           unitPrice: payload.package.pricePerHead,
-          lineDiscountType: "fixed",
-          lineDiscountValue: 0,
-          isFree: false,
+          ticketIds: ticketIds,
+          qty: payload.guestCount,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          createdByUid: user.uid,
-      });
-      batch.set(billableRef, billablePayload);
+      };
+      batch.set(billableLineRef, billableLinePayload);
 
       const ticketPayload = stripUndefined({
         id: ticketRef.id,
@@ -347,7 +348,7 @@ type AnalyticsV2 = {
 
 function buildAnalyticsV2(
   sessionData: any,
-  billables: BillableItem[],
+  billableLines: BillableLine[],
   billingSummary: BillingSummary,
   payments: Payment[],
   paymentMethods: ModeOfPayment[],
@@ -356,38 +357,36 @@ function buildAnalyticsV2(
   const salesByCategory: AnalyticsV2['salesByCategory'] = {};
   const salesByItem: AnalyticsV2['salesByItem'] = {};
 
-  const billablesForRevenue = billables.filter(item => 
-      (item.type === 'package' || item.type === 'addon') &&
-      !item.isFree &&
-      !item.isVoided &&
-      item.status !== 'cancelled'
+  const billablesForRevenue = billableLines.filter(line => 
+      !line.isFree &&
+      !line.isVoided
   );
 
-  billablesForRevenue.forEach(item => {
-    const qty = item.qty || 1;
-    const grossAmount = qty * item.unitPrice;
+  billablesForRevenue.forEach(line => {
+    const qty = line.qty || 1;
+    const grossAmount = qty * line.unitPrice;
     
-    const lineDiscountAmount = item.lineDiscountType === 'percent'
-        ? grossAmount * (item.lineDiscountValue / 100)
-        : Math.min(item.lineDiscountValue * qty, grossAmount);
+    const lineDiscountAmount = line.discountType === 'percent'
+        ? grossAmount * ((line.discountValue || 0) / 100)
+        : Math.min((line.discountValue || 0) * qty, grossAmount);
 
     const netAmount = Math.max(0, grossAmount - lineDiscountAmount);
 
     let categoryName = "Uncategorized";
-    let itemName = item.itemName || 'Unknown Item';
+    let itemName = line.itemName || 'Unknown Item';
     let itemKey: string;
 
-    if (item.type === 'package') {
+    if (line.type === 'package') {
         categoryName = "Packages";
-        const normalizedItemName = (item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-');
+        const normalizedItemName = (line.itemName || 'unknown').toLowerCase().replace(/\s/g, '-');
         itemKey = `pkg:${normalizedItemName}`;
-    } else if (item.type === 'addon' && item.addonId) {
-        const addonDetails = addonMap.get(item.addonId);
+    } else if (line.type === 'addon' && line.itemId) {
+        const addonDetails = addonMap.get(line.itemId);
         categoryName = addonDetails?.category || "Uncategorized Addons";
-        itemName = addonDetails?.name || item.itemName;
-        itemKey = item.addonId;
+        itemName = addonDetails?.name || line.itemName;
+        itemKey = line.itemId;
     } else {
-        itemKey = `other:${(item.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
+        itemKey = `other:${(line.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
     }
 
     if (!salesByCategory[categoryName]) {
@@ -446,17 +445,16 @@ export async function completePayment(
   sessionId: string,
   user: AppUser,
   payments: Payment[],
-  billables: BillableItem[],
+  billableLines: BillableLine[],
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
     // --- PRE-TRANSACTION: Fetch non-transactional data ---
     const addonMap = new Map<string, StoreAddon>();
-    const addonIds = billables.filter(b => b.type === 'addon' && b.addonId).map(b => b.addonId!);
+    const addonIds = billableLines.filter(b => b.type === 'addon' && b.itemId).map(b => b.itemId!);
     const uniqueAddonIds = [...new Set(addonIds)];
 
     if (uniqueAddonIds.length > 0) {
-        // Chunk the requests to avoid Firestore's 'in' query limit
         const idChunks = [];
         for (let i = 0; i < uniqueAddonIds.length; i += 30) {
             idChunks.push(uniqueAddonIds.slice(i, i + 30));
@@ -560,7 +558,7 @@ export async function completePayment(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-        const analyticsV2 = buildAnalyticsV2(sessionData, billables, billingSummary, payments, paymentMethods, addonMap);
+        const analyticsV2 = buildAnalyticsV2(sessionData, billableLines, billingSummary, payments, paymentMethods, addonMap);
 
         const receiptPayload = stripUndefined({
             id: sessionId,
