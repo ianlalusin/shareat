@@ -357,3 +357,44 @@ export type StoreAddon = {
   kitchenLocationName: string | null;
   imageUrl?: string;
 };
+
+export type ActivityLog = {
+  id: string;
+  sessionId: string;
+  storeId: string;
+
+  action: "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED";
+
+  actorUid: string;
+  actorRole?: string | null;
+  actorName?: string | null;
+
+  lineIds?: string[];
+  ticketIds?: string[];
+  fromLineId?: string | null;
+  toLineId?: string | null;
+
+  reason?: string | null;
+  note?: string | null;
+
+  meta?: {
+    itemId?: string;
+    itemName?: string;
+    discountType?: "fixed" | "percent" | null;
+    discountValue?: number | null;
+    unitPriceBefore?: number | null;
+    unitPriceAfter?: number | null;
+    qty?: number;
+    isFreeBefore?: boolean | null;
+    isFreeAfter?: boolean | null;
+    isVoidedBefore?: boolean | null;
+    isVoidedAfter?: boolean | null;
+
+    receiptId?: string;
+    receiptNumber?: string;
+    paymentTotal?: number;
+    mopSummary?: any;
+  };
+
+  createdAt: any; // serverTimestamp()
+};

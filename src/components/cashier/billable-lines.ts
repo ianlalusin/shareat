@@ -21,6 +21,7 @@ import { db } from '@/lib/firebase/client';
 import type { BillableLine, KitchenTicket } from '@/lib/types';
 import { AppUser } from '@/context/auth-context';
 import { sha1 } from 'js-sha1';
+import { writeActivityLog } from './activity-log';
 
 // Helper to create a consistent key for grouping.
 export function normalizeKey(str: string): string {
@@ -110,16 +111,27 @@ export async function moveTicketIdsBetweenLines({
   fromLineId,
   toVariant,
   ticketIdsToMove,
-  actorUid,
+  actor,
+  action,
+  reason,
+  note,
+  meta,
 }: {
   storeId: string;
   sessionId: string;
   fromLineId: string;
   toVariant: Partial<BillableLine>;
   ticketIdsToMove: string[];
-  actorUid: string;
+  actor: AppUser;
+  action: ActivityLog['action'];
+  reason?: string | null;
+  note?: string | null;
+  meta?: ActivityLog['meta'];
 }) {
     if (ticketIdsToMove.length === 0) return;
+
+    let fromLineFinalData: BillableLine | null = null;
+    let toLineFinalData: BillableLine | null = null;
 
     await runTransaction(db, async (tx) => {
         const linesRef = collection(db, `stores/${storeId}/sessions/${sessionId}/billableLines`);
@@ -128,7 +140,6 @@ export async function moveTicketIdsBetweenLines({
         const { ref: toLineRef, data: toLineData, exists: toLineExists } = await findOrCreateLineByVariantTx(tx, linesRef, toVariant);
         
         if (fromLineRef.id === toLineRef.id) {
-            // Trying to move an item to its own variant (e.g. applying same discount twice). This is a no-op.
             console.warn("moveTicketIdsBetweenLines: Attempted to move tickets to their own variant. Aborting.");
             return;
         }
@@ -137,69 +148,106 @@ export async function moveTicketIdsBetweenLines({
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        // Harden: Ensure we only move IDs that actually exist on the source line.
         const toMoveSet = new Set(ticketIdsToMove);
         const validIdsToMove = fromLineData.ticketIds.filter(id => toMoveSet.has(id));
-        if (validIdsToMove.length === 0) return; // Nothing to do
+        if (validIdsToMove.length === 0) return;
 
-        // Harden: Calculate new arrays using sets to prevent duplicates
         const remainingFromIds = normalizeTicketIds(fromLineData.ticketIds.filter(id => !toMoveSet.has(id)));
         const newToIds = normalizeTicketIds([...(toLineData.ticketIds || []), ...validIdsToMove]);
 
-        // Update or delete the 'from' line
         if (remainingFromIds.length === 0 && fromLineData.type === 'addon') {
             tx.delete(fromLineRef);
+            fromLineFinalData = { ...fromLineData, ticketIds: [], qty: 0 };
         } else {
+            const updatedQty = fromLineData.type === 'package' ? fromLineData.qty : remainingFromIds.length;
+            fromLineFinalData = { ...fromLineData, ticketIds: remainingFromIds, qty: updatedQty };
             tx.update(fromLineRef, { 
                 ticketIds: remainingFromIds, 
-                qty: fromLineData.type === 'package' ? fromLineData.qty : remainingFromIds.length, 
+                qty: updatedQty, 
                 updatedAt: serverTimestamp() 
             });
         }
-
-        // Update or create the 'to' line
+        
+        const toLineQty = toLineData.type === 'package' ? toLineData.qty : newToIds.length;
+        toLineFinalData = { ...toLineData, ticketIds: newToIds, qty: toLineQty };
         const toLinePayload = {
-            ...toLineData,
+            ...toVariant, // Use the target variant to ensure all properties are correct
             ticketIds: newToIds,
-            qty: newToIds.length,
+            qty: toLineQty,
             updatedAt: serverTimestamp()
         };
         
         if (toLineExists) {
-             tx.update(toLineRef, toLinePayload);
+             tx.set(toLineRef, toLinePayload, { merge: true });
         } else {
              tx.set(toLineRef, { ...toLinePayload, createdAt: serverTimestamp() }, { merge: true });
         }
     });
+
+    // Best-effort logging outside the transaction
+    if (fromLineFinalData && toLineFinalData) {
+        await writeActivityLog({
+            storeId,
+            sessionId,
+            user: actor,
+            action,
+            ticketIds: ticketIdsToMove,
+            fromLineId: fromLineId,
+            toLineId: toLineFinalData.id,
+            lineIds: [fromLineId, toLineFinalData.id],
+            reason,
+            note,
+            meta: {
+                ...meta,
+                qty: ticketIdsToMove.length,
+                itemName: toLineFinalData.itemName,
+            },
+        });
+    }
 }
 
 export async function updateLineUnitPrice(
   storeId: string,
   sessionId: string,
-  lineId: string,
+  line: BillableLine,
   newPrice: number,
-  actorUid: string
+  actor: AppUser
 ) {
-    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, lineId);
-    const lineSnap = await getDoc(lineRef);
-    if (!lineSnap.exists()) throw new Error("Line item not found.");
-    const lineData = lineSnap.data() as BillableLine;
-
-    // For packages, unit price is stored on the package line itself.
-    // Their quantity is not ticket-based, so a simple update is fine.
-    if (lineData.type === 'package') {
+    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
+    
+    if (line.type === 'package') {
         await updateDoc(lineRef, { unitPrice: newPrice, updatedAt: serverTimestamp() });
+        // Log this simple change
+        await writeActivityLog({
+            storeId,
+            sessionId,
+            user: actor,
+            action: 'PRICE_OVERRIDE',
+            lineIds: [line.id],
+            meta: {
+                itemId: line.itemId,
+                itemName: line.itemName,
+                unitPriceBefore: line.unitPrice,
+                unitPriceAfter: newPrice,
+            },
+        });
         return;
     }
 
-    // For addons, price is part of the variant key, so we must move tickets.
     await moveTicketIdsBetweenLines({
         storeId,
         sessionId,
-        fromLineId: lineId,
-        toVariant: { ...lineData, unitPrice: newPrice },
-        ticketIdsToMove: lineData.ticketIds, // Move all tickets
-        actorUid: actorUid,
+        fromLineId: line.id,
+        toVariant: { ...line, unitPrice: newPrice },
+        ticketIdsToMove: line.ticketIds, // Move all tickets
+        actor,
+        action: 'PRICE_OVERRIDE',
+        meta: {
+            itemId: line.itemId,
+            itemName: line.itemName,
+            unitPriceBefore: line.unitPrice,
+            unitPriceAfter: newPrice,
+        }
     });
 }
 

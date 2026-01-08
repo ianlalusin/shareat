@@ -180,51 +180,48 @@ service cloud.firestore {
         allow create: if isStoreMember(storeId) && (isServer() || isCashier());
         allow update: if isStoreMember(storeId) && (isServer() || isCashier()); // for updates like guest verification, change requests
         allow delete: if isStoreMember(storeId) && isManager();
-      }
+        
+        // Append-only Activity Logs
+        match /activityLogs/{logId} {
+            allow read, list: if isCashier();
+            allow create: if isCashier();
+            allow update, delete: if false;
+        }
 
-      // Kitchen Tickets
-      match /sessions/{sessionId}/kitchentickets/{ticketId} {
-        allow read: if isStoreMember(storeId);
-        allow create: if isStoreMember(storeId) && isServer();
+        // Kitchen Tickets
+        match /kitchentickets/{ticketId} {
+            allow read: if isStoreMember(storeId);
+            allow create: if isStoreMember(storeId) && isServer();
+            
+            allow update: if isStoreMember(storeId) && (
+            // Kitchen role can ONLY update status fields
+            (isKitchen() && changedKeysOnly([
+                'status', 'preparedAt', 'preparedByUid', 'servedAt', 'servedByUid', 
+                'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+            ])) ||
+            // Server/Cashier can cancel/void
+            ((isServer() || isCashier()) && changedKeysOnly([
+                'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+            ])) ||
+            // Manager/Admin can do more
+            isManager()
+            );
+            
+            allow delete: if false; // Use status 'cancelled' or 'void' instead of deleting.
+        }
         
-        allow update: if isStoreMember(storeId) && (
-          // Kitchen role can ONLY update status fields
-          (isKitchen() && changedKeysOnly([
-              'status', 'preparedAt', 'preparedByUid', 'servedAt', 'servedByUid', 
-              'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
-          ])) ||
-          // Server/Cashier can cancel/void
-          ((isServer() || isCashier()) && changedKeysOnly([
-              'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
-          ])) ||
-          // Manager/Admin can do more
-          isManager()
-        );
+        // Billable Lines (New canonical source for billing)
+        match /billableLines/{lineId} {
+            allow read: if isStoreMember(storeId);
+            allow create, update, delete: if isStoreMember(storeId) && isCashier();
+        }
         
-        allow delete: if false; // Use status 'cancelled' or 'void' instead of deleting.
-      }
-      
-      // Billable Items
-      match /sessions/{sessionId}/billables/{billableId} {
-        allow read: if isStoreMember(storeId);
-        allow create: if isStoreMember(storeId) && (isServer() || isCashier());
-        
-        allow update: if isStoreMember(storeId) && (
-           // Cashier can manage discounts and free status
-          (isCashier() && changedKeysOnly([
-            'lineDiscountType', 'lineDiscountValue', 'isFree', 'updatedAt'
-          ])) ||
-          isManager()
-        );
-        
-        allow delete: if false;
-      }
-      
-      // Payments
-      match /sessions/{sessionId}/payments/{paymentId} {
-      allow read: if isStoreMember(storeId) && (isCashier() || isManager());
-        allow create: if isStoreMember(storeId) && isCashier();
-        allow update, delete: if isStoreMember(storeId) && isManager(); // Tightly controlled
+        // Payments
+        match /payments/{paymentId} {
+        allow read: if isStoreMember(storeId) && (isCashier() || isManager());
+            allow create: if isStoreMember(storeId) && isCashier();
+            allow update, delete: if isStoreMember(storeId) && isManager(); // Tightly controlled
+        }
       }
     }
   }

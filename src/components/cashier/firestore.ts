@@ -19,10 +19,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon } from '@/lib/types';
+import type { StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon, ActivityLog } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { normalizeKey } from './billable-lines';
+import { writeActivityLog } from './activity-log';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -142,7 +143,6 @@ export async function startSession(
       const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
       const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
       
-      // For a package line, qty is guestCount, and ticketIds should be empty.
       const billableLinePayload: BillableLine = {
           id: billableLineRef.id,
           type: "package",
@@ -319,31 +319,30 @@ export async function completePaymentFromBillableLines(
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
-    // --- PRE-TRANSACTION: Fetch non-transactional data ---
-    const addonMap = new Map<string, StoreAddon>();
-    const addonIds = billableLines.filter(b => b.type === 'addon' && b.itemId).map(b => b.itemId!);
-    const uniqueAddonIds = [...new Set(addonIds)];
+  const addonMap = new Map<string, StoreAddon>();
+  const addonIds = billableLines.filter(b => b.type === 'addon' && b.itemId).map(b => b.itemId!);
+  const uniqueAddonIds = [...new Set(addonIds)];
 
-    if (uniqueAddonIds.length > 0) {
-        const idChunks = [];
-        for (let i = 0; i < uniqueAddonIds.length; i += 30) {
-            idChunks.push(uniqueAddonIds.slice(i, i + 30));
-        }
+  if (uniqueAddonIds.length > 0) {
+      const idChunks = [];
+      for (let i = 0; i < uniqueAddonIds.length; i += 30) {
+          idChunks.push(uniqueAddonIds.slice(i, i + 30));
+      }
 
-        for (const chunk of idChunks) {
-            const addonQuery = query(collection(db, `stores/${storeId}/storeAddons`), where('id', 'in', chunk));
-            const addonSnaps = await getDocs(addonQuery);
-            addonSnaps.forEach(snap => {
-                if (snap.exists()) {
-                    addonMap.set(snap.id, snap.data() as StoreAddon);
-                }
-            });
-        }
-    }
+      for (const chunk of idChunks) {
+          const addonQuery = query(collection(db, `stores/${storeId}/storeAddons`), where('id', 'in', chunk));
+          const addonSnaps = await getDocs(addonQuery);
+          addonSnaps.forEach(snap => {
+              if (snap.exists()) {
+                  addonMap.set(snap.id, snap.data() as StoreAddon);
+              }
+          });
+      }
+  }
 
+  let receiptId: string = "";
 
   await runTransaction(db, async (tx) => {
-    // --- TRANSACTION READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
@@ -356,15 +355,13 @@ export async function completePaymentFromBillableLines(
         tx.get(counterRef),
     ]);
 
-    if (!sessionSnap.exists()) {
-      throw new Error(`Session ${sessionId} does not exist.`);
-    }
+    if (!sessionSnap.exists()) throw new Error(`Session ${sessionId} does not exist.`);
     
     const sessionData = sessionSnap.data();
-    // IDEMPOTENCY GUARD
     if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
-      return receiptRef.id; // Return existing receipt ID
+      receiptId = receiptRef.id;
+      return;
     }
     
     let tableRef = null;
@@ -374,47 +371,31 @@ export async function completePaymentFromBillableLines(
         tableSnap = await tx.get(tableRef);
     }
     
-    // --- TRANSACTION VALIDATION AND PREPARATION ---
     const grandTotal = billingSummary.grandTotal || 0;
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
-    if (totalPaid < grandTotal) {
-      throw new Error("Cannot complete payment: balance is not zero.");
-    }
+    if (totalPaid < grandTotal) throw new Error("Cannot complete payment: balance is not zero.");
+
     const actor = getActorStamp(user);
     const shouldCreateReceipt = !receiptSnap.exists();
 
-    // --- TRANSACTION WRITE PHASE ---
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
-      const paymentPayload = stripUndefined({
-        ...payment,
-        id: paymentRef.id,
-        createdByUid: actor.uid,
-        createdByUsername: actor.username,
-      });
       tx.set(paymentRef, {
-          ...paymentPayload,
+          ...payment,
+          id: paymentRef.id,
+          createdByUid: actor.uid,
+          createdByUsername: actor.username,
           createdAt: serverTimestamp(),
       });
     });
 
-    const sessionUpdatePayload = stripUndefined({
-      status: "closed",
-      isPaid: true,
-      closedByUid: actor.uid,
-      closedByUsername: actor.username,
-      paymentSummary: {
-        ...billingSummary,
-        totalPaid,
-        change: Math.max(0, totalPaid - grandTotal),
-        payments,
-      },
-    });
-
     tx.update(sessionRef, {
-        ...sessionUpdatePayload,
+        status: "closed",
+        isPaid: true,
+        closedByUid: actor.uid,
+        closedByUsername: actor.username,
         closedAt: serverTimestamp(),
         closedAtClientMs: Date.now(),
         updatedAt: serverTimestamp(),
@@ -428,7 +409,6 @@ export async function completePaymentFromBillableLines(
         tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
-
         const analyticsV2 = buildAnalyticsV2(sessionData, billableLines, billingSummary, payments, paymentMethods, addonMap);
 
         const receiptPayload = stripUndefined({
@@ -456,6 +436,7 @@ export async function completePaymentFromBillableLines(
             createdAt: serverTimestamp(),
             createdAtClientMs: Date.now(),
         });
+        receiptId = receiptRef.id;
     }
 
     if (tableSnap && tableRef && tableSnap.exists()) {
@@ -470,7 +451,22 @@ export async function completePaymentFromBillableLines(
     }
   });
 
-  return sessionId;
+  if (receiptId) {
+     await writeActivityLog({
+        storeId,
+        sessionId,
+        user,
+        action: "PAYMENT_COMPLETED",
+        note: "Payment completed",
+        meta: {
+            receiptId,
+            receiptNumber: receiptId, // Placeholder until we can get it back from tx
+            paymentTotal: billingSummary.grandTotal,
+        }
+    });
+  }
+
+  return receiptId;
 }
 
 export async function voidSession({
