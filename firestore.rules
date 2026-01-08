@@ -183,8 +183,8 @@ service cloud.firestore {
         
         // Append-only Activity Logs
         match /activityLogs/{logId} {
-            allow read, list: if isCashier();
-            allow create: if isCashier();
+            allow read, list: if isCashier() && isStoreMember(storeId);
+            allow create: if isCashier() && isStoreMember(storeId);
             allow update, delete: if false;
         }
 
