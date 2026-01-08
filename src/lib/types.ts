@@ -381,3 +381,17 @@ export type Receipt = {
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
 }
+
+export type StoreAddon = {
+  id: string;
+  name: string;
+  category?: string;
+  uom?: string;
+  price: number;
+  isEnabled: boolean;
+  isArchived: boolean;
+  sortOrder: number;
+  kitchenLocationId: string | null;
+  kitchenLocationName: string | null;
+  imageUrl?: string;
+};

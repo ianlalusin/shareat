@@ -51,7 +51,7 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     isLocked?: boolean;
     onUpdateQty: (ticketIds: string[], newQty: number) => void;
-    onUpdateUnitPrice: (ticketIds: string[], newPrice: number) => void;
+    onUpdateUnitPrice: (ticketIds: string[], newPrice: number) => Promise<void>;
     onApplyDiscount: (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
     onApplyFree: (ticketIds: string[], quantity: number, currentIsFree: boolean) => void;
     onVoidItem: (ticketId: string, reason: string, note?: string) => void;

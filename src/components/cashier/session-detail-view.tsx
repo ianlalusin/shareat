@@ -256,55 +256,47 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     quantity: number
   ) => {
     if (isBillingLocked || !activeStore || !session) return;
-  
+    
+    // Ensure quantity is a positive integer
     const qty = Math.max(1, Math.floor(quantity || 1));
+    
+    // This logic correctly handles partial discounts by only updating the selected number of documents.
     const targetIds = ticketIds.slice(0, qty);
   
-    const batch = writeBatch(db);
-    
-    // Logic for single-doc with qty > 1
-    if (ticketIds.length === 1) {
-        const billableDocRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketIds[0]);
-        const billableDocSnap = await getDoc(billableDocRef);
-        if (billableDocSnap.exists() && (billableDocSnap.data().qty ?? 1) > 1) {
-            batch.update(billableDocRef, {
-                lineDiscountType: discountType,
-                lineDiscountValue: discountValue,
-                discountQty: qty,
-                isFree: false, // Ensure isFree is reset
-                freeQty: 0,
-                updatedAt: serverTimestamp(),
+    // New guard: prevent partial discount on a single doc with qty > 1
+    if (qty > 1 && ticketIds.length === 1) {
+        const billableDoc = legacyBillables.get(ticketIds[0]);
+        if (billableDoc && billableDoc.qty > 1) {
+            toast({
+                variant: "destructive",
+                title: "Partial Discount Not Supported",
+                description: `This item is a single entry with quantity > 1. Cannot apply discount to only ${qty} of ${billableDoc.qty}.`,
             });
-             try {
-                await batch.commit();
-                toast({ title: "Discount Applied" });
-                return;
-            } catch (e: any) {
-                toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
-                return;
-            }
+            return;
         }
     }
   
-    // Logic for multiple docs (each with qty=1)
+    const batch = writeBatch(db);
+    
     targetIds.forEach(ticketId => {
-        const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
-        batch.update(billableRef, {
-            lineDiscountType: discountType,
-            lineDiscountValue: discountValue,
-            discountQty: 1, // Each doc is one unit
-            isFree: false, 
-            freeQty: 0,
-            updatedAt: serverTimestamp(),
-        });
+      const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
+      batch.update(billableRef, {
+        lineDiscountType: discountType,
+        lineDiscountValue: discountValue,
+        discountQty: 1, // Since we now iterate, each doc gets a discountQty of 1
+        isFree: false, 
+        freeQty: 0,
+        updatedAt: serverTimestamp(),
+      });
     });
   
-    // Update remaining items in the group to have no discount
+    // Update remaining items in the group to have no discount if it was a partial application
     if (ticketIds.length > qty) {
       const remainingIds = ticketIds.slice(qty);
       remainingIds.forEach(ticketId => {
         const billableRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId);
         batch.update(billableRef, {
+          lineDiscountType: 'fixed',
           lineDiscountValue: 0,
           discountQty: 0,
           updatedAt: serverTimestamp(),
@@ -472,8 +464,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const canCompletePayment = pendingItems.length === 0 && allServedItems.length > 0;
 
   const handleCompletePayment = async () => {
-    if (!appUser || !activeStore || !session) return;
-    
     if (isCompletingPayment || isBillingLocked) return;
 
     const paymentError = validatePayments(payments, grandTotal, paymentMethods);
@@ -487,6 +477,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
     setIsCompletingPayment(true);
     try {
+        if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
         const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal };
         await completePayment(activeStore.id, sessionId, appUser, normalizedPayments, allBillableItems, billingSummary, paymentMethods);
@@ -496,7 +487,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         router.push(`/receipt/${sessionId}${autoPrint ? "?autoprint=1" : ""}`);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Payment failed", description: err?.message ?? "Something went wrong." });
-      setIsCompletingPayment(false);
+      setIsCompletingPayment(false); // Only set back to false on failure
     }
   };
   
@@ -570,5 +561,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    

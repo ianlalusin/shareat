@@ -9,9 +9,14 @@ import {
   writeBatch,
   doc,
   serverTimestamp,
+  runTransaction,
+  where,
+  getDoc,
+  Transaction,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import type { BillableItem, BillableLine } from '@/lib/types';
+import type { BillableItem, BillableLine, KitchenTicket } from '@/lib/types';
+import { AppUser } from '@/context/auth-context';
 
 // Helper to create a consistent key for grouping.
 export function normalizeKey(str: string): string {
@@ -19,13 +24,13 @@ export function normalizeKey(str: string): string {
 }
 
 // Helper to generate a key for identifying a unique billable line variant.
-export function makeVariantKey(lineLike: Partial<BillableItem>): string {
+export function makeVariantKey(lineLike: Partial<BillableLine>): string {
   const parts = [
     lineLike.type || 'addon',
-    (lineLike as any).addonId || (lineLike as any).packageId || normalizeKey(lineLike.itemName || 'unknown'),
+    lineLike.itemId || normalizeKey(lineLike.itemName || 'unknown'),
     `price:${(lineLike.unitPrice || 0).toFixed(2)}`,
     `free:${lineLike.isFree ? 'yes' : 'no'}`,
-    `disc:${lineLike.lineDiscountType || 'none'}-${lineLike.lineDiscountValue || 0}`,
+    `disc:${lineLike.discountType || 'none'}-${lineLike.discountValue || 0}`,
     `void:${lineLike.isVoided ? 'yes' : 'no'}`,
   ];
   return parts.join('|');
@@ -130,4 +135,117 @@ export async function ensureBillableLinesForSession(
     console.error(`Failed to migrate billable lines for session ${sessionId}:`, error);
     // We do not throw here to allow the UI to fall back to legacy data.
   }
+}
+
+export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
+    if (!line || !line.ticketIds) return [];
+
+    return line.ticketIds.filter(ticketId => {
+        const ticket = ticketsById.get(ticketId);
+        // For packages, which are synthetic, there's no ticket, so we treat them as "served" for billing purposes.
+        if (line.type === 'package') return true; 
+        if (!ticket) return false;
+
+        switch (mode) {
+            case "served":
+                return ticket.status === 'served';
+            case "pending":
+                return ticket.status === 'preparing' || ticket.status === 'ready';
+            case "any":
+                return ticket.status !== 'cancelled' && ticket.status !== 'void';
+            default:
+                return false;
+        }
+    });
+}
+
+async function findOrCreateLineByVariant(
+    tx: Transaction,
+    linesRef: collection,
+    variant: Partial<BillableLine>
+): Promise<{ ref: DocumentReference; data: BillableLine }> {
+    const variantKey = makeVariantKey(variant);
+    // This is a limitation: we can't query inside a transaction on fields not part of the read set.
+    // Instead, we'll create a deterministic ID based on the variant key.
+    // This is generally safe if variant keys are unique enough.
+    const deterministicId = variantKey.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 400);
+    const lineRef = doc(linesRef, deterministicId);
+    const lineSnap = await tx.get(lineRef);
+
+    if (lineSnap.exists()) {
+        return { ref: lineRef, data: lineSnap.data() as BillableLine };
+    } else {
+        const newLineData: BillableLine = {
+            id: lineRef.id,
+            type: variant.type!,
+            itemId: variant.itemId!,
+            itemName: variant.itemName!,
+            unitPrice: variant.unitPrice!,
+            ticketIds: [],
+            qty: 0,
+            isFree: variant.isFree,
+            discountType: variant.discountType,
+            discountValue: variant.discountValue,
+            isVoided: variant.isVoided,
+            voidReason: variant.voidReason,
+            voidNote: variant.voidNote,
+        };
+        return { ref: lineRef, data: newLineData };
+    }
+}
+
+export async function moveTicketIdsBetweenLines({
+  storeId, sessionId,
+  fromLineId,
+  toVariant,
+  ticketIdsToMove,
+  actorUid,
+  logAction
+}: {
+  storeId: string;
+  sessionId: string;
+  fromLineId: string;
+  toVariant: Partial<BillableLine>;
+  ticketIdsToMove: string[];
+  actorUid: string;
+  logAction?: string;
+}) {
+    if (ticketIdsToMove.length === 0) return;
+
+    await runTransaction(db, async (tx) => {
+        const linesRef = collection(db, `stores/${storeId}/sessions/${sessionId}/billableLines`);
+        const fromLineRef = doc(linesRef, fromLineId);
+        
+        // 1. Read fromLine
+        const fromLineSnap = await tx.get(fromLineRef);
+        if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
+        const fromLineData = fromLineSnap.data() as BillableLine;
+
+        // 2. Ensure tickets exist in source
+        const fromTicketSet = new Set(fromLineData.ticketIds);
+        for (const ticketId of ticketIdsToMove) {
+            if (!fromTicketSet.has(ticketId)) {
+                throw new Error(`Ticket ${ticketId} not found in source line ${fromLineId}.`);
+            }
+        }
+        
+        // 3. Find or Create destination line
+        const { ref: toLineRef, data: toLineData } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
+        
+        // 4. Update both lines
+        const newFromTicketIds = fromLineData.ticketIds.filter(id => !ticketIdsToMove.includes(id));
+        const newToTicketIds = [...new Set([...toLineData.ticketIds, ...ticketIdsToMove])];
+
+        if (newFromTicketIds.length === 0) {
+            tx.delete(fromLineRef);
+        } else {
+            tx.update(fromLineRef, { ticketIds: newFromTicketIds, qty: newFromTicketIds.length, updatedAt: serverTimestamp() });
+        }
+
+        if (toLineSnap.exists()) {
+             tx.update(toLineRef, { ticketIds: newToTicketIds, qty: newToTicketIds.length, updatedAt: serverTimestamp() });
+        } else {
+             tx.set(toLineRef, { ...toLineData, ticketIds: newToTicketIds, qty: newToTicketIds.length, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        }
+    });
 }
