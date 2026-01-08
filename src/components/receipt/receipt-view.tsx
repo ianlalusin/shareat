@@ -1,11 +1,12 @@
 
+
 "use client";
 
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
-import type { BillableItem, ModeOfPayment } from "@/lib/types";
+import type { BillableLine, ModeOfPayment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 // Define types based on your Firestore structure
@@ -57,7 +58,7 @@ export type ReceiptSettings = {
 
 export type ReceiptData = {
     session: Session;
-    billables: BillableItem[];
+    billables: BillableLine[];
     payments: Payment[];
     settings: ReceiptSettings;
     receiptCreatedAt?: any;
@@ -91,10 +92,10 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
     const groupedItems = useMemo(() => {
-        const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, lineDiscountValue: number, lineDiscountType: 'fixed' | 'percent' }>();
+        const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, discountValue: number, discountType?: 'fixed' | 'percent' }>();
         
         billables.forEach(item => {
-            if (item.isFree) return;
+            if (item.isFree || item.isVoided) return;
 
             // Correctly determine quantity for package items
             const isPackage = item.type === 'package';
@@ -111,9 +112,9 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     qty: itemQty, 
                     unitPrice: item.unitPrice, 
                     total: itemQty * item.unitPrice, 
-                    notes: item.notes,
-                    lineDiscountValue: item.lineDiscountValue,
-                    lineDiscountType: item.lineDiscountType,
+                    notes: (item as any).notes, // Cast for legacy notes if they exist
+                    discountValue: item.discountValue || 0,
+                    discountType: item.discountType,
                 });
             }
         });
@@ -122,7 +123,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();
-        billables.filter(i => i.isFree).forEach(item => {
+        billables.filter(i => i.isFree && !i.isVoided).forEach(item => {
              const key = item.itemName;
              const existing = map.get(key);
              if (existing) existing.qty += item.qty;
@@ -179,10 +180,10 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 </div>
                 {groupedItems.map(([key, item]) => {
                     const [name] = key.split('@');
-                    const hasDiscount = item.lineDiscountValue > 0;
-                    const discountAmount = item.lineDiscountType === 'percent' 
-                        ? item.total * (item.lineDiscountValue / 100) 
-                        : item.lineDiscountValue * item.qty;
+                    const hasDiscount = item.discountValue > 0;
+                    const discountAmount = item.discountType === 'percent' 
+                        ? item.total * (item.discountValue / 100) 
+                        : item.discountValue * item.qty;
 
                     return (
                         <div key={key} className="receipt-item-row">

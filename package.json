@@ -48,6 +48,7 @@
     "firebase": "^11.10.0",
     "firebase-admin": "^12.1.1",
     "genkit": "^1.0.0",
+    "js-sha1": "^0.3.0",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.475.0",
     "next": "15.0.7",

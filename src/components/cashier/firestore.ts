@@ -68,7 +68,7 @@ function formatReceiptNumber(fmt: string, seq: number): string {
 
 /**
  * Starts a new dining session.
- * Creates session doc, table update, initial package billable, and initial kitchen ticket.
+ * Creates session doc, table update, initial package billableLine, and initial kitchen ticket.
  */
 export async function startSession(
   storeId: string,
@@ -142,15 +142,14 @@ export async function startSession(
       const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
       const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
       
-      // For a package line, qty is guestCount, and ticketIds can be empty or synthetic.
-      // We don't strictly need ticketIds for package billing, as qty is the authority.
+      // For a package line, qty is guestCount, and ticketIds should be empty.
       const billableLinePayload: BillableLine = {
           id: billableLineRef.id,
           type: "package",
           itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
           itemName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
-          ticketIds: [], // Not needed for package billing logic
+          ticketIds: [], // Packages do not rely on ticket IDs for quantity
           qty: payload.guestCount,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),

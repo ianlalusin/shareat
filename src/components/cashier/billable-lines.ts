@@ -40,6 +40,17 @@ export function makeVariantKey(lineLike: Partial<BillableLine>): string {
   return parts.join('|');
 }
 
+/**
+ * Ensures a ticket ID array is unique and sorted.
+ * This guarantees consistency for comparisons and data integrity.
+ * @param ticketIds An array of ticket IDs.
+ * @returns A new array with unique, sorted ticket IDs.
+ */
+function normalizeTicketIds(ticketIds: string[]): string[] {
+  if (!Array.isArray(ticketIds)) return [];
+  return [...new Set(ticketIds)].sort();
+}
+
 export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
     if (!line || !line.ticketIds) return [];
 
@@ -62,7 +73,7 @@ export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string
     });
 }
 
-async function findOrCreateLineByVariant(
+export async function findOrCreateLineByVariantTx(
     tx: Transaction,
     linesRef: CollectionReference,
     variant: Partial<BillableLine>
@@ -81,12 +92,12 @@ async function findOrCreateLineByVariant(
             itemId: variant.itemId!,
             itemName: variant.itemName!,
             unitPrice: variant.unitPrice!,
-            ticketIds: [],
-            qty: 0,
-            isFree: variant.isFree,
+            ticketIds: [], // Always start with an empty array
+            qty: 0,        // And a quantity of 0
+            isFree: variant.isFree ?? false,
             discountType: variant.discountType,
             discountValue: variant.discountValue,
-            isVoided: variant.isVoided,
+            isVoided: variant.isVoided ?? false,
             voidReason: variant.voidReason,
             voidNote: variant.voidNote,
         };
@@ -100,7 +111,6 @@ export async function moveTicketIdsBetweenLines({
   toVariant,
   ticketIdsToMove,
   actorUid,
-  logAction
 }: {
   storeId: string;
   sessionId: string;
@@ -108,7 +118,6 @@ export async function moveTicketIdsBetweenLines({
   toVariant: Partial<BillableLine>;
   ticketIdsToMove: string[];
   actorUid: string;
-  logAction?: string;
 }) {
     if (ticketIdsToMove.length === 0) return;
 
@@ -116,10 +125,11 @@ export async function moveTicketIdsBetweenLines({
         const linesRef = collection(db, `stores/${storeId}/sessions/${sessionId}/billableLines`);
         const fromLineRef = doc(linesRef, fromLineId);
         
-        const { ref: toLineRef, exists: toLineExists } = await findOrCreateLineByVariant(tx, linesRef, toVariant);
+        const { ref: toLineRef, data: toLineData, exists: toLineExists } = await findOrCreateLineByVariantTx(tx, linesRef, toVariant);
         
-        if(fromLineRef.id === toLineRef.id) {
+        if (fromLineRef.id === toLineRef.id) {
             // Trying to move an item to its own variant (e.g. applying same discount twice). This is a no-op.
+            console.warn("moveTicketIdsBetweenLines: Attempted to move tickets to their own variant. Aborting.");
             return;
         }
 
@@ -127,18 +137,14 @@ export async function moveTicketIdsBetweenLines({
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        const toLineSnap = await tx.get(toLineRef);
-        const toLineData = toLineSnap.exists() ? toLineSnap.data() as BillableLine : (await findOrCreateLineByVariant(tx, linesRef, toVariant)).data;
-
-
         // Harden: Ensure we only move IDs that actually exist on the source line.
         const toMoveSet = new Set(ticketIdsToMove);
         const validIdsToMove = fromLineData.ticketIds.filter(id => toMoveSet.has(id));
         if (validIdsToMove.length === 0) return; // Nothing to do
 
         // Harden: Calculate new arrays using sets to prevent duplicates
-        const remainingFromIds = fromLineData.ticketIds.filter(id => !toMoveSet.has(id));
-        const newToIds = [...new Set([...(toLineData.ticketIds || []), ...validIdsToMove])];
+        const remainingFromIds = normalizeTicketIds(fromLineData.ticketIds.filter(id => !toMoveSet.has(id)));
+        const newToIds = normalizeTicketIds([...(toLineData.ticketIds || []), ...validIdsToMove]);
 
         // Update or delete the 'from' line
         if (remainingFromIds.length === 0 && fromLineData.type === 'addon') {
@@ -152,20 +158,17 @@ export async function moveTicketIdsBetweenLines({
         }
 
         // Update or create the 'to' line
+        const toLinePayload = {
+            ...toLineData,
+            ticketIds: newToIds,
+            qty: newToIds.length,
+            updatedAt: serverTimestamp()
+        };
+        
         if (toLineExists) {
-             tx.update(toLineRef, { 
-                ticketIds: newToIds, 
-                qty: newToIds.length, 
-                updatedAt: serverTimestamp() 
-            });
+             tx.update(toLineRef, toLinePayload);
         } else {
-             tx.set(toLineRef, { 
-                ...toLineData, 
-                ticketIds: newToIds, 
-                qty: newToIds.length, 
-                createdAt: serverTimestamp(), 
-                updatedAt: serverTimestamp() 
-            });
+             tx.set(toLineRef, { ...toLinePayload, createdAt: serverTimestamp() }, { merge: true });
         }
     });
 }
@@ -182,20 +185,21 @@ export async function updateLineUnitPrice(
     if (!lineSnap.exists()) throw new Error("Line item not found.");
     const lineData = lineSnap.data() as BillableLine;
 
+    // For packages, unit price is stored on the package line itself.
+    // Their quantity is not ticket-based, so a simple update is fine.
     if (lineData.type === 'package') {
-        // For packages, just update the price directly.
         await updateDoc(lineRef, { unitPrice: newPrice, updatedAt: serverTimestamp() });
         return;
     }
 
+    // For addons, price is part of the variant key, so we must move tickets.
     await moveTicketIdsBetweenLines({
         storeId,
         sessionId,
         fromLineId: lineId,
         toVariant: { ...lineData, unitPrice: newPrice },
-        ticketIdsToMove: lineData.ticketIds,
+        ticketIdsToMove: lineData.ticketIds, // Move all tickets
         actorUid: actorUid,
-        logAction: 'change_price'
     });
 }
 
@@ -203,12 +207,12 @@ export async function updateLineUnitPrice(
 export async function changeLineQty(
     storeId: string,
     sessionId: string,
-    lineId: string,
+    line: BillableLine,
     newQty: number,
     actor: AppUser,
     tickets: Map<string, KitchenTicket>
 ) {
-    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, lineId);
+    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
     
     await runTransaction(db, async (tx) => {
         const lineSnap = await tx.get(lineRef);
@@ -256,9 +260,10 @@ export async function changeLineQty(
                 });
             }
             
+            const finalTicketIds = normalizeTicketIds([...lineData.ticketIds, ...newTicketIds]);
             tx.update(lineRef, {
-                ticketIds: [...lineData.ticketIds, ...newTicketIds],
-                qty: newQty,
+                ticketIds: finalTicketIds,
+                qty: finalTicketIds.length,
                 updatedAt: serverTimestamp()
             });
 
@@ -277,7 +282,7 @@ export async function changeLineQty(
                 throw new Error("Cannot reduce quantity below the number of non-cancellable items.");
             }
 
-            const remainingTicketIds = lineData.ticketIds.filter(id => !ticketsToCancel.includes(id));
+            const remainingTicketIds = normalizeTicketIds(lineData.ticketIds.filter(id => !ticketsToCancel.includes(id)));
             
             tx.update(lineRef, {
                 ticketIds: remainingTicketIds,

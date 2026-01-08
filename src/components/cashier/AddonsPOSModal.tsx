@@ -16,12 +16,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { Product, StoreAddon, PendingSession } from "@/lib/types";
+import type { Product, StoreAddon, PendingSession, BillableLine } from "@/lib/types";
 import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { findOrCreateLineByVariant, makeVariantKey } from "./billable-lines";
+import { findOrCreateLineByVariantTx, normalizeTicketIds } from "./billable-lines";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -187,7 +187,7 @@ function POSContent({
 
             // 2. Find or Create Billable Line and update it
             const linesRef = collection(db, `stores/${storeId}/sessions/${session.id}/billableLines`);
-            const variant = {
+            const variant: Partial<BillableLine> = {
                 type: 'addon',
                 itemId: selectedAddon.id,
                 itemName: selectedAddon.name,
@@ -195,14 +195,14 @@ function POSContent({
                 isFree: false,
                 isVoided: false,
             };
-            const { ref: lineRef, data: lineData, exists } = await findOrCreateLineByVariant(tx, linesRef, variant);
+            const { ref: lineRef, data: lineData, exists } = await findOrCreateLineByVariantTx(tx, linesRef, variant);
             
-            const updatedTicketIds = [...new Set([...lineData.ticketIds, ...newTicketIds])];
+            const updatedTicketIds = normalizeTicketIds([...lineData.ticketIds, ...newTicketIds]);
             
             const lineUpdatePayload = {
                 ...variant,
                 ticketIds: updatedTicketIds,
-                qty: updatedTicketIds.length,
+                qty: updatedTicketIds.length, // Always derive qty from ticketIds length for addons
                 updatedAt: serverTimestamp(),
                 ...(!exists ? { createdAt: serverTimestamp() } : {})
             };

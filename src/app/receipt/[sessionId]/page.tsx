@@ -113,8 +113,7 @@ export default function ReceiptPage() {
                     } as any,
                     billables: billablesSnap.docs.map(d => ({
                         ...(d.data() as BillableLine),
-                        lineDiscountType: d.data().discountType,
-                        lineDiscountValue: d.data().discountValue,
+                        // No mapping needed as field names are now consistent
                     })) as any[],
                     payments: paymentsSnap.docs.map(d => d.data()) as any[],
                     settings: settingsData,
