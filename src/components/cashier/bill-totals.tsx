@@ -7,33 +7,22 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
-import type { BillableItem, Adjustment } from "@/lib/types";
+import type { BillableLine, Adjustment } from "@/lib/types";
 
 interface BillTotalsProps {
-  items: BillableItem[];
+  lines: BillableLine[];
   subtotal: number;
   lineDiscountsTotal: number;
   billDiscountAmount: number;
   adjustments: Adjustment[];
   grandTotal: number;
   totalPaid: number;
-  onRemoveDiscount: (ticketIds: string[]) => void;
+  onRemoveDiscount: (lineId: string) => void;
+  isLocked?: boolean;
 }
 
-type GroupedSummaryItem = {
-    key: string;
-    itemName: string;
-    type: 'package' | 'addon' | 'refill';
-    qty: number;
-    unitPrice: number;
-    lineTotal: number;
-    discountType: 'fixed' | 'percent';
-    discountValue: number;
-    ticketIds: string[];
-};
-
 export function BillTotals({
-  items,
+  lines,
   subtotal,
   lineDiscountsTotal,
   billDiscountAmount,
@@ -41,110 +30,53 @@ export function BillTotals({
   grandTotal,
   totalPaid,
   onRemoveDiscount,
+  isLocked,
 }: BillTotalsProps) {
     
-    const billableItems = items.filter(item => !item.isFree);
+    const billableLines = lines.filter(line => !line.isFree && !line.isVoided);
+    const freeLines = lines.filter(line => line.isFree && !line.isVoided);
     
-    const groupedSummaryItems = useMemo(() => {
-        const groups: Record<string, GroupedSummaryItem> = {};
-        
-        billableItems.forEach(item => {
-            const discountKey = `${item.lineDiscountType}-${item.lineDiscountValue}`;
-            const key = `${item.itemName}|${item.unitPrice}|${discountKey}`;
-
-            if (!groups[key]) {
-                groups[key] = {
-                    key,
-                    itemName: item.itemName || "(Unnamed Item)",
-                    type: item.type,
-                    qty: 0,
-                    unitPrice: item.unitPrice,
-                    lineTotal: 0,
-                    discountType: item.lineDiscountType,
-                    discountValue: item.lineDiscountValue,
-                    ticketIds: [],
-                };
-            }
-            const itemQty = Math.max(1, Number(item.qty) || 1);
-            groups[key].qty += itemQty;
-            groups[key].lineTotal += itemQty * item.unitPrice;
-            groups[key].ticketIds.push(item.id);
-        });
-
-        return Object.values(groups).sort((a, b) => {
-             // Prioritize 'package' type to be first
-            if (a.type === 'package' && b.type !== 'package') return -1;
-            if (a.type !== 'package' && b.type === 'package') return 1;
-            return a.itemName.localeCompare(b.itemName);
-        });
-
-    }, [billableItems]);
-
-    const freeItems = useMemo(() => {
-        const groups: Record<string, GroupedSummaryItem> = {};
-        items.filter(i => i.isFree).forEach(item => {
-             const key = `${item.itemName}|${item.unitPrice}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    key,
-                    itemName: item.itemName || "(Unnamed Item)",
-                    type: item.type,
-                    qty: 0,
-                    unitPrice: item.unitPrice,
-                    lineTotal: 0,
-                    discountType: 'fixed',
-                    discountValue: 0,
-                    ticketIds: [],
-                };
-            }
-            groups[key].qty += item.qty;
-        });
-        return Object.values(groups);
-    }, [items]);
-
     const remainingBalance = grandTotal - totalPaid;
     const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
 
   return (
     <div className="flex-1 flex flex-col p-4">
         <div className="space-y-1 text-sm pr-4">
-            {groupedSummaryItems.map(item => {
-                const hasDiscount = item.discountValue > 0;
+            {billableLines.map(line => {
+                const hasDiscount = (line.discountValue ?? 0) > 0;
                 let discountAmount = 0;
                 if (hasDiscount) {
-                    discountAmount = item.discountType === 'percent'
-                        ? item.lineTotal * (item.discountValue / 100)
-                        : Math.min(item.discountValue * item.qty, item.lineTotal);
+                    discountAmount = line.discountType === 'percent'
+                        ? (line.qty * line.unitPrice) * (line.discountValue! / 100)
+                        : Math.min(line.discountValue! * line.qty, line.qty * line.unitPrice);
                 }
 
-                const displayQty = Math.max(1, item.qty);
-
                 return (
-                    <div key={item.key} className="py-1">
+                    <div key={line.id} className="py-1">
                         <div className="flex justify-between items-center">
                             <div>
-                                <p>{displayQty > 1 && `${displayQty}x `}{item.itemName}</p>
-                                <p className="text-muted-foreground text-xs">{displayQty} x ₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p>{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
+                                <p className="text-muted-foreground text-xs">{line.qty} x ₱{line.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
-                            <p>₱{item.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p>₱{(line.qty * line.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                         {hasDiscount && (
-                            <div className="flex justify-between items-center text-xs text-red-600 pl-4 cursor-pointer" onClick={() => onRemoveDiscount(item.ticketIds)}>
-                                <span>Discount ({item.discountType === 'percent' ? `${item.discountValue}%` : `₱${item.discountValue}`})</span>
-                                <div className="flex items-center gap-1">
+                            <div className="flex justify-between items-center text-xs text-red-600 pl-4">
+                                <span>Discount ({line.discountType === 'percent' ? `${line.discountValue}%` : `₱${line.discountValue}`})</span>
+                                <button className="flex items-center gap-1" disabled={isLocked} onClick={() => onRemoveDiscount(line.id)}>
                                     <span>- ₱{discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     <Trash2 className="h-3 w-3" />
-                                </div>
+                                </button>
                             </div>
                         )}
                     </div>
                 )
             })}
-            {freeItems.length > 0 && <Separator className="my-2"/>}
-            {freeItems.map(item => (
-                <div key={item.key} className="flex justify-between items-center text-muted-foreground">
+            {freeLines.length > 0 && <Separator className="my-2"/>}
+            {freeLines.map(line => (
+                <div key={line.id} className="flex justify-between items-center text-muted-foreground">
                     <div>
-                        <p>{item.qty > 1 && `${item.qty}x `}{item.itemName}</p>
+                        <p>{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
                         <p className="text-xs">Free</p>
                     </div>
                     <p>₱0.00</p>
@@ -194,5 +126,3 @@ export function BillTotals({
     </div>
   );
 }
-
-    

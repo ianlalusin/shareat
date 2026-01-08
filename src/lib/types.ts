@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -196,18 +195,17 @@ export type BillableItem = {
   discountQty?: number;
 };
 
-
-type BillableLineType = "package" | "addon";
+export type BillableLineType = "package" | "addon";
 
 export type BillableLine = {
   id: string;
   type: BillableLineType;
-  itemId: string;        // addonId or packageId (fallback to normalized itemName if missing)
+  itemId: string;        // addonId or packageId
   itemName: string;
   unitPrice: number;
 
-  ticketIds: string[];   // addon ticket ids; for package can be synthetic ids to satisfy qty==ticketIds.length
-  qty: number;           // ALWAYS equals ticketIds.length
+  ticketIds: string[];   // for addon only (unit tickets). for package can be empty.
+  qty: number;             // for addon must equal ticketIds.length. for package equals guestCount.
 
   isFree?: boolean;
   discountType?: "fixed" | "percent";

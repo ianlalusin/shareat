@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
 import Image from "next/image";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit } from "firebase/firestore";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -21,6 +21,7 @@ import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
+import { findOrCreateLineByVariant, makeVariantKey } from "./billable-lines";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -132,89 +133,83 @@ function POSContent({
   }, [addons, search, activeCategory]);
 
   const handleSelectAddon = (addon: StoreAddon) => {
-    const allowDecimal = allowsDecimalQty(addon.uom);
     setSelectedAddon(addon);
-    setQuantity(allowDecimal ? 0.1 : 1);
+    setQuantity(1);
   };
   
   const handleAddToOrder = async () => {
-    if (!appUser || !storeId || !session?.id) {
+    if (!appUser || !storeId || !session?.id || !selectedAddon) {
         toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
-        return;
-    }
-    if (!selectedAddon) {
-        toast({ variant: "destructive", title: "No Item Selected", description: "Please select an item to add." });
         return;
     }
      if (sessionIsLocked) {
         toast({ variant: "destructive", title: "Cannot Add Item", description: "This session is locked and cannot be modified." });
         return;
     }
-    
     if (!selectedAddon.kitchenLocationId) {
-        console.warn(`Ordering blocked for addon ID ${selectedAddon.id}: missing kitchenLocationId.`);
-        toast({
-            variant: "destructive",
-            title: "Kitchen Not Assigned",
-            description: `"${selectedAddon.name}" has no kitchen location assigned. Please configure it in Store Settings.`
-        });
+        toast({ variant: "destructive", title: "Kitchen Not Assigned", description: `"${selectedAddon.name}" has no kitchen location assigned.`});
         return;
     }
 
     setIsSubmitting(true);
     
-    const batch = writeBatch(db);
     try {
-        const loopQty = Math.floor(quantity);
-        const toastQtyString = `${quantity}x`;
+        await runTransaction(db, async (tx) => {
+            // 1. Create Kitchen Tickets
+            const newTicketIds: string[] = [];
+            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
+            
+            for (let i = 0; i < quantity; i++) {
+                const ticketRef = doc(ticketsColRef);
+                newTicketIds.push(ticketRef.id);
 
-        for (let i = 0; i < loopQty; i++) {
-            const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-            const billableRef = doc(db, "stores", storeId, "sessions", session.id, "billables", ticketRef.id);
-            const itemName = selectedAddon.name;
+                const ticketPayload = stripUndefined({
+                    id: ticketRef.id,
+                    type: "addon",
+                    itemName: selectedAddon.name,
+                    qty: 1,
+                    uom: selectedAddon.uom,
+                    kitchenLocationId: selectedAddon.kitchenLocationId,
+                    kitchenLocationName: selectedAddon.kitchenLocationName,
+                    status: "preparing",
+                    createdAt: serverTimestamp(),
+                    createdByUid: appUser.uid,
+                    sessionId: session.id, 
+                    storeId,
+                    tableNumber: session.tableNumber,
+                    customerName: session.customer?.name || session.customerName,
+                    sessionMode: session.sessionMode,
+                    sessionLabel: computeSessionLabel(session),
+                    guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+                });
+                tx.set(ticketRef, ticketPayload);
+            }
 
-            const ticketPayload = stripUndefined({
-                id: ticketRef.id,
-                type: "addon",
-                itemName: itemName,
-                qty: 1, // Always 1 per document
-                uom: selectedAddon.uom,
-                kitchenLocationId: selectedAddon.kitchenLocationId,
-                kitchenLocationName: selectedAddon.kitchenLocationName,
-                status: "preparing",
-                createdAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-                sessionId: session.id, 
-                storeId,
-                tableNumber: session.tableNumber,
-                customerName: session.customer?.name || session.customerName,
-                sessionMode: session.sessionMode,
-                sessionLabel: computeSessionLabel(session),
-                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-            });
-            batch.set(ticketRef, ticketPayload);
-
-            const billablePayload = stripUndefined({
-                id: ticketRef.id,
-                source: "kitchenticket",
-                type: "addon",
-                addonId: selectedAddon.id,
-                itemName: itemName,
-                qty: 1, // Always 1 per document
-                uom: selectedAddon.uom,
+            // 2. Find or Create Billable Line and update it
+            const linesRef = collection(db, `stores/${storeId}/sessions/${session.id}/billableLines`);
+            const variant = {
+                type: 'addon',
+                itemId: selectedAddon.id,
+                itemName: selectedAddon.name,
                 unitPrice: selectedAddon.price || 0,
-                lineDiscountType: "fixed",
-                lineDiscountValue: 0,
                 isFree: false,
-                createdAt: serverTimestamp(),
+                isVoided: false,
+            };
+            const { ref: lineRef, data: lineData, isNew } = await findOrCreateLineByVariant(tx, linesRef, variant);
+            
+            const updatedTicketIds = [...new Set([...lineData.ticketIds, ...newTicketIds])];
+            
+            const lineUpdatePayload = {
+                ...variant,
+                ticketIds: updatedTicketIds,
+                qty: updatedTicketIds.length,
                 updatedAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-            });
-            batch.set(billableRef, billablePayload);
-        }
-        
-        await batch.commit();
-        toast({ title: "Added to Order", description: `${toastQtyString} ${selectedAddon.name} sent to kitchen.`});
+                ...(isNew ? { createdAt: serverTimestamp() } : {})
+            };
+            tx.set(lineRef, lineUpdatePayload, { merge: true });
+        });
+
+        toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});
         setSelectedAddon(null);
     } catch(e: any) {
         console.error("Order Failed:", e);
@@ -238,22 +233,8 @@ function POSContent({
   };
 
   const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
-  
-  // Force integer quantity for add-ons now
-  const qtyStep = 1;
-  const qtyMin = 1;
-  
-  const handleQtyChange = (val: number) => {
-      setQuantity(Math.floor(val));
-  }
-
-  const decrementQty = () => {
-      setQuantity(q => Math.max(qtyMin, q - qtyStep));
-  }
-
-  const incrementQty = () => {
-      setQuantity(q => q + qtyStep);
-  }
+  const qtyStep = allowDecimal ? 0.1 : 1;
+  const qtyMin = allowDecimal ? 0.1 : 1;
 
   return (
     <>
@@ -301,14 +282,14 @@ function POSContent({
                         <p className="text-sm text-muted-foreground">₱{(selectedAddon.price || 0).toFixed(2)}</p>
                     </div>
                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={decrementQty}><Minus/></Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => Math.max(qtyMin, q - qtyStep))}><Minus/></Button>
                         <QuantityInput 
                             value={quantity} 
-                            onChange={handleQtyChange}
+                            onChange={setQuantity}
                             className="w-20 h-8 text-center" 
-                            allowDecimal={false} // Force integer for addons
+                            allowDecimal={allowDecimal}
                         />
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={incrementQty}><Plus/></Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => q + qtyStep)}><Plus/></Button>
                      </div>
                      <div className="flex items-center gap-2">
                         <Button variant="ghost" size="sm" onClick={() => setSelectedAddon(null)}>Cancel</Button>
