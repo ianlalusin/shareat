@@ -125,7 +125,7 @@ function GroupedBillableItemRow({
                                         variant="outline"
                                         className="h-8 w-8"
                                         disabled={isLocked}
-                                        onClick={() => onUpdateQty(group.ticketIds, group.totalQty - 1)}
+                                        onClick={handleVoidClick}
                                         aria-label="Decrease qty"
                                     >
                                         <Minus className="h-4 w-4" />
@@ -133,16 +133,7 @@ function GroupedBillableItemRow({
 
                                     <div className="min-w-[28px] text-center text-sm font-medium">{group.totalQty}</div>
 
-                                    <Button
-                                        size="icon"
-                                        variant="outline"
-                                        className="h-8 w-8"
-                                        disabled={isLocked}
-                                        onClick={() => onUpdateQty(group.ticketIds, group.totalQty + 1)}
-                                        aria-label="Increase qty"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </Button>
+                                    {/* The "+" button is removed to prevent logic errors. Users should use "Add Item". */}
                                 </div>
                             ) : (
                                 <Button
