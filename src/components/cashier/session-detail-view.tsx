@@ -198,20 +198,41 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleApplyDiscount = async (ticketIds: string[], discountType: "fixed" | "percent", discountValue: number) => {
+  const handleApplyDiscount = async (
+    ticketIds: string[],
+    discountType: "fixed" | "percent",
+    discountValue: number,
+    quantity: number
+  ) => {
     if (isBillingLocked || !activeStore || !session) return;
+  
+    const qty = Math.max(1, Math.floor(quantity || 1));
+    const targetIds = ticketIds.slice(0, qty);
+  
+    if (qty > 1 && ticketIds.length === 1) {
+      toast({
+        variant: "destructive",
+        title: "Cannot apply partial discount",
+        description: "This line item is stored as a single record with qty > 1. Please void and re-add items individually to apply discount partially.",
+      });
+      return;
+    }
+  
     const batch = writeBatch(db);
-    // The ticketIds are already sliced by the dialog. Apply to all provided.
-    ticketIds.forEach(ticketId => {
-        batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), {
-            lineDiscountType: discountType, lineDiscountValue: discountValue, isFree: false, updatedAt: serverTimestamp()
-        });
+    targetIds.forEach((ticketId) => {
+      batch.update(doc(db, "stores", activeStore.id, "sessions", sessionId, "billables", ticketId), {
+        lineDiscountType: discountType,
+        lineDiscountValue: discountValue,
+        isFree: false,
+        updatedAt: serverTimestamp(),
+      });
     });
+  
     try {
-        await batch.commit();
-        toast({ title: "Discount Applied" });
+      await batch.commit();
+      toast({ title: "Discount Applied" });
     } catch (e: any) {
-        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   };
 

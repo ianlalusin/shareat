@@ -165,21 +165,19 @@ function POSContent({
     
     const batch = writeBatch(db);
     try {
-        const allowDecimal = allowsDecimalQty(selectedAddon.uom);
-        const loopQty = allowDecimal ? 1 : quantity;
-        const ticketQty = allowDecimal ? quantity : 1;
-        const toastQtyString = allowDecimal ? `${quantity} ${selectedAddon.uom}` : `${quantity}x`;
+        const loopQty = Math.floor(quantity);
+        const toastQtyString = `${quantity}x`;
 
         for (let i = 0; i < loopQty; i++) {
             const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-            const billableRef = doc(collection(db, "stores", storeId, "sessions", session.id, "billables"), ticketRef.id);
+            const billableRef = doc(db, "stores", storeId, "sessions", session.id, "billables"), ticketRef.id);
             const itemName = selectedAddon.name;
 
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
                 type: "addon",
                 itemName: itemName,
-                qty: ticketQty,
+                qty: 1, // Always 1 per document
                 uom: selectedAddon.uom,
                 kitchenLocationId: selectedAddon.kitchenLocationId,
                 kitchenLocationName: selectedAddon.kitchenLocationName,
@@ -202,7 +200,7 @@ function POSContent({
                 type: "addon",
                 addonId: selectedAddon.id,
                 itemName: itemName,
-                qty: ticketQty,
+                qty: 1, // Always 1 per document
                 uom: selectedAddon.uom,
                 unitPrice: selectedAddon.price || 0,
                 lineDiscountType: "fixed",
@@ -240,23 +238,21 @@ function POSContent({
   };
 
   const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
-  const qtyStep = allowDecimal ? 0.1 : 1;
-  const qtyMin = allowDecimal ? 0.01 : 1;
+  
+  // Force integer quantity for add-ons now
+  const qtyStep = 1;
+  const qtyMin = 1;
   
   const handleQtyChange = (val: number) => {
-      if (allowDecimal) {
-          setQuantity(parseFloat(val.toFixed(2)));
-      } else {
-          setQuantity(Math.floor(val));
-      }
+      setQuantity(Math.floor(val));
   }
 
   const decrementQty = () => {
-      setQuantity(q => parseFloat(Math.max(qtyMin, q - qtyStep).toFixed(2)));
+      setQuantity(q => Math.max(qtyMin, q - qtyStep));
   }
 
   const incrementQty = () => {
-      setQuantity(q => parseFloat((q + qtyStep).toFixed(2)));
+      setQuantity(q => q + qtyStep);
   }
 
   return (
@@ -310,7 +306,7 @@ function POSContent({
                             value={quantity} 
                             onChange={handleQtyChange}
                             className="w-20 h-8 text-center" 
-                            allowDecimal={allowDecimal}
+                            allowDecimal={false} // Force integer for addons
                         />
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={incrementQty}><Plus/></Button>
                      </div>
