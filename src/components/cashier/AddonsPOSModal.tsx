@@ -170,7 +170,7 @@ function POSContent({
 
         for (let i = 0; i < loopQty; i++) {
             const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-            const billableRef = doc(db, "stores", storeId, "sessions", session.id, "billables"), ticketRef.id);
+            const billableRef = doc(db, "stores", storeId, "sessions", session.id, "billables", ticketRef.id);
             const itemName = selectedAddon.name;
 
             const ticketPayload = stripUndefined({
