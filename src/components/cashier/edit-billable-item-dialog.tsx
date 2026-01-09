@@ -16,11 +16,9 @@ import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import type { BillUnit, Discount } from "@/lib/types";
+import type { Discount, SessionBillLine } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
-import { GroupedBillableLine } from "./billable-items";
-
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -31,21 +29,28 @@ const VOID_REASONS = {
 };
 
 const formSchema = z.object({
+  qtyOrdered: z.coerce.number().min(0, "Quantity must be non-negative."),
   unitPrice: z.coerce.number().min(0),
   
   applyDiscount: z.boolean().default(false),
   discountId: z.string().optional(),
-  discountType: z.enum(["fixed", "percent"]).default("fixed"),
+  discountType: z.enum(["fixed", "percent"]).nullable().optional(),
   discountValue: z.coerce.number().min(0).default(0),
-  discountQty: z.coerce.number().min(1),
+  discountQty: z.coerce.number().min(0),
 
   applyFree: z.boolean().default(false),
-  freeQty: z.coerce.number().min(1),
+  freeQty: z.coerce.number().min(0),
   
   applyVoid: z.boolean().default(false),
-  voidQty: z.coerce.number().min(1),
+  voidQty: z.coerce.number().min(0),
   voidReason: z.string().optional(),
   voidNote: z.string().optional(),
+}).refine(data => data.discountQty + data.freeQty + data.voidedQty <= data.qtyOrdered, {
+    message: "Sum of discounted, free, and voided items cannot exceed total quantity.",
+    path: ["qtyOrdered"],
+}).refine(data => data.applyDiscount ? (data.discountId && data.discountType && data.discountValue > 0 && data.discountQty > 0) || (data.discountId === 'custom' && data.discountValue > 0 && data.discountQty > 0) : true, {
+    message: "If discount is applied, you must select a valid preset or custom value and quantity.",
+    path: ["applyDiscount"],
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -53,20 +58,19 @@ type FormValues = z.infer<typeof formSchema>;
 interface EditBillableItemDialogProps {
     isOpen: boolean;
     onClose: () => void;
-    line: GroupedBillableLine;
+    line: SessionBillLine;
     discounts: Discount[];
     isLocked?: boolean;
-    onApplyDiscount: (units: BillUnit[], discountType: "fixed" | "percent", discountValue: number) => void;
-    onApplyFree: (units: BillUnit[], isFree: boolean) => void;
-    onVoidItem: (units: BillUnit[], reason: string, note?: string) => void;
+    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
 }
 
-function normalizeDiscountType(t: any): "fixed" | "percent" {
+function normalizeDiscountType(t: any): "fixed" | "percent" | null {
     if (t === "percentage" || t === "percent") return "percent";
-    return "fixed";
+    if (t === "fixed") return "fixed";
+    return null;
 }
 
-function QuantityStepper({ label, value, onChange, max, min = 1, description }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string }) {
+function QuantityStepper({ label, value, onChange, max, min = 0, description }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string }) {
     return (
         <FormItem>
             <FormLabel>{label}</FormLabel>
@@ -91,9 +95,7 @@ export function EditBillableItemDialog({
     line,
     discounts, 
     isLocked,
-    onApplyDiscount, 
-    onApplyFree, 
-    onVoidItem,
+    onSave,
 }: EditBillableItemDialogProps) {
     const { appUser } = useAuthContext();
     const { toast } = useToast();
@@ -105,93 +107,131 @@ export function EditBillableItemDialog({
         resolver: zodResolver(formSchema),
     });
     
+    const { control, handleSubmit, reset, setValue, watch, trigger } = form;
+    
+    const watchedValues = watch();
+
     useEffect(() => {
         if (line) {
             const isDiscounted = (line.discountValue ?? 0) > 0;
             const savedDiscount = isDiscounted ? discounts.find(d => d.type === line.discountType && d.value === line.discountValue) : undefined;
-            const defaultActionQty = line.qty;
             
-            form.reset({
+            reset({
+                qtyOrdered: line.qtyOrdered,
                 unitPrice: line.unitPrice,
                 applyDiscount: isDiscounted,
                 discountId: savedDiscount?.id || 'custom',
-                discountType: line.discountType || 'fixed',
+                discountType: normalizeDiscountType(line.discountType),
                 discountValue: line.discountValue || 0,
-                discountQty: defaultActionQty,
-                applyFree: line.isFree,
-                freeQty: defaultActionQty,
-                applyVoid: false,
-                voidQty: 1,
+                discountQty: line.discountQty || 0,
+                applyFree: (line.freeQty || 0) > 0,
+                freeQty: line.freeQty || 0,
+                applyVoid: (line.voidedQty || 0) > 0,
+                voidQty: line.voidedQty || 0,
                 voidReason: undefined,
                 voidNote: '',
             });
         }
-    }, [line, discounts, form, isOpen]);
+    }, [line, discounts, reset, isOpen]);
 
-    const { applyDiscount, discountId, applyFree, applyVoid, voidReason } = form.watch();
+    // Clamping logic
+    useEffect(() => {
+        const { qtyOrdered, discountQty, freeQty, voidQty } = watchedValues;
+        const totalAllocated = discountQty + freeQty + voidQty;
+        
+        if (totalAllocated > qtyOrdered) {
+            toast({ variant: 'destructive', title: 'Counts Adjusted', description: 'Allocated quantities cannot exceed total ordered.'});
+            
+            let excess = totalAllocated - qtyOrdered;
+            let newDiscountQty = discountQty;
+            let newFreeQty = freeQty;
+            let newVoidQty = voidQty;
 
+            if (excess > 0 && newVoidQty > 0) {
+                const reduction = Math.min(excess, newVoidQty);
+                newVoidQty -= reduction;
+                excess -= reduction;
+            }
+            if (excess > 0 && newFreeQty > 0) {
+                const reduction = Math.min(excess, newFreeQty);
+                newFreeQty -= reduction;
+                excess -= reduction;
+            }
+            if (excess > 0 && newDiscountQty > 0) {
+                const reduction = Math.min(excess, newDiscountQty);
+                newDiscountQty -= reduction;
+            }
+            setValue('discountQty', newDiscountQty);
+            setValue('freeQty', newFreeQty);
+            setValue('voidQty', newVoidQty);
+        }
+
+        // Auto-disable if qty is 0
+        if (discountQty === 0) setValue('applyDiscount', false);
+        if (freeQty === 0) setValue('applyFree', false);
+        if (voidQty === 0) setValue('applyVoid', false);
+
+    }, [watchedValues.qtyOrdered, watchedValues.discountQty, watchedValues.freeQty, watchedValues.voidQty, setValue, toast, watchedValues]);
+    
+    // Logic for handling discount preset selection
     const handleDiscountIdChange = (id: string) => {
-        form.setValue("discountId", id);
+        setValue("discountId", id);
         if (id === 'custom') {
-            form.setValue('discountValue', 0);
-            form.setValue('discountType', 'fixed');
+            setValue('discountValue', 0);
+            setValue('discountType', 'fixed');
         } else {
             const selected = discounts.find(d => d.id === id);
             if (selected) {
-                form.setValue('discountType', normalizeDiscountType(selected.type));
-                form.setValue('discountValue', Number(selected.value) || 0);
+                setValue('discountType', normalizeDiscountType(selected.type));
+                setValue('discountValue', Number(selected.value) || 0);
             }
         }
+        trigger(["discountValue", "discountType"]);
     };
 
     const handleSave = async (data: FormValues) => {
         setIsSubmitting(true);
+        const { applyDiscount, applyFree, applyVoid, ...payload } = data;
+
+        if (!applyDiscount) {
+            payload.discountQty = 0;
+            payload.discountType = null;
+            payload.discountValue = 0;
+        }
+        if (!applyFree) {
+            payload.freeQty = 0;
+        }
+        if (!applyVoid) {
+            payload.voidQty = 0;
+        }
+
+        const before: Partial<SessionBillLine> = {
+            qtyOrdered: line.qtyOrdered,
+            discountQty: line.discountQty,
+            discountType: line.discountType,
+            discountValue: line.discountValue,
+            freeQty: line.freeQty,
+            voidedQty: line.voidedQty,
+        };
+
+        const after: Partial<SessionBillLine> = {
+            qtyOrdered: payload.qtyOrdered,
+            discountQty: payload.discountQty,
+            discountType: payload.discountType,
+            discountValue: payload.discountValue,
+            freeQty: payload.freeQty,
+            voidedQty: payload.voidQty,
+        };
+
         try {
-            let actionTaken = false;
-            
-            const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
-            const isCurrentlyFree = line.isFree ?? false;
-            
-            const discountToggled = data.applyDiscount !== isCurrentlyDiscounted;
-            const discountValuesChanged = data.discountType !== line.discountType || data.discountValue !== line.discountValue;
-
-            if (data.applyDiscount && (discountToggled || discountValuesChanged)) {
-                onApplyDiscount(line.underlyingUnits.slice(0, data.discountQty), data.discountType, data.discountValue);
-                actionTaken = true;
-            } else if (!data.applyDiscount && isCurrentlyDiscounted) {
-                onApplyDiscount(line.underlyingUnits, 'fixed', 0);
-                actionTaken = true;
-            }
-
-            if (data.applyFree !== isCurrentlyFree) {
-                onApplyFree(line.underlyingUnits.slice(0, data.freeQty), data.applyFree);
-                actionTaken = true;
-            }
-
-            if (data.applyVoid) {
-                if (!data.voidReason) {
-                    toast({ variant: 'destructive', title: 'Void reason is required' });
-                    setIsSubmitting(false);
-                    return;
-                }
-                onVoidItem(line.underlyingUnits.slice(0, data.voidQty), data.voidReason, data.voidNote);
-                actionTaken = true;
-            }
-
-            if (actionTaken) {
-                toast({ title: "Changes Applied" });
-            } else {
-                toast({ title: "No Changes Made", description: "The values submitted were the same as the current state." });
-            }
-
+            await onSave(line.id, before, after);
             onClose();
-
-        } catch (error: any) {
-            toast({ variant: "destructive", title: "Failed to apply changes", description: error.message });
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    const remainingQty = watchedValues.qtyOrdered - (watchedValues.discountQty + watchedValues.freeQty + watchedValues.voidQty);
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -200,37 +240,42 @@ export function EditBillableItemDialog({
                     <DialogTitle>Edit: {line.itemName}</DialogTitle>
                 </DialogHeader>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSave)} id="edit-item-form" className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField name="qty" control={form.control} render={({ field }) => (
-                                <FormItem><FormLabel>Total Quantity</FormLabel><Input type="number" readOnly disabled value={line.qty} /></FormItem>
-                            )} />
-                            <FormField name="unitPrice" control={form.control} render={({ field }) => (
+                    <form onSubmit={handleSubmit(handleSave)} id="edit-item-form" className="space-y-4">
+                         <div className="grid grid-cols-2 gap-4">
+                            <FormField name="unitPrice" control={control} render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
-                                    <FormControl><Input type="number" step="0.01" {...field} readOnly disabled/></FormControl><FormMessage/></FormItem>
+                                    <FormControl><Input type="number" step="0.01" {...field} readOnly disabled/></FormControl>
+                                </FormItem>
+                            )} />
+                            <FormField name="qtyOrdered" control={control} render={({ field }) => (
+                                <QuantityStepper label="Total Quantity" value={field.value} onChange={field.onChange} max={50} min={0}/>
                             )} />
                         </div>
+                        <Alert>
+                            <AlertTitle>Remaining to Allocate: {remainingQty}</AlertTitle>
+                        </Alert>
 
                         <Separator />
+                        {/* Discount Section */}
                         <div className="space-y-2">
-                            <FormField name="applyDiscount" control={form.control} render={({ field }) => (
+                            <FormField name="applyDiscount" control={control} render={({ field }) => (
                                 <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
                             )} />
-                            {applyDiscount && (
+                            {watchedValues.applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
-                                    <FormField name="discountQty" control={form.control} render={({ field }) => (
-                                        <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
+                                    <FormField name="discountQty" control={control} render={({ field }) => (
+                                        <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qtyOrdered} description={`of ${line.qtyOrdered} total items`}/>
                                     )} />
-                                    <FormField name="discountId" control={form.control} render={({ field }) => (
+                                    <FormField name="discountId" control={control} render={({ field }) => (
                                         <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
                                     )} />
                                     <div className="grid grid-cols-2 gap-2">
-                                        <FormField name="discountType" control={form.control} render={({ field }) => (
-                                            <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
+                                        <FormField name="discountType" control={control} render={({ field }) => (
+                                            <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={field.value === null || watchedValues.discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
                                         )} />
-                                        <FormField name="discountValue" control={form.control} render={({ field }) => (
-                                            <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                        <FormField name="discountValue" control={control} render={({ field }) => (
+                                            <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={watchedValues.discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
                                         )} />
                                     </div>
                                 </div>
@@ -238,36 +283,38 @@ export function EditBillableItemDialog({
                         </div>
                         
                         <Separator />
+                        {/* Free Section */}
                         <div className="space-y-2">
-                             <FormField name="applyFree" control={form.control} render={({ field }) => (
+                             <FormField name="applyFree" control={control} render={({ field }) => (
                                 <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
                             )} />
-                            {applyFree && (
+                            {watchedValues.applyFree && (
                                  <div className="p-3 border rounded-md">
-                                    <FormField name="freeQty" control={form.control} render={({ field }) => (
-                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
+                                    <FormField name="freeQty" control={control} render={({ field }) => (
+                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qtyOrdered} description={`of ${line.qtyOrdered} total items`}/>
                                      )} />
                                  </div>
                             )}
                         </div>
 
+                        {/* Void Section (Add-ons only) */}
                         {!isPackage && (
                             <>
                                 <Separator />
                                 <div className="space-y-2">
-                                    <FormField name="applyVoid" control={form.control} render={({ field }) => (
+                                    <FormField name="applyVoid" control={control} render={({ field }) => (
                                         <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Void Item(s)</FormLabel></FormItem>
                                     )} />
-                                    {applyVoid && (
+                                    {watchedValues.applyVoid && (
                                         <div className="p-3 border rounded-md space-y-2">
-                                            <FormField name="voidQty" control={form.control} render={({ field }) => (
-                                                <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
+                                            <FormField name="voidQty" control={control} render={({ field }) => (
+                                                <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={line.qtyOrdered} description={`of ${line.qtyOrdered} total items`}/>
                                             )} />
-                                            <FormField name="voidReason" control={form.control} render={({ field }) => (
+                                            <FormField name="voidReason" control={control} render={({ field }) => (
                                                 <FormItem><FormLabel>Reason</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>
                                             )} />
-                                            {voidReason === 'other' && (
-                                                <FormField name="voidNote" control={form.control} render={({ field }) => (
+                                            {watchedValues.voidReason === 'other' && (
+                                                <FormField name="voidNote" control={control} render={({ field }) => (
                                                     <FormItem><FormLabel>Note</FormLabel><FormControl><Textarea {...field}/></FormControl></FormItem>
                                                 )} />
                                             )}
