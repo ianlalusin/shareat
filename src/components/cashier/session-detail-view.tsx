@@ -19,7 +19,7 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, moveTicketIdsBetweenLines, updateLineUnitPrice, getEligibleTicketIds } from "./billable-lines";
+import { changeLineQty, moveTicketIdsBetweenLines, getEligibleTicketIds } from "./billable-lines";
 import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment } from "@/lib/types";
 import { useConfirmDialog } from "../global/confirm-dialog";
 
@@ -98,8 +98,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     unsubBillableLines = onSnapshot(
       query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"), orderBy("createdAt", "asc")),
       (snapshot) => {
-        const lines = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as BillableLine[];
-        setBillableLines(lines);
+        const map = new Map<string, BillableLine>();
+        snapshot.forEach((d) => {
+          map.set(d.id, { id: d.id, ...(d.data() as any) });
+        });
+        setBillableLines(Array.from(map.values()));
       }, (e) => console.error("billableLines listener failed:", e)
     );
 
@@ -184,17 +187,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
   
-  const handleUpdateUnitPrice = async (lineId: string, newPrice: number) => {
-    if (isBillingLocked || !appUser || !activeStore || !session) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
-    try {
-        await updateLineUnitPrice(activeStore.id, sessionId, line, newPrice, appUser);
-        toast({ title: "Unit Price Updated" });
-    } catch(e: any) {
-        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
-    }
-  };
 
   const handleApplyDiscount = async (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
@@ -392,7 +384,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session} 
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
-                    onUpdateUnitPrice={handleUpdateUnitPrice}
                     onApplyDiscount={handleApplyDiscount}
                     onApplyFree={handleApplyFree}
                     onVoidItem={handleVoidItem}
