@@ -92,8 +92,11 @@ export function BillableItems({
   const { appUser } = useAuthContext();
   const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
 
-  const activeLines = lines.filter(line => !line.isVoided);
-  const voidedLines = lines.filter(line => line.isVoided);
+  const { activeLines, voidedLines } = useMemo(() => {
+    const active = lines.filter(line => !line.isVoided);
+    const voided = lines.filter(line => line.isVoided);
+    return { activeLines: active, voidedLines: voided };
+  }, [lines]);
   
   const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     onApplyDiscount(lineId, discountType, discountValue, quantity);
@@ -174,3 +177,5 @@ export function BillableItems({
     </>
   );
 }
+
+    

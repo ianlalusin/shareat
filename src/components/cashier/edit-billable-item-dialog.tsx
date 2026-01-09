@@ -57,6 +57,7 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     isLocked?: boolean;
     onUpdateQty: (lineId: string, newQty: number) => void;
+    onUpdateUnitPrice: (lineId: string, newPrice: number) => void;
     onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
     onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
     onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
@@ -93,7 +94,8 @@ export function EditBillableItemDialog({
     tickets,
     discounts, 
     isLocked, 
-    onUpdateQty, 
+    onUpdateQty,
+    onUpdateUnitPrice,
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
@@ -159,12 +161,13 @@ export function EditBillableItemDialog({
             const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
             const isCurrentlyFree = line.isFree ?? false;
 
-            if (data.applyDiscount) {
-                const discountDataChanged = data.discountType !== line.discountType || data.discountValue !== line.discountValue;
-                if (!isCurrentlyDiscounted || discountDataChanged) {
-                    onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
-                    actionTaken = true;
-                }
+            // Check if user is actually changing the discount status or values
+            const discountToggled = data.applyDiscount !== isCurrentlyDiscounted;
+            const discountValuesChanged = data.discountType !== line.discountType || data.discountValue !== line.discountValue;
+
+            if (data.applyDiscount && (discountToggled || discountValuesChanged)) {
+                onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
+                actionTaken = true;
             } else if (!data.applyDiscount && isCurrentlyDiscounted) {
                 onApplyDiscount(line.id, 'fixed', 0, line.qty);
                 actionTaken = true;
@@ -215,7 +218,7 @@ export function EditBillableItemDialog({
                             <FormField name="unitPrice" control={form.control} render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
-                                    <FormControl><Input type="number" step="0.01" {...field} disabled/></FormControl><FormMessage/></FormItem>
+                                    <FormControl><Input type="number" step="0.01" {...field} readOnly disabled/></FormControl><FormMessage/></FormItem>
                             )} />
                         </div>
 
@@ -295,3 +298,5 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
+
+    

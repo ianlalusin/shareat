@@ -82,7 +82,7 @@ export async function findOrCreateLineByVariantTx(
     variant: Partial<BillableLine>
 ): Promise<{ ref: DocumentReference; data: BillableLine, exists: boolean }> {
     const variantKey = makeVariantKey(variant);
-    const deterministicId = sha1(variantKey).substring(0, 20);
+    const deterministicId = sha1(variantKey);
     const lineRef = doc(linesRef, deterministicId);
     const lineSnap = await tx.get(lineRef);
 
@@ -400,5 +400,6 @@ export async function changeLineQty(
         }
     });
 }
+    
 
     
