@@ -49,10 +49,15 @@ export function calculateBillTotals(
     
     if (line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
       const discountedQty = Math.min(line.discountQty, billableQty);
-      if (line.discountType === 'percent') {
-        lineDiscountsTotal += (discountedQty * unitPrice) * (line.discountValue / 100);
+      
+      const discountBaseUnit = isVatInclusive && taxRate > 0
+        ? (unitPrice / (1 + taxRate))
+        : unitPrice;
+
+      if (line.discountType === "percent") {
+        lineDiscountsTotal += (discountedQty * discountBaseUnit) * ((line.discountValue ?? 0) / 100);
       } else { // fixed
-        lineDiscountsTotal += Math.min(unitPrice, line.discountValue) * discountedQty;
+        lineDiscountsTotal += Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountedQty;
       }
     }
   });
