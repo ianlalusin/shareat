@@ -249,7 +249,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
-            fromLineId: line.id,
+            fromLineId: lineId,
             toVariant: { ...line, isFree: false, discountValue: 0, discountType: undefined },
             ticketIdsToMove: line.ticketIds,
             actor: appUser,
