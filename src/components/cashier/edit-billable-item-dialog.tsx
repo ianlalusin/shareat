@@ -157,20 +157,25 @@ export function EditBillableItemDialog({
     const handleSave = async (data: FormValues) => {
         setIsSubmitting(true);
         try {
+            let actionTaken = false;
+
             if (canEditPrice && data.unitPrice !== line.unitPrice) {
                 await onUpdateUnitPrice(line.id, data.unitPrice);
+                actionTaken = true;
             }
             
-            // Only apply discount if the toggle is on and there was a change.
             const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
-            if (data.applyDiscount) {
+            if (data.applyDiscount && (!isCurrentlyDiscounted || data.discountValue !== line.discountValue || data.discountType !== line.discountType)) {
                 onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
+                actionTaken = true;
             } else if (!data.applyDiscount && isCurrentlyDiscounted) {
                  onApplyDiscount(line.id, 'fixed', 0, line.qty);
+                 actionTaken = true;
             }
             
-            if (data.applyFree !== line.isFree) {
+            if (data.applyFree !== (line.isFree ?? false)) {
                 onApplyFree(line.id, data.freeQty, line.isFree ?? false);
+                actionTaken = true;
             }
 
             if (!isPackage && data.applyVoid) {
@@ -180,8 +185,15 @@ export function EditBillableItemDialog({
                     return;
                 }
                 onVoidItem(line.id, data.voidQty, data.voidReason, data.voidNote);
+                actionTaken = true;
             }
-            toast({ title: "Changes Applied" });
+
+            if (actionTaken) {
+                toast({ title: "Changes Applied" });
+            } else {
+                toast({ title: "No Changes Made", description: "The values submitted were the same as the current state." });
+            }
+
             onClose();
 
         } catch (error: any) {
@@ -213,7 +225,7 @@ export function EditBillableItemDialog({
                         <Separator />
                         <div className="space-y-2">
                             <FormField name="applyDiscount" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage)}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
                             )} />
                             {applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
@@ -238,7 +250,7 @@ export function EditBillableItemDialog({
                         <Separator />
                         <div className="space-y-2">
                              <FormField name="applyFree" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage)}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
                             )} />
                             {applyFree && (
                                  <div className="p-3 border rounded-md">
