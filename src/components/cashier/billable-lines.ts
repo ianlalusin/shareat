@@ -155,6 +155,7 @@ export async function appendAddonTicketIdsToRegularLine({
 
     const payload = {
       ...regularVariant,
+      id: lineRef.id,
       ticketIds: newTicketIds,
       qty: newQty,
       updatedAt: serverTimestamp(),
@@ -241,9 +242,10 @@ export async function moveTicketIdsBetweenLines({
         }
         
         const toLineQty = finalToIds.length;
-        toLineFinalData = { ...toLineData, ticketIds: finalToIds, qty: toLineQty };
+        toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty };
         const toLinePayload = {
             ...toVariant, // Use the target variant to ensure all properties are correct
+            id: toLineRef.id,
             ticketIds: finalToIds,
             qty: toLineQty,
             updatedAt: serverTimestamp()
