@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import type { BillableLine, Discount, KitchenTicket } from "@/lib/types";
 import { getEligibleTicketIds } from "./billable-lines";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
+import { useAuthContext } from "@/context/auth-context";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -99,9 +100,11 @@ export function EditBillableItemDialog({
     onApplyFree, 
     onVoidItem,
 }: EditBillableItemDialogProps) {
+    const { appUser } = useAuthContext();
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const canEditPrice = appUser?.role === 'admin' || appUser?.role === 'manager';
     const isPackage = line.type === 'package';
 
     const servedQty = useMemo(() => getEligibleTicketIds(line, tickets, 'served').length, [line, tickets]);
@@ -154,12 +157,12 @@ export function EditBillableItemDialog({
     const handleSave = async (data: FormValues) => {
         setIsSubmitting(true);
         try {
-            if (data.unitPrice !== line.unitPrice) {
+            if (canEditPrice && data.unitPrice !== line.unitPrice) {
                 await onUpdateUnitPrice(line.id, data.unitPrice);
             }
-            if (!isPackage && data.applyDiscount) {
+            if (data.applyDiscount) {
                 onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
-            } else if (!isPackage && !data.applyDiscount && (line.discountValue ?? 0) > 0) {
+            } else if (!data.applyDiscount && (line.discountValue ?? 0) > 0) {
                  onApplyDiscount(line.id, 'fixed', 0, line.qty);
             }
             
@@ -200,58 +203,46 @@ export function EditBillableItemDialog({
                             <FormField name="unitPrice" control={form.control} render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
-                                    <FormControl><Input type="number" step="0.01" {...field} disabled={isLocked}/></FormControl><FormMessage/></FormItem>
+                                    <FormControl><Input type="number" step="0.01" {...field} disabled={isLocked || !canEditPrice}/></FormControl><FormMessage/></FormItem>
                             )} />
                         </div>
 
-                        {isPackage ? (
-                             <Alert>
-                                <AlertTitle>Package Items</AlertTitle>
-                                <AlertDescription>Discounts and voids must be applied to the entire bill, not individual packages.</AlertDescription>
-                            </Alert>
-                        ) : (
-                            <>
-                                <Separator />
-                                <div className="space-y-2">
-                                    <FormField name="applyDiscount" control={form.control} render={({ field }) => (
-                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || servedQty === 0}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                        <Separator />
+                        <div className="space-y-2">
+                            <FormField name="applyDiscount" control={form.control} render={({ field }) => (
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage) }/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                            )} />
+                            {applyDiscount && (
+                                <div className="p-3 border rounded-md space-y-2">
+                                    <FormField name="discountQty" control={form.control} render={({ field }) => (
+                                        <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
                                     )} />
-                                    {applyDiscount && (
-                                        <div className="p-3 border rounded-md space-y-2">
-                                            <FormField name="discountQty" control={form.control} render={({ field }) => (
-                                                <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty} description={`of ${servedQty} served items`}/>
-                                            )} />
-                                            <FormField name="discountId" control={form.control} render={({ field }) => (
-                                                <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
-                                            )} />
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <FormField name="discountType" control={form.control} render={({ field }) => (
-                                                    <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
-                                                )} />
-                                                <FormField name="discountValue" control={form.control} render={({ field }) => (
-                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
-                                                )} />
-                                            </div>
-                                        </div>
-                                    )}
+                                    <FormField name="discountId" control={form.control} render={({ field }) => (
+                                        <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
+                                    )} />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <FormField name="discountType" control={form.control} render={({ field }) => (
+                                            <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
+                                        )} />
+                                        <FormField name="discountValue" control={form.control} render={({ field }) => (
+                                            <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                        )} />
+                                    </div>
                                 </div>
-                            </>
-                        )}
+                            )}
+                        </div>
                         
                         <Separator />
                         <div className="space-y-2">
                              <FormField name="applyFree" control={form.control} render={({ field }) => (
                                 <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage)}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
                             )} />
-                            {applyFree && !isPackage && (
+                            {applyFree && (
                                  <div className="p-3 border rounded-md">
                                     <FormField name="freeQty" control={form.control} render={({ field }) => (
-                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty > 0 ? servedQty : 1} description={servedQty > 0 ? `of ${servedQty} served items` : ''}/>
+                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
                                      )} />
                                  </div>
-                            )}
-                            {applyFree && isPackage && (
-                                <AlertDescription className="text-xs text-muted-foreground p-3 border rounded-md">This will mark all guests in the package as free.</AlertDescription>
                             )}
                         </div>
 
@@ -292,5 +283,3 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
-
-    

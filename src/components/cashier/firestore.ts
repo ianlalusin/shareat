@@ -149,7 +149,8 @@ export async function startSession(
           itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
           itemName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
-          ticketIds: [], // Packages do not rely on ticket IDs for quantity
+          // For packages, generate virtual ticket IDs to represent each guest
+          ticketIds: Array.from({ length: payload.guestCount }, (_, i) => `pkg-guest-${i + 1}`),
           qty: payload.guestCount,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
