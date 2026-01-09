@@ -417,9 +417,9 @@ function POSContent({
                     key={refill.refillId}
                     onClick={() => handleSelectRefill(refill)}
                     className={cn(
-                      "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
-                       cart.has(refill.refillId) && "bg-muted font-semibold",
-                       activeRefillId === refill.refillId && "ring-2 ring-ring"
+                        "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none",
+                        cart.has(refill.refillId) && "bg-muted font-semibold",
+                        activeRefillId === refill.refillId && "bg-destructive/10 text-destructive border-destructive font-bold"
                     )}
                   >
                     {refill.refillName}
@@ -438,9 +438,6 @@ function POSContent({
           <h3 className="font-semibold">2. Customize Selection</h3>
           {activeCartItem ? (
             <div className="flex-1 flex flex-col gap-4">
-              <div className="p-3 border rounded-md">
-                <h4 className="font-medium text-lg">{activeCartItem.refill.refillName}</h4>
-              </div>
               <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
                 <div className="p-4 space-y-2">
                   <h3 className="font-semibold">Flavors {needsFlavors && "(up to 3)"}</h3>
