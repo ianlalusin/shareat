@@ -489,30 +489,6 @@ function POSContent({
         </div>
       </div>
       
-       {/* Cart Summary */}
-      {cart.size > 0 && (
-        <div className="p-4 border-t">
-          <h3 className="font-semibold mb-2">Order Summary ({cart.size})</h3>
-          <ScrollArea className="max-h-32">
-            <div className="space-y-2">
-              {Array.from(cart.values()).map(item => (
-                <div key={item.refill.refillId} className="flex items-start justify-between p-2 bg-muted/50 rounded-md">
-                    <div>
-                        <p className="font-medium">{item.refill.refillName}</p>
-                        <p className="text-xs text-muted-foreground">
-                            {item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName).join(', ') || (globalRefills.find(gr => gr.id === item.refill.refillId)?.requiresFlavor ? '(No flavor selected)' : '')}
-                        </p>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveFromCart(item.refill.refillId)}>
-                        <X className="h-4 w-4" />
-                    </Button>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
-
       <DialogFooter className="p-4 border-t">
         <Button variant="ghost" onClick={handleReset}>Cancel</Button>
         <Button 
