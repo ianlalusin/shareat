@@ -211,16 +211,6 @@ export async function completePaymentFromUnits(
 ) {
   let receiptId: string = "";
 
-  // Payment Gating for Ala Carte
-  const sessionDocForGating = await getDoc(doc(db, "stores", storeId, "sessions", sessionId));
-  if (sessionDocForGating.data()?.sessionMode === 'alacarte') {
-      const billedAddonQty = billLines.filter(line => line.type === 'addon')
-          .reduce((sum, line) => sum + (line.qtyOrdered - line.voidedQty - line.freeQty), 0);
-      if (billedAddonQty <= 0) {
-          throw new Error("Ala carte session requires at least one billable item.");
-      }
-  }
-
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
@@ -241,6 +231,16 @@ export async function completePaymentFromUnits(
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       receiptId = receiptRef.id;
       return;
+    }
+    
+    // Gating for Ala Carte
+    if (sessionData.sessionMode === 'alacarte') {
+        const billedAddonQty = billLines
+            .filter(line => line.type === 'addon')
+            .reduce((sum, line) => sum + Math.max(0, line.qtyOrdered - line.voidedQty - line.freeQty), 0);
+        if (billedAddonQty <= 0) {
+            throw new Error("Ala carte session requires at least one billable item.");
+        }
     }
     
     let tableRef = null;
@@ -464,7 +464,7 @@ export async function upsertAddonToBill(
   if (qtyToAdd <= 0) return;
 
   // Use a deterministic ID for the line item.
-  const lineId = sha1(`addon_${addon.id}_${addon.price.toFixed(2)}`);
+  const lineId = sha1(`addon_${addon.id}`);
   const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
   const actor = getActorStamp(user);
 

@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, BillableLine } from "@/lib/types";
+import type { ModeOfPayment, BillableLine, SessionBillLine } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -78,48 +78,37 @@ export default function ReceiptPage() {
             }
 
             try {
-                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-                    getDoc(doc(db, "stores", activeStoreId, "sessions", sessionId as string)),
-                    getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "billableLines"), orderBy("createdAt", "asc"))),
-                    getDocs(query(collection(db, "stores", activeStoreId, "sessions", sessionId as string, "payments"), orderBy("createdAt", "asc"))),
+                const [settingsSnap, receiptSnap] = await Promise.all([
                     getDoc(doc(db, "stores", activeStoreId, "receiptSettings", "main")),
                     getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string))
                 ]);
                 
-                if (!sessionSnap.exists()) throw new Error("Session not found.");
+                if (!receiptSnap.exists()) throw new Error("Receipt not found.");
 
-                const sessionData = sessionSnap.data({ serverTimestamps: "estimate" }) as any;
-                if (sessionData.storeId !== activeStoreId) throw new Error("You do not have permission to view this receipt.");
-                
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
                 const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
                 
-                const receiptDocData = receiptSnap.exists()
-                    ? (receiptSnap.data({ serverTimestamps: "estimate" }) as any)
-                    : null;
-                    
-                const receiptCreatedAt =
-                    receiptDocData?.createdAt ??
-                    (sessionData.closedAt ? (sessionData.closedAt.toDate ? sessionData.closedAt.toDate() : new Date(sessionData.closedAt)) : null) ??
-                    (receiptDocData?.createdAtClientMs ? new Date(receiptDocData.createdAtClientMs) : null);
-                    
-                const cashierName = receiptDocData?.createdByUsername || sessionData.startedByName || (sessionData.startedByUid || "").substring(0, 6);
-
-
+                // For preview, we can get most data from the receipt snapshot itself
+                const sessionDataForPreview = {
+                    id: receiptDocData.sessionId,
+                    tableNumber: receiptDocData.tableNumber,
+                    customerName: receiptDocData.customerName,
+                    sessionMode: receiptDocData.sessionMode,
+                    paymentSummary: receiptDocData.analytics,
+                    closedAt: receiptDocData.createdAt,
+                    startedByUid: "N/A", // This is not available in receipt, but can be added if needed
+                    cashierName: receiptDocData.createdByUsername,
+                };
+                
                 setReceiptData({
-                    session: { 
-                        ...sessionData, 
-                        closedAt: sessionData?.closedAt,
-                        cashierName,
-                    } as any,
-                    billables: billablesSnap.docs.map(d => ({
-                        ...(d.data() as BillableLine),
-                        // No mapping needed as field names are now consistent
-                    })) as any[],
-                    payments: paymentsSnap.docs.map(d => d.data()) as any[],
+                    session: sessionDataForPreview as any,
+                    lines: receiptDocData.lines || [],
+                    payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
                     settings: settingsData,
-                    receiptCreatedAt: receiptCreatedAt,
-                    createdByUsername: receiptDocData?.createdByUsername,
-                    receiptNumber: receiptDocData?.receiptNumber,
+                    receiptCreatedAt: receiptDocData.createdAt,
+                    createdByUsername: receiptDocData.createdByUsername,
+                    receiptNumber: receiptDocData.receiptNumber,
+                    analytics: receiptDocData.analytics,
                 });
                 
                 const storedWidth = localStorage.getItem(storageKey);
@@ -199,7 +188,7 @@ export default function ReceiptPage() {
         )
     }
 
-    const printedCount = receiptData?.session?.paymentSummary?.printedCount || 0;
+    const printedCount = receiptData?.analytics?.printedCount || 0;
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
