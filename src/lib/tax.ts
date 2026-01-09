@@ -1,5 +1,5 @@
 
-import type { BillUnit, Charge, Discount, Store } from "@/lib/types";
+import type { SessionBillLine, Charge, Discount, Store, Adjustment } from "@/lib/types";
 
 export interface TaxAndTotals {
   subtotal: number;
@@ -23,10 +23,10 @@ export interface TaxAndTotals {
  * @returns A comprehensive object with all calculated totals.
  */
 export function calculateBillTotals(
-  billUnits: BillUnit[],
+  billLines: SessionBillLine[],
   store: Store,
   billDiscount: Discount | null,
-  charges: Charge[]
+  customAdjustments: Adjustment[]
 ): TaxAndTotals {
 
   const taxRate = (store.taxRatePct || 0) / 100;
@@ -39,37 +39,37 @@ export function calculateBillTotals(
   let vatableSales = 0;
   let vatExemptSales = 0;
   
-  const activeUnits = billUnits.filter(unit => !(unit as any).billing?.isVoided && !(unit as any).billing?.isFree);
+  const activeLines = billLines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
 
-  activeUnits.forEach(unit => {
-    const billing = (unit as any).billing;
-    const unitPrice = billing?.unitPrice ?? (unit as any).unitPrice ?? 0;
+  activeLines.forEach(line => {
+    const billableQty = line.qtyOrdered - line.voidedQty;
+    const unitPrice = line.unitPrice || 0;
     
-    grossSubtotal += unitPrice;
+    // Add to gross subtotal based on the price user sees
+    grossSubtotal += billableQty * unitPrice;
     
-    // Determine the base price for discount and VAT calculation
-    const preTaxBase = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
+    // Determine the base price per unit for discount and VAT calculation
+    const preTaxBasePerUnit = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
 
-    // Calculate line-item discount
-    let lineDiscountAmount = 0;
-    if (billing?.discountValue && billing.discountValue > 0) {
-      if (billing.discountType === 'percent') {
-        lineDiscountAmount = preTaxBase * (billing.discountValue / 100);
+    // Calculate line-item discounts
+    if (line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
+      const discountedQty = Math.min(line.discountQty, billableQty);
+      if (line.discountType === 'percent') {
+        lineDiscountsTotal += (preTaxBasePerUnit * (line.discountValue / 100)) * discountedQty;
       } else { // fixed
-        lineDiscountAmount = Math.min(preTaxBase, billing.discountValue);
+        lineDiscountsTotal += Math.min(preTaxBasePerUnit, line.discountValue) * discountedQty;
       }
-      lineDiscountsTotal += lineDiscountAmount;
     }
     
-    const netLineBase = preTaxBase - lineDiscountAmount;
+    const freeQty = line.freeQty || 0;
+    const netBillableQty = billableQty - freeQty;
     
     // Aggregate vatable and VAT-exempt sales
     // For now, assuming all items are vatable unless specified otherwise.
-    // This can be expanded later if items can be marked as exempt.
-    vatableSales += netLineBase;
+    vatableSales += netBillableQty * preTaxBasePerUnit;
   });
 
-  const subtotalAfterLineDiscounts = vatableSales;
+  const subtotalAfterLineDiscounts = vatableSales - lineDiscountsTotal;
 
   // Calculate bill-wide discount
   let billDiscountTotal = 0;
@@ -85,30 +85,14 @@ export function calculateBillTotals(
   
   let taxTotal = 0;
   if (isVatInclusive) {
-      // Re-calculate the implied tax from the final net amount
       taxTotal = taxableAmount * (taxRate / (1 + taxRate));
   } else if (isVatExclusive) {
-      // Apply tax on top of the final net amount
       taxTotal = taxableAmount * taxRate;
   }
   
-  // Calculate charges
-  const chargesOnSubtotal = charges
-    .filter(c => c.appliesTo === 'subtotal')
-    .reduce((sum, charge) => {
-        return sum + (charge.type === 'fixed' ? charge.value : taxableAmount * (charge.value / 100));
-    }, 0);
+  const chargesTotal = customAdjustments.reduce((sum, charge) => sum + charge.amount, 0);
   
-  const totalBeforeFinalCharges = taxableAmount + (isVatExclusive ? taxTotal : 0) + chargesOnSubtotal;
-  
-  const chargesOnTotal = charges
-    .filter(c => c.appliesTo === 'total')
-    .reduce((sum, charge) => {
-        return sum + (charge.type === 'fixed' ? charge.value : totalBeforeFinalCharges * (charge.value / 100));
-    }, 0);
-    
-  const chargesTotal = chargesOnSubtotal + chargesOnTotal;
-  const grandTotal = totalBeforeFinalCharges + chargesOnTotal;
+  const grandTotal = taxableAmount + (isVatExclusive ? taxTotal : 0) + chargesTotal;
 
   return {
     subtotal: grossSubtotal,

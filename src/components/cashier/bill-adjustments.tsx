@@ -216,7 +216,7 @@ export function BillAdjustments({
         </div>
         
         {/* --- ADJUSTMENTS DISPLAY --- */}
-        {adjustments.length > 0 && (
+        {adjustments && adjustments.length > 0 && (
              <div className="text-sm pt-2 space-y-1">
                 {adjustments.map(adj => (
                     <div key={adj.id} className="flex justify-between items-center">

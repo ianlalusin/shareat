@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -211,6 +210,7 @@ export type Adjustment = {
   id: string;
   note: string;
   amount: number;
+  type: 'fixed' | 'percent';
   source: 'charge' | 'custom';
   sourceId?: string;
 };

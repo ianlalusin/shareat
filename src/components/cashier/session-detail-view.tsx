@@ -20,7 +20,7 @@ import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store } from "@/lib/types";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 
 // Validation logic remains the same
@@ -52,6 +52,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [charges, setCharges] = useState<Charge[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
+  const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   
@@ -67,8 +68,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (doc.exists()) {
             const data = doc.data();
             if ((data.status === 'closed' || data.isPaid) && router) {
-                // If payment is completed, redirect to receipt page to prevent further edits.
-                // The autoprint flag can be passed if needed.
                 router.replace(`/receipt/${sessionId}`);
                 return;
             }
@@ -113,14 +112,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return () => unsubs.forEach(unsub => unsub());
   }, [storeId]);
   
-  const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && d.scope?.includes("bill")), [discounts]);
-  const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && d.scope?.includes("item")), [discounts]);
+  const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill")), [discounts]);
+  const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && (Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item")), [discounts]);
   
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
   const billTotals = useMemo(() => {
-    return calculateBillTotals(billLines, activeStore as Store, billDiscount, charges);
-  }, [billLines, activeStore, billDiscount, charges]);
+    return calculateBillTotals(billLines, activeStore as Store, billDiscount, customAdjustments);
+  }, [billLines, activeStore, billDiscount, customAdjustments]);
   
   const { grandTotal } = billTotals;
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -200,7 +199,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     <CustomerInfoForm session={session} />
                     <BillTotals totals={billTotals} totalPaid={totalPaid} onRemoveDiscount={() => {}} isLocked={isBillingLocked} />
                 </div>
-                <BillAdjustments charges={charges} discounts={billableDiscounts} onAddAdjustment={() => {}} onAddCustomAdjustment={()=>{}} onRemoveAdjustment={() => {}} onSetBillDiscount={setBillDiscount} billDiscount={billDiscount} isLocked={isBillingLocked} />
+                <BillAdjustments charges={charges} discounts={billableDiscounts} onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])} onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])} onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} billDiscount={billDiscount} adjustments={customAdjustments || []} isLocked={isBillingLocked} />
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 
