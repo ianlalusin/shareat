@@ -22,12 +22,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine } from '@/lib/types';
+import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import sha1 from 'js-sha1';
+import { calculateBillTotals } from '@/lib/tax';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -206,10 +207,15 @@ export async function completePaymentFromUnits(
   user: AppUser,
   payments: Payment[],
   billLines: SessionBillLine[],
-  billingSummary: TaxAndTotals,
-  paymentMethods: ModeOfPayment[]
+  store: Store,
+  paymentMethods: ModeOfPayment[],
+  billDiscount: Discount | null,
+  customAdjustments: Adjustment[]
 ) {
   let receiptId: string = "";
+
+  const billingSummary = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
+  const { grandTotal } = billingSummary;
 
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
@@ -250,7 +256,6 @@ export async function completePaymentFromUnits(
         tableSnap = await tx.get(tableRef);
     }
     
-    const { grandTotal } = billingSummary;
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
     if (totalPaid < grandTotal) throw new Error("Cannot complete payment: balance is not zero.");
