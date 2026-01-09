@@ -32,7 +32,6 @@ export function calculateBillTotals(
   const taxRate = (store.taxRatePct || 0) / 100;
   const isVatInclusive = store.taxType === 'VAT_INCLUSIVE';
   const isVatExclusive = store.taxType === 'VAT_EXCLUSIVE';
-  const isNonVat = !isVatInclusive && !isVatExclusive;
 
   let grossSubtotal = 0;
   let lineDiscountsTotal = 0;
@@ -74,35 +73,40 @@ export function calculateBillTotals(
       billDiscountTotal = Math.min(subtotalAfterLineDiscounts, billDiscount.value);
     }
   }
-
+  
   const taxableAmount = subtotalAfterLineDiscounts - billDiscountTotal;
-  
+
   let taxTotal = 0;
+
   if (isVatExclusive) {
-      taxTotal = taxableAmount * taxRate;
+    // taxableAmount is net; VAT is added on top
+    taxTotal = taxableAmount * taxRate;
   } else if (isVatInclusive) {
-      // For inclusive, tax is part of the price. We calculate it from the final taxable amount.
-      taxTotal = taxableAmount - (taxableAmount / (1 + taxRate));
+    // taxableAmount is net-of-tax base; VAT is computed from the base
+    taxTotal = taxableAmount * taxRate;
   }
-  
+
   const chargesTotal = customAdjustments.reduce((sum, charge) => sum + charge.amount, 0);
-  
-  // GrandTotal is the final amount due. For inclusive, it's the taxable amount (which already includes tax).
-  // For exclusive, it's the taxable amount plus the calculated tax.
-  const grandTotal = isVatExclusive 
-    ? taxableAmount + taxTotal + chargesTotal 
-    : taxableAmount + chargesTotal;
+
+  // GrandTotal must be the amount the customer pays (gross).
+  // - VAT_EXCLUSIVE: net + VAT + charges
+  // - VAT_INCLUSIVE: (net + VAT) + charges = net*(1+rate) + charges
+  // - NON_VAT: net + charges
+  const grandTotal =
+    isVatExclusive ? (taxableAmount + taxTotal + chargesTotal)
+    : isVatInclusive ? (taxableAmount * (1 + taxRate) + chargesTotal)
+    : (taxableAmount + chargesTotal);
 
   return {
-    subtotal: grossSubtotal,
-    taxableAmount,
-    taxTotal,
+    subtotal: grossSubtotal,          // this is your gross before discounts/free adjustments
+    taxableAmount,                    // net-of-tax AFTER discounts (base)
+    taxTotal,                         // VAT computed from base
     lineDiscountsTotal,
     billDiscountTotal,
     totalDiscounts: lineDiscountsTotal + billDiscountTotal,
     chargesTotal,
-    grandTotal,
-    vatableSales: isVatInclusive ? grandTotal - taxTotal - chargesTotal : taxableAmount,
+    grandTotal,                       // gross amount due (includes VAT if inclusive)
+    vatableSales: isVatInclusive ? taxableAmount : taxableAmount, // net sales base
     vatExemptSales,
   };
 }
