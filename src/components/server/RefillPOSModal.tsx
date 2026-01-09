@@ -384,23 +384,24 @@ function POSContent({
     <div className="h-[70vh] flex flex-col">
       {session.sessionMode === 'package_dinein' && (
         <div className="p-4 border-b">
-          <Button 
-            className="w-full" 
-            variant="destructive"
-            onClick={handleRepeatFirstOrder}
-            disabled={isSubmitting || sessionIsLocked}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order (Refill Set)
-          </Button>
-           <div className="text-xs text-muted-foreground text-center mt-2 space-y-1">
-            <p>Sends all refills allowed by the package with the default flavors.</p>
-            {currentPackage?.packageName && (
-              <p>
-                <span className="font-semibold">{currentPackage.packageName}:</span> <span className="text-destructive font-medium">{defaultFlavorNames}</span>
-              </p>
-            )}
-          </div>
-          <Separator className="my-4" />
+            <div className="flex items-center gap-4">
+                <Button 
+                    variant="destructive"
+                    onClick={handleRepeatFirstOrder}
+                    disabled={isSubmitting || sessionIsLocked}
+                >
+                    <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                    <p>Sends all refills allowed by the package with the default flavors.</p>
+                    {currentPackage?.packageName && (
+                    <p>
+                        <span className="font-semibold">{currentPackage.packageName}:</span> <span className="text-destructive font-medium">{defaultFlavorNames}</span>
+                    </p>
+                    )}
+                </div>
+            </div>
+            <Separator className="mt-2 mb-0" />
         </div>
       )}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-hidden">
