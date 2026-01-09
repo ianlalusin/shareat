@@ -41,6 +41,10 @@ export function FlavorEditDialog({ isOpen, onClose, onSave, item, isSubmitting }
     }
   }, [item, form, isOpen]);
 
+  const handleSubmit = (data: FormValues) => {
+    onSave(data);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
@@ -49,7 +53,7 @@ export function FlavorEditDialog({ isOpen, onClose, onSave, item, isSubmitting }
           <DialogDescription>{item ? "Update the flavor details." : "Fill in the details for the new flavor."}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSave)} id="flavor-form" className="space-y-4 py-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} id="flavor-form" className="space-y-4 py-4">
             <FormField control={form.control} name="name" render={({ field }) => (
               <FormItem>
                 <FormLabel>Flavor Name</FormLabel>

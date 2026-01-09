@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { FlavorEditDialog } from "@/components/admin/menu/flavor-edit-dialog";
 import type { Flavor } from "@/lib/types";
+import { errorEmitter, FirestorePermissionError } from "@/firebase";
 
 export default function FlavorsManagementPage() {
   const { appUser } = useAuthContext();
@@ -37,6 +38,8 @@ export default function FlavorsManagementPage() {
       setIsLoading(false);
     }, (error) => {
       console.error("Failed to fetch flavors:", error);
+      const contextualError = new FirestorePermissionError({ operation: 'list', path: "flavors" });
+      errorEmitter.emit("permission-error", contextualError);
       toast({ variant: "destructive", title: "Error", description: "Could not fetch flavors." });
       setIsLoading(false);
     });
@@ -54,30 +57,40 @@ export default function FlavorsManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSave = async (data: Omit<Flavor, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleSave = (data: Omit<Flavor, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!appUser) return;
     setIsSubmitting(true);
 
-    try {
-      if (editingFlavor) {
-        const docRef = doc(db, "flavors", editingFlavor.id);
-        await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
-        toast({ title: "Flavor Updated" });
-      } else {
-        const newDocRef = doc(collection(db, "flavors"));
-        await writeBatch(db).set(newDocRef, {
-          ...data,
-          id: newDocRef.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        }).commit();
-        toast({ title: "Flavor Created" });
-      }
-      handleCloseDialog();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Save Failed", description: error.message });
-    } finally {
-      setIsSubmitting(false);
+    if (editingFlavor) {
+      const docRef = doc(db, "flavors", editingFlavor.id);
+      const payload = { ...data, updatedAt: serverTimestamp() };
+      updateDoc(docRef, payload)
+        .then(() => {
+          toast({ title: "Flavor Updated" });
+          handleCloseDialog();
+        })
+        .catch(async (error: any) => {
+            const contextualError = new FirestorePermissionError({ operation: 'update', path: docRef.path, requestResourceData: payload });
+            errorEmitter.emit("permission-error", contextualError);
+        })
+        .finally(() => {
+          setIsSubmitting(false);
+        });
+    } else {
+      const newDocRef = doc(collection(db, "flavors"));
+      const payload = { ...data, id: newDocRef.id, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+      setDoc(newDocRef, payload)
+        .then(() => {
+          toast({ title: "Flavor Created" });
+          handleCloseDialog();
+        })
+        .catch(async (error: any) => {
+          const contextualError = new FirestorePermissionError({ operation: 'create', path: newDocRef.path, requestResourceData: payload });
+          errorEmitter.emit("permission-error", contextualError);
+        })
+        .finally(() => {
+          setIsSubmitting(false);
+        });
     }
   };
 
@@ -91,13 +104,17 @@ export default function FlavorsManagementPage() {
         confirmText: `Yes, ${action}`,
         destructive: !newStatus,
     }))) return;
-
-    try {
-        await updateDoc(doc(db, "flavors", item.id), { isActive: newStatus, updatedAt: serverTimestamp() });
-        toast({ title: "Status Updated" });
-    } catch (error: any) {
-        toast({ variant: "destructive", title: "Update Failed", description: error.message });
-    }
+    
+    const docRef = doc(db, "flavors", item.id);
+    const payload = { isActive: newStatus, updatedAt: serverTimestamp() };
+    updateDoc(docRef, payload)
+        .then(() => {
+            toast({ title: "Status Updated" });
+        })
+        .catch(async (error: any) => {
+            const contextualError = new FirestorePermissionError({ operation: 'update', path: docRef.path, requestResourceData: payload });
+            errorEmitter.emit("permission-error", contextualError);
+        });
   };
 
   const handleDelete = async (item: Flavor) => {
@@ -109,12 +126,16 @@ export default function FlavorsManagementPage() {
         destructive: true,
     }))) return;
 
-    try {
-        await updateDoc(doc(db, "flavors", item.id), { isActive: false, isArchived: true, updatedAt: serverTimestamp() });
-        toast({ title: "Flavor Archived" });
-    } catch (error: any) {
-        toast({ variant: "destructive", title: "Archive Failed", description: error.message });
-    }
+    const docRef = doc(db, "flavors", item.id);
+    const payload = { isActive: false, isArchived: true, updatedAt: serverTimestamp() };
+    updateDoc(docRef, payload)
+        .then(() => {
+            toast({ title: "Flavor Archived" });
+        })
+        .catch(async (error: any) => {
+            const contextualError = new FirestorePermissionError({ operation: 'update', path: docRef.path, requestResourceData: payload });
+            errorEmitter.emit("permission-error", contextualError);
+        });
   };
 
   return (
