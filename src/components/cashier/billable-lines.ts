@@ -20,7 +20,7 @@ import {
 import { db } from '@/lib/firebase/client';
 import type { BillableLine, KitchenTicket } from '@/lib/types';
 import { AppUser } from '@/context/auth-context';
-import { sha1 } from 'js-sha1';
+import sha1 from 'js-sha1';
 import { writeActivityLog } from './activity-log';
 
 // Helper to create a consistent key for grouping.
@@ -400,3 +400,5 @@ export async function changeLineQty(
         }
     });
 }
+
+    
