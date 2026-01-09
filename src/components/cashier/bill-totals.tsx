@@ -25,21 +25,15 @@ export function BillTotals({
 }: BillTotalsProps) {
     
     const totals = useMemo(() => {
+        if (!store) return null; // Add guard for store
         return calculateBillTotals(lines, store, billDiscount, customAdjustments);
     }, [lines, store, billDiscount, customAdjustments]);
 
-    const { 
-        subtotal, 
-        totalDiscounts, 
-        chargesTotal, 
-        grandTotal, 
-        taxTotal,
-        vatableSales,
-        vatExemptSales,
-    } = totals;
-    
-    const remainingBalance = grandTotal - totalPaid;
-    const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
+    // Add guards for totals being null
+    const grandTotal = totals?.grandTotal ?? 0;
+    const totalPaidNum = totalPaid ?? 0;
+    const remainingBalance = grandTotal - totalPaidNum;
+    const change = totalPaidNum > grandTotal ? totalPaidNum - grandTotal : 0;
     
     const activeLines = useMemo(() => lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0), [lines]);
 
@@ -55,9 +49,20 @@ export function BillTotals({
             const lineSubRows: React.ReactNode[] = [];
             
             if (hasDiscount) {
-                const discountAmount = line.discountType === 'percent'
-                    ? (line.unitPrice * (line.discountValue! / 100)) * line.discountQty
-                    : line.discountValue! * line.discountQty;
+                const taxRate = (store.taxRatePct || 0) / 100;
+                const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
+
+                const baseUnitPrice = isVatInclusive ? (line.unitPrice / (1 + taxRate)) : line.unitPrice;
+
+                const discountBasePerUnit =
+                  line.discountType === "percent"
+                    ? baseUnitPrice * ((line.discountValue ?? 0) / 100)
+                    : Math.min(baseUnitPrice, (line.discountValue ?? 0));
+
+                const discountDisplayPerUnit = isVatInclusive ? discountBasePerUnit * (1 + taxRate) : discountBasePerUnit;
+
+                const discountAmount = discountDisplayPerUnit * line.discountQty;
+
                 lineSubRows.push(
                     <div key={`${line.id}-disc`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.discountQty}x Discount`}</span>
@@ -97,37 +102,37 @@ export function BillTotals({
 
         <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal</span>
-            <span>₱{subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span>₱{(totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         
-        {totalDiscounts > 0 && (
+        {((totals?.totalDiscounts ?? 0) > 0) && (
              <div className="flex justify-between text-red-600">
                 <span>Discounts</span>
-                <span>- ₱{totalDiscounts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>- ₱{(totals?.totalDiscounts ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         )}
 
-        {chargesTotal > 0 && (
+        {((totals?.chargesTotal ?? 0) > 0) && (
              <div className="flex justify-between text-green-600">
                 <span>Charges</span>
-                <span>+ ₱{chargesTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>+ ₱{(totals?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         )}
 
-        {taxTotal > 0 && (
+        {((totals?.taxTotal ?? 0) > 0) && (
             <>
                 <Separator className="my-1"/>
                 <div className="flex justify-between text-muted-foreground">
                     <span>VATable Sales</span>
-                    <span>₱{vatableSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>₱{(totals?.vatableSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                  <div className="flex justify-between text-muted-foreground">
                     <span>VAT-Exempt Sales</span>
-                    <span>₱{vatExemptSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>₱{(totals?.vatExemptSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                  <div className="flex justify-between text-muted-foreground">
                     <span>VAT ({((store.taxRatePct || 0))}%)</span>
-                    <span>₱{taxTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>₱{(totals?.taxTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
             </>
         )}
