@@ -52,7 +52,7 @@ function BillableLineRow({
         <div className="flex flex-col border-b last:border-b-0">
             <div className="flex items-center gap-4 py-3 px-4">
                 <div className="flex-1">
-                    <p className="font-medium">{line.itemName}</p>
+                    <p className="font-medium">{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
                     <div className="text-xs text-muted-foreground">
                         <p>{line.qty} x ₱{line.unitPrice.toFixed(2)} each = ₱{(line.qty * line.unitPrice).toFixed(2)}</p>
                         {(!isPackage && (servedQty > 0 || pendingQty > 0 || cancelledQty > 0)) && (

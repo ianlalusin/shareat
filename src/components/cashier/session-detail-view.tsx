@@ -387,6 +387,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     onApplyDiscount={handleApplyDiscount}
                     onApplyFree={handleApplyFree}
                     onVoidItem={handleVoidItem}
+                    onUpdateUnitPrice={() => {}}
                     isLocked={isBillingLocked} 
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />

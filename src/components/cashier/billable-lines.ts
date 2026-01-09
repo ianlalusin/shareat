@@ -214,16 +214,18 @@ export async function moveTicketIdsBetweenLines({
         const fromLineData = fromLineSnap.data() as BillableLine;
 
         // --- HARD INVARIANT GUARD ---
-        const moveSet = new Set(ticketIdsToMove);
+        const moveSet = new Set(normalizeTicketIds(ticketIdsToMove));
         const fromIds = normalizeTicketIds(fromLineData.ticketIds ?? []);
         const toIds = normalizeTicketIds(toLineData.ticketIds ?? []);
 
         const remainingFromIds = fromIds.filter(id => !moveSet.has(id));
-        const combinedToIds = normalizeTicketIds([...toIds, ...ticketIdsToMove]);
+        const combinedToIds = normalizeTicketIds([...toIds, ...Array.from(moveSet)]);
         
+        // Ensure disjointness (safety net)
         const remainingSet = new Set(remainingFromIds);
         const finalToIds = combinedToIds.filter(id => !remainingSet.has(id));
 
+        // Fail-fast assertion
         for (const id of finalToIds) {
             if (remainingSet.has(id)) {
                 throw new Error("Invariant failed: ticketId would be duplicated across lines.");
@@ -232,7 +234,7 @@ export async function moveTicketIdsBetweenLines({
         // --- END GUARD ---
 
         const updatedFromQty = remainingFromIds.length;
-        if (updatedFromQty === 0) {
+        if (updatedFromQty === 0 && fromLineData.type !== 'package') { // Don't delete package lines
             tx.delete(fromLineRef);
             fromLineFinalData = { ...fromLineData, ticketIds: [], qty: 0 };
         } else {
