@@ -47,7 +47,7 @@ export function makeVariantKey(lineLike: Partial<BillableLine>): string {
  * @param ticketIds An array of ticket IDs.
  * @returns A new array with unique, sorted ticket IDs.
  */
-function normalizeTicketIds(ticketIds: string[]): string[] {
+export function normalizeTicketIds(ticketIds: string[]): string[] {
   if (!Array.isArray(ticketIds)) return [];
   return [...new Set(ticketIds)].sort();
 }

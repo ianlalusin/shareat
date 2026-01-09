@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
 import Image from "next/image";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -197,7 +197,7 @@ function POSContent({
             };
             const { ref: lineRef, data: lineData, exists } = await findOrCreateLineByVariantTx(tx, linesRef, variant);
             
-            const updatedTicketIds = normalizeTicketIds([...lineData.ticketIds, ...newTicketIds]);
+            const updatedTicketIds = normalizeTicketIds([...(lineData.ticketIds || []), ...newTicketIds]);
             
             const lineUpdatePayload = {
                 ...variant,

@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -20,9 +19,9 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, getEligibleTicketIds, moveTicketIdsBetweenLines, updateLineUnitPrice, ensureBillableLinesForSession } from "./billable-lines";
+import { changeLineQty, getEligibleTicketIds, moveTicketIdsBetweenLines, updateLineUnitPrice } from "./billable-lines";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, BillableItem } from "@/lib/types";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine } from "@/lib/types";
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
@@ -56,7 +55,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
   const [ticketsById, setTicketsById] = useState<Map<string, KitchenTicket>>(new Map());
   
-  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -147,15 +146,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
     billableLines.forEach(line => {
       if (line.isVoided || line.isFree) return;
+      
+      const chargeableQty = line.type === 'package' ? (session?.guestCountFinal ?? line.qty) : line.qty;
 
-      const servedQty = line.type === 'package'
-        ? (session?.guestCountFinal ?? line.qty)
-        : getEligibleTicketIds(line, ticketsById, "served").length;
-      
-      const pendingQty = line.type === 'package' ? 0 : getEligibleTicketIds(line, ticketsById, "pending").length;
-      pendingCount += pendingQty;
-      
-      const chargeableQty = servedQty;
       if (chargeableQty > 0) {
         const grossLineAmount = chargeableQty * line.unitPrice;
         sub += grossLineAmount;
@@ -168,6 +161,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           }
         }
       }
+      
+      if (line.type === 'addon') {
+          const pendingQty = getEligibleTicketIds(line, ticketsById, "pending").length;
+          pendingCount += pendingQty;
+      }
     });
 
     return { subtotal: sub, lineDiscountsTotal: lineDisc, pendingItemsCount: pendingCount };
@@ -175,8 +173,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const handleUpdateQty = async (lineId: string, newQty: number) => {
     if (isBillingLocked || !activeStore || !session || newQty < 1 || !appUser) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
+
     try {
-        await changeLineQty(activeStore.id, sessionId, lineId, newQty, appUser, ticketsById);
+        await changeLineQty(activeStore.id, sessionId, line, newQty, appUser, ticketsById);
         toast({ title: "Quantity Updated" });
     } catch(e: any) {
          toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -186,7 +187,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleUpdateUnitPrice = async (line: BillableLine, newPrice: number) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
     try {
-        await updateLineUnitPrice(activeStore.id, sessionId, line.id, newPrice, appUser.uid);
+        await updateLineUnitPrice(activeStore.id, sessionId, line, newPrice, appUser);
         toast({ title: "Unit Price Updated" });
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -210,7 +211,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             fromLineId: line.id,
             toVariant: { ...line, isFree: false, discountType, discountValue },
             ticketIdsToMove: targetIds,
-            actorUid: appUser.uid,
+            actor: appUser,
+            action: 'DISCOUNT_APPLIED'
         });
         toast({ title: "Discount Applied" });
     } catch (e: any) {
@@ -235,7 +237,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             fromLineId: line.id,
             toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: 'fixed' },
             ticketIdsToMove: targetIds,
-            actorUid: appUser.uid,
+            actor: appUser,
+            action: currentIsFree ? 'UNMARK_FREE' : 'MARK_FREE'
         });
         toast({ title: currentIsFree ? "Free Status Removed" : "Item Marked as Free" });
     } catch (e: any) {
@@ -252,7 +255,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             fromLineId: line.id,
             toVariant: { ...line, isFree: false, discountValue: 0, discountType: 'fixed' },
             ticketIdsToMove: line.ticketIds,
-            actorUid: appUser.uid,
+            actor: appUser,
+            action: 'DISCOUNT_REMOVED'
         });
         toast({ title: "Discount Removed" });
     } catch (e: any) {
@@ -277,7 +281,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         fromLineId: line.id,
         toVariant: { ...line, isVoided: true, voidReason: reason, voidNote: note },
         ticketIdsToMove: targetIds,
-        actorUid: appUser.uid
+        actor: appUser,
+        action: 'VOID_TICKETS',
+        reason,
+        note
       });
       toast({ title: "Item(s) voided" });
     } catch (e: any) {
@@ -378,10 +385,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session} 
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
-                    onUpdateUnitPrice={handleUpdateUnitPrice}
-                    onApplyDiscount={handleApplyDiscount} 
-                    onApplyFree={handleApplyFree} 
-                    onVoidItem={handleVoidItem}
+                    onUpdateUnitPrice={(lineId, newPrice) => handleUpdateUnitPrice(billableLines.find(l => l.id === lineId)!, newPrice)}
+                    onApplyDiscount={(lineId, type, value, qty) => handleApplyDiscount(billableLines.find(l => l.id === lineId)!, type, value, qty)}
+                    onApplyFree={(lineId, qty, isFree) => handleApplyFree(billableLines.find(l => l.id === lineId)!, qty, isFree)}
+                    onVoidItem={(lineId, qty, reason, note) => handleVoidItem(billableLines.find(l => l.id === lineId)!, qty, reason, note)}
                     isLocked={isBillingLocked} 
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
