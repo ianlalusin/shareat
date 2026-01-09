@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp }
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "./auth-context";
 import type { Store } from "@/lib/types";
+import { errorEmitter, FirestorePermissionError } from "@/firebase";
 
 type StoreCtx = {
   activeStoreId: string | null;
@@ -32,7 +33,11 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       setAllActiveStores(storesData);
       setLoadingStores(false);
     }, (error) => {
-      console.error("Failed to fetch stores:", error);
+      const contextualError = new FirestorePermissionError({
+        operation: 'list',
+        path: 'stores',
+      });
+      errorEmitter.emit('permission-error', contextualError);
       setLoadingStores(false);
     });
 
