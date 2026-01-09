@@ -43,6 +43,7 @@ export function BillTotals({
     <div className="flex-1 flex flex-col p-4">
         <div className="space-y-1 text-sm pr-4">
             {billableLines.map(line => {
+                if (line.isVoided) return null; // Explicitly skip voided lines
                 const hasDiscount = (line.discountValue ?? 0) > 0;
                 let discountAmount = 0;
                 if (hasDiscount) {

@@ -246,7 +246,7 @@ export async function moveTicketIdsBetweenLines({
         }
         
         const toLineQty = finalToIds.length;
-        const completeToVariant = { ...lineData, ...toVariant }; // Merge fromLine data with toVariant details
+        const completeToVariant = { ...fromLineData, ...toVariant }; // Merge fromLine data with toVariant details
         toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty, ...completeToVariant };
         
         const toLinePayload = {
