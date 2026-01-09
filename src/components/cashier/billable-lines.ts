@@ -55,10 +55,14 @@ export function normalizeTicketIds(ticketIds: string[]): string[] {
 export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
     if (!line || !line.ticketIds) return [];
 
+    // For packages, guest tickets are always considered "pending" or "eligible" for billing actions
+    // as they don't have a real-time kitchen status.
+    if (line.type === 'package') {
+        return line.ticketIds;
+    }
+
     return line.ticketIds.filter(ticketId => {
         const ticket = ticketsById.get(ticketId);
-        // For packages, which are synthetic, there's no ticket, so we treat them as "served" for billing purposes.
-        if (line.type === 'package') return true; 
         if (!ticket) return false;
 
         switch (mode) {
@@ -159,7 +163,7 @@ export async function moveTicketIdsBetweenLines({
             tx.delete(fromLineRef);
             fromLineFinalData = { ...fromLineData, ticketIds: [], qty: 0 };
         } else {
-            const updatedQty = fromLineData.type === 'package' ? fromLineData.qty : remainingFromIds.length;
+            const updatedQty = remainingFromIds.length;
             fromLineFinalData = { ...fromLineData, ticketIds: remainingFromIds, qty: updatedQty };
             tx.update(fromLineRef, { 
                 ticketIds: remainingFromIds, 
@@ -168,7 +172,7 @@ export async function moveTicketIdsBetweenLines({
             });
         }
         
-        const toLineQty = toLineData.type === 'package' ? toLineData.qty : newToIds.length;
+        const toLineQty = newToIds.length;
         toLineFinalData = { ...toLineData, ticketIds: newToIds, qty: toLineQty };
         const toLinePayload = {
             ...toVariant, // Use the target variant to ensure all properties are correct
@@ -213,26 +217,6 @@ export async function updateLineUnitPrice(
   newPrice: number,
   actor: AppUser
 ) {
-    if (line.type === 'package') {
-        const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
-        await updateDoc(lineRef, { unitPrice: newPrice, updatedAt: serverTimestamp() });
-        // Log this simple change
-        await writeActivityLog({
-            storeId,
-            sessionId,
-            user: actor,
-            action: 'PRICE_OVERRIDE',
-            lineIds: [line.id],
-            meta: {
-                itemId: line.itemId,
-                itemName: line.itemName,
-                unitPriceBefore: line.unitPrice,
-                unitPriceAfter: newPrice,
-            },
-        });
-        return;
-    }
-
     await moveTicketIdsBetweenLines({
         storeId,
         sessionId,

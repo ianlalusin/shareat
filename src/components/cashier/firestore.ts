@@ -150,7 +150,7 @@ export async function startSession(
           itemName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
           // For packages, generate virtual ticket IDs to represent each guest
-          ticketIds: Array.from({ length: payload.guestCount }, (_, i) => `pkg-guest-${i + 1}`),
+          ticketIds: Array.from({ length: payload.guestCount }, (_, i) => `guest-${i + 1}`),
           qty: payload.guestCount,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),

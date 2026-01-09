@@ -569,6 +569,16 @@
             "type": "object",
             "description": "A map of refill names to their served counts for this session.",
             "additionalProperties": { "type": "number" }
+        },
+        "serveCountByType": {
+            "type": "object",
+            "description": "A map of item types (package, addon, refill) to their served counts.",
+            "additionalProperties": { "type": "number" }
+        },
+        "serveTimeMsTotalByType": {
+            "type": "object",
+            "description": "A map of item types to the total milliseconds taken to serve them.",
+            "additionalProperties": { "type": "number" }
         }
       },
       "required": ["id", "storeId", "tableId", "status", "startedAt", "startedByUid", "guestCountCashierInitial", "packageOfferingId", "packageSnapshot"]
