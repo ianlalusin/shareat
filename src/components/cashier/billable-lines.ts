@@ -154,7 +154,8 @@ export async function appendAddonTicketIdsToRegularLine({
     const newQty = newTicketIds.length;
 
     const payload = {
-      ...regularVariant,
+      ...lineData, // Use existing line data as base
+      ...regularVariant, // Apply variant properties
       id: lineRef.id,
       ticketIds: newTicketIds,
       qty: newQty,
@@ -211,22 +212,17 @@ export async function moveTicketIdsBetweenLines({
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        // --- HARD INVARIANT GUARD (as per your excellent suggestion) ---
+        // --- HARD INVARIANT GUARD ---
         const moveSet = new Set(ticketIdsToMove);
+        const fromIds = normalizeTicketIds(fromLineData.ticketIds ?? []);
+        const toIds = normalizeTicketIds(toLineData.ticketIds ?? []);
 
-        const remainingFromIds = normalizeTicketIds(
-            (fromLineData.ticketIds ?? []).filter(id => !moveSet.has(id))
-        );
-        
-        const newToIds = normalizeTicketIds([
-            ...(toLineData.ticketIds ?? []),
-            ...ticketIdsToMove,
-        ]);
+        const remainingFromIds = fromIds.filter(id => !moveSet.has(id));
+        const combinedToIds = normalizeTicketIds([...toIds, ...ticketIdsToMove]);
         
         const remainingSet = new Set(remainingFromIds);
-        const finalToIds = normalizeTicketIds(newToIds.filter(id => !remainingSet.has(id)));
+        const finalToIds = combinedToIds.filter(id => !remainingSet.has(id));
 
-        // Optional: Fail-fast assertion to ensure no overlap
         for (const id of finalToIds) {
             if (remainingSet.has(id)) {
                 throw new Error("Invariant failed: ticketId would be duplicated across lines.");
@@ -249,7 +245,9 @@ export async function moveTicketIdsBetweenLines({
         
         const toLineQty = finalToIds.length;
         toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty };
+        
         const toLinePayload = {
+            ...toLineData,
             ...toVariant, // Use the target variant to ensure all properties are correct
             id: toLineRef.id,
             ticketIds: finalToIds,
@@ -345,18 +343,22 @@ export async function changeLineQty(
             if (lineData.type !== 'addon') {
                 throw new Error("Quantity can only be changed for add-on items.");
             }
+            
+            const qtyToAdd = newQty - currentQty;
 
+            // This should not happen if the UI is correct, but as a safeguard:
+            if (qtyToAdd <= 0) return;
+            
+            // Create the new kitchen tickets
+            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
+            const sessionDoc = await getDoc(doc(db, `stores/${storeId}/sessions`, sessionId));
+            const sessionData = sessionDoc.data();
             const addonDoc = await getDoc(doc(db, `stores/${storeId}/storeAddons`, lineData.itemId));
             if (!addonDoc.exists()) throw new Error(`Addon details for ID ${lineData.itemId} not found.`);
             const addonData = addonDoc.data() as any;
 
-            const sessionDoc = await getDoc(doc(db, `stores/${storeId}/sessions`, sessionId));
-            const sessionData = sessionDoc.data();
-
             const newTicketIds: string[] = [];
-            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
-
-            for (let i = 0; i < (newQty - currentQty); i++) {
+            for (let i = 0; i < qtyToAdd; i++) {
                 const newTicketRef = doc(ticketsColRef);
                 newTicketIds.push(newTicketRef.id);
                 tx.set(newTicketRef, {
@@ -374,7 +376,8 @@ export async function changeLineQty(
                     sessionLabel: sessionData?.sessionLabel,
                 });
             }
-            
+
+            // Append the new ticket IDs to the existing line item
             const finalTicketIds = normalizeTicketIds([...lineData.ticketIds, ...newTicketIds]);
             tx.update(lineRef, {
                 ticketIds: finalTicketIds,
