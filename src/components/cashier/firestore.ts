@@ -379,7 +379,7 @@ export async function completePaymentFromUnits(
         meta: {
             receiptId,
             receiptNumber: receiptId, // Placeholder until we can get it back from tx
-            paymentTotal: grandTotal,
+            paymentTotal: billingSummary.grandTotal,
         }
     });
   }
