@@ -404,7 +404,7 @@ function POSContent({
             <Separator className="mt-2 mb-0" />
         </div>
       )}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-y-auto">
         {/* Left Panel: Refills */}
         <div className="md:col-span-1 border-r pr-4 flex flex-col">
           <h3 className="font-semibold mb-2">1. Select Refills</h3>
