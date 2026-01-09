@@ -11,6 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "..
 import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
+import { useAuthContext } from "@/context/auth-context";
 import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
 
 interface BillableItemsProps {
@@ -107,6 +108,7 @@ export function BillableItems({
     isLocked = false 
 }: BillableItemsProps) {
   
+  const { appUser } = useAuthContext();
   const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
 
   const activeLines = lines.filter(line => !line.isVoided);
@@ -206,10 +208,10 @@ export function BillableItems({
             discounts={discounts}
             isLocked={isLocked}
             onUpdateQty={onUpdateQty}
-            onUpdateUnitPrice={onUpdateUnitPrice}
-            onApplyDiscount={onApplyDiscount}
-            onApplyFree={onApplyFree}
-            onVoidItem={onVoidItem}
+            onUpdateUnitPrice={(newPrice) => onUpdateUnitPrice(editingLine.id, newPrice)}
+            onApplyDiscount={(type, value, qty) => onApplyDiscount(editingLine.id, type, value, qty)}
+            onApplyFree={(qty, isFree) => onApplyFree(editingLine.id, qty, isFree)}
+            onVoidItem={(qty, reason, note) => onVoidItem(editingLine.id, qty, reason, note)}
         />
       )}
     </>

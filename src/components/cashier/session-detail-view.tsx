@@ -19,9 +19,8 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, moveTicketIdsBetweenLines, updateLineUnitPrice } from "./billable-lines";
-import { EditBillableItemDialog } from "./edit-billable-item-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine } from "@/lib/types";
+import { changeLineQty, moveTicketIdsBetweenLines, updateLineUnitPrice, getEligibleTicketIds } from "./billable-lines";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment } from "@/lib/types";
 import { useConfirmDialog } from "../global/confirm-dialog";
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
@@ -57,7 +56,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
   const [ticketsById, setTicketsById] = useState<Map<string, KitchenTicket>>(new Map());
   
-  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -66,7 +65,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -186,8 +184,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
   
-  const handleUpdateUnitPrice = async (line: BillableLine, newPrice: number) => {
+  const handleUpdateUnitPrice = async (lineId: string, newPrice: number) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
     try {
         await updateLineUnitPrice(activeStore.id, sessionId, line, newPrice, appUser);
         toast({ title: "Unit Price Updated" });
@@ -196,8 +196,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleApplyDiscount = async (line: BillableLine, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
+  const handleApplyDiscount = async (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
     try {
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
@@ -214,8 +216,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleApplyFree = async (line: BillableLine, quantity: number, currentIsFree: boolean) => {
+  const handleApplyFree = async (lineId: string, quantity: number, currentIsFree: boolean) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
 
     if (!currentIsFree) {
         const ok = await confirm({
@@ -232,7 +236,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
-            toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: 'fixed' },
+            toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: undefined },
             ticketIdsToMove: line.ticketIds.slice(0, quantity),
             actor: appUser,
             action: currentIsFree ? 'UNMARK_FREE' : 'MARK_FREE'
@@ -243,8 +247,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleRemoveDiscount = async (line: BillableLine) => {
+  const handleRemoveDiscount = async (lineId: string) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
     try {
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
@@ -261,8 +267,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const handleVoidItem = async (line: BillableLine, quantity: number, reason: string, note?: string) => {
+  const handleVoidItem = async (lineId: string, quantity: number, reason: string, note?: string) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
+    const line = billableLines.find(l => l.id === lineId);
+    if (!line) return;
     try {
       const eligibleIds = getEligibleTicketIds(line, ticketsById, 'any'); // Can void pending or served
       const targetIds = eligibleIds.slice(0, quantity);
@@ -370,7 +378,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
                     <CustomerInfoForm session={session} />
-                    <BillTotals lines={billableLines} subtotal={subtotal} lineDiscountsTotal={lineDiscountsTotal} billDiscountAmount={billDiscountAmount} adjustments={adjustments} grandTotal={grandTotal} totalPaid={totalPaid} onRemoveDiscount={(lineId) => handleRemoveDiscount(billableLines.find(l=>l.id === lineId)!)} isLocked={isBillingLocked} />
+                    <BillTotals lines={billableLines} subtotal={subtotal} lineDiscountsTotal={lineDiscountsTotal} billDiscountAmount={billDiscountAmount} adjustments={adjustments} grandTotal={grandTotal} totalPaid={totalPaid} onRemoveDiscount={handleRemoveDiscount} isLocked={isBillingLocked} />
                 </div>
                 <BillAdjustments adjustments={adjustments} billDiscount={billDiscount} charges={charges} discounts={billableDiscounts} onAddAdjustment={addAdjustment} onAddCustomAdjustment={handleAddCustomAdjustment} onRemoveAdjustment={(id) => setAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} isLocked={isBillingLocked} />
             </div>
@@ -382,10 +390,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session} 
                     discounts={itemDiscounts}
                     onUpdateQty={handleUpdateQty}
-                    onUpdateUnitPrice={(lineId, newPrice) => handleUpdateUnitPrice(billableLines.find(l => l.id === lineId)!, newPrice)}
-                    onApplyDiscount={(lineId, type, value, qty) => handleApplyDiscount(billableLines.find(l => l.id === lineId)!, type, value, qty)}
-                    onApplyFree={(lineId, qty, isFree) => handleApplyFree(billableLines.find(l => l.id === lineId)!, qty, isFree)}
-                    onVoidItem={(lineId, qty, reason, note) => handleVoidItem(billableLines.find(l => l.id === lineId)!, qty, reason, note)}
+                    onUpdateUnitPrice={handleUpdateUnitPrice}
+                    onApplyDiscount={handleApplyDiscount}
+                    onApplyFree={handleApplyFree}
+                    onVoidItem={handleVoidItem}
                     isLocked={isBillingLocked} 
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
@@ -409,21 +417,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={activeStore.id} sessionId={sessionId!} />
        )}
        
-       {editingLine && appUser && (
-        <EditBillableItemDialog
-            isOpen={!!editingLine}
-            onClose={() => setEditingLine(null)}
-            line={editingLine}
-            tickets={ticketsById}
-            discounts={itemDiscounts}
-            isLocked={isBillingLocked}
-            onUpdateQty={handleUpdateQty}
-            onUpdateUnitPrice={handleUpdateUnitPrice}
-            onApplyDiscount={handleApplyDiscount}
-            onApplyFree={handleApplyFree}
-            onVoidItem={handleVoidItem}
-        />
-      )}
       {Dialog}
     </div>
   )
