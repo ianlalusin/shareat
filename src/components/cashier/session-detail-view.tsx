@@ -147,7 +147,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     billableLines.forEach(line => {
       if (line.isVoided || line.isFree) return;
       
-      const chargeableQty = line.type === 'package' ? (session?.guestCountFinal ?? line.qty) : line.qty;
+      const chargeableQty = line.qty;
 
       if (chargeableQty > 0) {
         const grossLineAmount = chargeableQty * line.unitPrice;
@@ -201,12 +201,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const line = billableLines.find(l => l.id === lineId);
     if (!line) return;
     try {
+        const ticketIdsToMove = line.ticketIds.slice(0, quantity);
+
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
             toVariant: { ...line, isFree: false, discountType, discountValue },
-            ticketIdsToMove: line.ticketIds.slice(0, quantity),
+            ticketIdsToMove: ticketIdsToMove,
             actor: appUser,
             action: 'DISCOUNT_APPLIED'
         });
@@ -421,3 +423,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    
