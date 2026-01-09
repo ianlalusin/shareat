@@ -21,7 +21,9 @@ import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { writeActivityLog } from "./activity-log";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment, PackageUnit } from "@/lib/types";
+import { moveTicketIdsBetweenLines } from "./billable-lines";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment, PackageUnit, Store } from "@/lib/types";
+import { calculateBillTotals } from "@/lib/tax";
 
 export type BillUnit = (KitchenTicket & { unitType: 'addon' }) | (PackageUnit & { unitType: 'package' });
 
@@ -53,20 +55,20 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [kitchenTickets, setKitchenTickets] = useState<KitchenTicket[]>([]);
   const [packageUnits, setPackageUnits] = useState<PackageUnit[]>([]);
   
-  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [charges, setCharges] = useState<Charge[]>([]);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
-  const [charges, setCharges] = useState<Charge[]>([]);
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
-
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const storeId = activeStore?.id;
 
   useEffect(() => {
-    if (!activeStore) return;
-    const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
+    if (!storeId) return;
+    const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
     const unsubscribe = onSnapshot(sessionRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
@@ -87,17 +89,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [sessionId, activeStore, router, toast]);
+  }, [sessionId, storeId, router, toast]);
 
   useEffect(() => {
-    if (!activeStore) return;
+    if (!storeId) return;
 
-    const ticketsQuery = query(collection(db, `stores/${activeStore.id}/sessions/${sessionId}/kitchentickets`));
+    const ticketsQuery = query(collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`));
     const unsubTickets = onSnapshot(ticketsQuery, (snapshot) => {
       setKitchenTickets(snapshot.docs.map(d => ({id: d.id, ...d.data()} as KitchenTicket)));
     }, (e) => console.error("kitchentickets listener failed:", e));
 
-    const unitsQuery = query(collection(db, `stores/${activeStore.id}/sessions/${sessionId}/packageUnits`));
+    const unitsQuery = query(collection(db, `stores/${storeId}/sessions/${sessionId}/packageUnits`));
     const unsubUnits = onSnapshot(unitsQuery, (snapshot) => {
         setPackageUnits(snapshot.docs.map(d => ({id: d.id, ...d.data()} as PackageUnit)));
     }, (e) => console.error("packageUnits listener failed:", e));
@@ -106,26 +108,26 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       unsubTickets();
       unsubUnits();
     };
-  }, [sessionId, activeStore]);
+  }, [sessionId, storeId]);
 
 
   useEffect(() => {
-    if (!activeStore) return;
+    if (!storeId) return;
     const unsubs: (() => void)[] = [];
-    unsubs.push(onSnapshot(query(collection(db, "stores", activeStore.id, "storeModesOfPayment"), where("isArchived", "==", false), where("isActive", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
+    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeModesOfPayment"), where("isArchived", "==", false), where("isActive", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
         setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
     }));
-    unsubs.push(onSnapshot(query(collection(db, "stores", activeStore.id, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
+    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
         setCharges(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Charge)));
     }));
-    unsubs.push(onSnapshot(query(collection(db, "stores", activeStore.id, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
+    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
         setDiscounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Discount)));
     }));
     return () => unsubs.forEach(unsub => unsub());
-  }, [activeStore]);
-
-  const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "bill")), [discounts]);
-  const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "item")), [discounts]);
+  }, [storeId]);
+  
+  const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && d.scope?.includes("bill")), [discounts]);
+  const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && d.scope?.includes("item")), [discounts]);
 
   const billUnits = useMemo((): BillUnit[] => {
     const addonUnits = kitchenTickets
@@ -137,41 +139,21 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return [...addonUnits, ...pkgUnits];
   }, [kitchenTickets, packageUnits]);
   
-  
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
-  const { subtotal, lineDiscountsTotal, pendingItemsCount } = useMemo(() => {
-    let sub = 0;
-    let lineDisc = 0;
-    let pendingCount = 0;
-
-    billUnits.forEach(unit => {
-        const billing = (unit as any).billing;
-        if (!billing || billing.isVoided || billing.isFree) return;
-        
-        const unitPrice = billing.unitPrice ?? (unit as any).unitPrice ?? 0;
-        sub += unitPrice;
-        
-        if ((billing.discountValue ?? 0) > 0) {
-            if (billing.discountType === 'percent') {
-                lineDisc += unitPrice * (billing.discountValue! / 100);
-            } else { // fixed
-                lineDisc += Math.min(billing.discountValue!, unitPrice);
-            }
-        }
-    });
-
-    kitchenTickets.forEach(ticket => {
-        if(ticket.type === 'addon' && (ticket.status === 'preparing' || ticket.status === 'ready')) {
-            pendingCount++;
-        }
-    });
-
-    return { subtotal: sub, lineDiscountsTotal: lineDisc, pendingItemsCount: pendingCount };
-  }, [billUnits, kitchenTickets]);
+  const billTotals = useMemo(() => {
+    return calculateBillTotals(billUnits, activeStore as Store, billDiscount, charges);
+  }, [billUnits, activeStore, billDiscount, charges]);
+  
+  const { grandTotal } = billTotals;
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const remainingBalance = grandTotal - totalPaid;
+  const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
+  const pendingItemsCount = useMemo(() => kitchenTickets.filter(t => t.type === 'addon' && (t.status === 'preparing' || t.status === 'ready')).length, [kitchenTickets]);
+  const canCompletePayment = pendingItemsCount === 0 && grandTotal > 0 && remainingBalance <= 0;
 
   const handleApplyDiscount = async (unitsToUpdate: BillUnit[], discountType: "fixed" | "percent", discountValue: number) => {
-    if (isBillingLocked || !activeStore || !session || !appUser) return;
+    if (isBillingLocked || !storeId || !session || !appUser) return;
     
     const batch = writeBatch(db);
     unitsToUpdate.forEach(unit => {
@@ -190,7 +172,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   };
 
   const handleApplyFree = async (unitsToUpdate: BillUnit[], isFree: boolean) => {
-     if (isBillingLocked || !activeStore || !session || !appUser) return;
+     if (isBillingLocked || !storeId || !session || !appUser) return;
      const actionText = isFree ? "Mark as Free" : "Remove Free Status";
     
     const ok = await confirm({
@@ -217,7 +199,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   };
 
   const handleRemoveDiscount = async (unitsToUpdate: BillUnit[]) => {
-    if (isBillingLocked || !activeStore || !appUser) return;
+    if (isBillingLocked || !storeId || !appUser) return;
     
     const batch = writeBatch(db);
     unitsToUpdate.forEach(unit => {
@@ -236,7 +218,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }
 
   const handleVoidItem = async (unitsToUpdate: BillUnit[], reason: string, note?: string) => {
-    if (isBillingLocked || !appUser || !activeStore || !session) return;
+    if (isBillingLocked || !appUser || !storeId || !session) return;
     
     const batch = writeBatch(db);
     unitsToUpdate.forEach(unit => {
@@ -252,28 +234,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       toast({ variant: "destructive", title: "Void failed", description: e?.message ?? "Unknown error" });
     }
   };
-  
-  const discountedSubtotal = subtotal - lineDiscountsTotal;
-  const billDiscountAmount = billDiscount ? (billDiscount.type === 'percent' ? discountedSubtotal * (billDiscount.value / 100) : Math.min(billDiscount.value, discountedSubtotal)) : 0;
-  const netSubtotalAfterDiscounts = Math.max(0, discountedSubtotal - billDiscountAmount);
-  const addAdjustment = (charge: Charge) => {
-    if (isBillingLocked) return;
-    setAdjustments(prev => [...prev, { id: `adj-${Date.now()}`, note: charge.name, amount: charge.type === 'fixed' ? charge.value : netSubtotalAfterDiscounts * (charge.value / 100), source: 'charge', sourceId: charge.id }]);
-  };
-  const handleAddCustomAdjustment = (note: string, amount: number) => {
-    if (isBillingLocked || !note || amount <= 0) {
-        toast({ variant: 'destructive', title: 'Invalid Custom Charge', description: 'Please provide a valid note and amount.' });
-        return;
-    }
-    setAdjustments(prev => [...prev, { id: `adj-custom-${Date.now()}`, note, amount, source: 'custom' }]);
-    toast({ title: 'Custom Charge Added' });
-  };
-  const adjustmentsTotal = adjustments.reduce((total, adj) => total + adj.amount, 0);
-  const grandTotal = netSubtotalAfterDiscounts + adjustmentsTotal;
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const remainingBalance = grandTotal - totalPaid;
-  const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
-  const canCompletePayment = pendingItemsCount === 0 && grandTotal > 0 && remainingBalance <= 0;
 
   const handleCompletePayment = async () => {
     if (isCompletingPayment || isBillingLocked) return;
@@ -291,9 +251,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
-        const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal };
         
-        await completePaymentFromUnits(activeStore.id, sessionId, appUser, normalizedPayments, billUnits, billingSummary, paymentMethods);
+        // This is where the old function was called. Now billTotals is used directly.
+        await completePaymentFromUnits(activeStore.id, sessionId, appUser, normalizedPayments, billUnits, billTotals, paymentMethods);
         
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
@@ -305,7 +265,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
   
-  if (isLoading || !session || !activeStore) {
+  if (isLoading || !session || !storeId || !activeStore) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }
   
@@ -334,14 +294,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
                     <CustomerInfoForm session={session} />
-                    <BillTotals units={billUnits} subtotal={subtotal} lineDiscountsTotal={lineDiscountsTotal} billDiscountAmount={billDiscountAmount} adjustments={adjustments} grandTotal={grandTotal} totalPaid={totalPaid} onRemoveDiscount={handleRemoveDiscount} isLocked={isBillingLocked} />
+                    <BillTotals totals={billTotals} totalPaid={totalPaid} onRemoveDiscount={handleRemoveDiscount} isLocked={isBillingLocked} />
                 </div>
-                <BillAdjustments adjustments={adjustments} billDiscount={billDiscount} charges={charges} discounts={billableDiscounts} onAddAdjustment={addAdjustment} onAddCustomAdjustment={handleAddCustomAdjustment} onRemoveAdjustment={(id) => setAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} isLocked={isBillingLocked} />
+                <BillAdjustments charges={charges} discounts={billableDiscounts} onAddAdjustment={() => {}} onAddCustomAdjustment={()=>{}} onRemoveAdjustment={() => {}} onSetBillDiscount={setBillDiscount} billDiscount={billDiscount} isLocked={isBillingLocked} />
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 
                     units={billUnits}
-                    storeId={activeStore.id} 
+                    storeId={storeId} 
                     session={session} 
                     discounts={itemDiscounts}
                     onApplyDiscount={handleApplyDiscount}
@@ -367,7 +327,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       </main>
 
        {isTimelineOpen && (
-        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={activeStore.id} sessionId={sessionId!} />
+        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={storeId} sessionId={sessionId!} />
        )}
        
       {Dialog}

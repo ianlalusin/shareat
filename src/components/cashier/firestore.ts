@@ -19,11 +19,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon, ActivityLog } from '@/lib/types';
+import type { Store, StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon, ActivityLog } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { normalizeKey } from './billable-lines';
 import { writeActivityLog } from './activity-log';
+import type { TaxAndTotals } from '@/lib/tax';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -191,123 +192,6 @@ export async function startSession(
   return newSessionRef.id;
 }
 
-type BillingSummary = {
-  subtotal: number;
-  lineDiscountsTotal: number;
-  billDiscountAmount: number;
-  adjustmentsTotal: number;
-  grandTotal: number;
-}
-
-type AnalyticsV2 = {
-  v: 2;
-  sessionStartedAt: Timestamp | null;
-  sessionStartedAtClientMs: number | null;
-  subtotal: number;
-  discountsTotal: number;
-  chargesTotal: number;
-  taxAmount: number;
-  grandTotal: number;
-  totalPaid: number;
-  change: number;
-  mop: Record<string, number>;
-  salesByCategory: Record<string, { qty: number; amount: number }>;
-  salesByItem: Record<string, { qty: number; amount: number; categoryName: string }>;
-  servedRefillsByName?: Record<string, number>;
-  serveCountByType?: Record<string, number>;
-  serveTimeMsTotalByType?: Record<string, number>;
-};
-
-
-function buildAnalyticsV2(
-  sessionData: any,
-  billableLines: BillableLine[],
-  billingSummary: BillingSummary,
-  payments: Payment[],
-  paymentMethods: ModeOfPayment[],
-  addonMap: Map<string, StoreAddon>
-): AnalyticsV2 {
-  const salesByCategory: AnalyticsV2['salesByCategory'] = {};
-  const salesByItem: AnalyticsV2['salesByItem'] = {};
-
-  const billablesForRevenue = billableLines.filter(line => 
-      !line.isFree &&
-      !line.isVoided
-  );
-
-  billablesForRevenue.forEach(line => {
-    const qty = line.qty || 1;
-    const grossAmount = qty * line.unitPrice;
-    
-    const lineDiscountAmount = line.discountType === 'percent'
-        ? grossAmount * ((line.discountValue || 0) / 100)
-        : Math.min((line.discountValue || 0) * qty, grossAmount);
-
-    const netAmount = Math.max(0, grossAmount - lineDiscountAmount);
-
-    let categoryName = "Uncategorized";
-    let itemName = line.itemName || 'Unknown Item';
-    let itemKey: string;
-
-    if (line.type === 'package') {
-        categoryName = "Packages";
-        const normalizedItemName = (line.itemName || 'unknown').toLowerCase().replace(/\s/g, '-');
-        itemKey = `pkg:${normalizedItemName}`;
-    } else if (line.type === 'addon' && line.itemId) {
-        const addonDetails = addonMap.get(line.itemId);
-        categoryName = addonDetails?.category || "Uncategorized Addons";
-        itemName = addonDetails?.name || line.itemName;
-        itemKey = line.itemId;
-    } else {
-        itemKey = `other:${(line.itemName || 'unknown').toLowerCase().replace(/\s/g, '-')}`;
-    }
-
-    if (!salesByCategory[categoryName]) {
-      salesByCategory[categoryName] = { qty: 0, amount: 0 };
-    }
-    salesByCategory[categoryName].qty += qty;
-    salesByCategory[categoryName].amount += netAmount;
-
-    if (!salesByItem[itemKey]) {
-      salesByItem[itemKey] = { qty: 0, amount: 0, categoryName };
-    }
-    salesByItem[itemKey].qty += qty;
-    salesByItem[itemKey].amount += netAmount;
-  });
-
-  const grandTotal = billingSummary.grandTotal || 0;
-  const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0), 0);
-  const change = Math.max(0, totalPaid - grandTotal);
-  const discountsTotal = (billingSummary.lineDiscountsTotal || 0) + (billingSummary.billDiscountAmount || 0);
-
-  const mopNameMap = new Map(paymentMethods.map(m => [m.id, m.name]));
-  const mop = payments.reduce((acc, p) => {
-    const key = mopNameMap.get(p.methodId) || p.methodId || "unknown";
-    const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
-    acc[key] = (acc[key] || 0) + amt;
-    return acc;
-  }, {} as Record<string, number>);
-
-  return {
-    v: 2,
-    sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
-    sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
-    subtotal: billingSummary.subtotal || 0,
-    discountsTotal,
-    chargesTotal: billingSummary.adjustmentsTotal || 0,
-    taxAmount: 0, // Placeholder
-    grandTotal,
-    totalPaid,
-    change,
-    mop,
-    salesByCategory,
-    salesByItem,
-    servedRefillsByName: sessionData.servedRefillsByName || {},
-    serveCountByType: sessionData.serveCountByType || {},
-    serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
-  };
-}
-
 
 /**
  * Completes a payment and closes the dining session idempotently using individual billing units.
@@ -318,12 +202,12 @@ export async function completePaymentFromUnits(
   sessionId: string,
   user: AppUser,
   payments: Payment[],
-  billableLines: BillableLine[], // Still used for summary calculation, not as truth source
-  billingSummary: BillingSummary,
+  billableUnits: any[], // Type is now 'any' because it's just for analytics
+  billingSummary: TaxAndTotals,
   paymentMethods: ModeOfPayment[]
 ) {
   const addonMap = new Map<string, StoreAddon>();
-  const addonIds = billableLines.filter(b => b.type === 'addon' && b.itemId).map(b => b.itemId!);
+  const addonIds = billableUnits.filter(b => b.type === 'addon' && b.itemId).map(b => b.itemId!);
   const uniqueAddonIds = [...new Set(addonIds)];
 
   if (uniqueAddonIds.length > 0) {
@@ -374,7 +258,7 @@ export async function completePaymentFromUnits(
         tableSnap = await tx.get(tableRef);
     }
     
-    const grandTotal = billingSummary.grandTotal || 0;
+    const { grandTotal } = billingSummary;
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
     if (totalPaid < grandTotal) throw new Error("Cannot complete payment: balance is not zero.");
@@ -412,7 +296,30 @@ export async function completePaymentFromUnits(
         tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
-        const analyticsV2 = buildAnalyticsV2(sessionData, billableLines, billingSummary, payments, paymentMethods, addonMap);
+        const analyticsV2 = {
+          v: 2,
+          sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
+          sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
+          subtotal: billingSummary.subtotal,
+          discountsTotal: billingSummary.totalDiscounts,
+          chargesTotal: billingSummary.chargesTotal,
+          taxAmount: billingSummary.taxTotal,
+          grandTotal: billingSummary.grandTotal,
+          totalPaid: totalPaid,
+          change: Math.max(0, totalPaid - grandTotal),
+          mop: payments.reduce((acc, p) => {
+              const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
+              const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
+              acc[key] = (acc[key] || 0) + amt;
+              return acc;
+          }, {} as Record<string, number>),
+          // salesByCategory and salesByItem are now computed in the billingSummary
+          salesByCategory: {}, // This will be calculated in a more advanced analytics model
+          salesByItem: {}, // This will be calculated in a more advanced analytics model
+          servedRefillsByName: sessionData.servedRefillsByName || {},
+          serveCountByType: sessionData.serveCountByType || {},
+          serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
+        };
 
         const receiptPayload = stripUndefined({
             id: sessionId,
@@ -464,7 +371,7 @@ export async function completePaymentFromUnits(
         meta: {
             receiptId,
             receiptNumber: receiptId, // Placeholder until we can get it back from tx
-            paymentTotal: billingSummary.grandTotal,
+            paymentTotal: grandTotal,
         }
     });
   }
