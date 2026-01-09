@@ -5,6 +5,7 @@ import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Providers } from './providers';
 
+// Define fonts
 const fontSans = Poppins({
   subsets: ["latin"],
   variable: "--font-sans",
