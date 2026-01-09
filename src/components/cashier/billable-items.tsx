@@ -104,7 +104,9 @@ export function BillableItems({
       }
       grouped.get(key)!.push(line);
     });
-    // Now consolidate lines that belong to the same logical item (e.g. "Fries") but are different variants
+    
+    // Consolidate lines that are part of the same logical item (e.g. "Fries")
+    // but have different variants (regular, discounted).
     const finalConsolidation = new Map<string, BillableLine[]>();
     for(const lineGroup of grouped.values()) {
         const firstLine = lineGroup[0];
