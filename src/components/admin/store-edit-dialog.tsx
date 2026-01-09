@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { format } from "date-fns";
@@ -27,7 +27,8 @@ const formSchema = z.object({
   code: z.string().min(2, "Code must be at least 2 characters.").max(10, "Code cannot be more than 10 characters.").toUpperCase(),
   address: z.string().min(5, "Address is required."),
   tin: z.string().optional(),
-  vatType: z.enum(["VAT", "NON_VAT"]).optional(),
+  taxType: z.enum(["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"]).optional(),
+  taxRatePct: z.coerce.number().min(0).max(30).optional(),
   logoUrl: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
@@ -71,27 +72,47 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
     defaultValues: {
       name: "", code: "", address: "", tin: "", isActive: true,
       email: "", contactNumber: "", openingDate: null,
-      logoUrl: null, vatType: "NON_VAT"
+      logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
     },
   });
 
   const logoUrl = form.watch("logoUrl");
+  const taxType = useWatch({ control: form.control, name: 'taxType' });
+
+  useEffect(() => {
+      if (taxType === "NON_VAT") {
+          form.setValue("taxRatePct", 0);
+      } else if (form.getValues("taxRatePct") === 0) {
+          form.setValue("taxRatePct", 12);
+      }
+  }, [taxType, form]);
 
   useEffect(() => {
     if (store) {
+      let currentTaxType = store.taxType;
+      if (!currentTaxType && store.vatType) {
+        currentTaxType = store.vatType === "VAT" ? "VAT_INCLUSIVE" : "NON_VAT";
+      }
+
+      let currentTaxRate = store.taxRatePct;
+      if (currentTaxRate === undefined || currentTaxRate === null) {
+        currentTaxRate = (currentTaxType === 'VAT_INCLUSIVE' || currentTaxType === 'VAT_EXCLUSIVE') ? 12 : 0;
+      }
+
       form.reset({
         name: store.name, code: store.code, address: store.address,
         tin: store.tin || "", isActive: store.isActive,
         email: store.email || "", contactNumber: store.contactNumber || "",
         openingDate: toJsDate(store.openingDate),
         logoUrl: store.logoUrl || null,
-        vatType: store.vatType || "NON_VAT",
+        taxType: currentTaxType || "NON_VAT",
+        taxRatePct: currentTaxRate
       });
     } else {
       form.reset({
         name: "", code: "", address: "", tin: "", isActive: true,
         email: "", contactNumber: "", openingDate: null,
-        logoUrl: null, vatType: "NON_VAT",
+        logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
       });
     }
   }, [store, form, isOpen]);
@@ -164,7 +185,10 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="tin" render={({ field }) => ( <FormItem><FormLabel>TIN</FormLabel><FormControl><Input placeholder="e.g., 123-456-789-000" {...field} /></FormControl><FormMessage /></FormItem> )} />
-                    <FormField control={form.control} name="vatType" render={({ field }) => ( <FormItem><FormLabel>VAT Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="VAT">VAT</SelectItem><SelectItem value="NON_VAT">Non-VAT</SelectItem></SelectContent></Select><FormMessage /></FormItem> )} />
+                    <FormField control={form.control} name="taxType" render={({ field }) => ( <FormItem><FormLabel>Tax Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="VAT_INCLUSIVE">VAT Inclusive</SelectItem><SelectItem value="VAT_EXCLUSIVE">VAT Exclusive</SelectItem><SelectItem value="NON_VAT">Non-VAT</SelectItem></SelectContent></Select><FormMessage /></FormItem> )} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <FormField control={form.control} name="taxRatePct" render={({ field }) => ( <FormItem><FormLabel>Tax Rate (%)</FormLabel><FormControl><Input type="number" {...field} disabled={taxType === 'NON_VAT'} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                     <FormField

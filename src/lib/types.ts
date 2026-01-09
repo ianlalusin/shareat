@@ -272,7 +272,9 @@ export type Store = {
   address: string;
   tin?: string;
   logoUrl?: string | null;
-  vatType?: "VAT" | "NON_VAT";
+  vatType?: "VAT" | "NON_VAT"; // Deprecated
+  taxType?: "VAT_INCLUSIVE" | "VAT_EXCLUSIVE" | "NON_VAT";
+  taxRatePct?: number;
   isActive: boolean;
   openingDate?: Timestamp | null;
   contactNumber?: string;

@@ -1,4 +1,5 @@
 
+
 {
   "entities": {
     "Store": {
@@ -27,10 +28,14 @@
             "type": "string",
             "description": "URL for the store's logo."
         },
-        "vatType": {
+        "taxType": {
             "type": "string",
-            "enum": ["VAT", "NON_VAT"],
-            "description": "The VAT type for the store."
+            "enum": ["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"],
+            "description": "The tax type for the store."
+        },
+        "taxRatePct": {
+            "type": "number",
+            "description": "The tax rate percentage for the store."
         },
         "isActive": {
           "type": "boolean",

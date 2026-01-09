@@ -39,6 +39,15 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
 
   const openingDate = toJsDate(store.openingDate);
 
+  const getTaxTypeLabel = (taxType?: string) => {
+    switch (taxType) {
+        case "VAT_INCLUSIVE": return "VAT Inclusive";
+        case "VAT_EXCLUSIVE": return "VAT Exclusive";
+        case "NON_VAT": return "Non-VAT";
+        default: return "N/A";
+    }
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-md">
@@ -76,8 +85,12 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                         <span className="font-medium text-sm text-right">{store.tin || 'N/A'}</span>
                     </div>
                     <div className="flex items-start justify-between">
-                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> VAT Type</span>
-                        <span className="font-medium text-sm text-right">{store.vatType || 'N/A'}</span>
+                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> Tax Type</span>
+                        <span className="font-medium text-sm text-right">{getTaxTypeLabel(store.taxType)}</span>
+                    </div>
+                    <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Hash /> Tax Rate</span>
+                        <span className="font-medium text-sm text-right">{store.taxRatePct ?? 0}%</span>
                     </div>
                     <div className="flex items-start justify-between">
                         <span className="text-sm text-muted-foreground flex items-center gap-2"><MapPin /> Address</span>
