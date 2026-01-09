@@ -34,10 +34,12 @@ export function FlavorEditDialog({ isOpen, onClose, onSave, item, isSubmitting }
   });
 
   useEffect(() => {
-    if (item) {
-      form.reset(item);
-    } else {
-      form.reset({ name: "", isActive: true });
+    if (isOpen) {
+      if (item) {
+        form.reset(item);
+      } else {
+        form.reset({ name: "", isActive: true });
+      }
     }
   }, [item, form, isOpen]);
 

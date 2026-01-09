@@ -50,15 +50,17 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
   });
 
   useEffect(() => {
-    form.reset({
-        pricePerHead: item.pricePerHead,
-        sortOrder: item.sortOrder,
-        kitchenLocationId: item.kitchenLocationId,
-        menuScheduleId: item.menuScheduleId,
-        refillsAllowed: item.refillsAllowed || [],
-        flavorsAllowed: item.flavorsAllowed || [],
-    });
-  }, [item, form]);
+    if (isOpen) {
+        form.reset({
+            pricePerHead: item.pricePerHead,
+            sortOrder: item.sortOrder,
+            kitchenLocationId: item.kitchenLocationId,
+            menuScheduleId: item.menuScheduleId,
+            refillsAllowed: item.refillsAllowed || [],
+            flavorsAllowed: item.flavorsAllowed || [],
+        });
+    }
+  }, [item, form, isOpen]);
 
   const handleSubmit = (data: FormValues) => {
     const kitchenLocation = kitchenLocations.find(kl => kl.id === data.kitchenLocationId);

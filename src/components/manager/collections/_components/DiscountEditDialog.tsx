@@ -56,31 +56,33 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
   });
 
   useEffect(() => {
-    if (item) {
-      const currentScope = item.scope;
-      const normalizedScope = (Array.isArray(currentScope) 
-        ? currentScope 
-        : (typeof currentScope === 'string' ? [currentScope] : [])) as ("item" | "bill")[];
-      
-      form.reset({
-        name: item.name,
-        type: item.type,
-        value: item.value,
-        scope: normalizedScope,
-        stackable: item.stackable,
-        sortOrder: item.sortOrder,
-        isEnabled: item.isEnabled,
-      });
-    } else {
-      form.reset({
-        name: "",
-        type: "fixed",
-        value: 0,
-        scope: ["bill"],
-        stackable: false,
-        sortOrder: 1000,
-        isEnabled: true,
-      });
+    if (isOpen) {
+      if (item) {
+        const currentScope = item.scope;
+        const normalizedScope = (Array.isArray(currentScope) 
+          ? currentScope 
+          : (typeof currentScope === 'string' ? [currentScope] : [])) as ("item" | "bill")[];
+        
+        form.reset({
+          name: item.name,
+          type: item.type,
+          value: item.value,
+          scope: normalizedScope,
+          stackable: item.stackable,
+          sortOrder: item.sortOrder,
+          isEnabled: item.isEnabled,
+        });
+      } else {
+        form.reset({
+          name: "",
+          type: "fixed",
+          value: 0,
+          scope: ["bill"],
+          stackable: false,
+          sortOrder: 1000,
+          isEnabled: true,
+        });
+      }
     }
   }, [item, form, isOpen]);
 

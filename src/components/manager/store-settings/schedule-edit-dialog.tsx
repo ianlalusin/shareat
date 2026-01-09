@@ -42,10 +42,12 @@ export function ScheduleEditDialog({ isOpen, onClose, onSave, item, isSubmitting
   });
 
   useEffect(() => {
-    if (item) {
-      form.reset(item);
-    } else {
-      form.reset({ name: "", days: [], startTime: "09:00", endTime: "22:00", isActive: true });
+    if (isOpen) {
+      if (item) {
+        form.reset(item);
+      } else {
+        form.reset({ name: "", days: [], startTime: "09:00", endTime: "22:00", isActive: true });
+      }
     }
   }, [item, form, isOpen]);
 
@@ -78,7 +80,7 @@ export function ScheduleEditDialog({ isOpen, onClose, onSave, item, isSubmitting
                             checked={field.value?.includes(day)}
                             onCheckedChange={(checked) => {
                               return checked
-                                ? field.onChange([...field.value, day])
+                                ? field.onChange([...(field.value || []), day])
                                 : field.onChange(field.value?.filter((value) => value !== day));
                             }}
                           />

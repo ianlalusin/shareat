@@ -33,10 +33,12 @@ export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: Kit
   });
 
   useEffect(() => {
-    if (item) {
-      form.reset(item);
-    } else {
-      form.reset({ name: "", sortOrder: 0, isActive: true });
+    if (isOpen) {
+      if (item) {
+        form.reset(item);
+      } else {
+        form.reset({ name: "", sortOrder: 0, isActive: true });
+      }
     }
   }, [item, form, isOpen]);
 

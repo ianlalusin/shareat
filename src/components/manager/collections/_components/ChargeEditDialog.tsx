@@ -51,17 +51,19 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
   });
 
   useEffect(() => {
-    if (item) {
-      form.reset(item);
-    } else {
-      form.reset({
-        name: "",
-        type: "fixed",
-        value: 0,
-        appliesTo: "subtotal",
-        sortOrder: 1000,
-        isEnabled: true,
-      });
+    if (isOpen) {
+      if (item) {
+        form.reset(item);
+      } else {
+        form.reset({
+          name: "",
+          type: "fixed",
+          value: 0,
+          appliesTo: "subtotal",
+          sortOrder: 1000,
+          isEnabled: true,
+        });
+      }
     }
   }, [item, form, isOpen]);
 

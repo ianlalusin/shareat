@@ -42,20 +42,22 @@ export function ModeOfPaymentEditDialog({ isOpen, onClose, onSave, item }: ModeO
   });
 
   useEffect(() => {
-    if (item) {
-      form.reset({
-        name: item.name,
-        sortOrder: item.sortOrder,
-        isActive: item.isActive,
-        hasRef: item.hasRef || false,
-      });
-    } else {
-      form.reset({
-        name: "",
-        sortOrder: 1000,
-        isActive: true,
-        hasRef: false,
-      });
+    if (isOpen) {
+      if (item) {
+        form.reset({
+          name: item.name,
+          sortOrder: item.sortOrder,
+          isActive: item.isActive,
+          hasRef: item.hasRef || false,
+        });
+      } else {
+        form.reset({
+          name: "",
+          sortOrder: 1000,
+          isActive: true,
+          hasRef: false,
+        });
+      }
     }
   }, [item, form, isOpen]);
 

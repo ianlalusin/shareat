@@ -41,10 +41,12 @@ export function RefillEditDialog({ isOpen, onClose, onSave, item, isSubmitting, 
   const requiresFlavor = useWatch({ control: form.control, name: "requiresFlavor" });
 
   useEffect(() => {
-    if (item) {
-      form.reset(item);
-    } else {
-      form.reset({ name: "", requiresFlavor: false, allowedFlavorIds: [], isActive: true });
+    if (isOpen) {
+      if (item) {
+        form.reset(item);
+      } else {
+        form.reset({ name: "", requiresFlavor: false, allowedFlavorIds: [], isActive: true });
+      }
     }
   }, [item, form, isOpen]);
 
