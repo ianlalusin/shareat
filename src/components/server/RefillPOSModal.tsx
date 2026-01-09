@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-is-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -399,26 +398,16 @@ function POSContent({
 }
 
 export function RefillPOSModal(props: RefillPOSModalProps) {
-  const isMobile = useIsMobile();
   
   const handleOpenChange = (open: boolean) => {
     if (!open) props.onOpenChange(false);
   };
 
-  if (isMobile) {
-    return (
-      <Drawer open={props.open} onOpenChange={handleOpenChange}>
-        <DrawerContent>
-          <DrawerHeader>
-            <DrawerTitle>Order Refill</DrawerTitle>
-            <DrawerDescription>Select a refill item to order.</DrawerDescription>
-          </DrawerHeader>
-          <POSContent {...props} onClose={() => props.onOpenChange(false)} />
-        </DrawerContent>
-      </Drawer>
-    );
-  }
-
+  // The Drawer component was removed, but if you want a responsive modal,
+  // Dialog is generally sufficient as it centers and can be styled.
+  // For a true drawer on mobile, the useIsMobile hook would need to be reinstated
+  // and the Drawer component re-added.
+  
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl p-0 gap-0">
