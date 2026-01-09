@@ -4,13 +4,14 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
     { title: "Store Management", description: "Create, edit, or deactivate store locations.", href: "/admin/stores", icon: Store },
+    { title: "Data Reset Tool", description: "Clear session and receipt data for a store.", href: "/admin/tools/reset-data", icon: Wrench },
 ]
 
 const menuTools = [
@@ -58,10 +59,10 @@ export default function AdminPage() {
                     <>
                         <Card>
                             <CardHeader>
-                                <CardTitle>Global Settings</CardTitle>
-                                <CardDescription>Access tools for global system configuration.</CardDescription>
+                                <CardTitle>Global Settings & Tools</CardTitle>
+                                <CardDescription>Access tools for global system configuration and maintenance.</CardDescription>
                             </CardHeader>
-                            <CardContent className="grid gap-4 md:grid-cols-2">
+                            <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                                 {adminTools.map(tool => (
                                     <ToolCard key={tool.title} {...tool} />
                                 ))}

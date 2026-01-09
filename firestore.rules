@@ -146,9 +146,9 @@ service cloud.firestore {
       match /counters/{docId} {
         allow read: if isStoreMember(storeId);
         // Allow cashier/manager/admin to increment ONLY the receipts counter doc
-        allow create, update: if isStoreMember(storeId) && isCashier() && docId == "receipts";
-        // Never delete counters
-        allow delete: if false;
+        allow create, update: if isStoreMember(storeId) && isCashier();
+        // Allow admin to delete (for reset tool)
+        allow delete: if isAdmin();
       }
       
       match /receipts/{receiptId} {
@@ -167,8 +167,8 @@ service cloud.firestore {
             'updatedAt'
           ]);
       
-        // never delete receipts
-        allow delete: if false;
+        // Allow admin to delete (for reset tool)
+        allow delete: if isAdmin();
       }
 
 
@@ -179,13 +179,16 @@ service cloud.firestore {
         allow read: if isStoreMember(storeId);
         allow create: if isStoreMember(storeId) && (isServer() || isCashier());
         allow update: if isStoreMember(storeId) && (isServer() || isCashier()); // for updates like guest verification, change requests
-        allow delete: if isStoreMember(storeId) && isManager();
+        // Allow admin to delete (for reset tool)
+        allow delete: if isAdmin();
         
         // Append-only Activity Logs
         match /activityLogs/{logId} {
             allow read, list: if isCashier() && isStoreMember(storeId);
             allow create: if isCashier() && isStoreMember(storeId);
-            allow update, delete: if false;
+            allow update: if false;
+            // Allow admin to delete (for reset tool)
+            allow delete: if isAdmin();
         }
 
         // Kitchen Tickets
@@ -201,26 +204,44 @@ service cloud.firestore {
             ])) ||
             // Server/Cashier can cancel/void
             ((isServer() || isCashier()) && changedKeysOnly([
-                'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+                'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt', 'billing'
             ])) ||
             // Manager/Admin can do more
             isManager()
             );
             
-            allow delete: if false; // Use status 'cancelled' or 'void' instead of deleting.
+            // Allow admin to delete (for reset tool)
+            allow delete: if isAdmin();
         }
         
         // Billable Lines (New canonical source for billing)
         match /billableLines/{lineId} {
             allow read: if isStoreMember(storeId);
-            allow create, update, delete: if isStoreMember(storeId) && isCashier();
+            allow create, update: if isStoreMember(storeId) && isCashier();
+            // Allow admin to delete (for reset tool)
+            allow delete: if isAdmin();
+        }
+        
+         match /sessionBillLines/{lineId} {
+            allow read: if isStoreMember(storeId);
+            allow create, update: if isStoreMember(storeId) && isCashier();
+            // Allow admin to delete (for reset tool)
+            allow delete: if isAdmin();
         }
         
         // Payments
         match /payments/{paymentId} {
-        allow read: if isStoreMember(storeId) && (isCashier() || isManager());
+            allow read: if isStoreMember(storeId) && (isCashier() || isManager());
             allow create: if isStoreMember(storeId) && isCashier();
-            allow update, delete: if isStoreMember(storeId) && isManager(); // Tightly controlled
+            allow update: if isStoreMember(storeId) && isManager(); // Tightly controlled
+            // Allow admin to delete (for reset tool)
+            allow delete: if isAdmin();
+        }
+
+        match /packageUnits/{guestId} {
+          allow read: if isStoreMember(storeId);
+          allow create, update: if isCashier() && isStoreMember(storeId);
+          allow delete: if isAdmin();
         }
       }
     }

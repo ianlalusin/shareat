@@ -7,14 +7,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
-import type { BillUnit, Adjustment } from "@/lib/types";
-import { makeVariantKey } from "./billable-lines";
+import type { SessionBillLine, Adjustment } from "@/lib/types";
 import type { TaxAndTotals } from "@/lib/tax";
 
 interface BillTotalsProps {
   totals: TaxAndTotals;
   totalPaid: number;
-  onRemoveDiscount: (units: BillUnit[]) => void;
+  onRemoveDiscount: (units: SessionBillLine[]) => void;
   isLocked?: boolean;
 }
 
