@@ -22,6 +22,8 @@ import { SessionTimelineDrawer } from "@/components/session/session-timeline-dra
 import { useConfirmDialog } from "../global/confirm-dialog";
 import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
+import { EditBillableItemDialog } from "./edit-billable-item-dialog";
+import { writeActivityLog } from "./activity-log";
 
 // Validation logic remains the same
 function validatePayments(payments: Payment[], grandTotal: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -59,7 +61,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+
   const storeId = activeStore?.id;
+
+  const editingLine = useMemo(() => {
+    if (!editingLineId) return null;
+    return billLines.find(line => line.id === editingLineId) || null;
+  }, [billLines, editingLineId]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -131,7 +140,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId) return;
     try {
-        await updateSessionBillLine(storeId, sessionId, lineId, before, after, appUser);
+        await updateSessionBillLine(storeId, sessionId, lineId, after, appUser);
+        await writeActivityLog({
+            storeId,
+            sessionId,
+            user: appUser,
+            action: 'edit_line',
+            lineId: lineId,
+            meta: {
+                itemName: billLines.find(l => l.id === lineId)?.itemName,
+            },
+            before: before,
+            after: after
+        });
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -208,7 +229,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     session={session} 
                     discounts={itemDiscounts}
                     isLocked={isBillingLocked}
-                    onUpdateLine={handleUpdateLine}
+                    onUpdateLine={(line) => setEditingLineId(line.id)}
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
                  <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
@@ -224,6 +245,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={storeId} sessionId={sessionId!} />
        )}
        
+       {editingLine && (
+        <EditBillableItemDialog
+            isOpen={!!editingLine}
+            onClose={() => setEditingLineId(null)}
+            line={editingLine}
+            discounts={itemDiscounts}
+            isLocked={isBillingLocked}
+            onSave={handleUpdateLine}
+        />
+      )}
       {Dialog}
     </div>
   )

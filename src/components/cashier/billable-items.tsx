@@ -10,7 +10,6 @@ import { Badge } from "../ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
-import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
 import type { Discount, PendingSession, SessionBillLine } from "@/lib/types";
 
@@ -20,7 +19,7 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   isLocked?: boolean;
-  onUpdateLine: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
+  onUpdateLine: (line: SessionBillLine) => void;
 }
 
 function BillableLineRow({ 
@@ -70,8 +69,7 @@ export function BillableItems({
 }: BillableItemsProps) {
   
   const { appUser } = useAuthContext();
-  const [editingLine, setEditingLine] = useState<SessionBillLine | null>(null);
-
+  
   const { activeLines, voidedLines } = useMemo(() => {
     const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
     const voided = lines.filter(line => line.voidedQty > 0);
@@ -95,7 +93,7 @@ export function BillableItems({
                     <BillableLineRow 
                         key={line.id}
                         line={line}
-                        onEdit={setEditingLine}
+                        onEdit={onUpdateLine}
                         isLocked={isLocked}
                     />
                 ))}
@@ -124,17 +122,6 @@ export function BillableItems({
             </div>
         </CardContent>
       </Card>
-      
-      {editingLine && appUser && (
-        <EditBillableItemDialog
-            isOpen={!!editingLine}
-            onClose={() => setEditingLine(null)}
-            line={editingLine}
-            discounts={discounts}
-            isLocked={isLocked}
-            onSave={onUpdateLine}
-        />
-      )}
     </>
   );
 }
