@@ -166,6 +166,17 @@ export type KitchenTicket = {
     sessionMode?: 'package_dinein' | 'alacarte';
     customerName?: string | null;
     sessionLabel?: string;
+    billing?: {
+        isVoided: boolean;
+        voidReason?: string | null;
+        voidNote?: string | null;
+        isFree: boolean;
+        discountType?: "percent" | "fixed" | null;
+        discountValue?: number | null;
+        itemId: string;
+        itemName: string;
+        unitPrice: number;
+    }
 };
 
 export type BillableLineType = "package" | "addon";
@@ -399,3 +410,18 @@ export type ActivityLog = {
 
   createdAt: any; // serverTimestamp()
 };
+
+export type PackageUnit = {
+    guestId: string;
+    packageId: string;
+    packageName: string;
+    unitPrice: number;
+    createdAt: any;
+    billing: {
+        isFree: boolean;
+        discountType?: "percent" | "fixed" | null;
+        discountValue?: number | null;
+    }
+}
+
+  

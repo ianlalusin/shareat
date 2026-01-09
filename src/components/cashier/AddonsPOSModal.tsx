@@ -21,7 +21,6 @@ import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { appendAddonTicketIdsToRegularLine } from "./billable-lines";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -155,12 +154,10 @@ function POSContent({
     
     try {
         const batch = writeBatch(db);
-        const newTicketIds: string[] = [];
         const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
         
         for (let i = 0; i < quantity; i++) {
             const ticketRef = doc(ticketsColRef);
-            newTicketIds.push(ticketRef.id);
 
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
@@ -180,20 +177,18 @@ function POSContent({
                 sessionMode: session.sessionMode,
                 sessionLabel: computeSessionLabel(session),
                 guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+                billing: {
+                    isVoided: false,
+                    isFree: false,
+                    itemId: selectedAddon.id,
+                    itemName: selectedAddon.name,
+                    unitPrice: selectedAddon.price || 0,
+                }
             });
             batch.set(ticketRef, ticketPayload);
         }
 
         await batch.commit();
-
-        await appendAddonTicketIdsToRegularLine({
-            storeId,
-            sessionId: session.id,
-            addonId: selectedAddon.id,
-            itemName: selectedAddon.name,
-            unitPrice: selectedAddon.price || 0,
-            ticketIds: newTicketIds,
-        });
 
         toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});
         setSelectedAddon(null);
@@ -335,3 +330,5 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
     </Dialog>
   );
 }
+
+  

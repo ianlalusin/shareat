@@ -69,7 +69,7 @@ function formatReceiptNumber(fmt: string, seq: number): string {
 
 /**
  * Starts a new dining session.
- * Creates session doc, table update, initial package billableLine, and initial kitchen ticket.
+ * Creates session doc, table update, and initial kitchen/billing units.
  */
 export async function startSession(
   storeId: string,
@@ -133,31 +133,32 @@ export async function startSession(
     });
   }
   
-  // 3. For package dine-in, create initial billableLine and kitchen ticket
+  // 3. For package dine-in, create packageUnits and one operational kitchen ticket
   if (payload.sessionMode === 'package_dinein' && payload.package) {
       const stationKey = payload.package.kitchenLocationId;
       if (!stationKey) {
           throw new Error(`Package with ID ${payload.package.packageId} does not have a kitchen location assigned.`);
       }
       
-      const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
-      const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
-      
-      const guestTicketIds = Array.from({ length: payload.guestCount }, (_, i) => `guest-${i + 1}`);
-
-      const billableLinePayload: BillableLine = {
-          id: billableLineRef.id,
-          type: "package",
-          itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
-          itemName: payload.package.packageName,
+      // Create billable guest units
+      const packageUnitsRef = collection(db, "stores", storeId, "sessions", newSessionRef.id, "packageUnits");
+      for (let i = 0; i < payload.guestCount; i++) {
+        const guestId = `guest-${String(i+1).padStart(3, '0')}`;
+        const unitRef = doc(packageUnitsRef, guestId);
+        batch.set(unitRef, {
+          guestId,
+          packageId: payload.package.packageId,
+          packageName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
-          ticketIds: guestTicketIds,
-          qty: guestTicketIds.length,
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-      };
-      batch.set(billableLineRef, billableLinePayload);
+          billing: {
+            isFree: false,
+          }
+        });
+      }
 
+      // Create one operational kitchen ticket
+      const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
       const ticketPayload = stripUndefined({
         id: ticketRef.id,
         sessionId: newSessionRef.id,
@@ -309,15 +310,15 @@ function buildAnalyticsV2(
 
 
 /**
- * Completes a payment and closes the dining session idempotently using `billableLines`.
- * Uses a Firestore transaction to ensure atomicity and prevent race conditions.
+ * Completes a payment and closes the dining session idempotently using individual billing units.
+ * Uses a Firestore transaction to ensure atomicity.
  */
-export async function completePaymentFromBillableLines(
+export async function completePaymentFromUnits(
   storeId: string,
   sessionId: string,
   user: AppUser,
   payments: Payment[],
-  billableLines: BillableLine[],
+  billableLines: BillableLine[], // Still used for summary calculation, not as truth source
   billingSummary: BillingSummary,
   paymentMethods: ModeOfPayment[]
 ) {
@@ -532,3 +533,5 @@ export async function voidSession({
   
   await batch.commit();
 }
+
+  
