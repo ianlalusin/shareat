@@ -26,7 +26,6 @@ import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
-import { ActivityLogsCard } from "@/components/dashboard/activity-logs-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -773,11 +772,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="grid gap-6 md:grid-cols-2">
                             <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
-                             <ActivityLogsCard
-                                storeId={activeStore.id}
-                                dateRange={{ start, end }}
-                                onOpenReceipt={(sessionId) => setSelectedReceiptId(sessionId)}
-                            />
+                             
                         </div>
                         
                          <Card>
