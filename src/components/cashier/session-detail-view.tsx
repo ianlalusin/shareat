@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -77,10 +78,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const unsubscribe = onSnapshot(sessionRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
-            if ((data.status === 'closed' || data.isPaid) && router) {
-                router.replace(`/receipt/${sessionId}`);
-                return;
-            }
+            // Don't auto-redirect here anymore, as the receipt page now handles itself.
+            // This allows cashiers to revisit a closed session's bill if needed, before navigating away.
+            // if ((data.status === 'closed' || data.isPaid) && router) {
+            //     router.replace(`/receipt/${sessionId}`);
+            //     return;
+            // }
             setSession({ id: doc.id, ...data } as PendingSession);
         } else {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
@@ -220,9 +223,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" /> View Timeline
             </Button>
-            <Button variant="outline" size="sm" onClick={() => router.push(`/receipt/${sessionId}`)} disabled={!session.isPaid}>
-                <Receipt className="mr-2 h-4 w-4" /> Receipt
-            </Button>
+            {session.isPaid && (
+              <Button variant="outline" size="sm" onClick={() => router.push(`/receipt/${sessionId}`)}>
+                  <Receipt className="mr-2 h-4 w-4" /> View Receipt
+              </Button>
+            )}
         </div>
       </header>
       

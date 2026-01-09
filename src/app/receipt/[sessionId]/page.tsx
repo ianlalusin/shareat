@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, BillableLine, SessionBillLine } from "@/lib/types";
+import type { ModeOfPayment, BillableLine, SessionBillLine, Store } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -73,7 +73,7 @@ export default function ReceiptPage() {
 
     useEffect(() => {
         const fetchData = async () => {
-            if (!sessionId || !activeStoreId || !appUser) {
+            if (!sessionId || !activeStoreId || !appUser || !activeStore) {
                 return;
             }
 
@@ -105,6 +105,7 @@ export default function ReceiptPage() {
                     lines: receiptDocData.lines || [],
                     payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
                     settings: settingsData,
+                    store: activeStore as Store,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
                     receiptNumber: receiptDocData.receiptNumber,
@@ -127,7 +128,7 @@ export default function ReceiptPage() {
         };
 
         fetchData();
-    }, [sessionId, activeStoreId, appUser, storageKey]);
+    }, [sessionId, activeStoreId, activeStore, appUser, storageKey]);
 
     const [isPrinting, setIsPrinting] = useState(false);
 
