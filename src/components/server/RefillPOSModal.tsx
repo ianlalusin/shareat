@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -216,6 +216,7 @@ function POSContent({
         
         if (refillsToOrder.length === 0) {
             toast({ variant: "destructive", title: "No Refills", description: "No valid refills are enabled for this package." });
+            setIsSubmitting(false);
             return;
         }
 
@@ -253,7 +254,20 @@ function POSContent({
         }
 
         await batch.commit();
-        toast({ title: "Refill Set Ordered", description: `Sent ${refillsToOrder.length} tickets to the kitchen.` });
+
+        const sentNames = refillsToOrder.map(r => r.refillName);
+        let summary = "";
+        if (sentNames.length <= 3) {
+            summary = sentNames.join(", ");
+        } else {
+            summary = `${sentNames.slice(0, 3).join(", ")} +${sentNames.length - 3} more`;
+        }
+        
+        toast({
+            title: `Sent ${refillsToOrder.length} refill tickets to kitchen.`,
+            description: `Items: ${summary}`
+        });
+
         onClose();
 
     } catch (e: any) {
