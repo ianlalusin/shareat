@@ -27,17 +27,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn(
+      <body
+        className={cn(
           "min-h-screen bg-background font-sans antialiased",
           fontSans.variable,
           fontSerif.variable
-        )}>
-        <Providers>
-          {children}
-        </Providers>
+        )}
+      >
+        <Providers>{children}</Providers>
         <Toaster />
       </body>
     </html>

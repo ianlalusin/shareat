@@ -14,15 +14,25 @@ function combineUser(
   firebaseUser: FirebaseUser | null,
   appUser: AppUser | null
 ): AppUser | null {
-  if (!firebaseUser || !appUser) return null;
+  if (!firebaseUser) return null;
+  if (!appUser) {
+      // If there's a Firebase user but no app user yet, it might be the initial moments
+      // of sign-up or a loading state. We can create a partial user.
+      return {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+          status: 'pending', // Assume pending until Firestore doc loads
+      };
+  }
   
   return {
     ...appUser,
     uid: firebaseUser.uid,
-    email: appUser?.email ?? null,
+    email: appUser?.email ?? firebaseUser.email,
     displayName: firebaseUser.displayName || appUser?.displayName || appUser?.name,
     photoURL: firebaseUser.photoURL || appUser?.photoURL,
-    status: appUser?.status || "pending",
   };
 }
 
@@ -63,3 +73,4 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </FirebaseClientProvider>
     );
 }
+
