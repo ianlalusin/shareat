@@ -18,6 +18,7 @@ import { Minus, Plus, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import type { BillableLine, Discount, KitchenTicket } from "@/lib/types";
 import { getEligibleTicketIds } from "./billable-lines";
+import { Alert, AlertTitle } from "../ui/alert";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -101,9 +102,11 @@ export function EditBillableItemDialog({
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const isPackage = line.type === 'package';
+
     const servedQty = useMemo(() => getEligibleTicketIds(line, tickets, 'served').length, [line, tickets]);
     const pendingQty = useMemo(() => getEligibleTicketIds(line, tickets, 'pending').length, [line, tickets]);
-    const totalActionableQty = servedQty + pendingQty;
+    const totalActionableQty = isPackage ? line.qty : servedQty + pendingQty;
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -113,7 +116,7 @@ export function EditBillableItemDialog({
         if (line) {
             const isDiscounted = (line.discountValue ?? 0) > 0;
             const savedDiscount = isDiscounted ? discounts.find(d => d.type === line.discountType && d.value === line.discountValue) : undefined;
-            const defaultActionQty = servedQty > 0 ? servedQty : 1;
+            const defaultActionQty = isPackage ? line.qty : (servedQty > 0 ? servedQty : 1);
             
             form.reset({
                 unitPrice: line.unitPrice,
@@ -130,7 +133,7 @@ export function EditBillableItemDialog({
                 voidNote: '',
             });
         }
-    }, [line, discounts, servedQty, form, isOpen]);
+    }, [line, discounts, servedQty, form, isOpen, isPackage]);
 
     const { applyDiscount, discountId, applyFree, applyVoid, voidReason } = form.watch();
 
@@ -154,9 +157,9 @@ export function EditBillableItemDialog({
             if (data.unitPrice !== line.unitPrice) {
                 await onUpdateUnitPrice(line.id, data.unitPrice);
             }
-            if (data.applyDiscount) {
+            if (!isPackage && data.applyDiscount) {
                 onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
-            } else if (!data.applyDiscount && (line.discountValue ?? 0) > 0) {
+            } else if (!isPackage && !data.applyDiscount && (line.discountValue ?? 0) > 0) {
                  onApplyDiscount(line.id, 'fixed', 0, line.qty);
             }
             
@@ -164,7 +167,7 @@ export function EditBillableItemDialog({
                 onApplyFree(line.id, data.freeQty, line.isFree ?? false);
             }
 
-            if (data.applyVoid) {
+            if (!isPackage && data.applyVoid) {
                 if (!data.voidReason) {
                     toast({ variant: 'destructive', title: 'Void reason is required' });
                     setIsSubmitting(false);
@@ -195,67 +198,88 @@ export function EditBillableItemDialog({
                                 <FormItem><FormLabel>Total Quantity</FormLabel><Input type="number" readOnly disabled value={line.qty} /></FormItem>
                             )} />
                             <FormField name="unitPrice" control={form.control} render={({ field }) => (
-                                <FormItem><FormLabel>Unit Price</FormLabel><FormControl><Input type="number" step="0.01" {...field} disabled={isLocked}/></FormControl><FormMessage/></FormItem>
+                                <FormItem>
+                                    <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
+                                    <FormControl><Input type="number" step="0.01" {...field} disabled={isLocked}/></FormControl><FormMessage/></FormItem>
                             )} />
                         </div>
-                        <Separator />
-                        <div className="space-y-2">
-                            <FormField name="applyDiscount" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || servedQty === 0}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
-                            )} />
-                            {applyDiscount && (
-                                <div className="p-3 border rounded-md space-y-2">
-                                    <FormField name="discountQty" control={form.control} render={({ field }) => (
-                                        <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty} description={`of ${servedQty} served items`}/>
-                                     )} />
-                                     <FormField name="discountId" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
-                                     )} />
-                                     <div className="grid grid-cols-2 gap-2">
-                                        <FormField name="discountType" control={form.control} render={({ field }) => (
-                                            <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
-                                        )} />
-                                        <FormField name="discountValue" control={form.control} render={({ field }) => (
-                                            <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
-                                        )} />
-                                     </div>
+
+                        {isPackage ? (
+                             <Alert>
+                                <AlertTitle>Package Items</AlertTitle>
+                                <AlertDescription>Discounts and voids must be applied to the entire bill, not individual packages.</AlertDescription>
+                            </Alert>
+                        ) : (
+                            <>
+                                <Separator />
+                                <div className="space-y-2">
+                                    <FormField name="applyDiscount" control={form.control} render={({ field }) => (
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || servedQty === 0}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                                    )} />
+                                    {applyDiscount && (
+                                        <div className="p-3 border rounded-md space-y-2">
+                                            <FormField name="discountQty" control={form.control} render={({ field }) => (
+                                                <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty} description={`of ${servedQty} served items`}/>
+                                            )} />
+                                            <FormField name="discountId" control={form.control} render={({ field }) => (
+                                                <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
+                                            )} />
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <FormField name="discountType" control={form.control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={discountId !== 'custom'}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
+                                                )} />
+                                                <FormField name="discountValue" control={form.control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                                )} />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
+                            </>
+                        )}
+                        
                         <Separator />
                         <div className="space-y-2">
                              <FormField name="applyFree" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || servedQty === 0}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage)}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
                             )} />
-                            {applyFree && (
+                            {applyFree && !isPackage && (
                                  <div className="p-3 border rounded-md">
                                     <FormField name="freeQty" control={form.control} render={({ field }) => (
-                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty} description={`of ${servedQty} served items`}/>
+                                       <QuantityStepper label="Apply to" value={field.value} onChange={field.onChange} max={servedQty > 0 ? servedQty : 1} description={servedQty > 0 ? `of ${servedQty} served items` : ''}/>
                                      )} />
                                  </div>
                             )}
-                        </div>
-                        <Separator />
-                        <div className="space-y-2">
-                            <FormField name="applyVoid" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Void Item(s)</FormLabel></FormItem>
-                            )} />
-                            {applyVoid && (
-                                 <div className="p-3 border rounded-md space-y-2">
-                                     <FormField name="voidQty" control={form.control} render={({ field }) => (
-                                        <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={totalActionableQty} description={`of ${totalActionableQty} total items (pending items first)`}/>
-                                     )} />
-                                     <FormField name="voidReason" control={form.control} render={({ field }) => (
-                                        <FormItem><FormLabel>Reason</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>
-                                     )} />
-                                     {voidReason === 'other' && (
-                                         <FormField name="voidNote" control={form.control} render={({ field }) => (
-                                            <FormItem><FormLabel>Note</FormLabel><FormControl><Textarea {...field}/></FormControl></FormItem>
-                                         )} />
-                                     )}
-                                </div>
+                            {applyFree && isPackage && (
+                                <AlertDescription className="text-xs text-muted-foreground p-3 border rounded-md">This will mark all guests in the package as free.</AlertDescription>
                             )}
                         </div>
+
+                        {!isPackage && (
+                            <>
+                                <Separator />
+                                <div className="space-y-2">
+                                    <FormField name="applyVoid" control={form.control} render={({ field }) => (
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Void Item(s)</FormLabel></FormItem>
+                                    )} />
+                                    {applyVoid && (
+                                        <div className="p-3 border rounded-md space-y-2">
+                                            <FormField name="voidQty" control={form.control} render={({ field }) => (
+                                                <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={totalActionableQty} description={`of ${totalActionableQty} total items (pending items first)`}/>
+                                            )} />
+                                            <FormField name="voidReason" control={form.control} render={({ field }) => (
+                                                <FormItem><FormLabel>Reason</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>
+                                            )} />
+                                            {voidReason === 'other' && (
+                                                <FormField name="voidNote" control={form.control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Note</FormLabel><FormControl><Textarea {...field}/></FormControl></FormItem>
+                                                )} />
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
                     </form>
                 </Form>
                 <DialogFooter>
@@ -268,3 +292,5 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
+
+    
