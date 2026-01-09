@@ -59,7 +59,7 @@ function BillableLineRow({
                          {isPackage && <p>({line.qty} Guests)</p>}
                     </div>
                     {hasDiscount && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">Discounted</Badge>}
-                    {line.isFree && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free</Badge>}
+                    {line.isFree && <Badge variant="outline" className="mt-1 border-yellow-500 text-yellow-600">Free</Badge>}
                 </div>
                 {!isLocked && (
                     <div className="flex items-center gap-2">
@@ -91,17 +91,24 @@ export function BillableItems({
   const activeLines = lines.filter(line => !line.isVoided);
   const voidedLines = lines.filter(line => line.isVoided);
 
-  // Group lines by their base item to show discounts/freebies correctly
   const groupedActiveLines = useMemo(() => {
-    const finalConsolidation = new Map<string, BillableLine[]>();
+    const groups = new Map<string, BillableLine[]>();
     activeLines.forEach(line => {
-        const consolidationKey = line.itemId;
-        if(!finalConsolidation.has(consolidationKey)) {
-            finalConsolidation.set(consolidationKey, []);
-        }
-        finalConsolidation.get(consolidationKey)!.push(line);
+      const key = makeVariantKey(line);
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(line);
     });
-    return Array.from(finalConsolidation.values());
+
+    const consolidated = Array.from(groups.values()).map(lineGroup => {
+        if (lineGroup.length === 1) return lineGroup[0];
+        // Consolidate if needed, but for now, we just use the first line as representative
+        // This part could be enhanced if lines with the same variant key should be merged in the UI
+        return lineGroup[0];
+    });
+
+    return consolidated;
   }, [activeLines]);
   
   const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
@@ -122,18 +129,16 @@ export function BillableItems({
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-y-auto">
             <div className="space-y-4">
-                {groupedActiveLines.map((lineGroup) => {
-                  const firstLine = lineGroup[0];
-                  if (!firstLine) return null;
+                {groupedActiveLines.map((line) => {
+                  if (!line) return null;
 
-                  const isPackage = firstLine.type === 'package';
-                  const title = isPackage ? 'Package' : `Add-ons & Refills - ${firstLine.itemName}`;
+                  const isPackage = line.type === 'package';
+                  const title = isPackage ? 'Package' : `Add-ons & Refills - ${line.itemName}`;
 
                   return (
-                    <div key={firstLine.itemId}>
+                    <div key={makeVariantKey(line)}>
                       <h3 className="text-sm font-semibold mb-2 px-4 pt-4">{title}</h3>
                       <div className="divide-y border-t">
-                        {lineGroup.map(line => (
                           <BillableLineRow 
                             key={line.id}
                             line={line}
@@ -143,7 +148,6 @@ export function BillableItems({
                             pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
                             cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
                           />
-                        ))}
                       </div>
                     </div>
                   );
@@ -196,4 +200,3 @@ export function BillableItems({
     </>
   );
 }
-
