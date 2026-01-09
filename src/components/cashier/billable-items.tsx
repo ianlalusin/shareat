@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
-import { getEligibleTicketIds } from "./billable-lines";
+import { getEligibleTicketIds, makeVariantKey } from "./billable-lines";
 import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
 
 interface BillableItemsProps {
@@ -97,13 +97,25 @@ export function BillableItems({
   const groupedActiveLines = useMemo(() => {
     const grouped = new Map<string, BillableLine[]>();
     activeLines.forEach(line => {
-      const key = line.itemId; // Group by addonId or packageId
+      // Group by a key that represents the specific variant (price, discount, etc.)
+      const key = makeVariantKey(line);
       if (!grouped.has(key)) {
         grouped.set(key, []);
       }
       grouped.get(key)!.push(line);
     });
-    return Array.from(grouped.values());
+    // Now consolidate lines that belong to the same logical item (e.g. "Fries") but are different variants
+    const finalConsolidation = new Map<string, BillableLine[]>();
+    for(const lineGroup of grouped.values()) {
+        const firstLine = lineGroup[0];
+        if (!firstLine) continue;
+        const consolidationKey = firstLine.itemId; // Use the base item ID to group variants together visually
+        if(!finalConsolidation.has(consolidationKey)) {
+            finalConsolidation.set(consolidationKey, []);
+        }
+        finalConsolidation.get(consolidationKey)!.push(...lineGroup);
+    }
+    return Array.from(finalConsolidation.values());
   }, [activeLines]);
 
 
