@@ -20,7 +20,6 @@ import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import { writeActivityLog } from "./activity-log";
 import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 
@@ -68,6 +67,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (doc.exists()) {
             const data = doc.data();
             if ((data.status === 'closed' || data.isPaid) && router) {
+                // If payment is completed, redirect to receipt page to prevent further edits.
+                // The autoprint flag can be passed if needed.
                 router.replace(`/receipt/${sessionId}`);
                 return;
             }
@@ -131,18 +132,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId) return;
     try {
-        await updateSessionBillLine(storeId, sessionId, lineId, after);
-        await writeActivityLog({
-            storeId,
-            sessionId,
-            user: appUser,
-            action: 'EDIT_LINE',
-            lineId,
-            meta: { itemName: before.itemName, qty: after.qtyOrdered },
-            note: 'Line item updated',
-            before,
-            after
-        })
+        await updateSessionBillLine(storeId, sessionId, lineId, before, after, appUser);
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });

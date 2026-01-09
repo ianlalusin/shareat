@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -35,9 +34,8 @@ function BillableLineRow({
 }) {
     const totalDiscountQty = line.discountQty;
     const totalFreeQty = line.freeQty;
-    const totalVoidQty = line.voidedQty;
 
-    const netQty = line.qtyOrdered - totalVoidQty;
+    const netQty = line.qtyOrdered - line.voidedQty;
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
@@ -75,7 +73,7 @@ export function BillableItems({
   const [editingLine, setEditingLine] = useState<SessionBillLine | null>(null);
 
   const { activeLines, voidedLines } = useMemo(() => {
-    const active = lines.filter(line => line.qtyOrdered > line.voidedQty);
+    const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
     const voided = lines.filter(line => line.voidedQty > 0);
     return { activeLines: active, voidedLines: voided };
   }, [lines]);
@@ -111,7 +109,7 @@ export function BillableItems({
                             <AccordionContent className="px-4">
                                 <div className="divide-y">
                                 {voidedLines.map(line => (
-                                    <div key={line.id} className="py-2">
+                                    <div key={`${line.id}-voided`} className="py-2">
                                         <div className="flex justify-between">
                                             <p className="font-medium text-muted-foreground line-through">{line.voidedQty}x {line.itemName}</p>
                                             <p className="text-muted-foreground line-through">₱{(line.voidedQty * line.unitPrice).toFixed(2)}</p>
