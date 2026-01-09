@@ -514,18 +514,22 @@ export async function updateSessionBillLine(
     storeId: string,
     sessionId: string,
     lineId: string,
-    patch: Partial<SessionBillLine>
+    patch: Partial<SessionBillLine>,
+    user: AppUser,
 ) {
     if (!storeId || !sessionId || !lineId) {
         throw new Error("Missing storeId, sessionId, or lineId");
     }
 
     const lineRef = doc(db, "stores", storeId, "sessions", sessionId, "sessionBillLines", lineId);
+    const actor = getActorStamp(user);
 
     // Make sure to include the update timestamp.
     const updatePayload = {
         ...patch,
         updatedAt: serverTimestamp(),
+        updatedByUid: actor.uid,
+        updatedByName: actor.username,
     };
 
     await updateDoc(lineRef, updatePayload);

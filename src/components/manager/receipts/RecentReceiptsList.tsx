@@ -103,6 +103,7 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
                     lines: receiptDocData.lines || [],
                     payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
                     settings: settingsData,
+                    store: store,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
                     receiptNumber: receiptDocData.receiptNumber,

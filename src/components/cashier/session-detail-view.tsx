@@ -61,14 +61,15 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
-
-  const storeId = activeStore?.id;
 
   const editingLine = useMemo(() => {
     if (!editingLineId) return null;
     return billLines.find(line => line.id === editingLineId) || null;
   }, [billLines, editingLineId]);
+
+  const storeId = activeStore?.id;
 
   useEffect(() => {
     if (!storeId) return;
@@ -218,7 +219,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
                     <CustomerInfoForm session={session} />
-                    <BillTotals totals={billTotals} totalPaid={totalPaid} onRemoveDiscount={() => {}} isLocked={isBillingLocked} />
+                    <BillTotals 
+                        lines={billLines} 
+                        store={activeStore} 
+                        billDiscount={billDiscount}
+                        customAdjustments={customAdjustments}
+                        totalPaid={totalPaid} 
+                        isLocked={isBillingLocked} 
+                    />
                 </div>
                 <BillAdjustments charges={charges} discounts={billableDiscounts} onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])} onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])} onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} billDiscount={billDiscount} adjustments={customAdjustments || []} isLocked={isBillingLocked} />
             </div>

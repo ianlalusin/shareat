@@ -5,8 +5,9 @@ import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
-import type { BillableLine, ModeOfPayment, SessionBillLine } from "@/lib/types";
+import type { BillableLine, ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
+import { calculateBillTotals } from "@/lib/tax";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -61,6 +62,7 @@ export type ReceiptData = {
     lines?: SessionBillLine[]; // New counter model
     payments: Payment[];
     settings: ReceiptSettings;
+    store?: Store, // Pass the full store object for tax calculation
     receiptCreatedAt?: any;
     createdByUsername?: string;
     receiptNumber?: string;
@@ -122,6 +124,10 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     
     // Fallback logic for payment summary
     const summary = session.paymentSummary ?? data.analytics;
+    const totals = useMemo(() => {
+        if (!data.store) return null; // Or some default
+        return calculateBillTotals(lines || [], data.store, null, []);
+    }, [lines, data.store]);
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
@@ -165,9 +171,6 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     if (hasDiscount) {
                         const discountedQty = Math.min(line.discountQty, billableQty);
                         if (line.discountType === 'percent') {
-                           // For VAT inclusive, we need the base price to calculate discount correctly.
-                           // This simplified receipt view does not have store context.
-                           // A slight inaccuracy is accepted here for simplicity as it's for display only.
                            lineDiscountAmount = (discountedQty * line.unitPrice) * (line.discountValue! / 100);
                         } else {
                            lineDiscountAmount = discountedQty * line.discountValue!;
@@ -200,18 +203,18 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                <ReceiptRow label="Subtotal" value={(summary?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                {((summary?.discountsTotal ?? 0) > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${(summary?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
+                <ReceiptRow label="Subtotal" value={(totals?.subtotal ?? summary?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                {((totals?.totalDiscounts ?? summary?.discountsTotal ?? 0) > 0) && (
+                    <ReceiptRow label="Discounts" value={`(${(totals?.totalDiscounts ?? summary?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
                 )}
-                 {(summary?.chargesTotal ?? 0) > 0 && (
-                    <ReceiptRow label="Charges" value={(summary?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 {(totals?.chargesTotal ?? summary?.chargesTotal ?? 0) > 0 && (
+                    <ReceiptRow label="Charges" value={(totals?.chargesTotal ?? summary?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 )}
              </section>
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={`PHP ${(summary?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
+                <ReceiptRow label="TOTAL" value={`PHP ${(totals?.grandTotal ?? summary?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
              </section>
             
              <hr className="border-dashed border-black my-2" />
