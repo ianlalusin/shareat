@@ -142,6 +142,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (!appUser || !storeId || !sessionId) return;
     try {
         await updateSessionBillLine(storeId, sessionId, lineId, after, appUser);
+        
         await writeActivityLog({
             storeId,
             sessionId,
@@ -154,6 +155,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             before: before,
             after: after
         });
+
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });

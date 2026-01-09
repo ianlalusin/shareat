@@ -18,6 +18,8 @@ type ActivityLogPayload = {
     reason?: string | null;
     note?: string | null;
     meta?: ActivityLog['meta'];
+    before?: any;
+    after?: any;
 };
 
 /**
