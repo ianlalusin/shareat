@@ -214,8 +214,9 @@ export async function completePaymentFromUnits(
 ) {
   let receiptId: string = "";
 
-  const billingSummary = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
-  const { grandTotal } = billingSummary;
+  // Recalculate totals inside the transaction function to ensure consistency
+  const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
+  const amountDue = finalTotals.grandTotal;
 
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
@@ -258,7 +259,7 @@ export async function completePaymentFromUnits(
     
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
-    if (totalPaid < grandTotal) throw new Error("Cannot complete payment: balance is not zero.");
+    if (totalPaid < amountDue) throw new Error("Cannot complete payment: balance is not zero.");
 
     const actor = getActorStamp(user);
     const shouldCreateReceipt = !receiptSnap.exists();
@@ -297,13 +298,13 @@ export async function completePaymentFromUnits(
           v: 2,
           sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
           sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
-          subtotal: billingSummary.subtotal,
-          discountsTotal: billingSummary.totalDiscounts,
-          chargesTotal: billingSummary.chargesTotal,
-          taxAmount: billingSummary.taxTotal,
-          grandTotal: billingSummary.grandTotal,
+          subtotal: finalTotals.subtotal,
+          discountsTotal: finalTotals.totalDiscounts,
+          chargesTotal: finalTotals.chargesTotal,
+          taxAmount: finalTotals.taxTotal,
+          grandTotal: finalTotals.grandTotal,
           totalPaid: totalPaid,
-          change: Math.max(0, totalPaid - grandTotal),
+          change: Math.max(0, totalPaid - amountDue),
           mop: payments.reduce((acc, p) => {
               const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
               const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
@@ -343,9 +344,9 @@ export async function completePaymentFromUnits(
             tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
             tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
             customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-            total: grandTotal,
+            total: amountDue,
             totalPaid,
-            change: Math.max(0, totalPaid - grandTotal),
+            change: Math.max(0, totalPaid - amountDue),
             status: "final",
             receiptSeq: nextSeq,
             receiptNumber,
@@ -384,7 +385,7 @@ export async function completePaymentFromUnits(
         meta: {
             receiptId,
             receiptNumber: receiptId, // Placeholder until we can get it back from tx
-            paymentTotal: billingSummary.grandTotal,
+            paymentTotal: amountDue,
         }
     });
   }

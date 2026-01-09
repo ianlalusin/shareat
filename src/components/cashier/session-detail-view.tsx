@@ -180,7 +180,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
         
-        await completePaymentFromUnits(activeStore.id, sessionId, appUser, normalizedPayments, billLines, billTotals, paymentMethods, billDiscount, customAdjustments);
+        await completePaymentFromUnits(
+            activeStore.id,
+            sessionId,
+            appUser,
+            normalizedPayments,
+            billLines,
+            activeStore,
+            paymentMethods,
+            billDiscount,
+            customAdjustments
+        );
         
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
