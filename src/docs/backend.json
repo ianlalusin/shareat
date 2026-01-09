@@ -610,6 +610,28 @@
       },
       "required": ["guestId", "packageId", "packageName", "unitPrice", "createdAt", "billing"]
     },
+    "SessionBillLine": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SessionBillLine",
+      "type": "object",
+      "description": "Represents a single billable line item in a session, using counters.",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["package", "addon"] },
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "unitPrice": { "type": "number" },
+        "qtyOrdered": { "type": "number" },
+        "discountType": { "type": ["string", "null"], "enum": ["percent", "fixed", null] },
+        "discountValue": { "type": ["number", "null"] },
+        "discountQty": { "type": "number" },
+        "freeQty": { "type": "number" },
+        "voidedQty": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "itemId", "itemName", "unitPrice", "qtyOrdered", "discountQty", "freeQty", "voidedQty"]
+    },
     "Charge": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Charge",
@@ -901,6 +923,21 @@
         }
       },
       {
+        "path": "/stores/{storeId}/sessions/{sessionId}/sessionBillLines/{lineId}",
+        "definition": {
+          "entityName": "SessionBillLine",
+          "schema": {
+            "$ref": "#/backend/entities/SessionBillLine"
+          },
+          "description": "Represents a single billable line item within a session, consolidating all units of a specific item variant.",
+          "params": [
+            { "name": "storeId" },
+            { "name": "sessionId" },
+            { "name": "lineId" }
+          ]
+        }
+      },
+      {
         "path": "/users/{userId}",
         "definition": {
           "entityName": "User",
@@ -1073,3 +1110,5 @@
 }
 
   
+
+    

@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -21,6 +22,7 @@ import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
+import { upsertAddonToBill } from "./firestore";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -156,6 +158,7 @@ function POSContent({
         const batch = writeBatch(db);
         const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
         
+        const ticketPayloads = [];
         for (let i = 0; i < quantity; i++) {
             const ticketRef = doc(ticketsColRef);
 
@@ -187,6 +190,9 @@ function POSContent({
             });
             batch.set(ticketRef, ticketPayload);
         }
+
+        // Upsert the billable line item
+        await upsertAddonToBill(storeId, session.id, selectedAddon, quantity, appUser);
 
         await batch.commit();
 
@@ -332,3 +338,5 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
 }
 
   
+
+    

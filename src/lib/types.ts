@@ -179,31 +179,26 @@ export type KitchenTicket = {
     }
 };
 
-export type BillableLineType = "package" | "addon";
-
-export type BillableLine = {
+export type SessionBillLine = {
   id: string;
-  type: BillableLineType;
-  itemId: string;        // addonId or packageId
+  type: "package" | "addon";
+  itemId: string;
   itemName: string;
+  category?: string | null;
+  barcode?: string | null;
   unitPrice: number;
-
-  ticketIds: string[];   // for addon only (unit tickets). for package can be empty.
-  qty: number;             // for addon must equal ticketIds.length. for package equals guestCount.
-
-  isFree?: boolean;
-  discountType?: "fixed" | "percent";
-  discountValue?: number;
-
-  isVoided?: boolean;
-  voidReason?: string;
-  voidNote?: string;
-  voidedAt?: any;
-  voidedByUid?: string;
-
-  createdAt?: any;
-  updatedAt?: any;
+  qtyOrdered: number;
+  discountType: "percent" | "fixed" | null;
+  discountValue: number | null;
+  discountQty: number;
+  freeQty: number;
+  voidedQty: number; // addons only
+  createdAt: any;
+  updatedAt: any;
+  updatedByUid?: string | null;
+  updatedByName?: string | null;
 };
+
 
 export type Payment = {
     id: string;
@@ -377,16 +372,16 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED";
+  action: "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "EDIT_LINE";
 
   actorUid: string;
   actorRole?: string | null;
   actorName?: string | null;
-
-  lineIds?: string[];
-  ticketIds?: string[];
-  fromLineId?: string | null;
-  toLineId?: string | null;
+  
+  lineId?: string;
+  
+  before?: any;
+  after?: any;
 
   reason?: string | null;
   note?: string | null;
@@ -426,4 +421,4 @@ export type PackageUnit = {
     }
 }
 
-  
+    
