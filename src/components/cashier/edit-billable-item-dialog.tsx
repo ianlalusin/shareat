@@ -160,9 +160,12 @@ export function EditBillableItemDialog({
             if (canEditPrice && data.unitPrice !== line.unitPrice) {
                 await onUpdateUnitPrice(line.id, data.unitPrice);
             }
+            
+            // Only apply discount if the toggle is on and there was a change.
+            const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
             if (data.applyDiscount) {
                 onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
-            } else if (!data.applyDiscount && (line.discountValue ?? 0) > 0) {
+            } else if (!data.applyDiscount && isCurrentlyDiscounted) {
                  onApplyDiscount(line.id, 'fixed', 0, line.qty);
             }
             
@@ -210,7 +213,7 @@ export function EditBillableItemDialog({
                         <Separator />
                         <div className="space-y-2">
                             <FormField name="applyDiscount" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage) }/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || (totalActionableQty === 0 && !isPackage)}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
                             )} />
                             {applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
