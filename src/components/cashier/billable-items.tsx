@@ -21,7 +21,6 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   onUpdateQty: (lineId: string, newQty: number) => void;
-  onUpdateUnitPrice: (lineId: string, newPrice: number) => Promise<void>;
   onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
   onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
@@ -81,6 +80,7 @@ function BillableLineRow({
                         {(!isPackage && (servedQty > 0 || pendingQty > 0 || cancelledQty > 0)) && (
                             <p>({servedQty} served, {pendingQty} pending, {cancelledQty} cancelled)</p>
                         )}
+                         {isPackage && <p>({line.qty} Guests)</p>}
                     </div>
                     {hasDiscount && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">Discounted</Badge>}
                     {line.isFree && <Badge variant="outline" className="ml-1 border-yellow-500 text-yellow-600">Free</Badge>}
@@ -104,7 +104,6 @@ export function BillableItems({
     session,
     discounts,
     onUpdateQty, 
-    onUpdateUnitPrice,
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
@@ -119,6 +118,11 @@ export function BillableItems({
 
   const packageLines = activeLines.filter(line => line.type === 'package');
   const addonLines = activeLines.filter(line => line.type === 'addon');
+
+  const handleApplyDiscount = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
+    onApplyDiscount(lineId, discountType, discountValue, quantity);
+  };
+
 
   return (
     <>
@@ -211,7 +215,6 @@ export function BillableItems({
             discounts={discounts}
             isLocked={isLocked}
             onUpdateQty={onUpdateQty}
-            onUpdateUnitPrice={onUpdateUnitPrice}
             onApplyDiscount={handleApplyDiscount}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
