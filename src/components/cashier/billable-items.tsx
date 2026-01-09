@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
-import { getEligibleTicketIds, makeVariantKey } from "./billable-lines";
+import { getEligibleTicketIds } from "./billable-lines";
 import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
 
 interface BillableItemsProps {
@@ -25,6 +25,7 @@ interface BillableItemsProps {
   onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
   onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
   onUpdateQty: (lineId: string, newQty: number) => void;
+  onUpdateUnitPrice: (lineId: string, newPrice: number) => void; // Added prop
   isLocked?: boolean;
 }
 
@@ -84,23 +85,23 @@ export function BillableItems({
     onApplyFree, 
     onVoidItem,
     onUpdateQty,
+    onUpdateUnitPrice, // Destructure new prop
     isLocked = false 
 }: BillableItemsProps) {
   
   const { appUser } = useAuthContext();
   const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
 
-  const safeLines = useMemo(() => {
+  const { activeLines, voidedLines } = useMemo(() => {
+    // Defensive guard against duplicate lines from props
     const map = new Map<string, BillableLine>();
     lines.forEach(l => map.set(l.id, l));
-    return Array.from(map.values());
-  }, [lines]);
-
-  const { activeLines, voidedLines } = useMemo(() => {
+    const safeLines = Array.from(map.values());
+    
     const active = safeLines.filter(line => !line.isVoided);
     const voided = safeLines.filter(line => line.isVoided);
     return { activeLines: active, voidedLines: voided };
-  }, [safeLines]);
+  }, [lines]);
   
   const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     onApplyDiscount(lineId, discountType, discountValue, quantity);
@@ -122,7 +123,7 @@ export function BillableItems({
             <div className="divide-y">
                 {activeLines.map((line) => (
                     <BillableLineRow 
-                        key={line.id}
+                        key={line.id} // Use the unique line ID as the key
                         line={line}
                         onEdit={setEditingLine}
                         isLocked={isLocked}
@@ -172,6 +173,7 @@ export function BillableItems({
             discounts={discounts}
             isLocked={isLocked}
             onUpdateQty={onUpdateQty}
+            onUpdateUnitPrice={onUpdateUnitPrice}
             onApplyDiscount={handleApplyDiscountWrapper}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
