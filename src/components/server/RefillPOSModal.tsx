@@ -114,26 +114,33 @@ function POSContent({
     return availableRefills;
   }, [storeRefills, currentPackage]);
   
-  const currentRefillAllowedFlavors = useMemo(() => {
+  const sortedAllowedFlavors = useMemo(() => {
     if (!selectedRefill) return [];
     
     const globalRefillInfo = globalRefills.find(r => r.id === selectedRefill.refillId);
-    
     if (!globalRefillInfo?.requiresFlavor) return [];
 
     const globallyAllowedFlavorIds = new Set(globalRefillInfo.allowedFlavorIds || []);
     const storeEnabledFlavorIds = new Set(storeFlavors.map(f => f.flavorId));
-
-    const finalAllowedIds = new Set(
-        [...globallyAllowedFlavorIds].filter(id => storeEnabledFlavorIds.has(id))
-    );
     
-    if (globallyAllowedFlavorIds.size === 0) {
-      return storeFlavors;
-    }
+    // If global list is empty, all store flavors are allowed. Otherwise, find the intersection.
+    const finalAllowedIds = globallyAllowedFlavorIds.size === 0
+      ? storeEnabledFlavorIds
+      : new Set([...globallyAllowedFlavorIds].filter(id => storeEnabledFlavorIds.has(id)));
 
-    return storeFlavors.filter(f => finalAllowedIds.has(f.flavorId));
-  }, [selectedRefill, storeFlavors, globalRefills]);
+    const allowedStoreFlavors = storeFlavors.filter(f => finalAllowedIds.has(f.flavorId));
+    
+    // Sort to put session's initial flavors first
+    const initialFlavorIds = new Set(session.initialFlavorIds || []);
+    return allowedStoreFlavors.sort((a, b) => {
+        const aIsInitial = initialFlavorIds.has(a.flavorId);
+        const bIsInitial = initialFlavorIds.has(b.flavorId);
+        if (aIsInitial && !bIsInitial) return -1;
+        if (!aIsInitial && bIsInitial) return 1;
+        return a.flavorName.localeCompare(b.flavorName);
+    });
+}, [selectedRefill, storeFlavors, globalRefills, session.initialFlavorIds]);
+
 
   const handleSelectRefill = (refill: StoreRefill) => {
     setSelectedRefill(refill);
@@ -202,14 +209,14 @@ function POSContent({
   };
 
   const handleRepeatFirstOrder = async () => {
-    if (!appUser || !currentPackage || !currentPackage.refillsAllowed) {
+    if (!appUser || !currentPackage) {
         toast({ variant: "destructive", title: "Cannot Repeat Order", description: "Package information not found." });
         return;
     }
     setIsSubmitting(true);
 
     try {
-        const allowedRefillIds = new Set(currentPackage.refillsAllowed);
+        const allowedRefillIds = new Set(currentPackage.refillsAllowed || []);
         const refillsToOrder = storeRefills.filter(sr => sr.isEnabled && allowedRefillIds.has(sr.refillId) && sr.kitchenLocationId);
         
         if (refillsToOrder.length === 0) {
@@ -296,7 +303,7 @@ function POSContent({
   }
 
   const globalRefillInfo = globalRefills.find(r => r.id === selectedRefill?.refillId);
-  const needsFlavors = !!globalRefillInfo?.requiresFlavor && currentRefillAllowedFlavors.length > 0;
+  const needsFlavors = !!globalRefillInfo?.requiresFlavor && sortedAllowedFlavors.length > 0;
   
   const defaultFlavorNames = useMemo(() => {
     if (!session.initialFlavorIds || !storeFlavors) return "";
@@ -305,6 +312,8 @@ function POSContent({
         .filter(Boolean)
         .join(", ");
   }, [session.initialFlavorIds, storeFlavors]);
+  
+  const initialFlavorIdSet = useMemo(() => new Set(session.initialFlavorIds || []), [session.initialFlavorIds]);
 
   return (
     <div className="h-[70vh] flex flex-col">
@@ -322,7 +331,7 @@ function POSContent({
             <p>Sends all refills allowed by the package with the default flavors.</p>
             {currentPackage?.packageName && (
               <p>
-                <span className="font-semibold">{currentPackage.packageName}:</span> {defaultFlavorNames}
+                <span className="font-semibold">{currentPackage.packageName}:</span> <span className="text-destructive font-medium">{defaultFlavorNames}</span>
               </p>
             )}
           </div>
@@ -365,14 +374,22 @@ function POSContent({
               <h3 className="font-semibold">Flavors {needsFlavors && "(up to 3)"}</h3>
               {needsFlavors ? (
                 <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    {currentRefillAllowedFlavors.map(flavor => (
+                    {sortedAllowedFlavors.map(flavor => (
                         <div key={flavor.flavorId} className="flex items-center gap-2">
                             <Checkbox
                                 id={`flavor-${flavor.flavorId}`}
                                 checked={selectedFlavorIds.includes(flavor.flavorId)}
                                 onCheckedChange={() => handleFlavorToggle(flavor.flavorId)}
                             />
-                            <Label htmlFor={`flavor-${flavor.flavorId}`} className="font-normal">{flavor.flavorName}</Label>
+                            <Label 
+                              htmlFor={`flavor-${flavor.flavorId}`} 
+                              className={cn(
+                                "font-normal",
+                                initialFlavorIdSet.has(flavor.flavorId) && "text-destructive font-medium"
+                              )}
+                            >
+                                {flavor.flavorName}
+                            </Label>
                         </div>
                     ))}
                 </div>
@@ -427,3 +444,5 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
+
+    
