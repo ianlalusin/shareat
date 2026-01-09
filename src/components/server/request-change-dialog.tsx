@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -6,6 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -67,7 +67,7 @@ const DIALOG_TABS = [
     { value: "package", label: "Package" },
 ]
 
-export function RequestChangeDialog({ isOpen, onClose, session, storeId, storePackages, schedules }: RequestChangeDialogProps) {
+function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose }: RequestChangeDialogProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -100,11 +100,9 @@ export function RequestChangeDialog({ isOpen, onClose, session, storeId, storePa
 
 
   useEffect(() => {
-    if (isOpen) {
-      guestForm.reset({ requestedCount: session.guestCountFinal || 0, reasonNote: "" });
-      packageForm.reset({ requestedPackageId: session.packageOfferingId, reasonNote: "" });
-    }
-  }, [isOpen, session, guestForm, packageForm]);
+    guestForm.reset({ requestedCount: session.guestCountFinal || 0, reasonNote: "" });
+    packageForm.reset({ requestedPackageId: session.packageOfferingId, reasonNote: "" });
+  }, [session, guestForm, packageForm]);
   
   const checkSessionLock = async () => {
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
@@ -174,178 +172,202 @@ export function RequestChangeDialog({ isOpen, onClose, session, storeId, storePa
   const isPackageRequestPending = session.packageChange?.status === "pending";
   const isSessionLocked = session.status === "closed";
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Request Change for Table {session.tableNumber}</DialogTitle>
-          <DialogDescription>Submit a request for a cashier to approve.</DialogDescription>
-        </DialogHeader>
-        {isSessionLocked && (
-            <Alert variant="destructive">
-                <AlertDescription>This session is closed and cannot be modified.</AlertDescription>
-            </Alert>
-        )}
+    return (
+        <>
+            {isSessionLocked && (
+                <Alert variant="destructive" className="m-4">
+                    <AlertDescription>This session is closed and cannot be modified.</AlertDescription>
+                </Alert>
+            )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          {isMobile ? (
-             <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger>
-                    <SelectValue placeholder="Select a change type..." />
-                </SelectTrigger>
-                <SelectContent>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4">
+            {isMobile ? (
+                <Select value={activeTab} onValueChange={setActiveTab}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select a change type..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {DIALOG_TABS.map(tab => (
+                            <SelectItem key={tab.value} value={tab.value}>{tab.label}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            ) : (
+                <TabsList className="grid w-full grid-cols-2">
                     {DIALOG_TABS.map(tab => (
-                        <SelectItem key={tab.value} value={tab.value}>{tab.label}</SelectItem>
+                        <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                     ))}
-                </SelectContent>
-            </Select>
-          ) : (
-            <TabsList className="grid w-full grid-cols-2">
-                {DIALOG_TABS.map(tab => (
-                    <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
-                ))}
-            </TabsList>
-          )}
+                </TabsList>
+            )}
 
-          <TabsContent value="guest">
-            <form onSubmit={guestForm.handleSubmit(handleGuestSubmit)} className="space-y-4 pt-4">
-              {isGuestRequestPending && (
-                <Alert variant="destructive">
-                  <AlertDescription>A guest count change request is already pending for this session.</AlertDescription>
-                </Alert>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="requestedCount">New Guest Count</Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => guestForm.setValue("requestedCount", Math.max(0, guestCountValue - 1))}
-                  >
-                    <Minus />
-                  </Button>
-                  <Controller
-                    name="requestedCount"
-                    control={guestForm.control}
-                    render={({ field }) => (
-                      <QuantityInput
-                        value={field.value}
-                        onChange={field.onChange}
-                        className="w-full text-center"
-                      />
-                    )}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => guestForm.setValue("requestedCount", guestCountValue + 1)}
-                  >
-                    <Plus />
-                  </Button>
-                </div>
-                {guestForm.formState.errors.requestedCount && <p className="text-sm text-destructive">{guestForm.formState.errors.requestedCount.message}</p>}
-              </div>
-               <div className="space-y-2">
-                <Label>Reason</Label>
-                <Controller
-                  name="reason"
-                  control={guestForm.control}
-                  render={({ field, fieldState }) => (
-                    <>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger><SelectValue placeholder="Select a reason..." /></SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(REASON_OPTIONS).map(([key, value]) => (
-                            <SelectItem key={key} value={key}>{value}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {fieldState.error && <p className="text-sm text-destructive">{fieldState.error.message}</p>}
-                    </>
-                  )}
-                />
-              </div>
-              {watchedGuestReason === 'other' && (
+            <TabsContent value="guest">
+                <form onSubmit={guestForm.handleSubmit(handleGuestSubmit)} className="space-y-4 pt-4">
+                {isGuestRequestPending && (
+                    <Alert variant="destructive">
+                    <AlertDescription>A guest count change request is already pending for this session.</AlertDescription>
+                    </Alert>
+                )}
                 <div className="space-y-2">
-                    <Label htmlFor="guestNote">Details for "Other"</Label>
-                    <Textarea id="guestNote" {...guestForm.register("reasonNote")} />
-                    {guestForm.formState.errors.reasonNote && <p className="text-sm text-destructive">{guestForm.formState.errors.reasonNote.message}</p>}
-                </div>
-              )}
-              <Button type="submit" disabled={isSubmitting || isGuestRequestPending || isSessionLocked} className="w-full">
-                {isSubmitting ? <Loader2 className="animate-spin" /> : "Request Guest Count Change"}
-              </Button>
-            </form>
-          </TabsContent>
-          <TabsContent value="package">
-             <form onSubmit={packageForm.handleSubmit(handlePackageSubmit)} className="space-y-4 pt-4">
-              {isPackageRequestPending && (
-                <Alert variant="destructive">
-                  <AlertDescription>A package change request is already pending for this session.</AlertDescription>
-                </Alert>
-              )}
-               <div className="space-y-2">
-                <Label>New Package</Label>
-                <Controller
-                  name="requestedPackageId"
-                  control={packageForm.control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger><SelectValue placeholder="Select a package..." /></SelectTrigger>
-                      <SelectContent>
-                        {availablePackages.length > 0 ? (
-                            availablePackages.map(p => (
-                            <SelectItem key={p.packageId} value={p.packageId}>
-                                {p.packageName} - ₱{p.pricePerHead}/head
-                            </SelectItem>
-                            ))
-                        ) : (
-                            <div className="p-4 text-center text-sm text-muted-foreground">
-                                No packages available at this time.
-                            </div>
+                    <Label htmlFor="requestedCount">New Guest Count</Label>
+                    <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => guestForm.setValue("requestedCount", Math.max(0, guestCountValue - 1))}
+                    >
+                        <Minus />
+                    </Button>
+                    <Controller
+                        name="requestedCount"
+                        control={guestForm.control}
+                        render={({ field }) => (
+                        <QuantityInput
+                            value={field.value}
+                            onChange={field.onChange}
+                            className="w-full text-center"
+                        />
                         )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                 {packageForm.formState.errors.requestedPackageId && <p className="text-sm text-destructive">{packageForm.formState.errors.requestedPackageId.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label>Reason</Label>
-                <Controller
-                  name="reason"
-                  control={packageForm.control}
-                  render={({ field, fieldState }) => (
-                    <>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger><SelectValue placeholder="Select a reason..." /></SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(REASON_OPTIONS).map(([key, value]) => (
-                            <SelectItem key={key} value={key}>{value}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {fieldState.error && <p className="text-sm text-destructive">{fieldState.error.message}</p>}
-                    </>
-                  )}
-                />
-              </div>
-              {watchedPackageReason === 'other' && (
-                <div className="space-y-2">
-                    <Label htmlFor="packageNote">Details for "Other"</Label>
-                    <Textarea id="packageNote" {...packageForm.register("reasonNote")} />
-                    {packageForm.formState.errors.reasonNote && <p className="text-sm text-destructive">{packageForm.formState.errors.reasonNote.message}</p>}
+                    />
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => guestForm.setValue("requestedCount", guestCountValue + 1)}
+                    >
+                        <Plus />
+                    </Button>
+                    </div>
+                    {guestForm.formState.errors.requestedCount && <p className="text-sm text-destructive">{guestForm.formState.errors.requestedCount.message}</p>}
                 </div>
-              )}
-              <Button type="submit" disabled={isSubmitting || isPackageRequestPending || isSessionLocked || availablePackages.length === 0} className="w-full">
-                {isSubmitting ? <Loader2 className="animate-spin" /> : "Request Package Change"}
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
-  );
+                <div className="space-y-2">
+                    <Label>Reason</Label>
+                    <Controller
+                    name="reason"
+                    control={guestForm.control}
+                    render={({ field, fieldState }) => (
+                        <>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger><SelectValue placeholder="Select a reason..." /></SelectTrigger>
+                            <SelectContent>
+                            {Object.entries(REASON_OPTIONS).map(([key, value]) => (
+                                <SelectItem key={key} value={key}>{value}</SelectItem>
+                            ))}
+                            </SelectContent>
+                        </Select>
+                        {fieldState.error && <p className="text-sm text-destructive">{fieldState.error.message}</p>}
+                        </>
+                    )}
+                    />
+                </div>
+                {watchedGuestReason === 'other' && (
+                    <div className="space-y-2">
+                        <Label htmlFor="guestNote">Details for "Other"</Label>
+                        <Textarea id="guestNote" {...guestForm.register("reasonNote")} />
+                        {guestForm.formState.errors.reasonNote && <p className="text-sm text-destructive">{guestForm.formState.errors.reasonNote.message}</p>}
+                    </div>
+                )}
+                <Button type="submit" disabled={isSubmitting || isGuestRequestPending || isSessionLocked} className="w-full">
+                    {isSubmitting ? <Loader2 className="animate-spin" /> : "Request Guest Count Change"}
+                </Button>
+                </form>
+            </TabsContent>
+            <TabsContent value="package">
+                <form onSubmit={packageForm.handleSubmit(handlePackageSubmit)} className="space-y-4 pt-4">
+                {isPackageRequestPending && (
+                    <Alert variant="destructive">
+                    <AlertDescription>A package change request is already pending for this session.</AlertDescription>
+                    </Alert>
+                )}
+                <div className="space-y-2">
+                    <Label>New Package</Label>
+                    <Controller
+                    name="requestedPackageId"
+                    control={packageForm.control}
+                    render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger><SelectValue placeholder="Select a package..." /></SelectTrigger>
+                        <SelectContent>
+                            {availablePackages.length > 0 ? (
+                                availablePackages.map(p => (
+                                <SelectItem key={p.packageId} value={p.packageId}>
+                                    {p.packageName} - ₱{p.pricePerHead}/head
+                                </SelectItem>
+                                ))
+                            ) : (
+                                <div className="p-4 text-center text-sm text-muted-foreground">
+                                    No packages available at this time.
+                                </div>
+                            )}
+                        </SelectContent>
+                        </Select>
+                    )}
+                    />
+                    {packageForm.formState.errors.requestedPackageId && <p className="text-sm text-destructive">{packageForm.formState.errors.requestedPackageId.message}</p>}
+                </div>
+                <div className="space-y-2">
+                    <Label>Reason</Label>
+                    <Controller
+                    name="reason"
+                    control={packageForm.control}
+                    render={({ field, fieldState }) => (
+                        <>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger><SelectValue placeholder="Select a reason..." /></SelectTrigger>
+                            <SelectContent>
+                            {Object.entries(REASON_OPTIONS).map(([key, value]) => (
+                                <SelectItem key={key} value={key}>{value}</SelectItem>
+                            ))}
+                            </SelectContent>
+                        </Select>
+                        {fieldState.error && <p className="text-sm text-destructive">{fieldState.error.message}</p>}
+                        </>
+                    )}
+                    />
+                </div>
+                {watchedPackageReason === 'other' && (
+                    <div className="space-y-2">
+                        <Label htmlFor="packageNote">Details for "Other"</Label>
+                        <Textarea id="packageNote" {...packageForm.register("reasonNote")} />
+                        {packageForm.formState.errors.reasonNote && <p className="text-sm text-destructive">{packageForm.formState.errors.reasonNote.message}</p>}
+                    </div>
+                )}
+                <Button type="submit" disabled={isSubmitting || isPackageRequestPending || isSessionLocked || availablePackages.length === 0} className="w-full">
+                    {isSubmitting ? <Loader2 className="animate-spin" /> : "Request Package Change"}
+                </Button>
+                </form>
+            </TabsContent>
+            </Tabs>
+        </>
+    );
+}
+
+export function RequestChangeDialog(props: RequestChangeDialogProps) {
+    const isMobile = useIsMobile();
+    
+    if (isMobile) {
+        return (
+            <Drawer open={props.isOpen} onOpenChange={props.onClose}>
+                <DrawerContent>
+                    <DrawerHeader className="text-left">
+                        <DrawerTitle>Request Change for Table {props.session.tableNumber}</DrawerTitle>
+                        <DrawerDescription>Submit a request for a cashier to approve.</DrawerDescription>
+                    </DrawerHeader>
+                    <ChangeRequestForm {...props} />
+                </DrawerContent>
+            </Drawer>
+        );
+    }
+    
+    return (
+        <Dialog open={props.isOpen} onOpenChange={props.onClose}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Request Change for Table {props.session.tableNumber}</DialogTitle>
+                    <DialogDescription>Submit a request for a cashier to approve.</DialogDescription>
+                </DialogHeader>
+                <ChangeRequestForm {...props} />
+            </DialogContent>
+        </Dialog>
+    );
 }

@@ -1,8 +1,8 @@
-
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, X } from "lucide-react";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { Separator } from "../ui/separator";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -384,11 +385,12 @@ function POSContent({
     <div className="h-[70vh] flex flex-col">
       {session.sessionMode === 'package_dinein' && (
         <div className="p-4 border-b">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start sm:items-center gap-4 flex-col sm:flex-row">
                 <Button 
                     variant="destructive"
                     onClick={handleRepeatFirstOrder}
                     disabled={isSubmitting || sessionIsLocked}
+                    className="flex-shrink-0"
                 >
                     <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order
                 </Button>
@@ -501,10 +503,25 @@ function POSContent({
 }
 
 export function RefillPOSModal(props: RefillPOSModalProps) {
+  const isMobile = useIsMobile();
   
   const handleOpenChange = (open: boolean) => {
     if (!open) props.onOpenChange(false);
   };
+
+  if (isMobile) {
+    return (
+      <Drawer open={props.open} onOpenChange={handleOpenChange}>
+        <DrawerContent>
+          <DrawerHeader className="text-left">
+            <DrawerTitle>Order Refill</DrawerTitle>
+            <DrawerDescription>Select refill items and any required flavors.</DrawerDescription>
+          </DrawerHeader>
+          <POSContent {...props} onClose={() => props.onOpenChange(false)} />
+        </DrawerContent>
+      </Drawer>
+    );
+  }
   
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
@@ -518,3 +535,4 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
+
