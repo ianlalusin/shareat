@@ -213,9 +213,8 @@ export async function updateLineUnitPrice(
   newPrice: number,
   actor: AppUser
 ) {
-    const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
-    
     if (line.type === 'package') {
+        const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
         await updateDoc(lineRef, { unitPrice: newPrice, updatedAt: serverTimestamp() });
         // Log this simple change
         await writeActivityLog({

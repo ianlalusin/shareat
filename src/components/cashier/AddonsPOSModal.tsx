@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
 import Image from "next/image";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +21,7 @@ import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { findOrCreateLineByVariantTx, normalizeTicketIds } from "./billable-lines";
+import { appendAddonTicketIdsToRegularLine } from "./billable-lines";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -154,59 +154,45 @@ function POSContent({
     setIsSubmitting(true);
     
     try {
-        await runTransaction(db, async (tx) => {
-            // 1. Create Kitchen Tickets
-            const newTicketIds: string[] = [];
-            const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
-            
-            for (let i = 0; i < quantity; i++) {
-                const ticketRef = doc(ticketsColRef);
-                newTicketIds.push(ticketRef.id);
+        const batch = writeBatch(db);
+        const newTicketIds: string[] = [];
+        const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
+        
+        for (let i = 0; i < quantity; i++) {
+            const ticketRef = doc(ticketsColRef);
+            newTicketIds.push(ticketRef.id);
 
-                const ticketPayload = stripUndefined({
-                    id: ticketRef.id,
-                    type: "addon",
-                    itemName: selectedAddon.name,
-                    qty: 1,
-                    uom: selectedAddon.uom,
-                    kitchenLocationId: selectedAddon.kitchenLocationId,
-                    kitchenLocationName: selectedAddon.kitchenLocationName,
-                    status: "preparing",
-                    createdAt: serverTimestamp(),
-                    createdByUid: appUser.uid,
-                    sessionId: session.id, 
-                    storeId,
-                    tableNumber: session.tableNumber,
-                    customerName: session.customer?.name || session.customerName,
-                    sessionMode: session.sessionMode,
-                    sessionLabel: computeSessionLabel(session),
-                    guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-                });
-                tx.set(ticketRef, ticketPayload);
-            }
-
-            // 2. Find or Create Billable Line and update it
-            const linesRef = collection(db, `stores/${storeId}/sessions/${session.id}/billableLines`);
-            const variant: Partial<BillableLine> = {
-                type: 'addon',
-                itemId: selectedAddon.id,
+            const ticketPayload = stripUndefined({
+                id: ticketRef.id,
+                type: "addon",
                 itemName: selectedAddon.name,
-                unitPrice: selectedAddon.price || 0,
-                isFree: false,
-                isVoided: false,
-            };
-            const { ref: lineRef, data: lineData, exists } = await findOrCreateLineByVariantTx(tx, linesRef, variant);
-            
-            const updatedTicketIds = normalizeTicketIds([...(lineData.ticketIds || []), ...newTicketIds]);
-            
-            const lineUpdatePayload = {
-                ...variant,
-                ticketIds: updatedTicketIds,
-                qty: updatedTicketIds.length, // Always derive qty from ticketIds length for addons
-                updatedAt: serverTimestamp(),
-                ...(!exists ? { createdAt: serverTimestamp() } : {})
-            };
-            tx.set(lineRef, lineUpdatePayload, { merge: true });
+                qty: 1,
+                uom: selectedAddon.uom,
+                kitchenLocationId: selectedAddon.kitchenLocationId,
+                kitchenLocationName: selectedAddon.kitchenLocationName,
+                status: "preparing",
+                createdAt: serverTimestamp(),
+                createdByUid: appUser.uid,
+                sessionId: session.id, 
+                storeId,
+                tableNumber: session.tableNumber,
+                customerName: session.customer?.name || session.customerName,
+                sessionMode: session.sessionMode,
+                sessionLabel: computeSessionLabel(session),
+                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+            });
+            batch.set(ticketRef, ticketPayload);
+        }
+
+        await batch.commit();
+
+        await appendAddonTicketIdsToRegularLine({
+            storeId,
+            sessionId: session.id,
+            addonId: selectedAddon.id,
+            itemName: selectedAddon.name,
+            unitPrice: selectedAddon.price || 0,
+            ticketIds: newTicketIds,
         });
 
         toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});

@@ -19,9 +19,10 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, getEligibleTicketIds, moveTicketIdsBetweenLines, updateLineUnitPrice } from "./billable-lines";
+import { changeLineQty, moveTicketIdsBetweenLines, updateLineUnitPrice } from "./billable-lines";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine } from "@/lib/types";
+import { useConfirmDialog } from "../global/confirm-dialog";
 
 function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
   const scope = (discount as any).scope;
@@ -50,6 +51,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { toast } = useToast();
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
+  const { confirm, Dialog } = useConfirmDialog();
 
   const [session, setSession] = useState<PendingSession | null>(null);
   const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
@@ -197,20 +199,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleApplyDiscount = async (line: BillableLine, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
     try {
-        const eligibleIds = getEligibleTicketIds(line, ticketsById, "served");
-        const targetIds = eligibleIds.slice(0, quantity);
-
-        if(targetIds.length === 0) {
-            toast({ variant: "destructive", title: "No items to discount", description: "There are no served items in this line to apply a discount to."});
-            return;
-        }
-
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
             toVariant: { ...line, isFree: false, discountType, discountValue },
-            ticketIdsToMove: targetIds,
+            ticketIdsToMove: line.ticketIds.slice(0, quantity),
             actor: appUser,
             action: 'DISCOUNT_APPLIED'
         });
@@ -222,21 +216,24 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const handleApplyFree = async (line: BillableLine, quantity: number, currentIsFree: boolean) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
+
+    if (!currentIsFree) {
+        const ok = await confirm({
+            title: `Mark ${quantity} item(s) as FREE?`,
+            description: `This will mark ${quantity} x ${line.itemName} as free of charge.`,
+            confirmText: "Confirm",
+            destructive: false,
+        });
+        if (!ok) return;
+    }
+
     try {
-        const eligibleIds = getEligibleTicketIds(line, ticketsById, "served");
-        const targetIds = eligibleIds.slice(0, quantity);
-
-        if(targetIds.length === 0) {
-            toast({ variant: "destructive", title: "No items to mark as free", description: "There are no served items in this line."});
-            return;
-        }
-
         await moveTicketIdsBetweenLines({
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
             toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: 'fixed' },
-            ticketIdsToMove: targetIds,
+            ticketIdsToMove: line.ticketIds.slice(0, quantity),
             actor: appUser,
             action: currentIsFree ? 'UNMARK_FREE' : 'MARK_FREE'
         });
@@ -253,7 +250,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             storeId: activeStore.id,
             sessionId,
             fromLineId: line.id,
-            toVariant: { ...line, isFree: false, discountValue: 0, discountType: 'fixed' },
+            toVariant: { ...line, isFree: false, discountValue: 0, discountType: undefined },
             ticketIdsToMove: line.ticketIds,
             actor: appUser,
             action: 'DISCOUNT_REMOVED'
@@ -427,6 +424,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             onVoidItem={handleVoidItem}
         />
       )}
+      {Dialog}
     </div>
   )
 }
