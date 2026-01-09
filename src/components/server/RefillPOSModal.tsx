@@ -4,7 +4,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, X } from "lucide-react";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,12 @@ interface RefillPOSModalProps {
   sessionIsLocked?: boolean;
 }
 
+type CartItem = {
+    refill: StoreRefill;
+    flavorIds: string[];
+    notes: string;
+}
+
 function POSContent({
     storeId, 
     session, 
@@ -46,9 +52,8 @@ function POSContent({
   const [currentPackage, setCurrentPackage] = useState<StorePackage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [selectedRefill, setSelectedRefill] = useState<StoreRefill | null>(null);
-  const [selectedFlavorIds, setSelectedFlavorIds] = useState<string[]>([]);
-  const [notes, setNotes] = useState("");
+  const [cart, setCart] = useState<Map<string, CartItem>>(new Map());
+  const [activeRefillId, setActiveRefillId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -113,24 +118,25 @@ function POSContent({
     
     return availableRefills;
   }, [storeRefills, currentPackage]);
+
+  const activeCartItem = activeRefillId ? cart.get(activeRefillId) : null;
+  const activeGlobalRefill = activeCartItem ? globalRefills.find(r => r.id === activeCartItem.refill.refillId) : null;
   
   const sortedAllowedFlavors = useMemo(() => {
-    if (!selectedRefill) return [];
+    if (!activeCartItem) return [];
     
-    const globalRefillInfo = globalRefills.find(r => r.id === selectedRefill.refillId);
+    const globalRefillInfo = globalRefills.find(r => r.id === activeCartItem.refill.refillId);
     if (!globalRefillInfo?.requiresFlavor) return [];
 
     const globallyAllowedFlavorIds = new Set(globalRefillInfo.allowedFlavorIds || []);
     const storeEnabledFlavorIds = new Set(storeFlavors.map(f => f.flavorId));
     
-    // If global list is empty, all store flavors are allowed. Otherwise, find the intersection.
     const finalAllowedIds = globallyAllowedFlavorIds.size === 0
       ? storeEnabledFlavorIds
       : new Set([...globallyAllowedFlavorIds].filter(id => storeEnabledFlavorIds.has(id)));
 
     const allowedStoreFlavors = storeFlavors.filter(f => finalAllowedIds.has(f.flavorId));
     
-    // Sort to put session's initial flavors first
     const initialFlavorIds = new Set(session.initialFlavorIds || []);
     return allowedStoreFlavors.sort((a, b) => {
         const aIsInitial = initialFlavorIds.has(a.flavorId);
@@ -139,67 +145,87 @@ function POSContent({
         if (!aIsInitial && bIsInitial) return 1;
         return a.flavorName.localeCompare(b.flavorName);
     });
-}, [selectedRefill, storeFlavors, globalRefills, session.initialFlavorIds]);
+}, [activeCartItem, storeFlavors, globalRefills, session.initialFlavorIds]);
 
 
   const handleSelectRefill = (refill: StoreRefill) => {
-    setSelectedRefill(refill);
-    setSelectedFlavorIds([]);
-    setNotes("");
+    setCart(prev => {
+        const newCart = new Map(prev);
+        if (!newCart.has(refill.refillId)) {
+            newCart.set(refill.refillId, {
+                refill: refill,
+                flavorIds: [],
+                notes: ""
+            });
+        }
+        return newCart;
+    });
+    setActiveRefillId(refill.refillId);
   };
   
   const handleAddToOrder = async () => {
-    if (!appUser || !selectedRefill) {
-      toast({ variant: "destructive", title: "Cannot Add Item" });
+    if (!appUser || cart.size === 0) {
+      toast({ variant: "destructive", title: "Cannot Add Item", description: "Your order list is empty." });
       return;
     }
     if (sessionIsLocked) {
-      toast({ variant: "destructive", title: "Session Locked" });
+      toast({ variant: "destructive", title: "Session Locked", description: "This session is locked and cannot be modified." });
       return;
     }
-    if (!selectedRefill.kitchenLocationId) {
-      toast({ variant: 'destructive', title: 'Kitchen Not Assigned' });
-      return;
+    
+    // Validate all items in cart
+    for (const item of cart.values()) {
+        if (!item.refill.kitchenLocationId) {
+            toast({ variant: 'destructive', title: 'Kitchen Not Assigned', description: `"${item.refill.refillName}" has no kitchen location assigned.` });
+            return;
+        }
+        const globalRefillInfo = globalRefills.find(r => r.id === item.refill.refillId);
+        if (globalRefillInfo?.requiresFlavor && sortedAllowedFlavors.length > 0 && item.flavorIds.length === 0) {
+            toast({ variant: 'destructive', title: 'Flavor Required', description: `"${item.refill.refillName}" requires at least one flavor.` });
+            setActiveRefillId(item.refill.refillId); // Switch to the item that needs attention
+            return;
+        }
     }
 
     setIsSubmitting(true);
     
     const batch = writeBatch(db);
     try {
-        const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-        const itemName = `${selectedRefill.refillName}`;
-        
-        const selectedFlavorNames = selectedFlavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
-        let finalNotes = notes.trim();
-        if (selectedFlavorNames.length > 0) {
-            const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
-            finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
+        for (const item of cart.values()) {
+            const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
+            
+            const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
+            let finalNotes = item.notes.trim();
+            if (selectedFlavorNames.length > 0) {
+                const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
+                finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
+            }
+
+            const ticketPayload = stripUndefined({
+                id: ticketRef.id,
+                type: "refill",
+                itemName: item.refill.refillName,
+                qty: 1,
+                kitchenLocationId: item.refill.kitchenLocationId,
+                kitchenLocationName: item.refill.kitchenLocationName,
+                notes: finalNotes || null,
+                status: "preparing",
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdByUid: appUser.uid,
+                sessionId: session.id, 
+                storeId,
+                tableNumber: session.tableNumber,
+                customerName: session.customer?.name || session.customerName,
+                sessionMode: session.sessionMode,
+                sessionLabel: computeSessionLabel(session),
+                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+            });
+            batch.set(ticketRef, ticketPayload);
         }
 
-        const ticketPayload = stripUndefined({
-            id: ticketRef.id,
-            type: "refill",
-            itemName,
-            qty: 1,
-            kitchenLocationId: selectedRefill.kitchenLocationId,
-            kitchenLocationName: selectedRefill.kitchenLocationName,
-            notes: finalNotes || null,
-            status: "preparing",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            createdByUid: appUser.uid,
-            sessionId: session.id, 
-            storeId,
-            tableNumber: session.tableNumber,
-            customerName: session.customer?.name || session.customerName,
-            sessionMode: session.sessionMode,
-            sessionLabel: computeSessionLabel(session),
-            guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-        });
-        batch.set(ticketRef, ticketPayload);
-
         await batch.commit();
-        toast({ title: "Refill Ordered", description: `${itemName} sent to kitchen.`});
+        toast({ title: `Sent ${cart.size} refill(s) to the kitchen.` });
         handleReset();
     } catch(e: any) {
         toast({ variant: 'destructive', title: "Order Failed", description: e.message });
@@ -233,7 +259,12 @@ function POSContent({
 
         for (const refill of refillsToOrder) {
             const ticketRef = doc(ticketsRef);
-            const notes = `Repeat First Order\nFlavors: ${defaultFlavorNames}`;
+            let notes = "Repeat First Order";
+
+            const globalRefill = globalRefills.find(r => r.id === refill.refillId);
+            if (globalRefill?.requiresFlavor && defaultFlavorNames) {
+                notes += `\nFlavors: ${defaultFlavorNames}`;
+            }
 
             const payload = {
                 id: ticketRef.id,
@@ -284,27 +315,59 @@ function POSContent({
 
 
   const handleReset = () => {
-    setSelectedRefill(null);
-    setSelectedFlavorIds([]);
-    setNotes("");
+    setCart(new Map());
+    setActiveRefillId(null);
     onClose();
   }
   
   const handleFlavorToggle = (flavorId: string) => {
-      const isSelected = selectedFlavorIds.includes(flavorId);
-      if (!isSelected && selectedFlavorIds.length >= 3) {
-          toast({ variant: 'destructive', title: 'Flavor Limit Reached', description: 'You can select a maximum of 3 flavors.'});
-          return;
-      }
+    if (!activeRefillId) return;
 
-      setSelectedFlavorIds(prev => 
-        isSelected ? prev.filter(id => id !== flavorId) : [...prev, flavorId]
-      );
+    setCart(prev => {
+        const newCart = new Map(prev);
+        const item = newCart.get(activeRefillId);
+        if (item) {
+            const isSelected = item.flavorIds.includes(flavorId);
+            let newFlavorIds = item.flavorIds;
+            if (isSelected) {
+                newFlavorIds = item.flavorIds.filter(id => id !== flavorId);
+            } else {
+                 if (item.flavorIds.length >= 3) {
+                    toast({ variant: 'destructive', title: 'Flavor Limit Reached', description: 'You can select a maximum of 3 flavors.'});
+                    return prev; // Return previous state without changes
+                }
+                newFlavorIds = [...item.flavorIds, flavorId];
+            }
+            newCart.set(activeRefillId, { ...item, flavorIds: newFlavorIds });
+        }
+        return newCart;
+    });
+  }
+  
+  const handleNotesChange = (notes: string) => {
+    if (!activeRefillId) return;
+    setCart(prev => {
+      const newCart = new Map(prev);
+      const item = newCart.get(activeRefillId);
+      if (item) {
+        newCart.set(activeRefillId, { ...item, notes });
+      }
+      return newCart;
+    });
+  };
+
+  const handleRemoveFromCart = (refillId: string) => {
+      setCart(prev => {
+          const newCart = new Map(prev);
+          newCart.delete(refillId);
+          // If the removed item was the active one, reset active selection
+          if (activeRefillId === refillId) {
+              setActiveRefillId(newCart.keys().next().value || null);
+          }
+          return newCart;
+      });
   }
 
-  const globalRefillInfo = globalRefills.find(r => r.id === selectedRefill?.refillId);
-  const needsFlavors = !!globalRefillInfo?.requiresFlavor && sortedAllowedFlavors.length > 0;
-  
   const defaultFlavorNames = useMemo(() => {
     if (!session.initialFlavorIds || !storeFlavors) return "";
     return session.initialFlavorIds
@@ -314,6 +377,8 @@ function POSContent({
   }, [session.initialFlavorIds, storeFlavors]);
   
   const initialFlavorIdSet = useMemo(() => new Set(session.initialFlavorIds || []), [session.initialFlavorIds]);
+
+  const needsFlavors = !!activeGlobalRefill?.requiresFlavor && sortedAllowedFlavors.length > 0;
 
   return (
     <div className="h-[70vh] flex flex-col">
@@ -327,7 +392,7 @@ function POSContent({
           >
             <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order (Refill Set)
           </Button>
-          <div className="text-xs text-muted-foreground text-center mt-2 space-y-1">
+           <div className="text-xs text-muted-foreground text-center mt-2 space-y-1">
             <p>Sends all refills allowed by the package with the default flavors.</p>
             {currentPackage?.packageName && (
               <p>
@@ -338,11 +403,11 @@ function POSContent({
           <Separator className="my-4" />
         </div>
       )}
-      <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-hidden">
         {/* Left Panel: Refills */}
-        <div className="col-span-1 border-r pr-4">
-          <h3 className="font-semibold mb-2">Order Single Refill</h3>
-          <ScrollArea className="h-full">
+        <div className="md:col-span-1 border-r pr-4 flex flex-col">
+          <h3 className="font-semibold mb-2">1. Select Refills</h3>
+          <ScrollArea className="flex-1">
             <div className="space-y-1">
               {isLoading ? (
                 <Loader2 className="mx-auto my-16 animate-spin"/>
@@ -353,7 +418,8 @@ function POSContent({
                     onClick={() => handleSelectRefill(refill)}
                     className={cn(
                       "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
-                      selectedRefill?.refillId === refill.refillId && "bg-muted ring-2 ring-ring"
+                       cart.has(refill.refillId) && "bg-muted font-semibold",
+                       activeRefillId === refill.refillId && "ring-2 ring-ring"
                     )}
                   >
                     {refill.refillName}
@@ -367,59 +433,93 @@ function POSContent({
           </ScrollArea>
         </div>
 
-        {/* Right Panel: Flavors & Notes */}
-        <div className="col-span-2 flex flex-col gap-4">
-          <div className={cn("border rounded-lg", !selectedRefill && "bg-muted/50 flex items-center justify-center")}>
-            <div className={cn("p-4 space-y-2", !needsFlavors && !selectedRefill && "hidden")}>
-              <h3 className="font-semibold">Flavors {needsFlavors && "(up to 3)"}</h3>
-              {needsFlavors ? (
-                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    {sortedAllowedFlavors.map(flavor => (
-                        <div key={flavor.flavorId} className="flex items-center gap-2">
-                            <Checkbox
-                                id={`flavor-${flavor.flavorId}`}
-                                checked={selectedFlavorIds.includes(flavor.flavorId)}
-                                onCheckedChange={() => handleFlavorToggle(flavor.flavorId)}
-                            />
-                            <Label 
-                              htmlFor={`flavor-${flavor.flavorId}`} 
-                              className={cn(
-                                "font-normal",
-                                initialFlavorIdSet.has(flavor.flavorId) && "text-destructive font-medium"
-                              )}
-                            >
-                                {flavor.flavorName}
-                            </Label>
-                        </div>
-                    ))}
+        {/* Right Panel: Flavors & Notes for Active Item */}
+        <div className="md:col-span-2 flex flex-col gap-4">
+          <h3 className="font-semibold">2. Customize Selection</h3>
+          {activeCartItem ? (
+            <div className="flex-1 flex flex-col gap-4">
+              <div className="p-3 border rounded-md">
+                <h4 className="font-medium text-lg">{activeCartItem.refill.refillName}</h4>
+              </div>
+              <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
+                <div className="p-4 space-y-2">
+                  <h3 className="font-semibold">Flavors {needsFlavors && "(up to 3)"}</h3>
+                  {needsFlavors ? (
+                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                        {sortedAllowedFlavors.map(flavor => (
+                            <div key={flavor.flavorId} className="flex items-center gap-2">
+                                <Checkbox
+                                    id={`flavor-${flavor.flavorId}`}
+                                    checked={activeCartItem.flavorIds.includes(flavor.flavorId)}
+                                    onCheckedChange={() => handleFlavorToggle(flavor.flavorId)}
+                                />
+                                <Label 
+                                  htmlFor={`flavor-${flavor.flavorId}`} 
+                                  className={cn(
+                                    "font-normal",
+                                    initialFlavorIdSet.has(flavor.flavorId) && "text-destructive font-medium"
+                                  )}
+                                >
+                                    {flavor.flavorName}
+                                </Label>
+                            </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">This item does not require flavors.</p>
+                  )}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{selectedRefill ? "This item does not require flavors." : "Select a refill to see flavor options."}</p>
-              )}
+              </div>
+              <div className="flex-1 flex flex-col gap-2">
+                <Label htmlFor="notes">Notes (Optional)</Label>
+                <Textarea 
+                  id="notes" 
+                  value={activeCartItem.notes} 
+                  onChange={e => handleNotesChange(e.target.value)} 
+                  placeholder="e.g., extra hot, no onions..." 
+                  className="flex-1"
+                />
+              </div>
             </div>
-             {!selectedRefill && <p className="text-sm text-muted-foreground">Select a refill item</p>}
-          </div>
-
-          <div className="flex-1 flex flex-col gap-2">
-            <Label htmlFor="notes">Notes (Optional)</Label>
-            <Textarea 
-              id="notes" 
-              value={notes} 
-              onChange={e => setNotes(e.target.value)} 
-              placeholder="e.g., extra hot, no onions..." 
-              className="flex-1"
-              disabled={!selectedRefill}
-            />
-          </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-center text-muted-foreground bg-muted/50 rounded-lg">
+                <p>Select a refill item from the left to customize it.</p>
+            </div>
+          )}
         </div>
       </div>
+      
+       {/* Cart Summary */}
+      {cart.size > 0 && (
+        <div className="p-4 border-t">
+          <h3 className="font-semibold mb-2">Order Summary ({cart.size})</h3>
+          <ScrollArea className="max-h-32">
+            <div className="space-y-2">
+              {Array.from(cart.values()).map(item => (
+                <div key={item.refill.refillId} className="flex items-start justify-between p-2 bg-muted/50 rounded-md">
+                    <div>
+                        <p className="font-medium">{item.refill.refillName}</p>
+                        <p className="text-xs text-muted-foreground">
+                            {item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName).join(', ') || (globalRefills.find(gr => gr.id === item.refill.refillId)?.requiresFlavor ? '(No flavor selected)' : '')}
+                        </p>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveFromCart(item.refill.refillId)}>
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
       <DialogFooter className="p-4 border-t">
         <Button variant="ghost" onClick={handleReset}>Cancel</Button>
         <Button 
           onClick={handleAddToOrder} 
-          disabled={isSubmitting || sessionIsLocked || !selectedRefill || (needsFlavors && selectedFlavorIds.length === 0)}
+          disabled={isSubmitting || sessionIsLocked || cart.size === 0}
         >
-           {isSubmitting ? <Loader2 className="animate-spin" /> : "Send to Kitchen"}
+           {isSubmitting ? <Loader2 className="animate-spin" /> : `Send ${cart.size} Item(s) to Kitchen`}
         </Button>
       </DialogFooter>
     </div>
@@ -434,15 +534,13 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
   
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl p-0 gap-0">
+      <DialogContent className="max-w-4xl p-0 gap-0">
           <DialogHeader className="p-4 pb-0">
             <DialogTitle>Order Refill</DialogTitle>
-            <DialogDescription>Select a refill item and any required flavors.</DialogDescription>
+            <DialogDescription>Select refill items and any required flavors.</DialogDescription>
           </DialogHeader>
           <POSContent {...props} onClose={() => props.onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   );
 }
-
-    
