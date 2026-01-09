@@ -137,10 +137,12 @@ export function PaymentSection({
                         </div>
                     )})}
                 </div>
-
-                <Button variant="outline" size="sm" onClick={addPayment} className="w-full" disabled={isLocked}>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Add Payment Line
-                </Button>
+                
+                {remainingBalance > 0 && (
+                    <Button variant="outline" size="sm" onClick={addPayment} className="w-full" disabled={isLocked}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> Add Payment Line
+                    </Button>
+                )}
                 
                 <div className="space-y-1 pt-2 text-sm">
                     <div className="flex justify-between">
