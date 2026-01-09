@@ -35,38 +35,48 @@ export function calculateBillTotals(
 
   let grossSubtotal = 0;
   let lineDiscountsTotal = 0;
-  let vatableSalesBase = 0; // Net-of-tax sales
+  let vatableSales = 0;
   let vatExemptSales = 0;
+  let taxTotal = 0;
 
   const activeLines = billLines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
 
   activeLines.forEach(line => {
-    const billableQty = line.qtyOrdered - line.voidedQty;
+    const billableQty = line.qtyOrdered - line.voidedQty - (line.freeQty || 0);
     const unitPrice = line.unitPrice || 0;
     
     grossSubtotal += billableQty * unitPrice;
     
-    const preTaxBasePerUnit = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
-
     if (line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
       const discountedQty = Math.min(line.discountQty, billableQty);
       if (line.discountType === 'percent') {
-        lineDiscountsTotal += (preTaxBasePerUnit * (line.discountValue / 100)) * discountedQty;
+        lineDiscountsTotal += (discountedQty * unitPrice) * (line.discountValue / 100);
       } else { // fixed
-        lineDiscountsTotal += Math.min(preTaxBasePerUnit, line.discountValue) * discountedQty;
+        lineDiscountsTotal += Math.min(unitPrice, line.discountValue) * discountedQty;
       }
     }
-    
-    const freeQty = line.freeQty || 0;
-    const netBillableQty = billableQty - freeQty;
-    
-    vatableSalesBase += netBillableQty * preTaxBasePerUnit;
   });
 
-  const subtotalAfterLineDiscounts = vatableSalesBase - lineDiscountsTotal;
+  const grossSalesBeforeDiscounts = billLines.reduce((sum, line) => {
+      const billableQty = line.qtyOrdered - line.voidedQty - (line.freeQty || 0);
+      return sum + (billableQty * line.unitPrice);
+  }, 0);
+
+  if (isVatInclusive) {
+      vatableSales = grossSalesBeforeDiscounts / (1 + taxRate);
+      taxTotal = grossSalesBeforeDiscounts - vatableSales;
+  } else if (isVatExclusive) {
+      vatableSales = grossSalesBeforeDiscounts;
+      taxTotal = vatableSales * taxRate;
+  } else { // NON_VAT
+      vatableSales = grossSalesBeforeDiscounts;
+      taxTotal = 0;
+  }
 
   let billDiscountTotal = 0;
   if (billDiscount) {
+    // Bill-wide discount is applied on the gross subtotal after line discounts
+    const subtotalAfterLineDiscounts = grossSubtotal - lineDiscountsTotal;
     if (billDiscount.type === 'percent') {
       billDiscountTotal = subtotalAfterLineDiscounts * (billDiscount.value / 100);
     } else { // fixed
@@ -74,39 +84,20 @@ export function calculateBillTotals(
     }
   }
   
-  const taxableAmount = subtotalAfterLineDiscounts - billDiscountTotal;
-
-  let taxTotal = 0;
-
-  if (isVatExclusive) {
-    // taxableAmount is net; VAT is added on top
-    taxTotal = taxableAmount * taxRate;
-  } else if (isVatInclusive) {
-    // taxableAmount is net-of-tax base; VAT is computed from the base
-    taxTotal = taxableAmount * taxRate;
-  }
-
   const chargesTotal = customAdjustments.reduce((sum, charge) => sum + charge.amount, 0);
 
-  // GrandTotal must be the amount the customer pays (gross).
-  // - VAT_EXCLUSIVE: net + VAT + charges
-  // - VAT_INCLUSIVE: (net + VAT) + charges = net*(1+rate) + charges
-  // - NON_VAT: net + charges
-  const grandTotal =
-    isVatExclusive ? (taxableAmount + taxTotal + chargesTotal)
-    : isVatInclusive ? (taxableAmount * (1 + taxRate) + chargesTotal)
-    : (taxableAmount + chargesTotal);
+  const grandTotal = grossSubtotal - lineDiscountsTotal - billDiscountTotal + chargesTotal;
 
   return {
-    subtotal: grossSubtotal,          // this is your gross before discounts/free adjustments
-    taxableAmount,                    // net-of-tax AFTER discounts (base)
-    taxTotal,                         // VAT computed from base
+    subtotal: grossSubtotal,
+    taxableAmount: vatableSales, // For display consistency, taxableAmount is the base for tax
+    taxTotal,
     lineDiscountsTotal,
     billDiscountTotal,
     totalDiscounts: lineDiscountsTotal + billDiscountTotal,
     chargesTotal,
-    grandTotal,                       // gross amount due (includes VAT if inclusive)
-    vatableSales: isVatInclusive ? taxableAmount : taxableAmount, // net sales base
+    grandTotal,
+    vatableSales,
     vatExemptSales,
   };
 }

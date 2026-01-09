@@ -49,19 +49,13 @@ export function BillTotals({
             const lineSubRows: React.ReactNode[] = [];
             
             if (hasDiscount) {
-                const taxRate = (store.taxRatePct || 0) / 100;
-                const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
-
-                const baseUnitPrice = isVatInclusive ? (line.unitPrice / (1 + taxRate)) : line.unitPrice;
-
-                const discountBasePerUnit =
-                  line.discountType === "percent"
-                    ? baseUnitPrice * ((line.discountValue ?? 0) / 100)
-                    : Math.min(baseUnitPrice, (line.discountValue ?? 0));
-
-                const discountDisplayPerUnit = isVatInclusive ? discountBasePerUnit * (1 + taxRate) : discountBasePerUnit;
-
-                const discountAmount = discountDisplayPerUnit * line.discountQty;
+                const discountedQty = Math.min(line.discountQty, billableQty);
+                let discountAmount = 0;
+                if (line.discountType === 'percent') {
+                    discountAmount = (discountedQty * line.unitPrice) * (line.discountValue! / 100);
+                } else {
+                    discountAmount = Math.min(line.unitPrice, line.discountValue!) * discountedQty;
+                }
 
                 lineSubRows.push(
                     <div key={`${line.id}-disc`} className="flex justify-between pl-4 text-destructive">
