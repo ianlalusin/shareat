@@ -57,7 +57,6 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     isLocked?: boolean;
     onUpdateQty: (lineId: string, newQty: number) => void;
-    onUpdateUnitPrice: (lineId: string, newPrice: number) => Promise<void>;
     onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
     onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
     onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
@@ -95,7 +94,6 @@ export function EditBillableItemDialog({
     discounts, 
     isLocked, 
     onUpdateQty, 
-    onUpdateUnitPrice, 
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
@@ -104,7 +102,6 @@ export function EditBillableItemDialog({
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const canEditPrice = appUser?.role === 'admin' || appUser?.role === 'manager';
     const isPackage = line.type === 'package';
 
     const servedQty = useMemo(() => getEligibleTicketIds(line, tickets, 'served').length, [line, tickets]);
@@ -158,23 +155,23 @@ export function EditBillableItemDialog({
         setIsSubmitting(true);
         try {
             let actionTaken = false;
-
-            if (canEditPrice && data.unitPrice !== line.unitPrice) {
-                await onUpdateUnitPrice(line.id, data.unitPrice);
-                actionTaken = true;
-            }
             
             const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
-            if (data.applyDiscount && (!isCurrentlyDiscounted || data.discountValue !== line.discountValue || data.discountType !== line.discountType)) {
-                onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
-                actionTaken = true;
+            const isCurrentlyFree = line.isFree ?? false;
+
+            if (data.applyDiscount) {
+                const discountDataChanged = data.discountType !== line.discountType || data.discountValue !== line.discountValue;
+                if (!isCurrentlyDiscounted || discountDataChanged) {
+                    onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
+                    actionTaken = true;
+                }
             } else if (!data.applyDiscount && isCurrentlyDiscounted) {
-                 onApplyDiscount(line.id, 'fixed', 0, line.qty);
-                 actionTaken = true;
+                onApplyDiscount(line.id, 'fixed', 0, line.qty);
+                actionTaken = true;
             }
-            
-            if (data.applyFree !== (line.isFree ?? false)) {
-                onApplyFree(line.id, data.freeQty, line.isFree ?? false);
+
+            if (data.applyFree !== isCurrentlyFree) {
+                onApplyFree(line.id, data.freeQty, isCurrentlyFree);
                 actionTaken = true;
             }
 
@@ -218,7 +215,7 @@ export function EditBillableItemDialog({
                             <FormField name="unitPrice" control={form.control} render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
-                                    <FormControl><Input type="number" step="0.01" {...field} disabled={isLocked || !canEditPrice}/></FormControl><FormMessage/></FormItem>
+                                    <FormControl><Input type="number" step="0.01" {...field} disabled/></FormControl><FormMessage/></FormItem>
                             )} />
                         </div>
 

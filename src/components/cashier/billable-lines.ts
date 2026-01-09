@@ -108,6 +108,66 @@ export async function findOrCreateLineByVariantTx(
     }
 }
 
+export async function appendAddonTicketIdsToRegularLine({
+  storeId,
+  sessionId,
+  addonId,
+  itemName,
+  unitPrice,
+  ticketIds,
+}: {
+  storeId: string;
+  sessionId: string;
+  addonId: string;
+  itemName: string;
+  unitPrice: number;
+  ticketIds: string[];
+}) {
+  if (ticketIds.length === 0) return;
+
+  await runTransaction(db, async (tx) => {
+    const linesRef = collection(
+      db,
+      `stores/${storeId}/sessions/${sessionId}/billableLines`
+    );
+
+    const regularVariant: Partial<BillableLine> = {
+      type: "addon",
+      itemId: addonId,
+      itemName: itemName,
+      unitPrice: unitPrice,
+      isFree: false,
+      discountValue: 0,
+      isVoided: false,
+    };
+
+    const {
+      ref: lineRef,
+      data: lineData,
+      exists,
+    } = await findOrCreateLineByVariantTx(tx, linesRef, regularVariant);
+
+    const newTicketIds = normalizeTicketIds([
+      ...(lineData.ticketIds || []),
+      ...ticketIds,
+    ]);
+    const newQty = newTicketIds.length;
+
+    const payload = {
+      ...regularVariant,
+      ticketIds: newTicketIds,
+      qty: newQty,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (exists) {
+      tx.update(lineRef, payload);
+    } else {
+      tx.set(lineRef, { ...payload, createdAt: serverTimestamp() });
+    }
+  });
+}
+
 export async function moveTicketIdsBetweenLines({
   storeId, sessionId,
   fromLineId,
@@ -207,36 +267,6 @@ export async function moveTicketIdsBetweenLines({
         });
     }
 }
-
-export async function updateLineUnitPrice(
-  storeId: string,
-  sessionId: string,
-  line: BillableLine,
-  newPrice: number,
-  actor: AppUser
-) {
-    // This action is now restricted. Add a role check for safety.
-    if (actor.role !== 'admin' && actor.role !== 'manager') {
-        throw new Error("You do not have permission to change prices.");
-    }
-
-    await moveTicketIdsBetweenLines({
-        storeId,
-        sessionId,
-        fromLineId: line.id,
-        toVariant: { ...line, unitPrice: newPrice },
-        ticketIdsToMove: line.ticketIds, // Move all tickets
-        actor,
-        action: 'PRICE_OVERRIDE',
-        meta: {
-            itemId: line.itemId,
-            itemName: line.itemName,
-            unitPriceBefore: line.unitPrice,
-            unitPriceAfter: newPrice,
-        }
-    });
-}
-
 
 export async function changeLineQty(
     storeId: string,

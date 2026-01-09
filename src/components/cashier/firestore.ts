@@ -143,14 +143,16 @@ export async function startSession(
       const ticketRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "kitchentickets"));
       const billableLineRef = doc(collection(db, "stores", storeId, "sessions", newSessionRef.id, "billableLines"));
       
+      const guestTicketIds = Array.from({ length: payload.guestCount }, (_, i) => `guest-${i + 1}`);
+
       const billableLinePayload: BillableLine = {
           id: billableLineRef.id,
           type: "package",
           itemId: payload.package.packageId || normalizeKey(payload.package.packageName),
           itemName: payload.package.packageName,
           unitPrice: payload.package.pricePerHead,
-          ticketIds: Array.from({ length: payload.guestCount }, (_, i) => `guest-${i + 1}`),
-          qty: payload.guestCount,
+          ticketIds: guestTicketIds,
+          qty: guestTicketIds.length,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
       };

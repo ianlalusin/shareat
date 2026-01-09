@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
+import { getEligibleTicketIds } from "./billable-lines";
 import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
 
 interface BillableItemsProps {
@@ -25,30 +26,6 @@ interface BillableItemsProps {
   onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
   onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
   isLocked?: boolean;
-}
-
-function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
-    if (!line || !line.ticketIds) return [];
-
-    if (line.type === 'package') {
-        return line.ticketIds;
-    }
-
-    return line.ticketIds.filter(ticketId => {
-        const ticket = ticketsById.get(ticketId);
-        if (!ticket) return false;
-
-        switch (mode) {
-            case "served":
-                return ticket.status === 'served';
-            case "pending":
-                return ticket.status === 'preparing' || ticket.status === 'ready';
-            case "any":
-                return ticket.status !== 'cancelled' && ticket.status !== 'void';
-            default:
-                return false;
-        }
-    });
 }
 
 function BillableLineRow({ 
@@ -116,12 +93,18 @@ export function BillableItems({
   const activeLines = lines.filter(line => !line.isVoided);
   const voidedLines = lines.filter(line => line.isVoided);
 
-  const packageLines = activeLines.filter(line => line.type === 'package');
-  const addonLines = activeLines.filter(line => line.type === 'addon');
-
-  const handleApplyDiscount = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
-    onApplyDiscount(lineId, discountType, discountValue, quantity);
-  };
+  // Group lines by their base item to show discounts/freebies correctly
+  const groupedActiveLines = useMemo(() => {
+    const grouped = new Map<string, BillableLine[]>();
+    activeLines.forEach(line => {
+      const key = line.itemId; // Group by addonId or packageId
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(line);
+    });
+    return Array.from(grouped.values());
+  }, [activeLines]);
 
 
   return (
@@ -137,43 +120,32 @@ export function BillableItems({
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-y-auto">
             <div className="space-y-4">
-                {packageLines.length > 0 && (
-                    <div>
-                        <h3 className="text-sm font-semibold mb-2 px-4 pt-4">Package</h3>
-                         <div className="divide-y border-t">
-                            {packageLines.map(line => (
-                                <BillableLineRow 
-                                    key={line.id} 
-                                    line={line}
-                                    onEdit={setEditingLine}
-                                    isLocked={isLocked}
-                                    servedQty={line.qty} // Packages are always "served" for billing
-                                    pendingQty={0}
-                                    cancelledQty={0}
-                                />
-                            ))}
-                         </div>
-                    </div>
-                )}
+                {groupedActiveLines.map((lineGroup, index) => {
+                  const firstLine = lineGroup[0];
+                  if (!firstLine) return null;
 
-                {addonLines.length > 0 && (
-                     <div>
-                        <h3 className="text-sm font-semibold my-2 px-4">Add-ons & Refills</h3>
-                         <div className="divide-y border-t">
-                            {addonLines.map(line => (
-                                <BillableLineRow 
-                                    key={line.id} 
-                                    line={line}
-                                    onEdit={setEditingLine}
-                                    isLocked={isLocked}
-                                    servedQty={getEligibleTicketIds(line, tickets, 'served').length}
-                                    pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
-                                    cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
-                                />
-                            ))}
-                         </div>
+                  const isPackage = firstLine.type === 'package';
+                  const title = isPackage ? 'Package' : `Add-ons & Refills - ${firstLine.itemName}`;
+
+                  return (
+                    <div key={`${firstLine.itemId}-${index}`}>
+                      <h3 className="text-sm font-semibold mb-2 px-4 pt-4">{title}</h3>
+                      <div className="divide-y border-t">
+                        {lineGroup.map(line => (
+                          <BillableLineRow 
+                            key={line.id}
+                            line={line}
+                            onEdit={setEditingLine}
+                            isLocked={isLocked}
+                            servedQty={getEligibleTicketIds(line, tickets, 'served').length}
+                            pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
+                            cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
+                          />
+                        ))}
+                      </div>
                     </div>
-                )}
+                  );
+                })}
 
                 {voidedLines.length > 0 && (
                      <Accordion type="single" collapsible className="w-full">
@@ -215,7 +187,7 @@ export function BillableItems({
             discounts={discounts}
             isLocked={isLocked}
             onUpdateQty={onUpdateQty}
-            onApplyDiscount={handleApplyDiscount}
+            onApplyDiscount={onApplyDiscount}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
         />
