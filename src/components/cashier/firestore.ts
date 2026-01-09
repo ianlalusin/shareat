@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -23,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { Store, StorePackage, BillableLine, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine } from '@/lib/types';
+import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
@@ -212,6 +211,16 @@ export async function completePaymentFromUnits(
 ) {
   let receiptId: string = "";
 
+  // Payment Gating for Ala Carte
+  const sessionDocForGating = await getDoc(doc(db, "stores", storeId, "sessions", sessionId));
+  if (sessionDocForGating.data()?.sessionMode === 'alacarte') {
+      const billedAddonQty = billLines.filter(line => line.type === 'addon')
+          .reduce((sum, line) => sum + (line.qtyOrdered - line.voidedQty - line.freeQty), 0);
+      if (billedAddonQty <= 0) {
+          throw new Error("Ala carte session requires at least one billable item.");
+      }
+  }
+
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
@@ -296,9 +305,24 @@ export async function completePaymentFromUnits(
               acc[key] = (acc[key] || 0) + amt;
               return acc;
           }, {} as Record<string, number>),
-          // salesByCategory and salesByItem are now computed in the billingSummary
-          salesByCategory: {}, // This will be calculated in a more advanced analytics model
-          salesByItem: {}, // This will be calculated in a more advanced analytics model
+          // salesByCategory and salesByItem are now computed from the bill lines
+          salesByCategory: billLines.reduce((acc, line) => {
+              if (line.type === 'addon' && line.qtyOrdered > 0) {
+                  const category = line.category || 'Uncategorized';
+                  if (!acc[category]) acc[category] = { qty: 0, amount: 0 };
+                  acc[category].qty += line.qtyOrdered;
+                  acc[category].amount += line.qtyOrdered * line.unitPrice;
+              }
+              return acc;
+          }, {} as Record<string, { qty: number, amount: number}>),
+          salesByItem: billLines.reduce((acc, line) => {
+              if (line.qtyOrdered > 0) {
+                if (!acc[line.itemName]) acc[line.itemName] = { qty: 0, amount: 0, categoryName: line.category || 'Uncategorized' };
+                acc[line.itemName].qty += line.qtyOrdered;
+                acc[line.itemName].amount += line.qtyOrdered * line.unitPrice;
+              }
+              return acc;
+          }, {} as Record<string, { qty: number, amount: number, categoryName: string}>),
           servedRefillsByName: sessionData.servedRefillsByName || {},
           serveCountByType: sessionData.serveCountByType || {},
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
@@ -322,6 +346,7 @@ export async function completePaymentFromUnits(
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
             analytics: analyticsV2,
+            lines: billLines, // Snapshot the bill lines
         });
 
         tx.set(receiptRef, {
@@ -439,7 +464,7 @@ export async function upsertAddonToBill(
   if (qtyToAdd <= 0) return;
 
   // Use a deterministic ID for the line item.
-  const lineId = `addon_${addon.id}_${addon.price.toFixed(2)}`;
+  const lineId = sha1(`addon_${addon.id}_${addon.price.toFixed(2)}`);
   const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
   const actor = getActorStamp(user);
 

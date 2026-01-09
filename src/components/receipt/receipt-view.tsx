@@ -1,12 +1,11 @@
 
-
 "use client";
 
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
-import type { BillableLine, ModeOfPayment } from "@/lib/types";
+import type { BillableLine, ModeOfPayment, SessionBillLine } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 // Define types based on your Firestore structure
@@ -58,7 +57,8 @@ export type ReceiptSettings = {
 
 export type ReceiptData = {
     session: Session;
-    billables: BillableLine[];
+    billables?: BillableLine[]; // Legacy
+    lines?: SessionBillLine[]; // New counter model
     payments: Payment[];
     settings: ReceiptSettings;
     receiptCreatedAt?: any;
@@ -84,54 +84,28 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { la
 }
 
 export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: ReceiptViewProps) {
-    if (!data || !data.session || !data.billables) {
+    if (!data || !data.session) {
         return null;
     }
-    const { session, billables, payments, settings, createdByUsername } = data;
+    const { session, lines, payments, settings, createdByUsername } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
 
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
-    const groupedItems = useMemo(() => {
-        const map = new Map<string, { qty: number, unitPrice: number, total: number, notes?: string, discountValue: number, discountType?: 'fixed' | 'percent' }>();
-        
-        billables.forEach(item => {
-            if (item.isFree || item.isVoided) return;
-
-            // Correctly determine quantity for package items
-            const isPackage = item.type === 'package';
-            const itemQty = isPackage ? (session.guestCountFinal ?? item.qty) : item.qty;
-
-            const key = `${item.itemName}@${item.unitPrice.toFixed(2)}`;
-            const existing = map.get(key);
-
-            if (existing) {
-                existing.qty += itemQty;
-                existing.total += itemQty * item.unitPrice;
-            } else {
-                map.set(key, { 
-                    qty: itemQty, 
-                    unitPrice: item.unitPrice, 
-                    total: itemQty * item.unitPrice, 
-                    notes: (item as any).notes, // Cast for legacy notes if they exist
-                    discountValue: item.discountValue || 0,
-                    discountType: item.discountType,
-                });
-            }
-        });
-        return Array.from(map.entries());
-    }, [billables, session.guestCountFinal]);
+    const activeLines = useMemo(() => (lines || []).filter(line => (line.qtyOrdered - line.voidedQty) > 0), [lines]);
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();
-        billables.filter(i => i.isFree && !i.isVoided).forEach(item => {
-             const key = item.itemName;
-             const existing = map.get(key);
-             if (existing) existing.qty += item.qty;
-             else map.set(key, { qty: item.qty });
+        (lines || []).forEach(item => {
+            if (item.freeQty > 0) {
+                 const key = item.itemName;
+                 const existing = map.get(key);
+                 if (existing) existing.qty += item.freeQty;
+                 else map.set(key, { qty: item.freeQty });
+            }
         });
         return Array.from(map.entries());
-    }, [billables]);
+    }, [lines]);
 
     const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
@@ -181,35 +155,42 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     <span>Item</span>
                     <span className="text-right">Total</span>
                 </div>
-                {groupedItems.map(([key, item]) => {
-                    const [name] = key.split('@');
-                    const hasDiscount = item.discountValue > 0;
-                    const discountAmount = item.discountType === 'percent' 
-                        ? item.total * (item.discountValue / 100) 
-                        : item.discountValue * item.qty;
+                {activeLines.map(line => {
+                    const billableQty = line.qtyOrdered - line.voidedQty;
+                    const lineTotal = billableQty * line.unitPrice;
+                    
+                    const hasDiscount = (line.discountValue ?? 0) > 0 && line.discountQty > 0;
+                    
+                    let lineDiscountAmount = 0;
+                    if (hasDiscount) {
+                        const discountedQty = Math.min(line.discountQty, billableQty);
+                        if (line.discountType === 'percent') {
+                           // For VAT inclusive, we need the base price to calculate discount correctly.
+                           // This simplified receipt view does not have store context.
+                           // A slight inaccuracy is accepted here for simplicity as it's for display only.
+                           lineDiscountAmount = (discountedQty * line.unitPrice) * (line.discountValue! / 100);
+                        } else {
+                           lineDiscountAmount = discountedQty * line.discountValue!;
+                        }
+                    }
 
                     return (
-                        <div key={key} className="receipt-item-row">
+                        <div key={line.id} className="receipt-item-row">
                              <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 items-start">
-                                <span>{item.qty}</span>
+                                <span>{billableQty}</span>
                                 <div className="min-w-0">
                                   <div className="whitespace-normal break-words leading-tight">
-                                    {name}
+                                    {line.itemName}
                                   </div>
-                                  {settings.showItemNotes && item.notes && (
-                                    <div className="text-gray-600 text-xs italic mt-0.5">
-                                      ↳ {item.notes}
-                                    </div>
-                                  )}
                                 </div>
                                 <span className="text-right whitespace-nowrap">
-                                  {item.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                             </div>
                              {hasDiscount && settings.showDiscountBreakdown && (
                                 <div className="pl-4 text-xs flex justify-between">
-                                    <span>Discount</span>
-                                    <span className="text-right whitespace-nowrap">- {discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <span>Discount ({line.discountQty}x)</span>
+                                    <span className="text-right whitespace-nowrap">- {lineDiscountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                             )}
                         </div>
@@ -220,11 +201,11 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
                 <ReceiptRow label="Subtotal" value={(summary?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                {((summary?.lineDiscountsTotal ?? 0) > 0 || (summary?.billDiscountAmount ?? 0) > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${( (summary?.lineDiscountsTotal ?? 0) + (summary?.billDiscountAmount ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
+                {((summary?.discountsTotal ?? 0) > 0) && (
+                    <ReceiptRow label="Discounts" value={`(${(summary?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
                 )}
-                 {(summary?.adjustmentsTotal ?? 0) > 0 && (
-                    <ReceiptRow label="Charges" value={(summary?.adjustmentsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 {(summary?.chargesTotal ?? 0) > 0 && (
+                    <ReceiptRow label="Charges" value={(summary?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 )}
              </section>
 

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { collection, query, orderBy, limit, onSnapshot, Timestamp, getDoc, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Store } from "@/lib/types";
+import type { Store, SessionBillLine } from "@/lib/types";
 import { Loader2 } from "lucide-react";
 import { format } from 'date-fns';
 import { Button } from "@/components/ui/button";
@@ -78,27 +78,35 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
             }
 
             try {
-                const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-                    getDoc(doc(db, "stores", store.id, "sessions", selectedSessionId)),
-                    getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "billableLines"), orderBy("createdAt", "asc"))),
-                    getDocs(query(collection(db, "stores", store.id, "sessions", selectedSessionId, "payments"), orderBy("createdAt", "asc"))),
-                    getDoc(doc(db, "stores", store.id, "receiptSettings", "main")),
-                    getDoc(doc(db, "stores", store.id, "receipts", selectedSessionId))
-                ]);
+                const receiptSnap = await getDoc(doc(db, "stores", store.id, "receipts", selectedSessionId));
                 
-                if (!sessionSnap.exists()) throw new Error("Session not found.");
+                if (!receiptSnap.exists()) throw new Error("Receipt not found.");
                 
-                const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
-                const receiptDocData = receiptSnap.exists() ? receiptSnap.data({ serverTimestamps: "estimate" }) as any : {};
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                
+                // For preview, we can get most data from the receipt snapshot itself
+                const sessionDataForPreview = {
+                    id: receiptDocData.sessionId,
+                    tableNumber: receiptDocData.tableNumber,
+                    customerName: receiptDocData.customerName,
+                    sessionMode: receiptDocData.sessionMode,
+                    paymentSummary: receiptDocData.analytics,
+                    closedAt: receiptDocData.createdAt,
+                    startedByUid: "N/A",
+                };
 
+                const settingsSnap = await getDoc(doc(db, "stores", store.id, "receiptSettings", "main"));
+                const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
+                
                 onSelectReceipt({
-                    session: sessionSnap.data() as any,
-                    billables: billablesSnap.docs.map(d => d.data()) as any[],
-                    payments: paymentsSnap.docs.map(d => d.data()) as any[],
+                    session: sessionDataForPreview as any,
+                    lines: receiptDocData.lines || [],
+                    payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
                     settings: settingsData,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
                     receiptNumber: receiptDocData.receiptNumber,
+                    analytics: receiptDocData.analytics,
                 });
 
             } catch (err: any) {

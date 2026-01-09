@@ -1083,6 +1083,10 @@
               "tableId": { "type": "string" },
               "tableNumber": { "type": "string" },
               "customerName": { "type": "string" },
+              "lines": {
+                "type": "array",
+                "items": { "$ref": "#/backend/entities/SessionBillLine" }
+              },
               "total": { "type": "number" },
               "totalPaid": { "type": "number" },
               "change": { "type": "number" },
@@ -1113,3 +1117,4 @@
   }
 }
   
+
