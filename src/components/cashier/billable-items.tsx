@@ -112,28 +112,18 @@ export function BillableItems({
             />
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-y-auto">
-            <div className="space-y-4">
-                {activeLines.map((line) => {
-                  const isPackage = line.type === 'package';
-                  const title = isPackage ? 'Package' : `Add-ons & Refills - ${line.itemName}`;
-
-                  return (
-                    <div key={line.id}>
-                      <h3 className="text-sm font-semibold mb-2 px-4 pt-4">{title}</h3>
-                      <div className="divide-y border-t">
-                          <BillableLineRow 
-                            key={line.id}
-                            line={line}
-                            onEdit={setEditingLine}
-                            isLocked={isLocked}
-                            servedQty={getEligibleTicketIds(line, tickets, 'served').length}
-                            pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
-                            cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
-                          />
-                      </div>
-                    </div>
-                  );
-                })}
+            <div className="divide-y">
+                {activeLines.map((line) => (
+                    <BillableLineRow 
+                        key={line.id}
+                        line={line}
+                        onEdit={setEditingLine}
+                        isLocked={isLocked}
+                        servedQty={getEligibleTicketIds(line, tickets, 'served').length}
+                        pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
+                        cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
+                    />
+                ))}
 
                 {voidedLines.length > 0 && (
                      <Accordion type="single" collapsible className="w-full">
