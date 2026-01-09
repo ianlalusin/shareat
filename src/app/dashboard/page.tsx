@@ -532,10 +532,9 @@ export default function DashboardPage() {
                 // The receipt's ID is the session ID
                 const sessionId = selectedReceiptId;
 
-                const [receiptSnap, settingsSnap, billablesSnap] = await Promise.all([
+                const [receiptSnap, settingsSnap] = await Promise.all([
                     getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId)),
                     getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-                    getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"), orderBy("createdAt", "asc"))),
                 ]);
 
                 if (!receiptSnap.exists()) {
@@ -544,29 +543,21 @@ export default function DashboardPage() {
                 
                 const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
                 
-                let sessionData: any = null;
-                let paymentsData: any[] = [];
-
-                try {
-                    const [sessionSnap, paymentsSnap] = await Promise.all([
-                        getDoc(doc(db, "stores", activeStore.id, "sessions", sessionId)),
-                        getDocs(query(collection(db, "stores", activeStore.id, "sessions", sessionId, "payments"), orderBy("createdAt", "asc"))),
-                    ]);
-                    if (sessionSnap.exists()) {
-                        sessionData = { id: sessionSnap.id, ...sessionSnap.data() };
-                        paymentsData = paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    } else {
-                        console.warn(`Session not found for receipt: ${selectedReceiptId}. Preview will be limited.`);
-                    }
-                } catch(sessionError) {
-                    console.error(`Error fetching full session details for receipt ${selectedReceiptId}:`, sessionError);
-                    // Continue with receipt-only data if session fetch fails
-                }
+                // Construct a mock session object from the receipt data for the preview component
+                const sessionDataForPreview = {
+                    id: sessionId,
+                    paymentSummary: receiptDocData.analytics,
+                    closedAt: receiptDocData.createdAt,
+                    // other fields if needed by ReceiptView that are on the receipt
+                    tableNumber: receiptDocData.tableNumber,
+                    customerName: receiptDocData.customerName,
+                    sessionMode: receiptDocData.sessionMode,
+                };
                 
                 setDetailedReceiptData({
-                    session: sessionData ?? { id: sessionId, paymentSummary: receiptDocData.analytics },
-                    billables: billablesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-                    payments: paymentsData,
+                    session: sessionDataForPreview as any,
+                    lines: receiptDocData.lines || [],
+                    payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
                     settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
@@ -667,18 +658,15 @@ export default function DashboardPage() {
         }
     
         for (const receipt of statsReceipts) {
-            const sessionId = receipt.sessionId ?? receipt.id;
-            const billablesRef = collection(db, `stores/${activeStore.id}/sessions/${sessionId}/billableLines`);
-            const billablesSnap = await getDocs(query(billablesRef, orderBy("createdAt", "asc")));
+            const lines = receipt.lines || [];
+            
+            for (const item of lines) {
     
-            for (const billableDoc of billablesSnap.docs) {
-                const item = billableDoc.data() as BillableLine;
-    
-                if (item.isFree || isExcludedStatus(item.isVoided ? "voided" : "")) {
+                if (item.freeQty > 0 || item.voidedQty > 0) {
                     continue;
                 }
     
-                const qty = toNum(item.qty || 1);
+                const qty = toNum(item.qtyOrdered || 1);
                 const unitPrice = toNum(item.unitPrice || 0);
                 const lineSubtotal = qty * unitPrice;
     

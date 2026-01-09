@@ -1,7 +1,7 @@
 
 "use client";
 
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import type { ActivityLog } from "@/lib/types";
@@ -11,7 +11,7 @@ type ActivityLogPayload = {
     sessionId: string;
     user: AppUser | null;
     action: ActivityLog['action'];
-    lineIds?: string[];
+    lineId?: string;
     ticketIds?: string[];
     fromLineId?: string | null;
     toLineId?: string | null;
@@ -21,9 +21,9 @@ type ActivityLogPayload = {
 };
 
 /**
- * Logs an activity to the activityLogs subcollection for a session.
- * This is a "best-effort" fire-and-forget operation. It will not
- * block the main thread or throw an error that stops a critical process.
+ * Logs an activity to both the session's subcollection and a store-level
+ * collection for easy dashboard querying.
+ * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
   const { storeId, sessionId, user, action, ...rest } = payload;
@@ -38,8 +38,9 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
   }
 
   try {
-    const activityLogsRef = collection(db, "stores", storeId, "sessions", sessionId, "activityLogs");
-    
+    const sessionLogsRef = collection(db, "stores", storeId, "sessions", sessionId, "activityLogs");
+    const logDocRef = doc(sessionLogsRef); // Create a reference with a new auto-ID
+
     const logDoc: Omit<ActivityLog, 'id'> = {
       storeId,
       sessionId,
@@ -51,7 +52,13 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       createdAt: serverTimestamp(),
     };
 
-    await addDoc(activityLogsRef, logDoc);
+    // 1. Write to the session-specific log
+    await setDoc(logDocRef, logDoc);
+    
+    // 2. Write a mirror to the store-level log for dashboard querying
+    const storeLogRef = doc(db, "stores", storeId, "activityLogs", logDocRef.id);
+    await setDoc(storeLogRef, { ...logDoc, id: logDocRef.id });
+
 
   } catch (error) {
     console.warn("Failed to write activity log. This error is non-critical.", {

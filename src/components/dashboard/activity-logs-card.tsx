@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collectionGroup, onSnapshot, orderBy, query, where, limit, Timestamp } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where, limit, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,7 @@ function actionLabel(a: ActivityLog['action']) {
     case "VOID_TICKETS": return "Void";
     case "UNVOID": return "Unvoid";
     case "PRICE_OVERRIDE": return "Price override";
+    case "edit_line": return "Bill Edit";
     default: return a;
   }
 }
@@ -39,7 +40,7 @@ function actionLabel(a: ActivityLog['action']) {
 function actionVariant(a: ActivityLog['action']): "default" | "secondary" | "destructive" | "outline" {
   if (a === "PAYMENT_COMPLETED") return "default";
   if (a === "VOID_TICKETS") return "destructive";
-  if (a === "DISCOUNT_APPLIED" || a === "PRICE_OVERRIDE" || a === "MARK_FREE") return "secondary";
+  if (a === "edit_line" || a === "DISCOUNT_APPLIED" || a === "PRICE_OVERRIDE" || a === "MARK_FREE") return "secondary";
   return "outline";
 }
 
@@ -70,8 +71,7 @@ export function ActivityLogsCard({
     setIsLoading(true);
 
     const q = query(
-      collectionGroup(db, "activityLogs"),
-      where("storeId", "==", storeId),
+      collection(db, "stores", storeId, "activityLogs"),
       where("createdAt", ">=", dateRange.start),
       where("createdAt", "<=", dateRange.end),
       orderBy("createdAt", "desc"),
