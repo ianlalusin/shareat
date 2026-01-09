@@ -210,13 +210,23 @@ export async function moveTicketIdsBetweenLines({
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        const toMoveSet = new Set(ticketIdsToMove);
-        const validIdsToMove = fromLineData.ticketIds.filter(id => toMoveSet.has(id));
-        if (validIdsToMove.length === 0) return;
+        // --- HARD INVARIANT GUARD ---
+        const moveSet = new Set(ticketIdsToMove);
 
-        const remainingFromIds = normalizeTicketIds(fromLineData.ticketIds.filter(id => !toMoveSet.has(id)));
-        const newToIds = normalizeTicketIds([...(toLineData.ticketIds || []), ...validIdsToMove]);
+        const remainingFromIds = normalizeTicketIds(
+            (fromLineData.ticketIds ?? []).filter(id => !moveSet.has(id))
+        );
         
+        const newToIds = normalizeTicketIds([
+            ...(toLineData.ticketIds ?? []),
+            ...ticketIdsToMove,
+        ]);
+        
+        const fromSet = new Set(remainingFromIds);
+        const finalToIds = normalizeTicketIds(newToIds.filter(id => !fromSet.has(id)));
+        // --- END GUARD ---
+
+
         const updatedFromQty = remainingFromIds.length;
         if (updatedFromQty === 0) {
             tx.delete(fromLineRef);
@@ -230,11 +240,11 @@ export async function moveTicketIdsBetweenLines({
             fromLineFinalData = { ...fromLineData, ticketIds: remainingFromIds, qty: updatedFromQty };
         }
         
-        const toLineQty = newToIds.length;
-        toLineFinalData = { ...toLineData, ticketIds: newToIds, qty: toLineQty };
+        const toLineQty = finalToIds.length;
+        toLineFinalData = { ...toLineData, ticketIds: finalToIds, qty: toLineQty };
         const toLinePayload = {
             ...toVariant, // Use the target variant to ensure all properties are correct
-            ticketIds: newToIds,
+            ticketIds: finalToIds,
             qty: toLineQty,
             updatedAt: serverTimestamp()
         };
