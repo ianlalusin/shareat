@@ -64,6 +64,7 @@ export type ReceiptData = {
     receiptCreatedAt?: any;
     createdByUsername?: string;
     receiptNumber?: string;
+    analytics?: any;
 };
 
 interface ReceiptViewProps {
@@ -144,7 +145,9 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
         }
         return id; // Assume it's already a name
     };
-
+    
+    // Fallback logic for payment summary
+    const summary = session.paymentSummary ?? data.analytics;
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
@@ -216,18 +219,18 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                <ReceiptRow label="Subtotal" value={session.paymentSummary.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                {(session.paymentSummary.lineDiscountsTotal > 0 || session.paymentSummary.billDiscountAmount > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${(session.paymentSummary.lineDiscountsTotal + session.paymentSummary.billDiscountAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
+                <ReceiptRow label="Subtotal" value={(summary?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                {((summary?.lineDiscountsTotal ?? 0) > 0 || (summary?.billDiscountAmount ?? 0) > 0) && (
+                    <ReceiptRow label="Discounts" value={`(${( (summary?.lineDiscountsTotal ?? 0) + (summary?.billDiscountAmount ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
                 )}
-                 {session.paymentSummary.adjustmentsTotal > 0 && (
-                    <ReceiptRow label="Charges" value={session.paymentSummary.adjustmentsTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 {(summary?.adjustmentsTotal ?? 0) > 0 && (
+                    <ReceiptRow label="Charges" value={(summary?.adjustmentsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 )}
              </section>
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={`PHP ${session.paymentSummary.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
+                <ReceiptRow label="TOTAL" value={`PHP ${(summary?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
              </section>
             
              <hr className="border-dashed border-black my-2" />
@@ -235,8 +238,8 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 {payments.map((p, i) => (
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 ))}
-                 <ReceiptRow label="Total Paid" value={session.paymentSummary.totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                 <ReceiptRow label="CHANGE" value={session.paymentSummary.change.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
+                 <ReceiptRow label="Total Paid" value={(summary?.totalPaid ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 <ReceiptRow label="CHANGE" value={(summary?.change ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
              </section>
 
              {freeItems.length > 0 && (
