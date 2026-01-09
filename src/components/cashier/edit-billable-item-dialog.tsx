@@ -18,7 +18,7 @@ import { Minus, Plus, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import type { BillableLine, Discount, KitchenTicket } from "@/lib/types";
 import { getEligibleTicketIds } from "./billable-lines";
-import { Alert, AlertTitle } from "../ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
