@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
-import { getEligibleTicketIds, makeVariantKey } from "./billable-lines";
+import { getEligibleTicketIds } from "./billable-lines";
 import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
 
 interface BillableItemsProps {
@@ -24,6 +24,8 @@ interface BillableItemsProps {
   onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
   onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
+  onUpdateQty: (lineId: string, newQty: number) => void;
+  onUpdateUnitPrice: (lineId: string, newPrice: number) => void;
   isLocked?: boolean;
 }
 
@@ -82,6 +84,8 @@ export function BillableItems({
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
+    onUpdateQty,
+    onUpdateUnitPrice,
     isLocked = false 
 }: BillableItemsProps) {
   
@@ -90,26 +94,6 @@ export function BillableItems({
 
   const activeLines = lines.filter(line => !line.isVoided);
   const voidedLines = lines.filter(line => line.isVoided);
-
-  const groupedActiveLines = useMemo(() => {
-    const groups = new Map<string, BillableLine[]>();
-    activeLines.forEach(line => {
-      const key = makeVariantKey(line);
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(line);
-    });
-
-    const consolidated = Array.from(groups.values()).map(lineGroup => {
-        if (lineGroup.length === 1) return lineGroup[0];
-        // Consolidate if needed, but for now, we just use the first line as representative
-        // This part could be enhanced if lines with the same variant key should be merged in the UI
-        return lineGroup[0];
-    });
-
-    return consolidated;
-  }, [activeLines]);
   
   const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
     onApplyDiscount(lineId, discountType, discountValue, quantity);
@@ -129,14 +113,12 @@ export function BillableItems({
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-y-auto">
             <div className="space-y-4">
-                {groupedActiveLines.map((line) => {
-                  if (!line) return null;
-
+                {activeLines.map((line) => {
                   const isPackage = line.type === 'package';
                   const title = isPackage ? 'Package' : `Add-ons & Refills - ${line.itemName}`;
 
                   return (
-                    <div key={makeVariantKey(line)}>
+                    <div key={line.id}>
                       <h3 className="text-sm font-semibold mb-2 px-4 pt-4">{title}</h3>
                       <div className="divide-y border-t">
                           <BillableLineRow 
@@ -192,6 +174,8 @@ export function BillableItems({
             tickets={tickets}
             discounts={discounts}
             isLocked={isLocked}
+            onUpdateQty={onUpdateQty}
+            onUpdateUnitPrice={onUpdateUnitPrice}
             onApplyDiscount={handleApplyDiscountWrapper}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
