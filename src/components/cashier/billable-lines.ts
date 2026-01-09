@@ -48,7 +48,7 @@ export function makeVariantKey(lineLike: Partial<BillableLine>): string {
  * @param ticketIds An array of ticket IDs.
  * @returns A new array with unique, sorted ticket IDs.
  */
-export function normalizeTicketIds(ticketIds: string[]): string[] {
+export function normalizeTicketIds(ticketIds: string[] | undefined): string[] {
   if (!Array.isArray(ticketIds)) return [];
   return [...new Set(ticketIds)].sort();
 }
@@ -215,8 +215,8 @@ export async function moveTicketIdsBetweenLines({
 
         // --- HARD INVARIANT GUARD ---
         const moveSet = new Set(normalizeTicketIds(ticketIdsToMove));
-        const fromIds = normalizeTicketIds(fromLineData.ticketIds ?? []);
-        const toIds = normalizeTicketIds(toLineData.ticketIds ?? []);
+        const fromIds = normalizeTicketIds(fromLineData.ticketIds);
+        const toIds = normalizeTicketIds(toLineData.ticketIds);
 
         const remainingFromIds = fromIds.filter(id => !moveSet.has(id));
         const combinedToIds = normalizeTicketIds([...toIds, ...Array.from(moveSet)]);
@@ -226,10 +226,9 @@ export async function moveTicketIdsBetweenLines({
         const finalToIds = combinedToIds.filter(id => !remainingSet.has(id));
 
         // Fail-fast assertion
-        for (const id of finalToIds) {
-            if (remainingSet.has(id)) {
-                throw new Error("Invariant failed: ticketId would be duplicated across lines.");
-            }
+        const intersection = finalToIds.find(id => remainingSet.has(id));
+        if (intersection) {
+            throw new Error(`Invariant failed: ticketId ${intersection} would be duplicated across lines.`);
         }
         // --- END GUARD ---
 
@@ -247,10 +246,11 @@ export async function moveTicketIdsBetweenLines({
         }
         
         const toLineQty = finalToIds.length;
-        toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty, ...toVariant };
+        const completeToVariant = { ...lineData, ...toVariant }; // Merge fromLine data with toVariant details
+        toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty, ...completeToVariant };
         
         const toLinePayload = {
-            ...toLineFinalData, // Use the merged data
+            ...toLineFinalData,
             updatedAt: serverTimestamp()
         };
         
@@ -326,7 +326,7 @@ export async function changeLineQty(
         return; // Exit after handling package
     }
     
-    // Original logic for add-ons
+    // Logic for add-ons
     await runTransaction(db, async (tx) => {
         const lineSnap = await tx.get(lineRef);
         if (!lineSnap.exists()) throw new Error("Line item not found.");
@@ -345,11 +345,8 @@ export async function changeLineQty(
             }
             
             const qtyToAdd = newQty - currentQty;
-
-            // This should not happen if the UI is correct, but as a safeguard:
             if (qtyToAdd <= 0) return;
             
-            // Create the new kitchen tickets
             const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
             const sessionDoc = await getDoc(doc(db, `stores/${storeId}/sessions`, sessionId));
             const sessionData = sessionDoc.data();
@@ -377,7 +374,6 @@ export async function changeLineQty(
                 });
             }
 
-            // Append the new ticket IDs to the existing line item
             const finalTicketIds = normalizeTicketIds([...lineData.ticketIds, ...newTicketIds]);
             tx.update(lineRef, {
                 ticketIds: finalTicketIds,
@@ -408,7 +404,6 @@ export async function changeLineQty(
                 updatedAt: serverTimestamp()
             });
             
-            // Mark the corresponding kitchen tickets as cancelled
             const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
             for (const ticketId of ticketsToCancel) {
                 tx.update(doc(ticketsColRef, ticketId), {
@@ -421,6 +416,8 @@ export async function changeLineQty(
         }
     });
 }
+    
+
     
 
     
