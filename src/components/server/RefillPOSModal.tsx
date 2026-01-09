@@ -5,9 +5,9 @@ import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy } from "firebase/firestore";
+import { Loader2, RefreshCw } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -19,6 +19,7 @@ import { Textarea } from "../ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { Separator } from "../ui/separator";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -69,13 +70,13 @@ function POSContent({
         setStoreRefills(
           snapshot.docs.map((d) => {
             const data = d.data() as Omit<StoreRefill, "id">;
-            return { ...data, id: d.id };
+            return { ...data, id: d.id, refillId: d.id };
           })
         );
     }));
     
     const globalRefillsQuery = query(collection(db, "refills"), where("isActive", "==", true));
-    unsubs.push(onSnapshot(globalRefillsQuery, (snapshot) => setGlobalRefills(snapshot.docs.map(d => d.data() as Refill))));
+    unsubs.push(onSnapshot(globalRefillsQuery, (snapshot) => setGlobalRefills(snapshot.docs.map(d => ({id: d.id, ...d.data()} as Refill)))));
 
     const flavorsQuery = query(
         collection(db, "stores", storeId, "storeFlavors"),
@@ -85,7 +86,7 @@ function POSContent({
         setStoreFlavors(
           snapshot.docs.map((d) => {
             const data = d.data() as Omit<StoreFlavor, "id">;
-            return { ...data, id: d.id };
+            return { ...data, id: d.id, flavorId: d.id };
           })
         );
     }));
@@ -180,6 +181,7 @@ function POSContent({
             notes: finalNotes || null,
             status: "preparing",
             createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
             createdByUid: appUser.uid,
             sessionId: session.id, 
             storeId,
@@ -200,6 +202,67 @@ function POSContent({
         setIsSubmitting(false);
     }
   };
+
+  const handleRepeatFirstOrder = async () => {
+    if (!appUser || !currentPackage || !currentPackage.refillsAllowed) {
+        toast({ variant: "destructive", title: "Cannot Repeat Order", description: "Package information not found." });
+        return;
+    }
+    setIsSubmitting(true);
+
+    try {
+        const allowedRefillIds = new Set(currentPackage.refillsAllowed);
+        const refillsToOrder = storeRefills.filter(sr => sr.isEnabled && allowedRefillIds.has(sr.refillId) && sr.kitchenLocationId);
+        
+        if (refillsToOrder.length === 0) {
+            toast({ variant: "destructive", title: "No Refills", description: "No valid refills are enabled for this package." });
+            return;
+        }
+
+        const defaultFlavorIds = session.initialFlavorIds || [];
+        const defaultFlavorNames = defaultFlavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id).join(', ');
+
+        const batch = writeBatch(db);
+        const ticketsRef = collection(db, "stores", storeId, "sessions", session.id, "kitchentickets");
+
+        for (const refill of refillsToOrder) {
+            const ticketRef = doc(ticketsRef);
+            const notes = `Repeat First Order\nFlavors: ${defaultFlavorNames}`;
+
+            const payload = {
+                id: ticketRef.id,
+                type: "refill",
+                itemName: refill.refillName,
+                qty: 1,
+                notes: notes,
+                status: "preparing",
+                kitchenLocationId: refill.kitchenLocationId,
+                kitchenLocationName: refill.kitchenLocationName,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdByUid: appUser.uid,
+                sessionId: session.id,
+                storeId,
+                tableNumber: session.tableNumber,
+                customerName: session.customer?.name || session.customerName,
+                sessionMode: session.sessionMode,
+                sessionLabel: computeSessionLabel(session),
+                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+            };
+            batch.set(ticketRef, stripUndefined(payload));
+        }
+
+        await batch.commit();
+        toast({ title: "Refill Set Ordered", description: `Sent ${refillsToOrder.length} tickets to the kitchen.` });
+        onClose();
+
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Order Failed', description: e.message });
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
 
   const handleReset = () => {
     setSelectedRefill(null);
@@ -225,10 +288,26 @@ function POSContent({
   
   return (
     <div className="h-[70vh] flex flex-col">
+      {session.sessionMode === 'package_dinein' && (
+        <div className="p-4 border-b">
+          <Button 
+            className="w-full" 
+            variant="secondary"
+            onClick={handleRepeatFirstOrder}
+            disabled={isSubmitting || sessionIsLocked}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order (Refill Set)
+          </Button>
+          <p className="text-xs text-muted-foreground text-center mt-2">
+            Sends all package refills with the session's initial flavors.
+          </p>
+          <Separator className="my-4" />
+        </div>
+      )}
       <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden">
         {/* Left Panel: Refills */}
         <div className="col-span-1 border-r pr-4">
-          <h3 className="font-semibold mb-2">Available Refills</h3>
+          <h3 className="font-semibold mb-2">Order Single Refill</h3>
           <ScrollArea className="h-full">
             <div className="space-y-1">
               {isLoading ? (
