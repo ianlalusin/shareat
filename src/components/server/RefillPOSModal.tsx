@@ -298,6 +298,14 @@ function POSContent({
   const globalRefillInfo = globalRefills.find(r => r.id === selectedRefill?.refillId);
   const needsFlavors = !!globalRefillInfo?.requiresFlavor && currentRefillAllowedFlavors.length > 0;
   
+  const defaultFlavorNames = useMemo(() => {
+    if (!session.initialFlavorIds || !storeFlavors) return "";
+    return session.initialFlavorIds
+        .map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName)
+        .filter(Boolean)
+        .join(", ");
+  }, [session.initialFlavorIds, storeFlavors]);
+
   return (
     <div className="h-[70vh] flex flex-col">
       {session.sessionMode === 'package_dinein' && (
@@ -310,9 +318,14 @@ function POSContent({
           >
             <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order (Refill Set)
           </Button>
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            Sends all package refills with the session's initial flavors.
-          </p>
+          <div className="text-xs text-muted-foreground text-center mt-2 space-y-1">
+            <p>Sends all refills allowed by the package with the default flavors.</p>
+            {currentPackage?.packageName && (
+              <p>
+                <span className="font-semibold">{currentPackage.packageName}:</span> {defaultFlavorNames}
+              </p>
+            )}
+          </div>
           <Separator className="my-4" />
         </div>
       )}
