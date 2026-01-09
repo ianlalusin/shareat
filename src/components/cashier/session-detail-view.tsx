@@ -8,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, voidSession } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, updateSessionBillLine, voidSession } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -128,6 +128,28 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const canCompletePayment = grandTotal > 0 && remainingBalance <= 0;
 
+  const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
+    if (!appUser || !storeId || !sessionId) return;
+    try {
+        await updateSessionBillLine(storeId, sessionId, lineId, after);
+        await writeActivityLog({
+            storeId,
+            sessionId,
+            user: appUser,
+            action: 'EDIT_LINE',
+            lineId,
+            meta: { itemName: before.itemName, qty: after.qtyOrdered },
+            note: 'Line item updated',
+            before,
+            after
+        })
+        toast({ title: "Line Item Updated"});
+    } catch(e: any) {
+        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+    }
+  }
+
+
   const handleCompletePayment = async () => {
     if (isCompletingPayment || isBillingLocked) return;
 
@@ -196,7 +218,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     storeId={storeId} 
                     session={session} 
                     discounts={itemDiscounts}
-                    isLocked={isBillingLocked} 
+                    isLocked={isBillingLocked}
+                    onUpdateLine={handleUpdateLine}
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
                  <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">

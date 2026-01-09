@@ -21,6 +21,7 @@ interface BillableItemsProps {
   session: PendingSession;
   discounts: Discount[];
   isLocked?: boolean;
+  onUpdateLine: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
 }
 
 function BillableLineRow({ 
@@ -32,19 +33,22 @@ function BillableLineRow({
     onEdit: (line: SessionBillLine) => void,
     isLocked?: boolean,
 }) {
-    const totalDiscountQty = line.discountQty + line.freeQty;
+    const totalDiscountQty = line.discountQty;
+    const totalFreeQty = line.freeQty;
     const totalVoidQty = line.voidedQty;
+
+    const netQty = line.qtyOrdered - totalVoidQty;
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
             <div className="flex items-center gap-4 py-3 px-4">
                 <div className="flex-1">
-                    <p className="font-medium">{line.qtyOrdered > 1 && `${line.qtyOrdered}x `}{line.itemName}</p>
+                    <p className="font-medium">{netQty > 1 && `${netQty}x `}{line.itemName}</p>
                      <div className="text-xs text-muted-foreground">
-                        <p>{line.qtyOrdered} x ₱{line.unitPrice.toFixed(2)} each = ₱{(line.qtyOrdered * line.unitPrice).toFixed(2)}</p>
+                        <p>{netQty} x ₱{line.unitPrice.toFixed(2)} each = ₱{(netQty * line.unitPrice).toFixed(2)}</p>
                     </div>
                     {totalDiscountQty > 0 && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">{totalDiscountQty} discounted</Badge>}
-                    {totalVoidQty > 0 && <Badge variant="destructive" className="mt-1">{totalVoidQty} voided</Badge>}
+                    {totalFreeQty > 0 && <Badge variant="outline" className="mt-1 border-green-500 text-green-600">{totalFreeQty} free</Badge>}
                 </div>
                 {!isLocked && (
                     <div className="flex items-center gap-2">
@@ -63,7 +67,8 @@ export function BillableItems({
     storeId,
     session,
     discounts,
-    isLocked = false 
+    isLocked = false,
+    onUpdateLine
 }: BillableItemsProps) {
   
   const { appUser } = useAuthContext();
@@ -71,8 +76,7 @@ export function BillableItems({
 
   const { activeLines, voidedLines } = useMemo(() => {
     const active = lines.filter(line => line.qtyOrdered > line.voidedQty);
-    // For the UI, we only show voided lines if the entire line was voided
-    const voided = lines.filter(line => line.qtyOrdered > 0 && line.qtyOrdered === line.voidedQty);
+    const voided = lines.filter(line => line.voidedQty > 0);
     return { activeLines: active, voidedLines: voided };
   }, [lines]);
 
@@ -102,15 +106,15 @@ export function BillableItems({
                      <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="voided-items" className="border-t">
                             <AccordionTrigger className="px-4 text-muted-foreground">
-                                Voided Items ({voidedLines.reduce((sum, l) => sum + l.qtyOrdered, 0)})
+                                Voided Items ({voidedLines.reduce((sum, l) => sum + l.voidedQty, 0)})
                             </AccordionTrigger>
                             <AccordionContent className="px-4">
                                 <div className="divide-y">
                                 {voidedLines.map(line => (
                                     <div key={line.id} className="py-2">
                                         <div className="flex justify-between">
-                                            <p className="font-medium text-muted-foreground line-through">{line.qtyOrdered}x {line.itemName}</p>
-                                            <p className="text-muted-foreground line-through">₱{(line.qtyOrdered * line.unitPrice).toFixed(2)}</p>
+                                            <p className="font-medium text-muted-foreground line-through">{line.voidedQty}x {line.itemName}</p>
+                                            <p className="text-muted-foreground line-through">₱{(line.voidedQty * line.unitPrice).toFixed(2)}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -130,13 +134,9 @@ export function BillableItems({
             line={editingLine}
             discounts={discounts}
             isLocked={isLocked}
-            storeId={storeId}
-            sessionId={session.id}
+            onSave={onUpdateLine}
         />
       )}
     </>
   );
 }
-
-
-    

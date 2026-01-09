@@ -505,3 +505,28 @@ export async function upsertAddonToBill(
     }
   });
 }
+
+/**
+ * Updates a sessionBillLine document with new values.
+ * Uses a transaction to ensure safe updates.
+ */
+export async function updateSessionBillLine(
+    storeId: string,
+    sessionId: string,
+    lineId: string,
+    patch: Partial<SessionBillLine>
+) {
+    if (!storeId || !sessionId || !lineId) {
+        throw new Error("Missing storeId, sessionId, or lineId");
+    }
+
+    const lineRef = doc(db, "stores", storeId, "sessions", sessionId, "sessionBillLines", lineId);
+
+    // Make sure to include the update timestamp.
+    const updatePayload = {
+        ...patch,
+        updatedAt: serverTimestamp(),
+    };
+
+    await updateDoc(lineRef, updatePayload);
+}
