@@ -3,7 +3,6 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
@@ -305,7 +304,7 @@ function POSContent({
         <div className="p-4 border-b">
           <Button 
             className="w-full" 
-            variant="secondary"
+            variant="destructive"
             onClick={handleRepeatFirstOrder}
             disabled={isSubmitting || sessionIsLocked}
           >
@@ -402,11 +401,6 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
   const handleOpenChange = (open: boolean) => {
     if (!open) props.onOpenChange(false);
   };
-
-  // The Drawer component was removed, but if you want a responsive modal,
-  // Dialog is generally sufficient as it centers and can be styled.
-  // For a true drawer on mobile, the useIsMobile hook would need to be reinstated
-  // and the Drawer component re-added.
   
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
@@ -420,5 +414,3 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
-
-    
