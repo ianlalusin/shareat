@@ -21,7 +21,6 @@ interface BillableItemsProps {
   storeId: string;
   session: PendingSession;
   discounts: Discount[];
-  onUpdateQty: (lineId: string, newQty: number) => void;
   onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
   onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
   onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
@@ -80,7 +79,6 @@ export function BillableItems({
     storeId,
     session,
     discounts,
-    onUpdateQty, 
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
@@ -97,7 +95,7 @@ export function BillableItems({
   const groupedActiveLines = useMemo(() => {
     const finalConsolidation = new Map<string, BillableLine[]>();
     activeLines.forEach(line => {
-        const consolidationKey = line.itemId; // Group by base item ID
+        const consolidationKey = line.itemId;
         if(!finalConsolidation.has(consolidationKey)) {
             finalConsolidation.set(consolidationKey, []);
         }
@@ -105,6 +103,10 @@ export function BillableItems({
     });
     return Array.from(finalConsolidation.values());
   }, [activeLines]);
+  
+  const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
+    onApplyDiscount(lineId, discountType, discountValue, quantity);
+  };
 
 
   return (
@@ -186,8 +188,7 @@ export function BillableItems({
             tickets={tickets}
             discounts={discounts}
             isLocked={isLocked}
-            onUpdateQty={onUpdateQty}
-            onApplyDiscount={onApplyDiscount}
+            onApplyDiscount={handleApplyDiscountWrapper}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
         />
@@ -195,3 +196,4 @@ export function BillableItems({
     </>
   );
 }
+
