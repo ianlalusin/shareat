@@ -35,11 +35,12 @@ export function makeVariantKey(lineLike: Partial<BillableLine>): string {
     lineLike.itemId || normalizeKey(lineLike.itemName || 'unknown'),
     `price:${(lineLike.unitPrice || 0).toFixed(2)}`,
     `free:${lineLike.isFree ? 'yes' : 'no'}`,
-    `disc:${lineLike.discountType || 'none'}-${lineLike.discountValue || 0}`,
+    `disc:${lineLike.discountType || 'none'}-${(lineLike.discountValue || 0).toFixed(2)}`,
     `void:${lineLike.isVoided ? 'yes' : 'no'}`,
   ];
   return parts.join('|');
 }
+
 
 /**
  * Ensures a ticket ID array is unique and sorted.
@@ -244,14 +245,10 @@ export async function moveTicketIdsBetweenLines({
         }
         
         const toLineQty = finalToIds.length;
-        toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty };
+        toLineFinalData = { ...toLineData, id: toLineRef.id, ticketIds: finalToIds, qty: toLineQty, ...toVariant };
         
         const toLinePayload = {
-            ...toLineData,
-            ...toVariant, // Use the target variant to ensure all properties are correct
-            id: toLineRef.id,
-            ticketIds: finalToIds,
-            qty: toLineQty,
+            ...toLineFinalData, // Use the merged data
             updatedAt: serverTimestamp()
         };
         
@@ -283,6 +280,7 @@ export async function moveTicketIdsBetweenLines({
         });
     }
 }
+
 
 export async function changeLineQty(
     storeId: string,
@@ -421,4 +419,6 @@ export async function changeLineQty(
         }
     });
 }
+    
+
     
