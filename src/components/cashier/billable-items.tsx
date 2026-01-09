@@ -31,10 +31,12 @@ interface BillableItemsProps {
 function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
     if (!line || !line.ticketIds) return [];
 
+    if (line.type === 'package') {
+        return line.ticketIds;
+    }
+
     return line.ticketIds.filter(ticketId => {
         const ticket = ticketsById.get(ticketId);
-        // For packages, which are synthetic, there's no ticket, so we treat them as "served" for billing purposes.
-        if (line.type === 'package') return true; 
         if (!ticket) return false;
 
         switch (mode) {
@@ -67,6 +69,7 @@ function BillableLineRow({
 }) {
     
     const hasDiscount = (line.discountValue ?? 0) > 0;
+    const isPackage = line.type === 'package';
     
     return (
         <div className="flex flex-col border-b last:border-b-0">
@@ -75,7 +78,7 @@ function BillableLineRow({
                     <p className="font-medium">{line.itemName}</p>
                     <div className="text-xs text-muted-foreground">
                         <p>{line.qty} x ₱{line.unitPrice.toFixed(2)} each = ₱{(line.qty * line.unitPrice).toFixed(2)}</p>
-                        {(servedQty > 0 || pendingQty > 0 || cancelledQty > 0) && (
+                        {(!isPackage && (servedQty > 0 || pendingQty > 0 || cancelledQty > 0)) && (
                             <p>({servedQty} served, {pendingQty} pending, {cancelledQty} cancelled)</p>
                         )}
                     </div>
@@ -208,10 +211,10 @@ export function BillableItems({
             discounts={discounts}
             isLocked={isLocked}
             onUpdateQty={onUpdateQty}
-            onUpdateUnitPrice={(newPrice) => onUpdateUnitPrice(editingLine.id, newPrice)}
-            onApplyDiscount={(type, value, qty) => onApplyDiscount(editingLine.id, type, value, qty)}
-            onApplyFree={(qty, isFree) => onApplyFree(editingLine.id, qty, isFree)}
-            onVoidItem={(qty, reason, note) => onVoidItem(editingLine.id, qty, reason, note)}
+            onUpdateUnitPrice={onUpdateUnitPrice}
+            onApplyDiscount={handleApplyDiscount}
+            onApplyFree={onApplyFree}
+            onVoidItem={onVoidItem}
         />
       )}
     </>

@@ -55,8 +55,6 @@ export function normalizeTicketIds(ticketIds: string[]): string[] {
 export function getEligibleTicketIds(line: BillableLine, ticketsById: Map<string, KitchenTicket>, mode: "served" | "pending" | "any"): string[] {
     if (!line || !line.ticketIds) return [];
 
-    // For packages, guest tickets are always considered "pending" or "eligible" for billing actions
-    // as they don't have a real-time kitchen status.
     if (line.type === 'package') {
         return line.ticketIds;
     }
@@ -158,18 +156,18 @@ export async function moveTicketIdsBetweenLines({
 
         const remainingFromIds = normalizeTicketIds(fromLineData.ticketIds.filter(id => !toMoveSet.has(id)));
         const newToIds = normalizeTicketIds([...(toLineData.ticketIds || []), ...validIdsToMove]);
-
-        if (remainingFromIds.length === 0 && fromLineData.type === 'addon') {
+        
+        const updatedFromQty = remainingFromIds.length;
+        if (updatedFromQty === 0) {
             tx.delete(fromLineRef);
             fromLineFinalData = { ...fromLineData, ticketIds: [], qty: 0 };
         } else {
-            const updatedQty = remainingFromIds.length;
-            fromLineFinalData = { ...fromLineData, ticketIds: remainingFromIds, qty: updatedQty };
             tx.update(fromLineRef, { 
                 ticketIds: remainingFromIds, 
-                qty: updatedQty, 
+                qty: updatedFromQty, 
                 updatedAt: serverTimestamp() 
             });
+            fromLineFinalData = { ...fromLineData, ticketIds: remainingFromIds, qty: updatedFromQty };
         }
         
         const toLineQty = newToIds.length;
@@ -217,6 +215,11 @@ export async function updateLineUnitPrice(
   newPrice: number,
   actor: AppUser
 ) {
+    // This action is now restricted. Add a role check for safety.
+    if (actor.role !== 'admin' && actor.role !== 'manager') {
+        throw new Error("You do not have permission to change prices.");
+    }
+
     await moveTicketIdsBetweenLines({
         storeId,
         sessionId,
@@ -245,6 +248,39 @@ export async function changeLineQty(
 ) {
     const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/billableLines`, line.id);
     
+    if (line.type === 'package') {
+        await runTransaction(db, async (tx) => {
+            const lineSnap = await tx.get(lineRef);
+            if (!lineSnap.exists()) throw new Error("Line item not found.");
+            const lineData = lineSnap.data() as BillableLine;
+
+            const currentQty = lineData.qty;
+            if (newQty === currentQty) return;
+
+            if (lineData.isVoided || lineData.isFree || (lineData.discountValue ?? 0) > 0) {
+                throw new Error("Quantity can only be changed on regular, non-discounted package lines.");
+            }
+
+            let newTicketIds: string[];
+            if (newQty > currentQty) {
+                // Add new synthetic guest IDs
+                const newIds = Array.from({ length: newQty - currentQty }, (_, i) => `guest-${currentQty + i + 1}`);
+                newTicketIds = [...lineData.ticketIds, ...newIds];
+            } else {
+                // Remove from the end
+                newTicketIds = lineData.ticketIds.slice(0, newQty);
+            }
+
+            tx.update(lineRef, {
+                ticketIds: normalizeTicketIds(newTicketIds),
+                qty: newTicketIds.length,
+                updatedAt: serverTimestamp(),
+            });
+        });
+        return; // Exit after handling package
+    }
+    
+    // Original logic for add-ons
     await runTransaction(db, async (tx) => {
         const lineSnap = await tx.get(lineRef);
         if (!lineSnap.exists()) throw new Error("Line item not found.");

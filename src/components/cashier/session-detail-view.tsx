@@ -169,7 +169,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     });
 
     return { subtotal: sub, lineDiscountsTotal: lineDisc, pendingItemsCount: pendingCount };
-  }, [billableLines, ticketsById, session]);
+  }, [billableLines, ticketsById]);
 
   const handleUpdateQty = async (lineId: string, newQty: number) => {
     if (isBillingLocked || !activeStore || !session || newQty < 1 || !appUser) return;
@@ -423,5 +423,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    
