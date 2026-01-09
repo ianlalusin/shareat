@@ -211,7 +211,7 @@ export async function moveTicketIdsBetweenLines({
         if (!fromLineSnap.exists()) throw new Error(`Source line ${fromLineId} not found.`);
         const fromLineData = fromLineSnap.data() as BillableLine;
 
-        // --- HARD INVARIANT GUARD ---
+        // --- HARD INVARIANT GUARD (as per your excellent suggestion) ---
         const moveSet = new Set(ticketIdsToMove);
 
         const remainingFromIds = normalizeTicketIds(
@@ -223,10 +223,16 @@ export async function moveTicketIdsBetweenLines({
             ...ticketIdsToMove,
         ]);
         
-        const fromSet = new Set(remainingFromIds);
-        const finalToIds = normalizeTicketIds(newToIds.filter(id => !fromSet.has(id)));
-        // --- END GUARD ---
+        const remainingSet = new Set(remainingFromIds);
+        const finalToIds = normalizeTicketIds(newToIds.filter(id => !remainingSet.has(id)));
 
+        // Optional: Fail-fast assertion to ensure no overlap
+        for (const id of finalToIds) {
+            if (remainingSet.has(id)) {
+                throw new Error("Invariant failed: ticketId would be duplicated across lines.");
+            }
+        }
+        // --- END GUARD ---
 
         const updatedFromQty = remainingFromIds.length;
         if (updatedFromQty === 0) {
@@ -412,6 +418,4 @@ export async function changeLineQty(
         }
     });
 }
-    
-
     
