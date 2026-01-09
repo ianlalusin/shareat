@@ -12,20 +12,35 @@ import { format } from "date-fns";
 import { toJsDate } from "@/lib/utils/date";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { useAuthContext } from "@/context/auth-context";
-import { getEligibleTicketIds } from "./billable-lines";
-import type { OrderItemStatus, Discount, PendingSession, BillableLine, KitchenTicket } from "@/lib/types";
+import { makeVariantKey } from "./billable-lines";
+import type { OrderItemStatus, Discount, PendingSession, BillUnit } from "@/lib/types";
+
+// This represents a line item shown in the UI, grouped from multiple units.
+export type GroupedBillableLine = {
+    key: string;
+    type: 'package' | 'addon';
+    itemId: string;
+    itemName: string;
+    unitPrice: number;
+    qty: number;
+    isFree: boolean;
+    discountType?: "fixed" | "percent" | null;
+    discountValue?: number;
+    isVoided: boolean;
+    voidReason?: string;
+    voidNote?: string;
+    underlyingUnits: BillUnit[];
+};
+
 
 interface BillableItemsProps {
-  lines: BillableLine[];
-  tickets: Map<string, KitchenTicket>;
+  units: BillUnit[];
   storeId: string;
   session: PendingSession;
   discounts: Discount[];
-  onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
-  onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
-  onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
-  onUpdateQty: (lineId: string, newQty: number) => void;
-  onUpdateUnitPrice: (lineId: string, newPrice: number) => void; // Added prop
+  onApplyDiscount: (units: BillUnit[], discountType: "fixed" | "percent", discountValue: number) => void;
+  onApplyFree: (units: BillUnit[], isFree: boolean) => void;
+  onVoidItem: (units: BillUnit[], reason: string, note?: string) => void;
   isLocked?: boolean;
 }
 
@@ -33,32 +48,21 @@ function BillableLineRow({
     line, 
     onEdit,
     isLocked,
-    servedQty,
-    pendingQty,
-    cancelledQty,
 }: { 
-    line: BillableLine, 
-    onEdit: (line: BillableLine) => void,
+    line: GroupedBillableLine, 
+    onEdit: (line: GroupedBillableLine) => void,
     isLocked?: boolean,
-    servedQty: number,
-    pendingQty: number,
-    cancelledQty: number,
 }) {
     
     const hasDiscount = (line.discountValue ?? 0) > 0;
-    const isPackage = line.type === 'package';
     
     return (
         <div className="flex flex-col border-b last:border-b-0">
             <div className="flex items-center gap-4 py-3 px-4">
                 <div className="flex-1">
                     <p className="font-medium">{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
-                    <div className="text-xs text-muted-foreground">
+                     <div className="text-xs text-muted-foreground">
                         <p>{line.qty} x ₱{line.unitPrice.toFixed(2)} each = ₱{(line.qty * line.unitPrice).toFixed(2)}</p>
-                        {(!isPackage && (servedQty > 0 || pendingQty > 0 || cancelledQty > 0)) && (
-                            <p>({servedQty} served, {pendingQty} pending, {cancelledQty} cancelled)</p>
-                        )}
-                         {isPackage && <p>({line.qty} Guests)</p>}
                     </div>
                     {hasDiscount && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">Discounted</Badge>}
                     {line.isFree && <Badge variant="outline" className="mt-1 border-yellow-500 text-yellow-600">Free</Badge>}
@@ -76,37 +80,62 @@ function BillableLineRow({
 }
 
 export function BillableItems({ 
-    lines, 
-    tickets,
+    units,
     storeId,
     session,
     discounts,
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
-    onUpdateQty,
-    onUpdateUnitPrice, // Destructure new prop
     isLocked = false 
 }: BillableItemsProps) {
   
   const { appUser } = useAuthContext();
-  const [editingLine, setEditingLine] = useState<BillableLine | null>(null);
+  const [editingLine, setEditingLine] = useState<GroupedBillableLine | null>(null);
 
   const { activeLines, voidedLines } = useMemo(() => {
-    // Defensive guard against duplicate lines from props
-    const map = new Map<string, BillableLine>();
-    lines.forEach(l => map.set(l.id, l));
-    const safeLines = Array.from(map.values());
-    
-    const active = safeLines.filter(line => !line.isVoided);
-    const voided = safeLines.filter(line => line.isVoided);
-    return { activeLines: active, voidedLines: voided };
-  }, [lines]);
-  
-  const handleApplyDiscountWrapper = (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
-    onApplyDiscount(lineId, discountType, discountValue, quantity);
-  };
+    const grouped = new Map<string, GroupedBillableLine>();
 
+    units.forEach(unit => {
+        const billing = (unit as any).billing;
+        const key = makeVariantKey({
+            type: unit.unitType,
+            itemId: unit.unitType === 'package' ? (unit as any).packageId : billing?.itemId,
+            unitPrice: billing?.unitPrice ?? (unit as any).unitPrice ?? 0,
+            isFree: billing?.isFree,
+            discountType: billing?.discountType,
+            discountValue: billing?.discountValue,
+            isVoided: billing?.isVoided,
+        });
+
+        if (grouped.has(key)) {
+            const existing = grouped.get(key)!;
+            existing.qty += 1;
+            existing.underlyingUnits.push(unit);
+        } else {
+            grouped.set(key, {
+                key,
+                type: unit.unitType,
+                itemId: unit.unitType === 'package' ? (unit as any).packageId : billing.itemId,
+                itemName: unit.unitType === 'package' ? (unit as any).packageName : billing.itemName,
+                unitPrice: billing?.unitPrice ?? (unit as any).unitPrice ?? 0,
+                qty: 1,
+                isFree: billing?.isFree ?? false,
+                discountType: billing?.discountType,
+                discountValue: billing?.discountValue,
+                isVoided: billing?.isVoided ?? false,
+                voidReason: billing?.voidReason,
+                voidNote: billing?.voidNote,
+                underlyingUnits: [unit],
+            });
+        }
+    });
+
+    const allLines = Array.from(grouped.values());
+    const active = allLines.filter(line => !line.isVoided);
+    const voided = allLines.filter(line => line.isVoided);
+    return { activeLines: active, voidedLines: voided };
+  }, [units]);
 
   return (
     <>
@@ -123,13 +152,10 @@ export function BillableItems({
             <div className="divide-y">
                 {activeLines.map((line) => (
                     <BillableLineRow 
-                        key={line.id} // Use the unique line ID as the key
+                        key={line.key}
                         line={line}
                         onEdit={setEditingLine}
                         isLocked={isLocked}
-                        servedQty={getEligibleTicketIds(line, tickets, 'served').length}
-                        pendingQty={getEligibleTicketIds(line, tickets, 'pending').length}
-                        cancelledQty={line.qty - getEligibleTicketIds(line, tickets, 'any').length}
                     />
                 ))}
 
@@ -142,14 +168,11 @@ export function BillableItems({
                             <AccordionContent className="px-4">
                                 <div className="divide-y">
                                 {voidedLines.map(line => (
-                                    <div key={line.id} className="py-2">
+                                    <div key={line.key} className="py-2">
                                         <div className="flex justify-between">
                                             <p className="font-medium text-muted-foreground line-through">{line.qty}x {line.itemName}</p>
                                             <p className="text-muted-foreground line-through">₱{(line.qty * line.unitPrice).toFixed(2)}</p>
                                         </div>
-                                        <p className="text-xs text-destructive">
-                                            Voided by {line.voidedByUid?.substring(0, 6)} at {line.voidedAt ? format(toJsDate(line.voidedAt)!, 'p') : ''}
-                                        </p>
                                         <p className="text-xs text-destructive italic">
                                             Reason: {line.voidReason}{line.voidNote ? ` - ${line.voidNote}` : ''}
                                         </p>
@@ -169,12 +192,9 @@ export function BillableItems({
             isOpen={!!editingLine}
             onClose={() => setEditingLine(null)}
             line={editingLine}
-            tickets={tickets}
             discounts={discounts}
             isLocked={isLocked}
-            onUpdateQty={onUpdateQty}
-            onUpdateUnitPrice={onUpdateUnitPrice}
-            onApplyDiscount={handleApplyDiscountWrapper}
+            onApplyDiscount={onApplyDiscount}
             onApplyFree={onApplyFree}
             onVoidItem={onVoidItem}
         />

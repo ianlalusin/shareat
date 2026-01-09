@@ -16,10 +16,11 @@ import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import type { BillableLine, Discount, KitchenTicket } from "@/lib/types";
-import { getEligibleTicketIds } from "./billable-lines";
+import type { BillUnit, Discount } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
+import { GroupedBillableLine } from "./billable-items";
+
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -52,15 +53,12 @@ type FormValues = z.infer<typeof formSchema>;
 interface EditBillableItemDialogProps {
     isOpen: boolean;
     onClose: () => void;
-    line: BillableLine;
-    tickets: Map<string, KitchenTicket>;
+    line: GroupedBillableLine;
     discounts: Discount[];
     isLocked?: boolean;
-    onUpdateQty: (lineId: string, newQty: number) => void;
-    onUpdateUnitPrice: (lineId: string, newPrice: number) => void;
-    onApplyDiscount: (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => void;
-    onApplyFree: (lineId: string, quantity: number, currentIsFree: boolean) => void;
-    onVoidItem: (lineId: string, quantity: number, reason: string, note?: string) => void;
+    onApplyDiscount: (units: BillUnit[], discountType: "fixed" | "percent", discountValue: number) => void;
+    onApplyFree: (units: BillUnit[], isFree: boolean) => void;
+    onVoidItem: (units: BillUnit[], reason: string, note?: string) => void;
 }
 
 function normalizeDiscountType(t: any): "fixed" | "percent" {
@@ -91,11 +89,8 @@ export function EditBillableItemDialog({
     isOpen, 
     onClose, 
     line,
-    tickets,
     discounts, 
-    isLocked, 
-    onUpdateQty,
-    onUpdateUnitPrice,
+    isLocked,
     onApplyDiscount, 
     onApplyFree, 
     onVoidItem,
@@ -105,11 +100,7 @@ export function EditBillableItemDialog({
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const isPackage = line.type === 'package';
-
-    const servedQty = useMemo(() => getEligibleTicketIds(line, tickets, 'served').length, [line, tickets]);
-    const pendingQty = useMemo(() => getEligibleTicketIds(line, tickets, 'pending').length, [line, tickets]);
-    const totalActionableQty = isPackage ? line.qty : servedQty + pendingQty;
-
+    
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
     });
@@ -118,7 +109,7 @@ export function EditBillableItemDialog({
         if (line) {
             const isDiscounted = (line.discountValue ?? 0) > 0;
             const savedDiscount = isDiscounted ? discounts.find(d => d.type === line.discountType && d.value === line.discountValue) : undefined;
-            const defaultActionQty = isPackage ? line.qty : (servedQty > 0 ? servedQty : 1);
+            const defaultActionQty = line.qty;
             
             form.reset({
                 unitPrice: line.unitPrice,
@@ -135,7 +126,7 @@ export function EditBillableItemDialog({
                 voidNote: '',
             });
         }
-    }, [line, discounts, servedQty, form, isOpen, isPackage]);
+    }, [line, discounts, form, isOpen]);
 
     const { applyDiscount, discountId, applyFree, applyVoid, voidReason } = form.watch();
 
@@ -160,31 +151,30 @@ export function EditBillableItemDialog({
             
             const isCurrentlyDiscounted = (line.discountValue ?? 0) > 0;
             const isCurrentlyFree = line.isFree ?? false;
-
-            // Check if user is actually changing the discount status or values
+            
             const discountToggled = data.applyDiscount !== isCurrentlyDiscounted;
             const discountValuesChanged = data.discountType !== line.discountType || data.discountValue !== line.discountValue;
 
             if (data.applyDiscount && (discountToggled || discountValuesChanged)) {
-                onApplyDiscount(line.id, data.discountType, data.discountValue, data.discountQty);
+                onApplyDiscount(line.underlyingUnits.slice(0, data.discountQty), data.discountType, data.discountValue);
                 actionTaken = true;
             } else if (!data.applyDiscount && isCurrentlyDiscounted) {
-                onApplyDiscount(line.id, 'fixed', 0, line.qty);
+                onApplyDiscount(line.underlyingUnits, 'fixed', 0);
                 actionTaken = true;
             }
 
             if (data.applyFree !== isCurrentlyFree) {
-                onApplyFree(line.id, data.freeQty, isCurrentlyFree);
+                onApplyFree(line.underlyingUnits.slice(0, data.freeQty), data.applyFree);
                 actionTaken = true;
             }
 
-            if (!isPackage && data.applyVoid) {
+            if (data.applyVoid) {
                 if (!data.voidReason) {
                     toast({ variant: 'destructive', title: 'Void reason is required' });
                     setIsSubmitting(false);
                     return;
                 }
-                onVoidItem(line.id, data.voidQty, data.voidReason, data.voidNote);
+                onVoidItem(line.underlyingUnits.slice(0, data.voidQty), data.voidReason, data.voidNote);
                 actionTaken = true;
             }
 
@@ -225,7 +215,7 @@ export function EditBillableItemDialog({
                         <Separator />
                         <div className="space-y-2">
                             <FormField name="applyDiscount" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
                             )} />
                             {applyDiscount && (
                                 <div className="p-3 border rounded-md space-y-2">
@@ -250,7 +240,7 @@ export function EditBillableItemDialog({
                         <Separator />
                         <div className="space-y-2">
                              <FormField name="applyFree" control={form.control} render={({ field }) => (
-                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
+                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Mark as Free</FormLabel></FormItem>
                             )} />
                             {applyFree && (
                                  <div className="p-3 border rounded-md">
@@ -266,12 +256,12 @@ export function EditBillableItemDialog({
                                 <Separator />
                                 <div className="space-y-2">
                                     <FormField name="applyVoid" control={form.control} render={({ field }) => (
-                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked || totalActionableQty === 0}/></FormControl><FormLabel>Void Item(s)</FormLabel></FormItem>
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Void Item(s)</FormLabel></FormItem>
                                     )} />
                                     {applyVoid && (
                                         <div className="p-3 border rounded-md space-y-2">
                                             <FormField name="voidQty" control={form.control} render={({ field }) => (
-                                                <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={totalActionableQty} description={`of ${totalActionableQty} total items (pending items first)`}/>
+                                                <QuantityStepper label="Void Quantity" value={field.value} onChange={field.onChange} max={line.qty} description={`of ${line.qty} total items`}/>
                                             )} />
                                             <FormField name="voidReason" control={form.control} render={({ field }) => (
                                                 <FormItem><FormLabel>Reason</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select><FormMessage/></FormItem>
@@ -298,5 +288,3 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
-
-    

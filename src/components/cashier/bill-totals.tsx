@@ -7,22 +7,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
-import type { BillableLine, Adjustment } from "@/lib/types";
+import type { BillUnit, Adjustment } from "@/lib/types";
+import { makeVariantKey } from "./billable-lines";
 
 interface BillTotalsProps {
-  lines: BillableLine[];
+  units: BillUnit[];
   subtotal: number;
   lineDiscountsTotal: number;
   billDiscountAmount: number;
   adjustments: Adjustment[];
   grandTotal: number;
   totalPaid: number;
-  onRemoveDiscount: (lineId: string) => void;
+  onRemoveDiscount: (units: BillUnit[]) => void;
   isLocked?: boolean;
 }
 
 export function BillTotals({
-  lines,
+  units,
   subtotal,
   lineDiscountsTotal,
   billDiscountAmount,
@@ -33,8 +34,56 @@ export function BillTotals({
   isLocked,
 }: BillTotalsProps) {
     
-    const billableLines = lines.filter(line => !line.isFree && !line.isVoided);
-    const freeLines = lines.filter(line => line.isFree && !line.isVoided);
+    const billableLines = useMemo(() => {
+        const grouped = new Map<string, { qty: number; unitPrice: number; total: number; isFree: boolean; discountType?: 'fixed' | 'percent'; discountValue?: number; underlyingUnits: BillUnit[] }>();
+        const freeItems = new Map<string, { qty: number }>();
+
+        units.forEach(unit => {
+            const billing = (unit as any).billing;
+            if (!billing || billing.isVoided) return;
+
+            if (billing.isFree) {
+                 const key = unit.unitType === 'package' ? (unit as any).packageName : billing.itemName;
+                 const existing = freeItems.get(key);
+                 if (existing) existing.qty += 1;
+                 else freeItems.set(key, { qty: 1 });
+                 return;
+            }
+
+            const key = makeVariantKey({
+                type: unit.unitType,
+                itemId: unit.unitType === 'package' ? (unit as any).packageId : billing.itemId,
+                unitPrice: billing.unitPrice ?? (unit as any).unitPrice ?? 0,
+                isFree: false,
+                discountType: billing.discountType,
+                discountValue: billing.discountValue,
+            });
+
+            if (grouped.has(key)) {
+                const existing = grouped.get(key)!;
+                existing.qty += 1;
+                existing.total += billing.unitPrice ?? (unit as any).unitPrice ?? 0;
+                existing.underlyingUnits.push(unit);
+            } else {
+                grouped.set(key, {
+                    qty: 1,
+                    unitPrice: billing.unitPrice ?? (unit as any).unitPrice ?? 0,
+                    total: billing.unitPrice ?? (unit as any).unitPrice ?? 0,
+                    isFree: false,
+                    discountType: billing.discountType,
+                    discountValue: billing.discountValue,
+                    underlyingUnits: [unit],
+                });
+            }
+        });
+
+        return {
+            billable: Array.from(grouped.values()),
+            free: Array.from(freeItems.entries()),
+        }
+
+    }, [units]);
+
     
     const remainingBalance = grandTotal - totalPaid;
     const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
@@ -42,29 +91,29 @@ export function BillTotals({
   return (
     <div className="flex-1 flex flex-col p-4">
         <div className="space-y-1 text-sm pr-4">
-            {billableLines.map(line => {
-                if (line.isVoided) return null; // Explicitly skip voided lines
+            {billableLines.billable.map((line, index) => {
                 const hasDiscount = (line.discountValue ?? 0) > 0;
                 let discountAmount = 0;
                 if (hasDiscount) {
                     discountAmount = line.discountType === 'percent'
-                        ? (line.qty * line.unitPrice) * (line.discountValue! / 100)
-                        : Math.min(line.discountValue! * line.qty, line.qty * line.unitPrice);
+                        ? line.total * (line.discountValue! / 100)
+                        : Math.min(line.discountValue! * line.qty, line.total);
                 }
+                const itemName = line.underlyingUnits[0].unitType === 'package' ? (line.underlyingUnits[0] as any).packageName : (line.underlyingUnits[0] as any).billing.itemName;
 
                 return (
-                    <div key={line.id} className="py-1">
+                    <div key={index} className="py-1">
                         <div className="flex justify-between items-center">
                             <div>
-                                <p>{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
+                                <p>{line.qty > 1 && `${line.qty}x `}{itemName}</p>
                                 <p className="text-muted-foreground text-xs">{line.qty} x ₱{line.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
-                            <p>₱{(line.qty * line.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p>₱{line.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                         {hasDiscount && (
                             <div className="flex justify-between items-center text-xs text-red-600 pl-4">
                                 <span>Discount ({line.discountType === 'percent' ? `${line.discountValue}%` : `₱${line.discountValue}`})</span>
-                                <button className="flex items-center gap-1" disabled={isLocked} onClick={() => onRemoveDiscount(line.id)}>
+                                <button className="flex items-center gap-1" disabled={isLocked} onClick={() => onRemoveDiscount(line.underlyingUnits)}>
                                     <span>- ₱{discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     <Trash2 className="h-3 w-3" />
                                 </button>
@@ -73,11 +122,11 @@ export function BillTotals({
                     </div>
                 )
             })}
-            {freeLines.length > 0 && <Separator className="my-2"/>}
-            {freeLines.map(line => (
-                <div key={line.id} className="flex justify-between items-center text-muted-foreground">
+            {billableLines.free.length > 0 && <Separator className="my-2"/>}
+            {billableLines.free.map(([name, item]) => (
+                <div key={name} className="flex justify-between items-center text-muted-foreground">
                     <div>
-                        <p>{line.qty > 1 && `${line.qty}x `}{line.itemName}</p>
+                        <p>{item.qty > 1 && `${item.qty}x `}{name}</p>
                         <p className="text-xs">Free</p>
                     </div>
                     <p>₱0.00</p>

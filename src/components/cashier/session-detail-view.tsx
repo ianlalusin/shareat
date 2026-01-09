@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
-import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromBillableLines } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, voidSession } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,15 +19,12 @@ import { BillAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
-import { changeLineQty, moveTicketIdsBetweenLines, getEligibleTicketIds } from "./billable-lines";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment } from "@/lib/types";
 import { useConfirmDialog } from "../global/confirm-dialog";
+import { writeActivityLog } from "./activity-log";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, BillableLine, Adjustment, PackageUnit } from "@/lib/types";
 
-function hasScope(discount: Discount, scopeKey: "item" | "bill"): boolean {
-  const scope = (discount as any).scope;
-  if (!scope || !Array.isArray(scope)) return false;
-  return scope.includes(scopeKey);
-}
+export type BillUnit = (KitchenTicket & { unitType: 'addon' }) | (PackageUnit & { unitType: 'package' });
+
 
 // Validation logic remains the same
 function validatePayments(payments: Payment[], grandTotal: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -53,8 +50,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { confirm, Dialog } = useConfirmDialog();
 
   const [session, setSession] = useState<PendingSession | null>(null);
-  const [billableLines, setBillableLines] = useState<BillableLine[]>([]);
-  const [ticketsById, setTicketsById] = useState<Map<string, KitchenTicket>>(new Map());
+  const [kitchenTickets, setKitchenTickets] = useState<KitchenTicket[]>([]);
+  const [packageUnits, setPackageUnits] = useState<PackageUnit[]>([]);
   
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
@@ -62,7 +59,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
-  
+
+  const [isLoading, setIsLoading] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
 
@@ -81,10 +79,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
             router.replace('/cashier');
         }
+        setIsLoading(false);
     }, (error) => {
       console.error("Error fetching session:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not load session data.' });
       router.replace('/cashier');
+      setIsLoading(false);
     });
     return () => unsubscribe();
   }, [sessionId, activeStore, router, toast]);
@@ -92,32 +92,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!activeStore) return;
 
-    let unsubBillableLines: (() => void) | null = null;
-    let unsubKdsTickets: (() => void) | null = null;
-
-    unsubBillableLines = onSnapshot(
-      query(collection(db, "stores", activeStore.id, "sessions", sessionId, "billableLines"), orderBy("createdAt", "asc")),
-      (snapshot) => {
-        const map = new Map<string, BillableLine>();
-        snapshot.forEach((d) => {
-          map.set(d.id, { id: d.id, ...(d.data() as any) });
-        });
-        setBillableLines(Array.from(map.values()));
-      }, (e) => console.error("billableLines listener failed:", e)
-    );
-
     const ticketsQuery = query(collection(db, `stores/${activeStore.id}/sessions/${sessionId}/kitchentickets`));
-    unsubKdsTickets = onSnapshot(ticketsQuery, (snapshot) => {
-      const ticketsMap = new Map<string, KitchenTicket>();
-      snapshot.forEach(doc => {
-        ticketsMap.set(doc.id, { id: doc.id, ...doc.data() } as KitchenTicket);
-      });
-      setTicketsById(ticketsMap);
-    }, (e) => console.error("kdsTickets listener failed:", e));
+    const unsubTickets = onSnapshot(ticketsQuery, (snapshot) => {
+      setKitchenTickets(snapshot.docs.map(d => ({id: d.id, ...d.data()} as KitchenTicket)));
+    }, (e) => console.error("kitchentickets listener failed:", e));
+
+    const unitsQuery = query(collection(db, `stores/${activeStore.id}/sessions/${sessionId}/packageUnits`));
+    const unsubUnits = onSnapshot(unitsQuery, (snapshot) => {
+        setPackageUnits(snapshot.docs.map(d => ({id: d.id, ...d.data()} as PackageUnit)));
+    }, (e) => console.error("packageUnits listener failed:", e));
 
     return () => {
-      unsubBillableLines?.();
-      unsubKdsTickets?.();
+      unsubTickets();
+      unsubUnits();
     };
   }, [sessionId, activeStore]);
 
@@ -140,6 +127,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "bill")), [discounts]);
   const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && hasScope(d, "item")), [discounts]);
 
+  const billUnits = useMemo((): BillUnit[] => {
+    const addonUnits = kitchenTickets
+        .filter(t => t.type === 'addon' && t.billing)
+        .map(t => ({ ...t, unitType: 'addon' as const }));
+
+    const pkgUnits = packageUnits.map(u => ({ ...u, unitType: 'package' as const }));
+    
+    return [...addonUnits, ...pkgUnits];
+  }, [kitchenTickets, packageUnits]);
+  
+  
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
   const { subtotal, lineDiscountsTotal, pendingItemsCount } = useMemo(() => {
@@ -147,145 +145,109 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     let lineDisc = 0;
     let pendingCount = 0;
 
-    billableLines.forEach(line => {
-      if (line.isVoided || line.isFree) return;
-      
-      const chargeableQty = line.qty;
-
-      if (chargeableQty > 0) {
-        const grossLineAmount = chargeableQty * line.unitPrice;
-        sub += grossLineAmount;
-
-        if ((line.discountValue ?? 0) > 0) {
-          if (line.discountType === 'percent') {
-            lineDisc += grossLineAmount * (line.discountValue! / 100);
-          } else { // fixed
-            lineDisc += Math.min(line.discountValue! * chargeableQty, grossLineAmount);
-          }
+    billUnits.forEach(unit => {
+        const billing = (unit as any).billing;
+        if (!billing || billing.isVoided || billing.isFree) return;
+        
+        const unitPrice = billing.unitPrice ?? (unit as any).unitPrice ?? 0;
+        sub += unitPrice;
+        
+        if ((billing.discountValue ?? 0) > 0) {
+            if (billing.discountType === 'percent') {
+                lineDisc += unitPrice * (billing.discountValue! / 100);
+            } else { // fixed
+                lineDisc += Math.min(billing.discountValue!, unitPrice);
+            }
         }
-      }
-      
-      if (line.type === 'addon') {
-          const pendingQty = getEligibleTicketIds(line, ticketsById, "pending").length;
-          pendingCount += pendingQty;
-      }
+    });
+
+    kitchenTickets.forEach(ticket => {
+        if(ticket.type === 'addon' && (ticket.status === 'preparing' || ticket.status === 'ready')) {
+            pendingCount++;
+        }
     });
 
     return { subtotal: sub, lineDiscountsTotal: lineDisc, pendingItemsCount: pendingCount };
-  }, [billableLines, ticketsById]);
+  }, [billUnits, kitchenTickets]);
 
-  const handleUpdateQty = async (lineId: string, newQty: number) => {
-    if (isBillingLocked || !activeStore || !session || newQty < 1 || !appUser) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
-
-    try {
-        await changeLineQty(activeStore.id, sessionId, line, newQty, appUser, ticketsById);
-        toast({ title: "Quantity Updated" });
-    } catch(e: any) {
-         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
-    }
-  };
-  
-
-  const handleApplyDiscount = async (lineId: string, discountType: "fixed" | "percent", discountValue: number, quantity: number) => {
+  const handleApplyDiscount = async (unitsToUpdate: BillUnit[], discountType: "fixed" | "percent", discountValue: number) => {
     if (isBillingLocked || !activeStore || !session || !appUser) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
-    try {
-        const ticketIdsToMove = line.ticketIds.slice(0, quantity);
+    
+    const batch = writeBatch(db);
+    unitsToUpdate.forEach(unit => {
+        const refPath = unit.unitType === 'package' 
+            ? `stores/${storeId}/sessions/${sessionId}/packageUnits/${unit.id}`
+            : `stores/${storeId}/sessions/${sessionId}/kitchentickets/${unit.id}`;
+        batch.update(doc(db, refPath), { "billing.discountType": discountType, "billing.discountValue": discountValue });
+    });
 
-        await moveTicketIdsBetweenLines({
-            storeId: activeStore.id,
-            sessionId,
-            fromLineId: line.id,
-            toVariant: { ...line, isFree: false, discountType, discountValue },
-            ticketIdsToMove: ticketIdsToMove,
-            actor: appUser,
-            action: 'DISCOUNT_APPLIED'
-        });
+    try {
+        await batch.commit();
         toast({ title: "Discount Applied" });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+    } catch(e: any) {
+        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   };
 
-  const handleApplyFree = async (lineId: string, quantity: number, currentIsFree: boolean) => {
-    if (isBillingLocked || !activeStore || !session || !appUser) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
+  const handleApplyFree = async (unitsToUpdate: BillUnit[], isFree: boolean) => {
+     if (isBillingLocked || !activeStore || !session || !appUser) return;
+     const actionText = isFree ? "Mark as Free" : "Remove Free Status";
+    
+    const ok = await confirm({
+        title: `${actionText} for ${unitsToUpdate.length} item(s)?`,
+        confirmText: "Confirm",
+        destructive: false,
+    });
+    if (!ok) return;
 
-    if (!currentIsFree) {
-        const ok = await confirm({
-            title: `Mark ${quantity} item(s) as FREE?`,
-            description: `This will mark ${quantity} x ${line.itemName} as free of charge.`,
-            confirmText: "Confirm",
-            destructive: false,
-        });
-        if (!ok) return;
-    }
+    const batch = writeBatch(db);
+    unitsToUpdate.forEach(unit => {
+        const refPath = unit.unitType === 'package' 
+            ? `stores/${storeId}/sessions/${sessionId}/packageUnits/${unit.id}`
+            : `stores/${storeId}/sessions/${sessionId}/kitchentickets/${unit.id}`;
+        batch.update(doc(db, refPath), { "billing.isFree": isFree });
+    });
 
     try {
-        await moveTicketIdsBetweenLines({
-            storeId: activeStore.id,
-            sessionId,
-            fromLineId: line.id,
-            toVariant: { ...line, isFree: !currentIsFree, discountValue: 0, discountType: undefined },
-            ticketIdsToMove: line.ticketIds.slice(0, quantity),
-            actor: appUser,
-            action: currentIsFree ? 'UNMARK_FREE' : 'MARK_FREE'
-        });
-        toast({ title: currentIsFree ? "Free Status Removed" : "Item Marked as Free" });
+        await batch.commit();
+        toast({ title: "Update Successful", description: `Item(s) have been updated.` });
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   };
 
-  const handleRemoveDiscount = async (lineId: string) => {
-    if (isBillingLocked || !activeStore || !session || !appUser) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
+  const handleRemoveDiscount = async (unitsToUpdate: BillUnit[]) => {
+    if (isBillingLocked || !activeStore || !appUser) return;
+    
+    const batch = writeBatch(db);
+    unitsToUpdate.forEach(unit => {
+        const refPath = unit.unitType === 'package' 
+            ? `stores/${storeId}/sessions/${sessionId}/packageUnits/${unit.id}`
+            : `stores/${storeId}/sessions/${sessionId}/kitchentickets/${unit.id}`;
+        batch.update(doc(db, refPath), { "billing.discountType": null, "billing.discountValue": null });
+    });
+    
     try {
-        await moveTicketIdsBetweenLines({
-            storeId: activeStore.id,
-            sessionId,
-            fromLineId: lineId,
-            toVariant: { ...line, isFree: false, discountValue: 0, discountType: undefined },
-            ticketIdsToMove: line.ticketIds,
-            actor: appUser,
-            action: 'DISCOUNT_REMOVED'
-        });
+        await batch.commit();
         toast({ title: "Discount Removed" });
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   }
 
-  const handleVoidItem = async (lineId: string, quantity: number, reason: string, note?: string) => {
+  const handleVoidItem = async (unitsToUpdate: BillUnit[], reason: string, note?: string) => {
     if (isBillingLocked || !appUser || !activeStore || !session) return;
-    const line = billableLines.find(l => l.id === lineId);
-    if (!line) return;
-    try {
-      const eligibleIds = getEligibleTicketIds(line, ticketsById, 'any'); // Can void pending or served
-      const targetIds = eligibleIds.slice(0, quantity);
+    
+    const batch = writeBatch(db);
+    unitsToUpdate.forEach(unit => {
+      if (unit.unitType === 'package') return; // Cannot void packages this way
+      const docRef = doc(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`, unit.id);
+      batch.update(docRef, { "billing.isVoided": true, "billing.voidReason": reason, "billing.voidNote": note });
+    });
 
-      if (targetIds.length === 0) {
-        toast({ variant: 'destructive', title: 'No items to void' });
-        return;
-      }
-      
-      await moveTicketIdsBetweenLines({
-        storeId: activeStore.id,
-        sessionId,
-        fromLineId: line.id,
-        toVariant: { ...line, isVoided: true, voidReason: reason, voidNote: note },
-        ticketIdsToMove: targetIds,
-        actor: appUser,
-        action: 'VOID_TICKETS',
-        reason,
-        note
-      });
-      toast({ title: "Item(s) voided" });
+    try {
+        await batch.commit();
+        toast({ title: "Item(s) voided" });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Void failed", description: e?.message ?? "Unknown error" });
     }
@@ -331,7 +293,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
         const billingSummary = { subtotal, lineDiscountsTotal, billDiscountAmount, adjustmentsTotal, grandTotal };
         
-        await completePaymentFromBillableLines(activeStore.id, sessionId, appUser, normalizedPayments, billableLines, billingSummary, paymentMethods);
+        await completePaymentFromUnits(activeStore.id, sessionId, appUser, normalizedPayments, billUnits, billingSummary, paymentMethods);
         
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
@@ -343,7 +305,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
   
-  if (!session || !activeStore) {
+  if (isLoading || !session || !activeStore) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }
   
@@ -372,22 +334,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
                     <CustomerInfoForm session={session} />
-                    <BillTotals lines={billableLines} subtotal={subtotal} lineDiscountsTotal={lineDiscountsTotal} billDiscountAmount={billDiscountAmount} adjustments={adjustments} grandTotal={grandTotal} totalPaid={totalPaid} onRemoveDiscount={handleRemoveDiscount} isLocked={isBillingLocked} />
+                    <BillTotals units={billUnits} subtotal={subtotal} lineDiscountsTotal={lineDiscountsTotal} billDiscountAmount={billDiscountAmount} adjustments={adjustments} grandTotal={grandTotal} totalPaid={totalPaid} onRemoveDiscount={handleRemoveDiscount} isLocked={isBillingLocked} />
                 </div>
                 <BillAdjustments adjustments={adjustments} billDiscount={billDiscount} charges={charges} discounts={billableDiscounts} onAddAdjustment={addAdjustment} onAddCustomAdjustment={handleAddCustomAdjustment} onRemoveAdjustment={(id) => setAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} isLocked={isBillingLocked} />
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 
-                    lines={billableLines} 
-                    tickets={ticketsById}
+                    units={billUnits}
                     storeId={activeStore.id} 
                     session={session} 
                     discounts={itemDiscounts}
-                    onUpdateQty={handleUpdateQty}
                     onApplyDiscount={handleApplyDiscount}
                     onApplyFree={handleApplyFree}
                     onVoidItem={handleVoidItem}
-                    onUpdateUnitPrice={() => {}}
                     isLocked={isBillingLocked} 
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
