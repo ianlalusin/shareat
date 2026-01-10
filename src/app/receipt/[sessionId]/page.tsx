@@ -228,6 +228,9 @@ export default function ReceiptPage() {
                  <div id="print-receipt-area">
                     {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
                 </div>
+                <div className="hidden print-block">
+                    {receiptData && <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />}
+                </div>
             </div>
         </RoleGuard>
     );

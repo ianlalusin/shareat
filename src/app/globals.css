@@ -84,11 +84,11 @@
   }
   
   #print-receipt-area, #print-receipt-area *,
-  #print-receipt-area-live, #print-receipt-area-live * {
+  .print-block, .print-block * {
     visibility: visible !important;
   }
 
-  #print-receipt-area, #print-receipt-area-live {
+  #print-receipt-area, .print-block {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
