@@ -65,6 +65,7 @@ export default function AccountPage() {
         setIsUploading(true);
         try {
             await uploadUserAvatar(user.uid, file);
+            await user.reload(); // Force reload of user object to get new photoURL
             toast({
                 title: "Profile photo updated",
                 description: "Your new avatar has been saved.",
