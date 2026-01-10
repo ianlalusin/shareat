@@ -1,12 +1,11 @@
 
-
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, FieldPath } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +61,9 @@ export default function LogsPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+
+  const sessionCacheRef = useRef(new Map<string, PendingSession>());
+  const reqIdRef = useRef(0);
 
   const { start, end } = useMemo(() => {
     const now = new Date();
@@ -122,42 +124,53 @@ export default function LogsPage() {
     );
 
     const unsubscribe = onSnapshot(logsQuery, async (snapshot) => {
+        const currentReqId = ++reqIdRef.current;
         const logsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
-        
-        // Group logs by session ID
-        const logsBySessionId = new Map<string, ActivityLog[]>();
-        for (const log of logsData) {
-            if (!logsBySessionId.has(log.sessionId)) {
-                logsBySessionId.set(log.sessionId, []);
-            }
-            logsBySessionId.get(log.sessionId)!.push(log);
-        }
-        
-        const sessionIds = Array.from(logsBySessionId.keys());
+        const uniqueLogs = Array.from(new Map(logsData.map(l => [l.id, l])).values());
+
+        const sessionIds = [...new Set(uniqueLogs.map(log => log.sessionId))];
         if (sessionIds.length === 0) {
             setGroupedLogs([]);
             setIsLoading(false);
             return;
         }
 
-        // Fetch all required session documents
-        const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where("id", "in", sessionIds));
-        const sessionsSnap = await getDocs(sessionQuery);
-        const sessionsMap = new Map<string, PendingSession>();
-        sessionsSnap.forEach(doc => {
-            sessionsMap.set(doc.id, { id: doc.id, ...doc.data() } as PendingSession);
-        });
+        const missingSessionIds = sessionIds.filter(id => !sessionCacheRef.current.has(id));
+        
+        if (missingSessionIds.length > 0) {
+            const idChunks: string[][] = [];
+            for (let i = 0; i < missingSessionIds.length; i += 10) {
+                idChunks.push(missingSessionIds.slice(i, i + 10));
+            }
+            
+            for (const chunk of idChunks) {
+                const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(FieldPath.documentId(), "in", chunk));
+                const sessionsSnap = await getDocs(sessionQuery);
+                sessionsSnap.forEach(doc => {
+                    sessionCacheRef.current.set(doc.id, { id: doc.id, ...doc.data() } as PendingSession);
+                });
+            }
+        }
+        
+        if (reqIdRef.current !== currentReqId) return; // Stale request
 
-        // Combine sessions and their logs
+        const logsBySessionId = new Map<string, ActivityLog[]>();
+        for (const log of uniqueLogs) {
+            if (!logsBySessionId.has(log.sessionId)) {
+                logsBySessionId.set(log.sessionId, []);
+            }
+            logsBySessionId.get(log.sessionId)!.push(log);
+        }
+        
         const finalGroupedLogs: GroupedLog[] = [];
         for (const [sessionId, logs] of logsBySessionId.entries()) {
-            const session = sessionsMap.get(sessionId);
+            const session = sessionCacheRef.current.get(sessionId);
             if (session) {
+                logs.sort((a,b)=> (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))
                 finalGroupedLogs.push({ session, logs });
             }
         }
         
-        // Sort the groups by the most recent log in each group
         finalGroupedLogs.sort((a, b) => {
             const lastLogA = a.logs[0]?.createdAt.toMillis() || 0;
             const lastLogB = b.logs[0]?.createdAt.toMillis() || 0;

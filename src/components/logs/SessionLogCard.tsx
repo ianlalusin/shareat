@@ -1,5 +1,7 @@
+
 "use client";
 
+import { useMemo } from "react";
 import { AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +65,12 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
     const sessionLabel = computeSessionLabel(session);
     const sessionStarted = toJsDate(session.startedAt);
 
+    // Deduplicate logs just in case, using the unique document ID
+    const logs = useMemo(() => {
+        return Array.from(new Map(initialLogs.map((l, i) => [(l.id ?? `__${i}`), l])).values());
+    }, [initialLogs]);
+
+
     return (
         <AccordionItem value={session.id}>
             <Card>
@@ -78,7 +86,7 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                     </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                    {initialLogs.length === 0 ? (
+                    {logs.length === 0 ? (
                          <p className="text-sm text-muted-foreground text-center py-4 px-4">No activity logs for this session.</p>
                     ) : (
                         <Table>
@@ -92,7 +100,7 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {initialLogs.map(log => (
+                                {logs.map(log => (
                                     <TableRow key={log.id}>
                                         <TableCell><Badge variant="secondary" className="whitespace-nowrap">{actionLabel(log.action)}</Badge></TableCell>
                                         <TableCell>{log.actorName || log.actorRole || 'System'}</TableCell>
