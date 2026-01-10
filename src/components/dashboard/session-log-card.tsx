@@ -34,7 +34,9 @@ function actionLabel(a: ActivityLog['action']) {
 }
 
 function formatAmount(log: ActivityLog): string {
-    const amount = log.meta?.amount ?? log.meta?.paymentTotal ?? log.meta?.discountValue;
+    const meta = log.meta || {};
+    const amount = 'amount' in meta ? meta.amount : 'paymentTotal' in meta ? meta.paymentTotal : 'discountValue' in meta ? meta.discountValue : undefined;
+
     if (typeof amount === 'number') {
         const sign = log.action === 'DISCOUNT_REMOVED' || log.action === 'UNMARK_FREE' ? '+' : (amount < 0 ? '' : (log.action === 'PAYMENT_COMPLETED' ? '' : '-'));
         return `${sign} ₱${Math.abs(amount).toFixed(2)}`;
@@ -43,10 +45,13 @@ function formatAmount(log: ActivityLog): string {
 }
 
 function formatDescription(log: ActivityLog): string {
-    if (log.action === 'PAYMENT_COMPLETED') return `Paid via ${Object.keys(log.meta?.mopSummary || {}).join(', ')}`;
+    const meta = log.meta || {};
+    if (log.action === 'PAYMENT_COMPLETED') {
+        return `Paid via ${Object.keys(meta.mopSummary || {}).join(', ')}`;
+    }
 
     const qty = log.qty ? `${log.qty}x ` : '';
-    const item = log.meta?.itemName ? `${log.meta.itemName}` : '';
+    const item = 'itemName' in meta ? `${meta.itemName}` : '';
     const reason = log.reason || log.note ? ` - Reason: ${log.reason || log.note}` : "";
 
     return `${qty}${item}${reason}`;
