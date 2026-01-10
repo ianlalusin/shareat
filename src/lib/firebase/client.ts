@@ -1,8 +1,9 @@
 
+
 "use client";
 
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, updateProfile } from "firebase/auth";
 import { initializeFirestore, doc, updateDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { firebaseConfig } from "@/firebase/config";
@@ -35,17 +36,24 @@ export async function uploadProductImage(productId: string, file: File): Promise
 }
 
 export async function uploadUserAvatar(userId: string, file: File): Promise<string> {
-    if (!userId) {
-        throw new Error("User ID is required to upload an avatar.");
+    const user = auth.currentUser;
+    if (!user || user.uid !== userId) {
+        throw new Error("User ID does not match authenticated user.");
     }
+
     const storageRef = ref(storage, `users/${userId}/avatar.jpg`);
     await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(storageRef);
+
+    // Update both Firestore and Firebase Auth profile
     const userDocRef = doc(db, "users", userId);
     await updateDoc(userDocRef, {
         photoURL: downloadURL,
         updatedAt: serverTimestamp(),
     });
+
+    await updateProfile(user, { photoURL: downloadURL });
+
     return downloadURL;
 }
 

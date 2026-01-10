@@ -19,6 +19,7 @@ import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog"
 import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-security";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useStoreContext } from "@/context/store-context";
+import { auth } from "@/lib/firebase/client";
 
 export default function AccountPage() {
     const { appUser, user, loading } = useAuthContext();
@@ -57,6 +58,8 @@ export default function AccountPage() {
     const userInitials = appUser.displayName
         ? appUser.displayName.split(' ').map(n => n[0]).join('')
         : appUser.email ? appUser.email[0].toUpperCase() : 'U';
+
+    const avatarUrl = user.photoURL || appUser.photoURL || undefined;
 
     const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -152,7 +155,7 @@ export default function AccountPage() {
                             <DialogTrigger asChild>
                                 <button className="relative rounded-full">
                                     <Avatar className="h-24 w-24 mb-4 cursor-pointer ring-2 ring-offset-2 ring-transparent hover:ring-primary transition-all">
-                                        <AvatarImage src={user.photoURL || undefined} alt={appUser.displayName || 'User'} />
+                                        <AvatarImage src={avatarUrl} alt={appUser.displayName || 'User'} />
                                         <AvatarFallback className="text-3xl">{userInitials}</AvatarFallback>
                                     </Avatar>
                                         <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
@@ -167,13 +170,13 @@ export default function AccountPage() {
                                 </DialogHeader>
                                 <div className="flex justify-center py-4">
                                     <Avatar className="h-40 w-40">
-                                        <AvatarImage src={user.photoURL || undefined} alt={appUser.displayName || 'User'}/>
+                                        <AvatarImage src={avatarUrl} alt={appUser.displayName || 'User'}/>
                                         <AvatarFallback className="text-6xl">{userInitials}</AvatarFallback>
                                     </Avatar>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <Button variant="outline" asChild disabled={!user.photoURL}>
-                                        <a href={user.photoURL!} target="_blank" rel="noopener noreferrer">
+                                    <Button variant="outline" asChild disabled={!avatarUrl}>
+                                        <a href={avatarUrl!} target="_blank" rel="noopener noreferrer">
                                             <View className="mr-2" /> View Photo
                                         </a>
                                     </Button>
