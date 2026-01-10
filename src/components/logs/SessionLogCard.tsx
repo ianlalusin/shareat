@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useMemo } from "react";
@@ -19,6 +20,7 @@ function fmtTime(ts?: any) {
 
 function actionLabel(a: ActivityLog['action']) {
   switch (a) {
+    case "SESSION_STARTED": return "Session Started";
     case "PAYMENT_COMPLETED": return "Payment";
     case "DISCOUNT_APPLIED": return "Discount Applied";
     case "DISCOUNT_REMOVED": return "Discount Removed";
@@ -47,6 +49,9 @@ function formatDescription(log: ActivityLog): string {
     const meta = log.meta || {};
     if (log.action === 'PAYMENT_COMPLETED') {
         return `Paid via ${Object.keys(meta.mopSummary || {}).join(', ')}`;
+    }
+    if (log.action === "SESSION_STARTED") {
+        return "Session created by cashier.";
     }
 
     const qty = log.qty ? `${log.qty}x ` : '';

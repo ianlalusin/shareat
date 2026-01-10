@@ -194,6 +194,15 @@ export async function startSession(
 
 
   await batch.commit();
+
+  await writeActivityLog({
+    storeId,
+    sessionId: newSessionRef.id,
+    user,
+    action: "SESSION_STARTED",
+    note: "Session started",
+  });
+
   return newSessionRef.id;
 }
 
@@ -581,3 +590,4 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
+

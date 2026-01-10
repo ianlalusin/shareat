@@ -2,7 +2,7 @@
 
 "use client";
 
-import { collection, doc, setDoc } from "firebase/firestore";
+import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import type { ActivityLog } from "@/lib/types";
@@ -20,8 +20,7 @@ type ActivityLogPayload = {
 };
 
 /**
- * Logs an activity to both the session's subcollection and a store-level
- * collection for easy dashboard querying.
+ * Logs an activity to the session's subcollection.
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
@@ -37,7 +36,7 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
   }
 
   try {
-    const logDocRef = doc(collection(db, "stores", storeId, "activityLogs"));
+    const logDocRef = doc(collection(db, `stores/${storeId}/sessions/${sessionId}/activityLogs`));
 
     const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
       storeId,
@@ -49,15 +48,9 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       ...rest,
     };
     
-    // Add server timestamp on the client for immediate consistency
-    const finalPayload = { ...logDoc, createdAt: new Date() };
+    const finalPayload = { ...logDoc, createdAt: serverTimestamp() };
 
-    // Set with doc ref to ensure same ID in both locations
     await setDoc(logDocRef, finalPayload);
-    // Don't write to the session subcollection anymore, query via collectionGroup
-    // const sessionLogRef = doc(db, "stores", storeId, "sessions", sessionId, "activityLogs", logDocRef.id);
-    // await setDoc(sessionLogRef, finalPayload);
-
 
   } catch (error) {
     console.warn("Failed to write activity log. This error is non-critical.", {
