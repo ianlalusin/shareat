@@ -77,11 +77,12 @@ function ReceiptsPageContents() {
     });
 
     useEffect(() => {
-        const rid = searchParams.get('rid');
-        if (rid) {
-            setSelectedReceiptId(rid);
-        }
-    }, [searchParams]);
+        if (!searchParams) return;
+      
+        const rid = searchParams.get("rid");
+        if (rid) setSelectedReceiptId(rid);
+      }, [searchParams]);
+      
 
     useEffect(() => {
         if (!activeStore) {

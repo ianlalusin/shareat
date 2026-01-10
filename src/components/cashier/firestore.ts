@@ -370,15 +370,18 @@ export async function completePaymentFromUnits(
             const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
             const discrepancy = billedPackageCovers - finalGuestCount;
             
-            guestCountSnapshot = {
-                packageOfferingId: sessionData.packageOfferingId ?? null,
-                packageName: sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null,
+            const packageOfferingId = sessionData.packageOfferingId ?? null;
+            const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
+
+            const guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] = {
+                packageOfferingId,
+                packageName,
                 finalGuestCount,
                 billedPackageCovers,
                 discrepancy,
                 computedAtClientMs: Date.now(),
                 rule: "MAX",
-            };
+              };
         }
         // --- END GUEST COUNT SNAPSHOT ---
 
@@ -614,4 +617,5 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
+
 
