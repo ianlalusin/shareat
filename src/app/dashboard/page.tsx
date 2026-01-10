@@ -37,7 +37,7 @@ import * as XLSX from "xlsx";
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
 function isSameDay(a: Date, b: Date) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
-function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" }); }
+function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
     if (!active || !range) return "Custom";
     return isSameDay(range.start, range.end)
@@ -283,6 +283,13 @@ export default function DashboardPage() {
         }
         return { start: s, end: e };
     }, [datePreset, customRange]);
+
+    const dateRangeLabel = useMemo(() => {
+        if (isSameDay(start, end)) {
+            return fmtDate(start);
+        }
+        return `${fmtDate(start)} - ${fmtDate(end)}`;
+    }, [start, end]);
 
     // Live listener for the paginated receipt list
     useEffect(() => {
@@ -732,19 +739,22 @@ export default function DashboardPage() {
                     description={`Real-time overview of ${activeStore.name}'s performance.`}
                     className="flex-col items-start gap-4 md:flex-row md:items-center"
                 >
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-2 rounded-md bg-muted p-1 flex-wrap">
-                            {presets.map(p => (
-                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                            ))}
-                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                                <PopoverTrigger asChild>
-                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
-                            </Popover>
+                    <div className="flex flex-col gap-2">
+                         <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-2 rounded-md bg-muted p-1 flex-wrap">
+                                {presets.map(p => (
+                                    <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                                ))}
+                                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                                </Popover>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={exportXlsx} disabled={statsReceipts.length === 0}><Download />Export XLSX</Button>
                         </div>
-                        <Button variant="outline" size="sm" onClick={exportXlsx} disabled={statsReceipts.length === 0}><Download />Export XLSX</Button>
+                        <p className="text-sm text-muted-foreground">{dateRangeLabel}</p>
                     </div>
                 </PageHeader>
 
