@@ -199,6 +199,24 @@ export type SessionBillLine = {
   updatedByName?: string | null;
 };
 
+export type BillableLine = {
+  id: string;
+  type: "package" | "addon";
+  itemId: string;
+  itemName: string;
+  categoryName?: string | null;
+  barcode?: string | null;
+  unitPrice: number;
+  qtyOrdered: number;
+  discountQty: number;
+  discountType: "percent" | "fixed" | null;
+  discountValue: number | null;
+  freeQty: number;
+  voidedQty: number;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
 
 export type Payment = {
     id: string;
