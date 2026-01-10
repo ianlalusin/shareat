@@ -46,7 +46,8 @@ function formatAmount(log: ActivityLog): string {
 }
 
 function formatDescription(log: ActivityLog): string {
-    const meta = log.meta || {};
+    const meta = (log.meta ?? {}) as any;
+
     if (log.action === 'PAYMENT_COMPLETED') {
         return `Paid via ${Object.keys(meta.mopSummary || {}).join(', ')}`;
     }
@@ -54,7 +55,13 @@ function formatDescription(log: ActivityLog): string {
         return "Session created by cashier.";
     }
 
-    const qty = log.qty ? `${log.qty}x ` : '';
+    const qtyNum =
+      typeof meta.qty === "number" ? meta.qty :
+      typeof meta.quantity === "number" ? meta.quantity :
+      typeof meta.qtyChanged === "number" ? meta.qtyChanged :
+      undefined;
+
+    const qty = typeof qtyNum === "number" && qtyNum > 0 ? `${qtyNum}x ` : "";
     const item = 'itemName' in meta ? `${meta.itemName}` : '';
     const reason = log.reason || log.note ? ` - Reason: ${log.reason || log.note}` : "";
 
@@ -122,3 +129,4 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
         </AccordionItem>
     );
 }
+
