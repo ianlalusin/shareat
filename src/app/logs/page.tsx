@@ -31,7 +31,7 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" });
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
 }
 function customBtnLabel(range: { start: Date; end: Date } | null, active: boolean) {
   if (!active || !range) return "Custom";
@@ -97,6 +97,13 @@ export default function LogsPage() {
     }
     return { start: s, end: e };
   }, [datePreset, customRange]);
+
+   const dateRangeLabel = useMemo(() => {
+        if (isSameDay(start, end)) {
+            return fmtDate(start);
+        }
+        return `${fmtDate(start)} - ${fmtDate(end)}`;
+    }, [start, end]);
   
    useEffect(() => {
     if (!activeStore?.id) {
@@ -206,37 +213,38 @@ export default function LogsPage() {
         description={`Audit trail for ${activeStore.name}.`}
         className="flex-col items-start gap-4 md:flex-row md:items-center"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-md bg-muted p-1 flex-wrap">
-            {presets.map((p) => (
-              <Button
-                key={p.value}
-                variant={datePreset === p.value ? "default" : "ghost"}
-                size="sm"
-                onClick={() => {
-                  setDatePreset(p.value);
-                  setCustomRange(null);
-                }}
-                className="h-8"
-              >
-                {p.label}
-              </Button>
-            ))}
-            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-              <PopoverTrigger asChild>
+        <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                {presets.map((p) => (
                 <Button
-                  variant={datePreset === "custom" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 min-w-[100px]"
+                    key={p.value}
+                    variant={datePreset === p.value ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => {
+                    setDatePreset(p.value);
+                    setCustomRange(null);
+                    }}
+                    className="h-8"
                 >
-                  {customBtnLabel(customRange, datePreset === "custom")}
+                    {p.label}
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <CompactCalendar onChange={handleCalendarChange} />
-              </PopoverContent>
-            </Popover>
-          </div>
+                ))}
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                <PopoverTrigger asChild>
+                    <Button
+                    variant={datePreset === "custom" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-8 min-w-[100px]"
+                    >
+                    {customBtnLabel(customRange, datePreset === "custom")}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                    <CompactCalendar onChange={handleCalendarChange} />
+                </PopoverContent>
+                </Popover>
+            </div>
+            <p className="text-sm text-muted-foreground">{dateRangeLabel}</p>
         </div>
       </PageHeader>
       <div className="mt-6">

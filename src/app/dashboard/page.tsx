@@ -739,8 +739,8 @@ export default function DashboardPage() {
                     description={`Real-time overview of ${activeStore.name}'s performance.`}
                     className="flex-col items-start gap-4 md:flex-row md:items-center"
                 >
-                    <div className="flex flex-col gap-2">
-                         <div className="flex flex-wrap items-center gap-2">
+                    <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <div className="flex items-center gap-2 rounded-md bg-muted p-1 flex-wrap">
                                 {presets.map(p => (
                                     <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
