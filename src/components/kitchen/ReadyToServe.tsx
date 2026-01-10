@@ -73,7 +73,7 @@ export function ReadyToServe({ items, onMarkServed, isServing }: ReadyToServePro
                     <CardTitle>Ready to Serve</CardTitle>
                     <Badge variant="destructive">{items.length}</Badge>
                 </div>
-                <CardDescription>Items waiting for server pickup.</CardDescription>
+                <CardDescription>Items waiting for server pickup. Oldest are at the top.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 max-h-[70vh] overflow-y-auto">
                  {itemsWithLabels.length === 0 ? (

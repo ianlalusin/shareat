@@ -85,18 +85,15 @@ export default function KitchenPage() {
         setFlavorsMap(newFlavorsMap);
     }));
 
-    // Listen to kitchen tickets for the store
-    const ticketsQuery = query(collectionGroup(db, 'kitchentickets'), where('storeId', '==', activeStore.id));
+    // Listen to kitchen tickets for the store, ordered by creation time
+    const ticketsQuery = query(
+        collectionGroup(db, 'kitchentickets'), 
+        where('storeId', '==', activeStore.id),
+        orderBy('createdAt', 'asc') // Order by oldest first
+    );
     unsubs.push(onSnapshot(ticketsQuery, (snapshot) => {
         const allTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
-        
-        const getTime = (date: any): number => {
-            if (!date) return 0;
-            // Handle both Firestore Timestamp and JS Date
-            return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
-        };
-        
-        setTickets(allTickets.sort((a,b) => getTime(a.createdAt) - getTime(b.createdAt)));
+        setTickets(allTickets);
         
         // After getting tickets, get the unique session IDs and fetch their data
         const sessionIds = [...new Set(allTickets.map(t => t.sessionId))];
@@ -122,7 +119,7 @@ export default function KitchenPage() {
                         newSessionsMap.set(doc.id, {id: doc.id, ...doc.data()} as Session);
                     });
                 }
-                setSessionsMap(newSessionsMap);
+                setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
             };
 
             fetchSessionChunks();
@@ -225,22 +222,29 @@ export default function KitchenPage() {
     }
   };
 
-
-  const preparingItems = ticketsWithData.filter(t => t.status === 'preparing');
-  const readyItems = ticketsWithData.filter(t => t.status === 'ready');
-  const historyItems = ticketsWithData
+  const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
+  
+  const readyItems = useMemo(() => {
+      const items = ticketsWithData.filter(t => t.status === 'ready');
+      const getTime = (date: any): number => {
+            if (!date) return 0;
+            return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
+        };
+      return items.sort((a,b) => getTime(a.preparedAt) - getTime(b.preparedAt));
+  }, [ticketsWithData]);
+  
+  const historyItems = useMemo(() => ticketsWithData
     .filter(t => t.status === 'served' || t.status === 'cancelled' || t.status === 'void')
     .sort((a, b) => {
         const getTime = (date: any): number => {
             if (!date) return 0;
-            // Handle both Firestore Timestamp and JS Date
             return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
         };
         const aTime = getTime(a.cancelledAt || a.servedAt || a.createdAt);
         const bTime = getTime(b.cancelledAt || b.servedAt || b.createdAt);
         return bTime - aTime;
     })
-    .slice(0, 50);
+    .slice(0, 50), [ticketsWithData]);
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
