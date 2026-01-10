@@ -46,6 +46,7 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
             if (analytics.salesByCategory) {
                 hasAnalyticsData = true;
                 for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
+                    if (categoryName === "Uncategorized") continue; // Exclude packages
                     if (!categoryTally[categoryName]) categoryTally[categoryName] = { qty: 0, amount: 0 };
                     categoryTally[categoryName].qty += values.qty ?? 0;
                     categoryTally[categoryName].amount += values.amount ?? 0;
@@ -54,7 +55,9 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
              if (analytics.salesByItem) {
                 hasAnalyticsData = true;
                 for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-                    if (!itemTally[itemName]) itemTally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName || 'Uncategorized' };
+                    if (!values.categoryName || values.categoryName === "Uncategorized") continue; // Exclude packages
+                    
+                    if (!itemTally[itemName]) itemTally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
                     itemTally[itemName].qty += values.qty ?? 0;
                     itemTally[itemName].amount += values.amount ?? 0;
                 }
@@ -110,17 +113,17 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
     if (isLoading) {
         return (
             <Card>
-                <CardHeader><CardTitle>Top Categories</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Top Add-on Categories</CardTitle></CardHeader>
                 <CardContent><div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div></CardContent>
             </Card>
         );
     }
     
-    if (!categorySales.hasAnalytics) {
+    if (!categorySales.hasAnalytics || topCategories.length === 0) {
         return (
              <Card>
-                <CardHeader><CardTitle>Top Categories</CardTitle></CardHeader>
-                <CardContent><p className="text-center text-sm text-muted-foreground py-10">No category analytics yet for this period (v2 receipts only).</p></CardContent>
+                <CardHeader><CardTitle>Top Add-on Categories</CardTitle></CardHeader>
+                <CardContent><p className="text-center text-sm text-muted-foreground py-10">No add-on sales data for this period.</p></CardContent>
             </Card>
         )
     }
@@ -131,7 +134,7 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
             <CardHeader>
                 <div className="flex justify-between items-center">
                     <div>
-                        <CardTitle>Top Categories</CardTitle>
+                        <CardTitle>Top Add-on Categories</CardTitle>
                         <CardDescription>Based on finalized receipts.</CardDescription>
                     </div>
                     <Button variant="outline" size="sm" onClick={handleViewOverall}>
@@ -163,9 +166,9 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
             <SheetContent className="w-full sm:max-w-lg flex flex-col">
                 <SheetHeader>
-                    <SheetTitle>Sales Drilldown</SheetTitle>
+                    <SheetTitle>Add-on Sales Drilldown</SheetTitle>
                     <SheetDescription>
-                        Explore sales by category or view all items.
+                        Explore sales by category or view all add-on items.
                     </SheetDescription>
                 </SheetHeader>
                 

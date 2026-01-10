@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { useRouter } from "next/navigation";
+import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 
 
 // --- HELPERS ---
@@ -341,14 +342,17 @@ export default function DashboardPage() {
                                 </CardHeader>
                                 <CardContent><PaymentMix tally={mopTotals} isLoading={isStatsLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
-                            <TopCategoryCard receipts={statsReceipts} isLoading={isStatsLoading} />
-                        </div>
-                         <div className="grid gap-6 md:grid-cols-2">
-                            <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />
-                            <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
+                             <TopPackagesCard receipts={statsReceipts} isLoading={isStatsLoading} />
                         </div>
                         <div className="grid gap-6 md:grid-cols-2">
+                            <TopCategoryCard receipts={statsReceipts} isLoading={isStatsLoading} />
+                            <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />
+                        </div>
+                         <div className="grid gap-6 md:grid-cols-2">
+                            <AvgServingTimeCard storeId={activeStore.id} dateRange={{ start, end }} />
                             <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-2">
                              
                         </div>
                     </div>
@@ -358,4 +362,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
