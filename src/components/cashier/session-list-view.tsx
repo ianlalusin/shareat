@@ -135,14 +135,7 @@ export function SessionListView() {
 
     return (
         <>
-            <PageHeader title="Cashier" description="Start a new session or manage active ones.">
-              <Button asChild variant="outline" size="sm">
-                  <Link href="/cashier/receipts">
-                      <Receipt className="mr-2" />
-                      Receipts
-                  </Link>
-              </Button>
-            </PageHeader>
+            <PageHeader title="Cashier" description="Start a new session or manage active ones."/>
             
             {isLoading ? <Loader2 className="animate-spin" /> : (
                 <div className="space-y-8">
