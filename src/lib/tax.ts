@@ -24,10 +24,18 @@ export interface TaxAndTotals {
  */
 export function calculateBillTotals(
   billLines: SessionBillLine[],
-  store: Store,
+  store: Store | null,
   billDiscount: Discount | null,
   customAdjustments: Adjustment[]
 ): TaxAndTotals {
+
+  if (!store) {
+    return {
+      subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
+      billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
+      vatableSales: 0, vatExemptSales: 0
+    };
+  }
 
   const taxRate = (store.taxRatePct || 0) / 100;
   const isVatInclusive = store.taxType === 'VAT_INCLUSIVE';
