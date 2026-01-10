@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, BillableLine, SessionBillLine, Store } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -133,28 +133,29 @@ export default function ReceiptPage() {
     const [isPrinting, setIsPrinting] = useState(false);
 
     const handlePrint = async () => {
-        if (!receiptData || !activeStoreId || !appUser) return;
+        if (!receiptData || !activeStoreId || !appUser || !sessionId) return;
         if (isPrinting) return;
-
+    
         setIsPrinting(true);
-        
+    
         window.requestAnimationFrame(async () => {
             window.print();
-            
-            try {
-                const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, receiptData.session.id);
-                await updateDoc(receiptRef, {
-                    printedCount: increment(1),
-                    lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: appUser.uid,
-                    lastPrintedByUsername: getUsername(appUser),
-                });
-            } catch (e) {
-                console.warn("Print audit tracking failed:", e);
-                // Optionally inform the user, but don't block them
-            } finally {
-                setIsPrinting(false);
+    
+            if (sessionId !== "PREVIEW") {
+                try {
+                    const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, sessionId);
+                    await updateDoc(receiptRef, {
+                        printedCount: increment(1),
+                        lastPrintedAt: serverTimestamp(),
+                        lastPrintedByUid: appUser.uid,
+                        lastPrintedByUsername: getUsername(appUser),
+                    });
+                } catch (e) {
+                    console.warn("Print audit tracking failed:", e);
+                }
             }
+    
+            setIsPrinting(false);
         });
     };
     

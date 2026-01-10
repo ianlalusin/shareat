@@ -1,11 +1,12 @@
 
+
 "use client";
 
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
-import type { BillableLine, ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 // Define types based on your Firestore structure
@@ -57,7 +58,6 @@ export type ReceiptSettings = {
 
 export type ReceiptData = {
     session: Session;
-    billables?: BillableLine[]; // Legacy
     lines?: SessionBillLine[]; // New counter model
     payments: Payment[];
     settings: ReceiptSettings;

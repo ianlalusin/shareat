@@ -410,19 +410,6 @@ export type ActivityLog = {
   createdAt: any; // serverTimestamp()
 };
 
-// Deprecated in favor of SessionBillLine
-export type BillUnit = {
-  id: string;
-  type: 'package' | 'addon';
-  isVoided: boolean;
-  isFree: boolean;
-  discountType?: 'fixed' | 'percent';
-  discountValue?: number;
-  unitPrice: number;
-  itemName: string;
-  ticketIds?: string[];
-};
-
 export type PackageUnit = {
     guestId: string;
     packageId: string;
