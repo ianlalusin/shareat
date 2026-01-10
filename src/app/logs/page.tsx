@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, FieldPath } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, documentId } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -144,7 +144,7 @@ export default function LogsPage() {
             }
             
             for (const chunk of idChunks) {
-                const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(FieldPath.documentId(), "in", chunk));
+                const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(documentId(), "in", chunk));
                 const sessionsSnap = await getDocs(sessionQuery);
                 sessionsSnap.forEach(doc => {
                     sessionCacheRef.current.set(doc.id, { id: doc.id, ...doc.data() } as PendingSession);
