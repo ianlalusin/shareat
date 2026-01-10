@@ -25,6 +25,12 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
   // 1. Subscribe to all active stores
   useEffect(() => {
+    // Guard: Only run this query if the user is loaded and has a role.
+    if (authLoading || !appUser?.role) {
+      setLoadingStores(false); // Not loading if we're not going to fetch
+      return;
+    }
+    
     const storesRef = collection(db, "stores");
     const q = query(storesRef, where("isActive", "==", true));
     
@@ -42,7 +48,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [appUser, authLoading]); // Re-run when user/auth state changes
 
   // 2. Compute allowed stores based on user role
   const allowedStores = useMemo(() => {
@@ -66,7 +72,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
     // If current active store is not valid or not set, and there are allowed stores,
     // auto-select the first one.
-    if (!currentActiveId || !isActiveStoreAllowed) {
+    if ((!currentActiveId || !isActiveStoreAllowed) && appUser.uid) {
       const firstStoreId = allowedStores[0].id;
       const userDocRef = doc(db, "users", appUser.uid);
       updateDoc(userDocRef, {
