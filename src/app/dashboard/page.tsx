@@ -725,21 +725,18 @@ export default function DashboardPage() {
                 <PageHeader 
                     title="Dashboard" 
                     description={`Real-time overview of ${activeStore.name}'s performance.`}
-                    className="flex-col items-start gap-4 md:flex-row md:items-center"
                 >
-                    <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className="flex items-center gap-2 rounded-md bg-muted p-1 flex-wrap">
-                                {presets.map(p => (
-                                    <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                                ))}
-                                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
-                                </Popover>
-                            </div>
+                    <div className="flex flex-col items-end gap-2">
+                         <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                            {presets.map(p => (
+                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                            ))}
+                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                            </Popover>
                             <Button variant="outline" size="sm" onClick={exportXlsx} disabled={statsReceipts.length === 0}><Download />Export XLSX</Button>
                         </div>
                         <p className="text-sm text-muted-foreground">{dateRangeLabel}</p>
@@ -832,4 +829,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-

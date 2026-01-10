@@ -338,11 +338,14 @@ export async function completePaymentFromUnits(
             return acc;
         }, { salesByItem: {}, salesByCategory: {} } as { salesByItem: ReceiptAnalyticsV2['salesByItem'], salesByCategory: ReceiptAnalyticsV2['salesByCategory'] });
         
+        const startedDate = new Date(sessionData.startedAtClientMs);
+        const sessionStartedAtHour = startedDate.getHours();
 
         const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
           sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
           sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
+          sessionStartedAtHour: sessionStartedAtHour,
           subtotal: finalTotals.subtotal,
           discountsTotal: finalTotals.totalDiscounts,
           chargesTotal: finalTotals.chargesTotal,
