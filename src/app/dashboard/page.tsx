@@ -15,7 +15,7 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
-import type { ModeOfPayment, Receipt as ReceiptType, BillableLine } from "@/lib/types";
+import type { ModeOfPayment, Receipt as ReceiptType, BillableLine, ReceiptAnalyticsV2 } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
@@ -456,47 +456,35 @@ export default function DashboardPage() {
 
 
     const { stats, mopTotals } = useMemo(() => {
-        const finalReceipts = statsReceipts.filter(r => r.status === 'final' && r.analytics?.v === 2);
+        const finalReceipts = statsReceipts.filter(r => r.status === 'final');
 
         let totalSales = 0;
         let discountsTotal = 0;
         const mop: Record<string, number> = {};
 
         finalReceipts.forEach(r => {
-            if (r.analytics?.v !== 2) return; 
-            totalSales += toNum(r.analytics?.grandTotal);
-            discountsTotal += toNum(r.analytics?.discountsTotal);
+            if (r.analytics?.v !== 2) { // Legacy fallback
+                totalSales += toNum(r.total);
+                return;
+            };
 
-            const tenderedMop = r.analytics?.mop;
-            if (tenderedMop && typeof tenderedMop === 'object') {
-                const netMop = { ...tenderedMop };
-                const change = toNum(r.analytics?.change);
-
-                if (change > 0) {
-                    const cashKey = Object.keys(netMop).find(k => k.toLowerCase().includes('cash'));
-
-                    if (cashKey && toNum(netMop[cashKey]) > 0) {
-                        netMop[cashKey] = Math.max(0, toNum(netMop[cashKey]) - change);
-                    } else {
-                        let maxKey = '';
-                        let maxAmount = 0;
-                        for (const [key, value] of Object.entries(netMop)) {
-                           const amount = toNum(value);
-                           if (amount > maxAmount) {
-                               maxAmount = amount;
-                               maxKey = key;
-                           }
-                        }
-                        if (maxKey) {
-                            netMop[maxKey] = Math.max(0, toNum(netMop[maxKey]) - change);
-                        }
-                    }
+            const analytics = r.analytics as ReceiptAnalyticsV2;
+            totalSales += toNum(analytics.grandTotal);
+            discountsTotal += toNum(analytics.discountsTotal);
+            
+            const netMop = { ...(analytics.mop || {}) };
+            const change = toNum(analytics.change);
+            
+            if (change > 0) {
+                const cashKey = Object.keys(netMop).find(k => k.toLowerCase().includes('cash'));
+                if (cashKey && toNum(netMop[cashKey]) > 0) {
+                    netMop[cashKey] = Math.max(0, toNum(netMop[cashKey]) - change);
                 }
-                
-                for (const [methodKey, amount] of Object.entries(netMop)) {
-                     const amt = toNum(amount);
-                     mop[methodKey] = (mop[methodKey] || 0) + amt;
-                }
+            }
+
+            for (const [methodKey, amount] of Object.entries(netMop)) {
+                const amt = toNum(amount);
+                mop[methodKey] = (mop[methodKey] || 0) + amt;
             }
         });
 
@@ -774,7 +762,7 @@ export default function DashboardPage() {
                                 <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
                                 <CardContent><PaymentMix tally={mopTotals} isLoading={isStatsLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
-                            <TopCategoryCard storeId={activeStore.id} dateRange={{ start, end }} />
+                            <TopCategoryCard receipts={statsReceipts} isLoading={isStatsLoading} />
                         </div>
                          <div className="grid gap-6 md:grid-cols-2">
                             <PeakHoursCard storeId={activeStore.id} dateRange={{ start, end }} />

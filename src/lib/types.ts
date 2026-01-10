@@ -324,8 +324,8 @@ export type ReceiptAnalyticsV2 = {
   totalPaid: number;
   change: number;
   mop: Record<string, number>;
-  salesByCategory?: Record<string, { qty: number; amount: number }>;
-  salesByItem?: Record<string, { qty: number; amount: number; categoryName: string }>;
+  salesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
+  salesByCategory?: Record<string, { qty: number; amount: number; }>;
   servedRefillsByName?: Record<string, number>;
   serveCountByType?: Record<string, number>;
   serveTimeMsTotalByType?: Record<string, number>;

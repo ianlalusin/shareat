@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment } from '@/lib/types';
+import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment, ReceiptAnalyticsV2 } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
@@ -295,7 +295,51 @@ export async function completePaymentFromUnits(
         tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
-        const analyticsV2 = {
+
+        const salesAnalytics = billLines.reduce((acc, line) => {
+            if (line.type !== 'package' && line.type !== 'addon') return acc;
+            
+            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
+            if (netQty <= 0) return acc;
+
+            const grossAmount = netQty * line.unitPrice;
+            const discountQty = Math.min(line.discountQty || 0, netQty);
+            
+            let discountAmount = 0;
+            if (discountQty > 0) {
+                 const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
+                    ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
+                    : line.unitPrice;
+
+                if (line.discountType === 'percent') {
+                    discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
+                } else { // fixed
+                    discountAmount = Math.min(discountBaseUnit, (line.discountValue || 0)) * discountQty;
+                }
+            }
+            const netAmount = grossAmount - discountAmount;
+            
+            const categoryName = line.category || 'Uncategorized';
+            
+            // By Item
+            if (!acc.salesByItem[line.itemName]) {
+                acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
+            }
+            acc.salesByItem[line.itemName].qty += netQty;
+            acc.salesByItem[line.itemName].amount += netAmount;
+            
+            // By Category
+            if (!acc.salesByCategory[categoryName]) {
+                 acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
+            }
+            acc.salesByCategory[categoryName].qty += netQty;
+            acc.salesByCategory[categoryName].amount += netAmount;
+
+            return acc;
+        }, { salesByItem: {}, salesByCategory: {} } as { salesByItem: ReceiptAnalyticsV2['salesByItem'], salesByCategory: ReceiptAnalyticsV2['salesByCategory'] });
+        
+
+        const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
           sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
           sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
@@ -312,24 +356,8 @@ export async function completePaymentFromUnits(
               acc[key] = (acc[key] || 0) + amt;
               return acc;
           }, {} as Record<string, number>),
-          // salesByCategory and salesByItem are now computed from the bill lines
-          salesByCategory: billLines.reduce((acc, line) => {
-              if (line.type === 'addon' && line.qtyOrdered > 0) {
-                  const category = line.category || 'Uncategorized';
-                  if (!acc[category]) acc[category] = { qty: 0, amount: 0 };
-                  acc[category].qty += line.qtyOrdered;
-                  acc[category].amount += line.qtyOrdered * line.unitPrice;
-              }
-              return acc;
-          }, {} as Record<string, { qty: number, amount: number}>),
-          salesByItem: billLines.reduce((acc, line) => {
-              if (line.qtyOrdered > 0) {
-                if (!acc[line.itemName]) acc[line.itemName] = { qty: 0, amount: 0, categoryName: line.category || 'Uncategorized' };
-                acc[line.itemName].qty += line.qtyOrdered;
-                acc[line.itemName].amount += line.qtyOrdered * line.unitPrice;
-              }
-              return acc;
-          }, {} as Record<string, { qty: number, amount: number, categoryName: string}>),
+          salesByItem: salesAnalytics.salesByItem,
+          salesByCategory: salesAnalytics.salesByCategory,
           servedRefillsByName: sessionData.servedRefillsByName || {},
           serveCountByType: sessionData.serveCountByType || {},
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},

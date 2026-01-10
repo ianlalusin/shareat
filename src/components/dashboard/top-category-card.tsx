@@ -1,159 +1,97 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, orderBy, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Receipt } from "@/lib/types";
+import type { Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface TopCategoryCardProps {
-    storeId: string;
-    dateRange: { start: Date; end: Date };
+    receipts: Receipt[];
+    isLoading: boolean;
 }
 
 type CategoryTally = {
     qty: number;
     amount: number;
 };
-
-// Local types for stricter analytics data handling
-type CategoryAgg = { qty?: number; amount?: number };
-type SalesByCategory = Record<string, CategoryAgg>;
-
-type ItemAgg = { qty?: number; amount?: number; categoryName?: string };
-type SalesByItem = Record<string, ItemAgg>;
-
 type ItemTally = {
     qty: number;
     amount: number;
     categoryName: string;
-}
+};
 
-export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
-    const [receipts, setReceipts] = useState<Receipt[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    
+export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [metric, setMetric] = useState<"qty" | "amount">("amount");
     const [sheetTab, setSheetTab] = useState<'byCategory' | 'overall'>('byCategory');
-
-    useEffect(() => {
-        if (!storeId) {
-            setIsLoading(false);
-            setReceipts([]);
-            return;
-        }
-        setIsLoading(true);
-
-        const receiptsRef = collection(db, "stores", storeId, "receipts");
-        const q = query(
-            receiptsRef,
-            where("status", "==", "final"),
-            where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
-            where("createdAt", "<=", Timestamp.fromDate(dateRange.end))
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedReceipts = snapshot.docs.map(doc => doc.data() as Receipt);
-            setReceipts(fetchedReceipts);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching category sales:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [storeId, dateRange]);
     
     const v2Receipts = useMemo(() => receipts.filter(r => r.analytics?.v === 2), [receipts]);
 
-    const categorySales = useMemo(() => {
-        const tally: Record<string, CategoryTally> = {};
+    const { categorySales, itemSales } = useMemo(() => {
+        const categoryTally: Record<string, CategoryTally> = {};
+        const itemTally: Record<string, ItemTally> = {};
         let hasAnalyticsData = false;
 
         v2Receipts.forEach(receipt => {
-            const salesByCategory = (receipt.analytics?.salesByCategory ?? {}) as SalesByCategory;
-            if (Object.keys(salesByCategory).length > 0) {
+            const analytics = receipt.analytics as ReceiptAnalyticsV2;
+            if (analytics.salesByCategory) {
                 hasAnalyticsData = true;
-                for (const [categoryName, values] of Object.entries(salesByCategory)) {
-                    if (!tally[categoryName]) {
-                        tally[categoryName] = { qty: 0, amount: 0 };
-                    }
-                    tally[categoryName].qty += values.qty ?? 0;
-                    tally[categoryName].amount += values.amount ?? 0;
+                for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
+                    if (!categoryTally[categoryName]) categoryTally[categoryName] = { qty: 0, amount: 0 };
+                    categoryTally[categoryName].qty += values.qty ?? 0;
+                    categoryTally[categoryName].amount += values.amount ?? 0;
+                }
+            }
+             if (analytics.salesByItem) {
+                hasAnalyticsData = true;
+                for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
+                    if (!itemTally[itemName]) itemTally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName || 'Uncategorized' };
+                    itemTally[itemName].qty += values.qty ?? 0;
+                    itemTally[itemName].amount += values.amount ?? 0;
                 }
             }
         });
-
-        const sortedTally = Object.entries(tally).sort(([, a], [, b]) => b.amount - a.amount);
-        return { data: sortedTally, hasAnalytics: hasAnalyticsData };
+        
+        return { 
+            categorySales: { 
+                data: Object.entries(categoryTally).sort(([, a], [, b]) => b.amount - a.amount), 
+                hasAnalytics: hasAnalyticsData 
+            },
+            itemSales: itemTally
+        };
     }, [v2Receipts]);
     
     const aggregatedItems = useMemo(() => {
-        if (!selectedCategory || sheetTab !== 'byCategory') return { data: [], hasAnalytics: false };
+        if (!selectedCategory || sheetTab !== 'byCategory') return { data: [] };
         
-        const tally: Record<string, ItemTally> = {};
-        let hasItemAnalytics = false;
-
-        v2Receipts.forEach(receipt => {
-            const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
-            if (salesByItem && typeof salesByItem === 'object') {
-                for (const [itemName, values] of Object.entries(salesByItem)) {
-                    if ((values.categoryName ?? "") === selectedCategory) {
-                        hasItemAnalytics = true;
-                        if (!tally[itemName]) {
-                            tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName ?? 'Uncategorized' };
-                        }
-                        tally[itemName].qty += values.qty ?? 0;
-                        tally[itemName].amount += values.amount ?? 0;
-                    }
-                }
-            }
-        });
-
-        const sorted = Object.entries(tally).sort(([, a], [, b]) => {
+        const filtered = Object.entries(itemSales).filter(([, item]) => item.categoryName === selectedCategory);
+        
+        const sorted = filtered.sort(([, a], [, b]) => {
             return metric === 'qty' ? b.qty - a.qty : b.amount - a.amount;
         });
 
-        return { data: sorted, hasAnalytics: hasItemAnalytics };
-    }, [v2Receipts, selectedCategory, metric, sheetTab]);
+        return { data: sorted };
+    }, [itemSales, selectedCategory, metric, sheetTab]);
 
     const overallItems = useMemo(() => {
-        if (sheetTab !== 'overall') return { data: [], hasAnalytics: false };
+        if (sheetTab !== 'overall') return { data: [] };
 
-        const tally: Record<string, ItemTally> = {};
-        let hasItemAnalytics = false;
-
-        v2Receipts.forEach(receipt => {
-            const salesByItem = (receipt.analytics?.salesByItem ?? {}) as SalesByItem;
-            if (salesByItem && typeof salesByItem === 'object') {
-                hasItemAnalytics = true;
-                 for (const [itemName, values] of Object.entries(salesByItem)) {
-                    if (!tally[itemName]) {
-                        tally[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName ?? 'Uncategorized' };
-                    }
-                    tally[itemName].qty += values.qty ?? 0;
-                    tally[itemName].amount += values.amount ?? 0;
-                }
-            }
-        });
-        
-        const sorted = Object.entries(tally).sort(([, a], [, b]) => {
+        const sorted = Object.entries(itemSales).sort(([, a], [, b]) => {
             return metric === 'qty' ? b.qty - a.qty : b.amount - a.amount;
         });
         
-        return { data: sorted, hasAnalytics: hasItemAnalytics };
+        return { data: sorted };
 
-    }, [v2Receipts, sheetTab, metric]);
+    }, [itemSales, sheetTab, metric]);
 
     const handleCategoryClick = (categoryName: string) => {
         setSelectedCategory(categoryName);
@@ -182,7 +120,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
         return (
              <Card>
                 <CardHeader><CardTitle>Top Categories</CardTitle></CardHeader>
-                <CardContent><p className="text-center text-sm text-muted-foreground py-10">No category analytics yet for this period (new receipts only).</p></CardContent>
+                <CardContent><p className="text-center text-sm text-muted-foreground py-10">No category analytics yet for this period (v2 receipts only).</p></CardContent>
             </Card>
         )
     }
@@ -248,7 +186,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                             </Tabs>
                         </div>
                         {selectedCategory ? (
-                            aggregatedItems.hasAnalytics ? (
+                            aggregatedItems.data.length > 0 ? (
                                 <ScrollArea className="flex-1">
                                 <Table>
                                     <TableHeader>
@@ -283,7 +221,7 @@ export function TopCategoryCard({ storeId, dateRange }: TopCategoryCardProps) {
                                 </TabsList>
                             </Tabs>
                          </div>
-                        {overallItems.hasAnalytics ? (
+                        {overallItems.data.length > 0 ? (
                             <ScrollArea className="flex-1">
                                 <Table>
                                     <TableHeader>
