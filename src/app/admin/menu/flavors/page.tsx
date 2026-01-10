@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, deleteDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
