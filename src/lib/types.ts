@@ -178,6 +178,24 @@ export type KitchenTicket = {
     }
 };
 
+export type BillableLine = {
+  id: string;
+  type: "package" | "addon";
+  itemId: string;
+  itemName: string;
+  categoryName?: string | null;
+  barcode?: string | null;
+  unitPrice: number;
+  qtyOrdered: number;
+  discountQty: number;
+  discountType: "percent" | "fixed" | null;
+  discountValue: number | null;
+  freeQty: number;
+  voidedQty: number;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
 export type SessionBillLine = {
   id: string;
   type: "package" | "addon";
@@ -197,25 +215,6 @@ export type SessionBillLine = {
   updatedByUid?: string | null;
   updatedByName?: string | null;
 };
-
-export type BillableLine = {
-  id: string;
-  type: "package" | "addon";
-  itemId: string;
-  itemName: string;
-  categoryName?: string | null;
-  barcode?: string | null;
-  unitPrice: number;
-  qtyOrdered: number;
-  discountQty: number;
-  discountType: "percent" | "fixed" | null;
-  discountValue: number | null;
-  freeQty: number;
-  voidedQty: number;
-  createdAt?: any;
-  updatedAt?: any;
-};
-
 
 export type Payment = {
     id: string;
@@ -316,6 +315,7 @@ export type PendingSession = {
   customerName?: string | null;
   isPaid?: boolean;
   packageOfferingId: string;
+  packageSnapshot?: { id?: string; name?: string; pricePerHead?: number } | null;
   initialFlavorIds?: string[];
   startedAt: Timestamp;
   // Guest Count Model
@@ -332,7 +332,7 @@ export type PendingSession = {
 export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;
-  sessionStartedAtClientMs: number | null;
+  sessionStartedAtClientMs?: number | null;
   sessionStartedAtHour?: number | null;
   subtotal: number;
   discountsTotal: number;
