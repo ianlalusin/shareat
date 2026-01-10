@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
-import { SessionLogCard } from "@/components/dashboard/session-log-card";
+import { SessionLogCard } from "@/components/logs/SessionLogCard";
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 

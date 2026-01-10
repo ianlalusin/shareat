@@ -1,8 +1,5 @@
-
-
 "use client";
 
-import { useState, useEffect } from "react";
 import { AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
