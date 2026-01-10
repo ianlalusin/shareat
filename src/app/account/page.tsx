@@ -19,7 +19,6 @@ import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog"
 import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-security";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useStoreContext } from "@/context/store-context";
-import { auth } from "@/lib/firebase/client";
 
 export default function AccountPage() {
     const { appUser, user, loading } = useAuthContext();
@@ -84,11 +83,6 @@ export default function AccountPage() {
     };
 
     const handleLinkGoogle = async () => {
-        console.log("ORIGIN", window.location.origin);
-        console.log("HOSTNAME", window.location.hostname);
-        console.log("FIREBASE projectId", auth.app.options.projectId);
-        console.log("FIREBASE authDomain", auth.app.options.authDomain);
-
         if (!user) {
             toast({
             variant: "destructive",
@@ -101,7 +95,7 @@ export default function AccountPage() {
         setIsLinking(true);
         try {
             await linkWithGoogle();
-        
+
             // Ensure the user object updates its providerData
             await user.reload();
         
@@ -110,11 +104,26 @@ export default function AccountPage() {
         
             toast({ title: "Google Account Linked", description: "You can now sign in with Google." });
         } catch (error: any) {
-            console.error("Link Google error:", error);
+            // keep console.error for dev, but no Next overlay spam
+            console.log("Link Google error:", error);
+
+            let description = "Could not link Google account.";
+            const code = error?.code ?? "";
+
+            if (code === "auth/credential-already-in-use") {
+            description = "This Google account is already linked to another user.";
+            } else if (code === "auth/provider-already-linked") {
+            description = "Google is already linked.";
+            } else if (code === "auth/popup-blocked") {
+            description = "Popup was blocked. Please allow popups and try again.";
+            } else if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+            description = "Popup closed. Please try again.";
+            }
+
             toast({
                 variant: "destructive",
-                title: `Link failed: ${error?.code || "unknown"}`,
-                description: error?.message || "No message",
+                title: "Linking Failed",
+                description,
             });
         } finally {
             setIsLinking(false);
