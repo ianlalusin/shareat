@@ -18,9 +18,11 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog";
 import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-security";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { useStoreContext } from "@/context/store-context";
 
 export default function AccountPage() {
     const { appUser, user, loading } = useAuthContext();
+    const { activeStore } = useStoreContext();
     const router = useRouter();
     const { toast } = useToast();
     const [isUploading, setIsUploading] = useState(false);
@@ -37,11 +39,13 @@ export default function AccountPage() {
     }, [appUser, loading, router]);
 
     const hasPasswordProvider = useMemo(() => {
-        return user?.providerData.some(p => p.providerId === 'password') ?? false;
+        if (!user) return false;
+        return user.providerData.some(p => p.providerId === 'password');
     }, [user]);
 
     const hasGoogleProvider = useMemo(() => {
-        return user?.providerData.some(p => p.providerId === 'google.com') ?? false;
+        if (!user) return false;
+        return user.providerData.some(p => p.providerId === 'google.com');
     }, [user]);
 
 
@@ -78,6 +82,10 @@ export default function AccountPage() {
     };
 
     const handleLinkGoogle = async () => {
+        if (!user) {
+             toast({ variant: "destructive", title: "Linking Failed", description: "You must be signed in to link an account." });
+             return;
+        }
         setIsLinking(true);
         try {
             await linkWithGoogle(user);
@@ -172,8 +180,8 @@ export default function AccountPage() {
                                 <Badge variant="outline" className="capitalize">{appUser.role}</Badge>
                             </div>
                             <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground text-sm">Store ID</span>
-                                <span className="font-medium text-sm">{appUser.storeId || 'N/A'}</span>
+                                <span className="text-muted-foreground text-sm">Store</span>
+                                <span className="font-medium text-sm">{activeStore?.name || 'N/A'}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-muted-foreground text-sm">Status</span>
