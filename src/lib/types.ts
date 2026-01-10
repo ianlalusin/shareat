@@ -348,6 +348,15 @@ export type ReceiptAnalyticsV2 = {
   servedRefillsByName?: Record<string, number>;
   serveCountByType?: Record<string, number>;
   serveTimeMsTotalByType?: Record<string, number>;
+  guestCountSnapshot?: {
+    packageOfferingId?: string | null;
+    packageName?: string | null;
+    finalGuestCount: number;
+    billedPackageCovers: number;
+    discrepancy: number;
+    computedAtClientMs: number;
+    rule: "MAX";
+  };
 };
 
 export type Receipt = {

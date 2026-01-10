@@ -358,6 +358,29 @@ export async function completePaymentFromUnits(
         
         const startedDate = new Date(sessionData.startedAtClientMs);
         const sessionStartedAtHour = startedDate.getHours();
+        
+        // --- GUEST COUNT SNAPSHOT LOGIC ---
+        let guestCountSnapshot = undefined;
+        if (sessionData.sessionMode === 'package_dinein') {
+            const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
+            const serverVerified = sessionData.guestCountServerVerified ?? 0;
+            const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
+
+            const pkgLine = billLines.find(l => l.type === 'package');
+            const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
+            const discrepancy = billedPackageCovers - finalGuestCount;
+            
+            guestCountSnapshot = {
+                packageOfferingId: sessionData.packageOfferingId ?? null,
+                packageName: sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null,
+                finalGuestCount,
+                billedPackageCovers,
+                discrepancy,
+                computedAtClientMs: Date.now(),
+                rule: "MAX",
+            };
+        }
+        // --- END GUEST COUNT SNAPSHOT ---
 
         const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
@@ -382,6 +405,7 @@ export async function completePaymentFromUnits(
           servedRefillsByName: sessionData.servedRefillsByName || {},
           serveCountByType: sessionData.serveCountByType || {},
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
+          guestCountSnapshot, // Add the new snapshot here
         };
 
         const receiptPayload = stripUndefined({
