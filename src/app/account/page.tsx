@@ -30,6 +30,7 @@ export default function AccountPage() {
     const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
     const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
     const [isLinking, setIsLinking] = useState(false);
+    const [providerRefreshKey, setProviderRefreshKey] = useState(0);
     const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
 
     useEffect(() => {
@@ -41,12 +42,12 @@ export default function AccountPage() {
     const hasPasswordProvider = useMemo(() => {
         if (!user) return false;
         return user.providerData.some(p => p.providerId === 'password');
-    }, [user]);
+    }, [user, providerRefreshKey]);
 
     const hasGoogleProvider = useMemo(() => {
         if (!user) return false;
         return user.providerData.some(p => p.providerId === 'google.com');
-    }, [user]);
+    }, [user, providerRefreshKey]);
 
 
     if (loading || !appUser || !user) {
@@ -83,19 +84,33 @@ export default function AccountPage() {
 
     const handleLinkGoogle = async () => {
         if (!user) {
-             toast({ variant: "destructive", title: "Linking Failed", description: "You must be signed in to link an account." });
-             return;
+            toast({
+            variant: "destructive",
+            title: "Linking Failed",
+            description: "You must be signed in to link an account.",
+            });
+            return;
         }
+
         setIsLinking(true);
         try {
             await linkWithGoogle();
-            toast({ title: "Google Account Linked", description: "You can now sign in with Google."});
-        } catch(error: any) {
+
+            // Ensure the user object updates its providerData
+            await user.reload();
+
+            // Force re-memo of badges (since your memos depend on user/providerData)
+            setProviderRefreshKey((k) => k + 1);
+
+            toast({ title: "Google Account Linked", description: "You can now sign in with Google." });
+        } catch (error: any) {
             let description = "Could not link Google account.";
-            if (error.code === 'auth/credential-already-in-use') {
-                description = "This Google account is already linked to another user.";
-            } else if (error.code === 'auth/provider-already-linked') {
-                description = "This account is already linked with Google.";
+            if (error.code === "auth/credential-already-in-use") {
+            description = "This Google account is already linked to another user.";
+            } else if (error.code === "auth/provider-already-linked") {
+            description = "This account is already linked with Google.";
+            } else if (error.code === "auth/popup-blocked") {
+            description = "Popup was blocked by the browser. Please allow popups for this site.";
             }
             toast({ variant: "destructive", title: "Linking Failed", description });
         } finally {
@@ -227,7 +242,7 @@ export default function AccountPage() {
                     </CardContent>
                 </Card>
             </div>
-            {ConfirmDialog}
+            <ConfirmDialog />
         </RoleGuard>
     );
 }
