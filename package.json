@@ -1,6 +1,6 @@
 {
   "name": "culinaryflow",
-  "version": "0.1.9",
+  "version": "0.1.19",
   "description": "A complete solution for restaurant management.",
   "private": true,
   "scripts": {

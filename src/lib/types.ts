@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -310,7 +311,7 @@ export type PendingSession = {
   storeId: string; // Added for convenience
   tableNumber: string;
   packageName: string;
-  status: 'pending_verification' | 'active' | 'closed';
+  status: 'pending_verification' | 'active' | 'closed' | 'voided';
   sessionMode: 'package_dinein' | 'alacarte';
   customerName?: string | null;
   isPaid?: boolean;
