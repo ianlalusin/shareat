@@ -4,7 +4,7 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -136,11 +136,9 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
                             <CardTitle>Top Add-on Categories</CardTitle>
                             <CardDescription>Based on finalized receipts.</CardDescription>
                         </div>
-                        <SheetTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                View All Items
-                            </Button>
-                        </SheetTrigger>
+                        <Button variant="outline" size="sm" onClick={handleViewOverall}>
+                            View All Items
+                        </Button>
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -251,3 +249,5 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
         </Sheet>
     );
 }
+
+    
