@@ -10,10 +10,10 @@ import { SheetClose } from '../ui/sheet'
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier', 'kitchen', 'server'] },
   { href: '/cashier', label: 'Cashier', roles: ['admin', 'manager', 'cashier'] },
-  { href: '/receipts', label: 'Receipts', roles: ['admin', 'manager', 'cashier'] },
   { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
   { href: '/server', label: 'Server', roles: ['admin', 'manager', 'server'] },
   { href: '/admin', label: 'Admin', roles: ['admin', 'manager'] },
+  { href: '/receipts', label: 'Receipts', roles: ['admin', 'manager', 'cashier'] },
   { href: '/logs', label: 'Logs', roles: ['admin', 'manager'] },
 ]
 
