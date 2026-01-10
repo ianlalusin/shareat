@@ -337,7 +337,7 @@ export function EditBillableItemDialog({
                     </div>
                 </div>
                 <DialogFooter className="p-6 pt-0">
-                    <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
                     <Button type="submit" form="edit-item-form" disabled={isSubmitting || isLocked}>
                          {isSubmitting ? <Loader2 className="animate-spin" /> : "Save Changes"}
                     </Button>

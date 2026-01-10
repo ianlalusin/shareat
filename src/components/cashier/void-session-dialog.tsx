@@ -72,7 +72,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user }: VoidSessio
           </div>
         )}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}

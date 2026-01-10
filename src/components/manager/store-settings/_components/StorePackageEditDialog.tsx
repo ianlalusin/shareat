@@ -113,7 +113,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
                             {availableRefills.map(refill => (
                                 <FormField key={refill.refillId} control={form.control} name="refillsAllowed" render={({ field }) => (
                                     <FormItem className="flex items-center space-x-3 space-y-0 mb-2">
-                                        <FormControl><Checkbox checked={field.value?.includes(refill.refillId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), refill.refillId]) : field.onChange(field.value?.filter(id => id !== refill.refillId))}} /></FormControl>
+                                        <FormControl><Checkbox checked={field.value?.includes(refill.refillId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), refill.refillId]) : field.onChange(field.value?.filter((id: string) => id !== refill.refillId))}} /></FormControl>
                                         <FormLabel className="font-normal">{refill.refillName}</FormLabel>
                                     </FormItem>
                                 )} />
@@ -127,7 +127,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
                             {availableFlavors.map(flavor => (
                                 <FormField key={flavor.flavorId} control={form.control} name="flavorsAllowed" render={({ field }) => (
                                     <FormItem className="flex items-center space-x-3 space-y-0 mb-2">
-                                        <FormControl><Checkbox checked={field.value?.includes(flavor.flavorId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), flavor.flavorId]) : field.onChange(field.value?.filter(id => id !== flavor.flavorId))}} /></FormControl>
+                                        <FormControl><Checkbox checked={field.value?.includes(flavor.flavorId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), flavor.flavorId]) : field.onChange(field.value?.filter((id: string) => id !== flavor.flavorId))}} /></FormControl>
                                         <FormLabel className="font-normal">{flavor.flavorName}</FormLabel>
                                     </FormItem>
                                 )} />
@@ -139,7 +139,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="store-package-form">Save Changes</Button>
         </DialogFooter>
       </DialogContent>

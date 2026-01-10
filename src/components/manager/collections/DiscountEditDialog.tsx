@@ -216,7 +216,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="discount-form">Save</Button>
         </DialogFooter>
       </DialogContent>

@@ -158,7 +158,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="charge-form">Save</Button>
         </DialogFooter>
       </DialogContent>

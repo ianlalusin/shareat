@@ -163,7 +163,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
           </div>
           <DrawerFooter className="pt-2">
             <Button type="submit" form="store-package-form-mobile">Save Changes</Button>
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
@@ -183,7 +183,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="store-package-form">Save Changes</Button>
         </DialogFooter>
       </DialogContent>

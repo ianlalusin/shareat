@@ -73,7 +73,7 @@ export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: Kit
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="location-form">Save</Button>
         </DialogFooter>
       </DialogContent>

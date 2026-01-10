@@ -86,7 +86,7 @@ export function StoreAddonEditDialog({ isOpen, onClose, onSave, addon, kitchenLo
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" form="store-addon-form">Save Changes</Button>
         </DialogFooter>
       </DialogContent>

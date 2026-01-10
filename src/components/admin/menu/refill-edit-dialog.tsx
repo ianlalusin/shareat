@@ -103,7 +103,7 @@ export function RefillEditDialog({ isOpen, onClose, onSave, item, isSubmitting, 
           </form>
         </Form>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
           <Button type="submit" form="refill-form" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save"}</Button>
         </DialogFooter>
       </DialogContent>
