@@ -235,7 +235,9 @@ export default function AccountPage() {
                         <div className="space-y-2">
                             <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
                                 <DialogTrigger asChild>
-                                    <Button variant="outline"><KeyRound /> Change Password</Button>
+                                    <Button variant="outline">
+                                        <KeyRound className="mr-2 h-4 w-4" /> Change Password
+                                    </Button>
                                 </DialogTrigger>
                                 <ChangePasswordDialog
                                     hasPasswordProvider={hasPasswordProvider}
@@ -246,7 +248,11 @@ export default function AccountPage() {
 
                              {!hasGoogleProvider && (
                                 <Button variant="outline" onClick={handleLinkGoogle} disabled={isLinking}>
-                                    {isLinking ? <Loader2 className="animate-spin"/> : <LinkIcon />}
+                                    {isLinking ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <LinkIcon className="mr-2 h-4 w-4" />
+                                    )}
                                     Link Google Account
                                 </Button>
                             )}
