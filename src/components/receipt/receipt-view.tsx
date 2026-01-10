@@ -7,7 +7,6 @@ import Image from "next/image";
 import { Timestamp } from "firebase/firestore";
 import type { BillableLine, ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
-import { calculateBillTotals } from "@/lib/tax";
 
 // Define types based on your Firestore structure
 export type Session = {
@@ -89,12 +88,13 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     if (!data || !data.session) {
         return null;
     }
-    const { session, lines, payments, settings, createdByUsername } = data;
+    const { session, lines, settings, createdByUsername, store } = data;
     const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
+    const analytics = data.analytics || {};
 
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
-    const activeLines = useMemo(() => (lines || []).filter(line => (line.qtyOrdered - line.voidedQty) > 0), [lines]);
+    const activeLines = useMemo(() => (lines || []).filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0), [lines]);
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();
@@ -111,23 +111,33 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
     const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
-    const cashierName = createdByUsername || session.cashierName || session.startedByUid.substring(0, 6);
+    const cashierName = createdByUsername || session.cashierName || session.startedByUid?.substring(0, 6) || "N/A";
 
     const getPaymentMethodName = (id: string) => {
-        // Simple check if the ID is a long alphanumeric string (likely a Firestore ID)
-        const isFirestoreId = id.length > 15 && /[a-zA-Z]/.test(id) && /\d/.test(id);
-        if (isFirestoreId) {
-            return paymentMethodMap.get(id) || id; // Fallback to ID if not found
-        }
-        return id; // Assume it's already a name
+        const fromMap = paymentMethodMap.get(id);
+        if (fromMap) return fromMap;
+
+        // Fallback for when `payments` in analytics is just a map of names to amounts
+        const found = paymentMethods.find(pm => pm.name.toLowerCase() === id.toLowerCase());
+        if (found) return found.name;
+
+        return id;
     };
     
-    // Fallback logic for payment summary
-    const summary = session.paymentSummary ?? data.analytics;
-    const totals = useMemo(() => {
-        if (!data.store) return null; // Or some default
-        return calculateBillTotals(lines || [], data.store, null, []);
-    }, [lines, data.store]);
+    // Use analytics totals directly
+    const { 
+        subtotal = 0,
+        discountsTotal = 0,
+        chargesTotal = 0,
+        grandTotal = 0,
+        taxAmount = 0,
+        totalPaid = 0,
+        change = 0,
+        mop = {}
+    } = analytics;
+
+    const paymentsFromAnalytics = Object.entries(mop).map(([methodId, amount]) => ({ methodId, amount: amount as number }));
+    const vatableSales = grandTotal - taxAmount;
 
     return (
         <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
@@ -162,18 +172,25 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     <span className="text-right">Total</span>
                 </div>
                 {activeLines.map(line => {
-                    const billableQty = line.qtyOrdered - line.voidedQty;
+                    const billableQty = line.qtyOrdered - (line.voidedQty || 0);
                     const lineTotal = billableQty * line.unitPrice;
                     
                     const hasDiscount = (line.discountValue ?? 0) > 0 && line.discountQty > 0;
                     
                     let lineDiscountAmount = 0;
-                    if (hasDiscount) {
+                    if (hasDiscount && store) {
+                        const taxRate = (store.taxRatePct || 0) / 100;
+                        const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
                         const discountedQty = Math.min(line.discountQty, billableQty);
-                        if (line.discountType === 'percent') {
-                           lineDiscountAmount = (discountedQty * line.unitPrice) * (line.discountValue! / 100);
-                        } else {
-                           lineDiscountAmount = discountedQty * line.discountValue!;
+                        
+                        const discountBaseUnit = isVatInclusive && taxRate > 0
+                          ? (line.unitPrice / (1 + taxRate))
+                          : line.unitPrice;
+
+                        if (line.discountType === "percent") {
+                           lineDiscountAmount = (discountedQty * discountBaseUnit) * (line.discountValue! / 100);
+                        } else { // fixed
+                           lineDiscountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountedQty;
                         }
                     }
 
@@ -203,27 +220,39 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                <ReceiptRow label="Subtotal" value={(totals?.subtotal ?? summary?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                {((totals?.totalDiscounts ?? summary?.discountsTotal ?? 0) > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${(totals?.totalDiscounts ?? summary?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
+                <ReceiptRow label="Subtotal" value={(subtotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                {(discountsTotal > 0) && (
+                    <ReceiptRow label="Discounts" value={`(${(discountsTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
                 )}
-                 {(totals?.chargesTotal ?? summary?.chargesTotal ?? 0) > 0 && (
-                    <ReceiptRow label="Charges" value={(totals?.chargesTotal ?? summary?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 {(chargesTotal > 0) && (
+                    <ReceiptRow label="Charges" value={(chargesTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 )}
              </section>
+             
+             {(taxAmount > 0) && (
+                 <>
+                    <hr className="border-dashed border-black my-2" />
+                    <section className="space-y-px mb-2 text-xs receipt-section">
+                         <ReceiptRow label="VATable Sales" value={vatableSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                         <ReceiptRow label="VAT Exempt Sales" value={"0.00"} />
+                         <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                    </section>
+                </>
+             )}
+
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={`PHP ${(totals?.grandTotal ?? summary?.grandTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
+                <ReceiptRow label="TOTAL" value={`PHP ${(grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
              </section>
             
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                {payments.map((p, i) => (
+                {paymentsFromAnalytics.map((p, i) => (
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
                 ))}
-                 <ReceiptRow label="Total Paid" value={(summary?.totalPaid ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                 <ReceiptRow label="CHANGE" value={(summary?.change ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
+                 <ReceiptRow label="Total Paid" value={(totalPaid).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                 <ReceiptRow label="CHANGE" value={(change).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
              </section>
 
              {freeItems.length > 0 && (
