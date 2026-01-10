@@ -80,43 +80,42 @@ export function TopPackagesCard({ receipts, isLoading }: TopPackagesCardProps) {
     }
 
     return (
-        <>
-        <Card>
-            <CardHeader>
-                <div className="flex justify-between items-center">
-                    <div>
-                        <CardTitle>Top Packages</CardTitle>
-                        <CardDescription>Based on finalized receipts.</CardDescription>
-                    </div>
-                    <SheetTrigger asChild>
-                        <Button variant="outline" size="sm" onClick={() => setIsSheetOpen(true)}>
-                            View All Packages
-                        </Button>
-                    </SheetTrigger>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Package</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {topItems.map(([name, { qty, amount }]) => (
-                            <TableRow key={name}>
-                                <TableCell className="font-medium">{name}</TableCell>
-                                <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
-                                <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </CardContent>
-        </Card>
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <CardTitle>Top Packages</CardTitle>
+                            <CardDescription>Based on finalized receipts.</CardDescription>
+                        </div>
+                        <SheetTrigger asChild>
+                            <Button variant="outline" size="sm">
+                                View All Packages
+                            </Button>
+                        </SheetTrigger>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Package</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {topItems.map(([name, { qty, amount }]) => (
+                                <TableRow key={name}>
+                                    <TableCell className="font-medium">{name}</TableCell>
+                                    <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
+                                    <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
             <SheetContent className="w-full sm:max-w-lg flex flex-col">
                 <SheetHeader>
                     <SheetTitle>All Package Sales</SheetTitle>
@@ -157,6 +156,5 @@ export function TopPackagesCard({ receipts, isLoading }: TopPackagesCardProps) {
                 </div>
             </SheetContent>
         </Sheet>
-        </>
     );
 }

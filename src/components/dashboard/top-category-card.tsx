@@ -1,8 +1,7 @@
 
-
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
@@ -129,41 +128,42 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
     }
 
     return (
-        <>
-        <Card>
-            <CardHeader>
-                <div className="flex justify-between items-center">
-                    <div>
-                        <CardTitle>Top Add-on Categories</CardTitle>
-                        <CardDescription>Based on finalized receipts.</CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={handleViewOverall}>
-                        View All Items
-                    </Button>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Category</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {topCategories.map(([name, { qty, amount }]) => (
-                            <TableRow key={name} className="cursor-pointer" onClick={() => handleCategoryClick(name)}>
-                                <TableCell className="font-medium">{name}</TableCell>
-                                <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
-                                <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </CardContent>
-        </Card>
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <CardTitle>Top Add-on Categories</CardTitle>
+                            <CardDescription>Based on finalized receipts.</CardDescription>
+                        </div>
+                        <SheetTrigger asChild>
+                            <Button variant="outline" size="sm">
+                                View All Items
+                            </Button>
+                        </SheetTrigger>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Category</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {topCategories.map(([name, { qty, amount }]) => (
+                                <TableRow key={name} className="cursor-pointer" onClick={() => handleCategoryClick(name)}>
+                                    <TableCell className="font-medium">{name}</TableCell>
+                                    <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
+                                    <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
             <SheetContent className="w-full sm:max-w-lg flex flex-col">
                 <SheetHeader>
                     <SheetTitle>Add-on Sales Drilldown</SheetTitle>
@@ -249,6 +249,5 @@ export function TopCategoryCard({ receipts, isLoading }: TopCategoryCardProps) {
                 </Tabs>
             </SheetContent>
         </Sheet>
-        </>
     );
 }
