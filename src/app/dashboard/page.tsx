@@ -33,6 +33,7 @@ import * as XLSX from "xlsx";
 import { useRouter } from "next/navigation";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 import type { Receipt as ReceiptType, ReceiptAnalyticsV2 } from "@/lib/types";
+import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 
 
 // --- HELPERS ---
@@ -353,7 +354,7 @@ export default function DashboardPage() {
                             <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                         </div>
                         <div className="grid gap-6 md:grid-cols-2">
-                             
+                             <PackageCountCheckCard storeId={activeStore.id} dateRange={{ start, end }} />
                         </div>
                     </div>
                 )}
