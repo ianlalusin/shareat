@@ -19,6 +19,7 @@ import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog"
 import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-security";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useStoreContext } from "@/context/store-context";
+import { auth } from "@/lib/firebase/client";
 
 export default function AccountPage() {
     const { appUser, user, loading } = useAuthContext();
@@ -83,6 +84,11 @@ export default function AccountPage() {
     };
 
     const handleLinkGoogle = async () => {
+        console.log("ORIGIN", window.location.origin);
+        console.log("HOSTNAME", window.location.hostname);
+        console.log("FIREBASE projectId", auth.app.options.projectId);
+        console.log("FIREBASE authDomain", auth.app.options.authDomain);
+
         if (!user) {
             toast({
             variant: "destructive",
