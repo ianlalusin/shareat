@@ -1,7 +1,7 @@
 
 'use client';
 
-import { collection, doc, getDocs, query, writeBatch, deleteDoc, runTransaction } from "firebase/firestore";
+import { collection, doc, getDocs, query, writeBatch, deleteDoc, runTransaction, limit } from "firebase/firestore";
 import { db } from "./client";
 
 /**
@@ -94,4 +94,3 @@ export async function clearStoreData(
     
     onProgress("Cleanup complete.");
 }
-
