@@ -322,6 +322,9 @@ export async function completePaymentFromUnits(
                 
                 const categoryName = line.category || 'Uncategorized';
                 
+                acc.salesByItem ??= {};
+                acc.salesByCategory ??= {};
+                
                 // By Item
                 if (!acc.salesByItem[line.itemName]) {
                     acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
@@ -338,9 +341,9 @@ export async function completePaymentFromUnits(
 
                 return acc;
             },
-            { salesByItem: {}, salesByCategory: {} } as {
-                salesByItem: ReceiptAnalyticsV2['salesByItem'];
-                salesByCategory: ReceiptAnalyticsV2['salesByCategory'];
+            {} as {
+                salesByItem?: ReceiptAnalyticsV2['salesByItem'];
+                salesByCategory?: ReceiptAnalyticsV2['salesByCategory'];
             }
         );
         
