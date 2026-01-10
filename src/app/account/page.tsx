@@ -242,7 +242,7 @@ export default function AccountPage() {
                     </CardContent>
                 </Card>
             </div>
-            <ConfirmDialog />
+            {ConfirmDialog}
         </RoleGuard>
     );
 }
