@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { StorePackageEditDialog } from "@/components/manager/store-settings/store-package-edit-dialog";
+import { StorePackageEditDialog } from "@/components/manager/store-settings/StorePackageEditDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
@@ -33,7 +33,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
     const [schedules, setSchedules] = useState<Map<string, MenuSchedule>>(new Map());
     
     const [isLoading, setIsLoading] = useState(true);
-    const [isSyncing, setIsSyncing] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingPackage, setEditingPackage] = useState<StorePackage | null>(null);
     const [availableNowFilter, setAvailableNowFilter] = useState(false);
@@ -158,48 +157,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
             toast({ variant: 'destructive', title: "Failed to Add", description: error.message });
         }
     };
-    
-     const handleSync = async () => {
-        if (!appUser || !store) return;
-        setIsSyncing(true);
-        toast({ title: "Syncing...", description: "Adding new global packages to your store settings." });
-
-        const existingStoreIds = new Set(storePackages.map(p => p.packageId));
-        const batch = writeBatch(db);
-        let newCount = 0;
-
-        globalPackages.forEach(gPackage => {
-            if (!existingStoreIds.has(gPackage.id)) {
-                const docRef = doc(db, "stores", store.id, "storePackages", gPackage.id);
-                batch.set(docRef, {
-                    packageId: gPackage.id,
-                    packageName: gPackage.name,
-                    isEnabled: false,
-                    pricePerHead: 0,
-                    sortOrder: 1000,
-                    kitchenLocationId: null,
-                    kitchenLocationName: null,
-                    refillsAllowed: gPackage.allowedRefillIds || [],
-                    flavorsAllowed: [],
-                    menuScheduleId: null,
-                });
-                newCount++;
-            }
-        });
-
-        try {
-            await batch.commit();
-            if (newCount > 0) {
-                toast({ title: "Sync Complete", description: `Added ${newCount} new package(s).` });
-            } else {
-                toast({ title: "Already Up-to-Date", description: "No new global packages to add." });
-            }
-        } catch (error: any) {
-             toast({ variant: 'destructive', title: "Sync Failed", description: error.message });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
 
     const handleDelete = async (pkg: StorePackage) => {
         if (!appUser) return;
@@ -233,10 +190,6 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                                 <CardDescription>Manage packages available for sale in this store.</CardDescription>
                             </div>
                             <div className="flex items-center space-x-4">
-                                <Button onClick={handleSync} disabled={isSyncing} variant="outline" size="sm">
-                                    {isSyncing ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2"/>}
-                                    Sync Global Packages
-                                </Button>
                                 <div className="flex items-center space-x-2">
                                     <Switch id="available-now-filter" checked={availableNowFilter} onCheckedChange={setAvailableNowFilter}/>
                                     <Label htmlFor="available-now-filter">Available Now</Label>
