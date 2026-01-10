@@ -31,6 +31,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
+import { useRouter } from "next/navigation";
 
 
 // --- HELPERS ---
@@ -46,7 +47,7 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
 }
 
 
-const StatCard = ({ title, value, icon, isLoading, format = "number" }: { title: string, value: string | number, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) => {
+const StatCard = ({ title, value, icon, isLoading, format = "number", children }: { title: string, value: string | number, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number", children?: React.ReactNode }) => {
     const formattedValue = () => {
         if (isLoading) return <Skeleton className="h-8 w-3/4" />;
         if (typeof value === 'string') return value;
@@ -61,6 +62,7 @@ const StatCard = ({ title, value, icon, isLoading, format = "number" }: { title:
             </CardHeader>
             <CardContent>
                 <div className="text-2xl font-bold">{formattedValue()}</div>
+                {children}
             </CardContent>
         </Card>
     );
@@ -90,40 +92,6 @@ const PaymentMix = ({ tally, isLoading, activeMop, onMopSelect }: { tally: Recor
     );
 };
 
-type RecentReceipt = { id: string; receiptNumber?: string; customerName?: string | null; tableNumber?: string | null; sessionMode?: 'package_dinein' | 'alacarte'; total: number; createdAtClientMs: number; };
-
-const RecentReceiptsList = ({ receipts, onSelect, isLoading, selectedId, onOlder, hasMore, loadingMore }: { receipts: RecentReceipt[], onSelect: (id: string) => void, isLoading: boolean, selectedId: string | null, onOlder: () => void, hasMore: boolean, loadingMore: boolean }) => {
-    if (isLoading && receipts.length === 0) return <Skeleton className="h-48 w-full" />;
-    if (receipts.length === 0) return <p className="text-center text-sm text-muted-foreground py-10">No receipts match the current filters.</p>;
-    
-    return (
-        <div className="space-y-2">
-            {receipts.map((r) => {
-                const primaryId = r.receiptNumber ?? (r.sessionMode === 'alacarte' ? r.customerName : `Table ${r.tableNumber}`);
-                return (
-                    <button key={r.id} onClick={() => onSelect(r.id)} className={`flex items-center w-full text-left p-2 rounded-md transition-colors ${selectedId === r.id ? 'bg-muted' : 'hover:bg-muted/50'}`}>
-                        <div className="flex-1 space-y-1">
-                            <p className="text-sm font-medium leading-none">{primaryId}</p>
-                            <p className="text-sm text-muted-foreground">{format(new Date(r.createdAtClientMs), "p")}</p>
-                        </div>
-                        <div className="font-medium">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    </button>
-                )
-            })}
-             {hasMore && (
-                <Button
-                    variant="outline"
-                    className="w-full mt-4"
-                    onClick={onOlder}
-                    disabled={loadingMore}
-                >
-                    {loadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
-                    {loadingMore ? "Loading..." : "Load older"}
-                </Button>
-            )}
-        </div>
-    );
-};
 
 // --- Main Dashboard Page Component ---
 
@@ -178,76 +146,25 @@ type ReceiptData = BaseReceiptData & {
 
 
 export default function DashboardPage() {
+    const router = useRouter();
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
-    const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
     
     // State for all receipts in the date range (for stats)
     const [rangeReceiptsAll, setRangeReceiptsAll] = useState<ReceiptType[]>([]);
     const [isStatsLoading, setIsStatsLoading] = useState(true);
-
-    // Pagination states for the visible list
-    const [liveReceipts, setLiveReceipts] = useState<ReceiptType[]>([]);
-    const [olderReceipts, setOlderReceipts] = useState<ReceiptType[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [hasMore, setHasMore] = useState(true);
-    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-    const olderCountRef = useRef(0);
-    useEffect(() => { olderCountRef.current = olderReceipts.length; }, [olderReceipts]);
     
     const [error, setError] = useState<string | null>(null);
 
-    // Single source of truth for selection
-    const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
-    
-    // Derived state for the detailed preview data
-    const [detailedReceiptData, setDetailedReceiptData] = useState<ReceiptData | null>(null);
-    
-    const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-    const [isPrinting, setIsPrinting] = useState(false);
-
     // Filter states
     const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState<"all" | "final" | "void">("all");
-    const [modeFilter, setModeFilter] = useState<string>("all");
     const [activeMop, setActiveMop] = useState<string | null>(null);
     
-    const [autoSelectLatest, setAutoSelectLatest] = useState(true);
-    const autoSelectStorageKey = useMemo(() => `dashboard:autoSelectLatestReceipt:${activeStore?.id}:${appUser?.uid}`, [activeStore?.id, appUser?.uid]);
-
-    useEffect(() => {
-        const savedPref = localStorage.getItem(autoSelectStorageKey);
-        if (savedPref !== null) {
-            setAutoSelectLatest(savedPref === 'true');
-        }
-    }, [autoSelectStorageKey]);
-
-    const handleAutoSelectToggle = (checked: boolean) => {
-        setAutoSelectLatest(checked);
-        localStorage.setItem(autoSelectStorageKey, String(checked));
-    }
-
 
     // --- Data Fetching and Processing ---
-    
-    useEffect(() => {
-        if (!activeStore?.id) return;
-        const mopRef = collection(db, "stores", activeStore.id, "storeModesOfPayment");
-        const mopQuery = query(
-            mopRef, 
-            where("isArchived", "==", false),
-            orderBy("sortOrder", "asc")
-        );
-        const unsubscribe = onSnapshot(mopQuery, (snapshot) => {
-            setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
-        });
-        return () => unsubscribe();
-    }, [activeStore?.id]);
-
     const { start, end } = useMemo(() => {
         const now = new Date();
         let s = new Date();
@@ -291,49 +208,6 @@ export default function DashboardPage() {
         return `${fmtDate(start)} - ${fmtDate(end)}`;
     }, [start, end]);
 
-    // Live listener for the paginated receipt list
-    useEffect(() => {
-        if (!activeStore?.id) {
-            setIsLoading(false);
-            return;
-        }
-        setIsLoading(true);
-        setOlderReceipts([]);
-        setLastDoc(null);
-        setHasMore(true);
-
-        const mapDocToReceipt = (doc: DocumentData): ReceiptType => ({ id: doc.id, ...doc.data() });
-
-        const firstPageQuery = query(
-            collection(db, "stores", activeStore.id, "receipts"),
-            where("createdAt", ">=", start),
-            where("createdAt", "<=", end),
-            orderBy("createdAt", "desc"),
-            limit(PAGE_SIZE)
-        );
-
-        const unsubscribe = onSnapshot(firstPageQuery, (snapshot) => {
-            const newLiveReceipts = snapshot.docs.map(mapDocToReceipt);
-            setLiveReceipts(newLiveReceipts);
-
-            if (olderCountRef.current === 0) {
-                const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
-                setLastDoc(newLastDoc);
-            }
-            
-            setHasMore(snapshot.docs.length === PAGE_SIZE);
-
-            setIsLoading(false);
-            setError(null);
-        }, (err) => {
-            console.error("Dashboard onSnapshot error:", err);
-            setError("Failed to load real-time dashboard data.");
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [activeStore?.id, start, end]);
-
     // Listener for ALL receipts in the range (for stats)
     useEffect(() => {
         if (!activeStore?.id) {
@@ -361,100 +235,22 @@ export default function DashboardPage() {
         return () => unsub();
     }, [activeStore?.id, start, end]);
 
-
-    const loadMore = async () => {
-        if (!activeStore || !lastDoc || loadingMore || !hasMore) return;
-        setLoadingMore(true);
-
-        try {
-            const mapDocToReceipt = (doc: DocumentData): ReceiptType => ({ id: doc.id, ...doc.data() });
-            const moreQuery = query(
-                collection(db, `stores/${activeStore.id}/receipts`),
-                where("createdAt", ">=", start),
-                where("createdAt", "<=", end),
-                orderBy("createdAt", "desc"),
-                startAfter(lastDoc),
-                limit(PAGE_SIZE)
-            );
-
-            const snap = await getDocs(moreQuery);
-            const batch = snap.docs.map(mapDocToReceipt);
-            
-            setOlderReceipts(prev => {
-                const seen = new Set(prev.map(x => x.id));
-                const next = [...prev];
-                for (const r of batch) if (!seen.has(r.id)) next.push(r);
-                return next;
-            });
-
-            const newLast = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
-            if (newLast) setLastDoc(newLast);
-            setHasMore(snap.docs.length === PAGE_SIZE);
-        } catch (err) {
-            console.error("Error loading more receipts:", err);
-            setError("Failed to load older receipts.");
-        } finally {
-            setLoadingMore(false);
-        }
-    };
-    
-    // Combine live and paginated receipts for the list view
-    const paginatedReceipts = useMemo(() => {
-        const byId = new Map<string, ReceiptType>();
-        for (const r of liveReceipts) byId.set(r.id, r);
-        for (const r of olderReceipts) if (!byId.has(r.id)) byId.set(r.id, r);
-        return Array.from(byId.values()).sort((a,b)=> (b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0));
-    }, [liveReceipts, olderReceipts]);
-
-    const modeOptions = useMemo(() => {
-        const modes = new Set(paginatedReceipts.map(r => r.sessionMode).filter(Boolean));
-        return ["all", ...Array.from(modes).sort()];
-    }, [paginatedReceipts]);
-
     const applyFilters = useCallback((list: ReceiptType[]) => {
-        const searchQuery = search.trim().toLowerCase();
         return list.filter(r => {
-            if (statusFilter !== 'all' && r.status !== statusFilter) return false;
-            if (modeFilter !== 'all' && r.sessionMode !== modeFilter) return false;
-            
             if (activeMop) {
                 const mopData = r.analytics?.mop;
                 if (!mopData || typeof mopData !== 'object' || !(activeMop in mopData) || !((mopData as any)[activeMop] > 0)) {
                     return false;
                 }
             }
-
-            if (searchQuery) {
-                const receiptNumMatch = r.receiptNumber?.toLowerCase().includes(searchQuery);
-                const tableNumMatch = r.tableNumber?.toLowerCase().includes(searchQuery);
-                const customerNameMatch = typeof r.customerName === 'string' && r.customerName.toLowerCase().includes(searchQuery);
-                if (!receiptNumMatch && !tableNumMatch && !customerNameMatch) return false;
-            }
+            // other filters if any
             return true;
         });
-    }, [search, statusFilter, modeFilter, activeMop]);
-
-    // Derived list for UI display
-    const filteredReceipts = useMemo(() => applyFilters(paginatedReceipts), [paginatedReceipts, applyFilters]);
+    }, [activeMop]);
     
     // Derived list for stats calculation
     const statsReceipts = useMemo(() => applyFilters(rangeReceiptsAll), [rangeReceiptsAll, applyFilters]);
     
-    // Auto-select logic
-    useEffect(() => {
-        const shouldAutoSelect = autoSelectLatest && (
-            selectedReceiptId === null || 
-            !filteredReceipts.some(r => r.id === selectedReceiptId)
-        );
-
-        if (shouldAutoSelect && filteredReceipts.length > 0) {
-            setSelectedReceiptId(filteredReceipts[0].id);
-        } else if (filteredReceipts.length === 0) {
-            setSelectedReceiptId(null);
-        }
-    }, [filteredReceipts, autoSelectLatest, selectedReceiptId]);
-
-
     const { stats, mopTotals } = useMemo(() => {
         const finalReceipts = statsReceipts.filter(r => r.status === 'final');
 
@@ -463,12 +259,13 @@ export default function DashboardPage() {
         const mop: Record<string, number> = {};
 
         finalReceipts.forEach(r => {
-            if (r.analytics?.v !== 2) { // Legacy fallback
-                totalSales += toNum(r.total);
-                return;
-            };
-
             const analytics = r.analytics as ReceiptAnalyticsV2;
+            if (!analytics || typeof analytics !== 'object') {
+                 // Legacy fallback
+                 totalSales += toNum(r.total);
+                 return;
+            }
+
             totalSales += toNum(analytics.grandTotal);
             discountsTotal += toNum(analytics.discountsTotal);
             
@@ -497,102 +294,11 @@ export default function DashboardPage() {
         };
     }, [statsReceipts]);
 
-    const recentReceipts = useMemo(() => {
-       return filteredReceipts.map(r => ({
-            id: r.id,
-            receiptNumber: r.receiptNumber,
-            total: toNum(r.analytics?.grandTotal ?? r.total),
-            customerName: r.customerName,
-            tableNumber: r.tableNumber,
-            sessionMode: r.sessionMode,
-            createdAtClientMs: r.createdAtClientMs
-        }))
-    }, [filteredReceipts]);
-
 
     const handleMopSelect = (mopName: string) => {
         setActiveMop(prev => prev === mopName ? null : mopName);
     }
     
-   useEffect(() => {
-        const fetchDetailedData = async () => {
-            if (!selectedReceiptId || !activeStore?.id) {
-                setDetailedReceiptData(null);
-                return;
-            }
-
-            setIsLoadingPreview(true);
-            try {
-                // The receipt's ID is the session ID
-                const sessionId = selectedReceiptId;
-
-                const [receiptSnap, settingsSnap] = await Promise.all([
-                    getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId)),
-                    getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
-                ]);
-
-                if (!receiptSnap.exists()) {
-                    throw new Error(`Receipt ${selectedReceiptId} does not exist.`);
-                }
-                
-                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-                
-                // Construct a mock session object from the receipt data for the preview component
-                const sessionDataForPreview = {
-                    id: sessionId,
-                    paymentSummary: receiptDocData.analytics,
-                    closedAt: receiptDocData.createdAt,
-                    // other fields if needed by ReceiptView that are on the receipt
-                    tableNumber: receiptDocData.tableNumber,
-                    customerName: receiptDocData.customerName,
-                    sessionMode: receiptDocData.sessionMode,
-                };
-                
-                setDetailedReceiptData({
-                    session: sessionDataForPreview as any,
-                    lines: receiptDocData.lines || [],
-                    payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
-                    settings: settingsSnap.exists() ? (settingsSnap.data() as any) : {},
-                    receiptCreatedAt: receiptDocData.createdAt,
-                    createdByUsername: receiptDocData.createdByUsername,
-                    receiptNumber: receiptDocData.receiptNumber,
-                    analytics: receiptDocData.analytics,
-                });
-
-            } catch (err) {
-                console.error("Error loading receipt preview:", err);
-                setDetailedReceiptData(null);
-            } finally {
-                setIsLoadingPreview(false);
-            }
-        };
-
-        fetchDetailedData();
-    }, [selectedReceiptId, activeStore?.id]);
-
-
-    const handlePrint = async () => {
-      if (!detailedReceiptData || !activeStore?.id || !appUser || !selectedReceiptId) return;
-
-      setIsPrinting(true);
-      window.requestAnimationFrame(async () => {
-        window.print();
-        try {
-          const receiptRef = doc(db, "stores", activeStore.id, "receipts", selectedReceiptId);
-          await updateDoc(receiptRef, {
-            printedCount: increment(1),
-            lastPrintedAt: serverTimestamp(),
-            lastPrintedByUid: appUser.uid,
-            lastPrintedByUsername: getUsername(appUser),
-          });
-        } catch(e) {
-            console.error("Failed to update print count:", e)
-        } finally {
-          setIsPrinting(false);
-        }
-      });
-    };
-
     const handleCalendarChange = (range: {start: Date, end: Date}, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
             today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
@@ -644,22 +350,11 @@ export default function DashboardPage() {
     
         // 2. Build Items Sheet
         const itemsRows: any[] = [];
-        const isExcludedStatus = (status?: string) => {
-            if (!status) return false;
-            const lowerStatus = status.toLowerCase();
-            const excluded = ["cancelled", "canceled", "void", "voided", "removed", "deleted"];
-            return excluded.includes(lowerStatus);
-        }
-    
+        
         for (const receipt of statsReceipts) {
             const lines = receipt.lines || [];
             
             for (const item of lines) {
-    
-                if (item.freeQty > 0 || item.voidedQty > 0) {
-                    continue;
-                }
-    
                 const qty = toNum(item.qtyOrdered || 1);
                 const unitPrice = toNum(item.unitPrice || 0);
                 const lineSubtotal = qty * unitPrice;
@@ -749,14 +444,21 @@ export default function DashboardPage() {
                     <div className="space-y-6 mt-6">
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                             <StatCard title="Total Sales" value={stats.totalSales} icon={<span className="text-muted-foreground font-bold">₱</span>} isLoading={isStatsLoading} format="currency" />
-                            <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isStatsLoading} />
+                            <StatCard title="Receipts" value={stats.receiptsCount} icon={<Receipt />} isLoading={isStatsLoading}>
+                                <Button variant="outline" size="sm" className="mt-2" onClick={() => router.push('/receipts')}>View All</Button>
+                            </StatCard>
                             <StatCard title="Avg Basket" value={stats.avgBasket} icon={<ShoppingBasket />} isLoading={isStatsLoading} format="currency" />
                             <StatCard title="Discounts Given" value={stats.discountsTotal} icon={<Percent />} isLoading={isStatsLoading} format="currency" />
                         </div>
                         
                         <div className="grid gap-6 md:grid-cols-2">
                              <Card>
-                                <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
+                                <CardHeader>
+                                    <div className="flex justify-between items-center">
+                                      <CardTitle>Payment Mix</CardTitle>
+                                      {activeMop && (<Badge variant="secondary" className="flex items-center gap-2">MOP: {activeMop}<button onClick={() => setActiveMop(null)} className="rounded-full hover:bg-muted-foreground/20 p-0.5"><XIcon className="h-3 w-3" /></button></Badge>)}
+                                    </div>
+                                </CardHeader>
                                 <CardContent><PaymentMix tally={mopTotals} isLoading={isStatsLoading} activeMop={activeMop} onMopSelect={handleMopSelect} /></CardContent>
                             </Card>
                             <TopCategoryCard receipts={statsReceipts} isLoading={isStatsLoading} />
@@ -769,62 +471,9 @@ export default function DashboardPage() {
                             <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                              
                         </div>
-                        
-                         <Card>
-                            <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <CardTitle>Receipts</CardTitle>
-                                    {activeMop && (<Badge variant="secondary" className="flex items-center gap-2">MOP: {activeMop}<button onClick={() => setActiveMop(null)} className="rounded-full hover:bg-muted-foreground/20 p-0.5"><XIcon className="h-3 w-3" /></button></Badge>)}
-                                </div>
-                                <CardDescription>Filter and browse receipts from the selected period.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid lg:grid-cols-5 gap-6">
-                                <div className="lg:col-span-2 space-y-4">
-                                     <div className="grid sm:grid-cols-[1fr,120px,120px] gap-2">
-                                        <Input placeholder="Search receipt #, table, customer..." value={search} onChange={e => setSearch(e.target.value)} />
-                                        <Select value={statusFilter} onValueChange={v => setStatusFilter(v as any)}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="final">Final</SelectItem><SelectItem value="void">Void</SelectItem></SelectContent></Select>
-                                        <Select value={modeFilter} onValueChange={setModeFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{modeOptions.map(mode => (<SelectItem key={mode} value={mode} className="capitalize">{mode === 'all' ? 'All Modes' : mode.replace('_', ' ')}</SelectItem>))}</SelectContent></Select>
-                                     </div>
-                                      <ScrollArea className="h-[420px] pr-4">
-                                        <RecentReceiptsList receipts={recentReceipts} onSelect={setSelectedReceiptId} isLoading={isLoading} selectedId={selectedReceiptId} onOlder={loadMore} hasMore={hasMore} loadingMore={loadingMore} />
-                                     </ScrollArea>
-                                </div>
-                                <div className="lg:col-span-3">
-                                    <Card className="h-full">
-                                        <CardHeader className="flex flex-row items-center justify-between">
-                                            <CardTitle>Receipt Preview</CardTitle>
-                                            {detailedReceiptData && (
-                                                <Button onClick={handlePrint} disabled={isPrinting} size="sm">{isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2" />} Print</Button>
-                                            )}
-                                        </CardHeader>
-                                        <CardContent className="bg-muted/30 p-2 min-h-[440px]">
-                                            {isLoadingPreview ? (
-                                                <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-muted-foreground" /></div>
-                                            ) : detailedReceiptData ? (
-                                                <ScrollArea className="h-[440px]">
-                                                  <div id="print-receipt-area-dashboard"><ReceiptView data={detailedReceiptData} paymentMethods={paymentMethods} /></div>
-                                                </ScrollArea>
-                                            ) : (
-                                                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground p-4">
-                                                    <h3 className="text-lg font-semibold text-foreground">Select a receipt</h3>
-                                                    <p className="mb-4">Choose one from the list to preview and print.</p>
-                                                    <div className="flex items-center space-x-2">
-                                                        <Switch id="auto-select-toggle" checked={autoSelectLatest} onCheckedChange={handleAutoSelectToggle} />
-                                                        <Label htmlFor="auto-select-toggle">Auto-select latest</Label>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </div>
-                            </CardContent>
-                        </Card>
                     </div>
                 )}
                  {error && <Card className="mt-6"><CardContent className="p-10 text-center text-destructive">{error}</CardContent></Card>}
-            </div>
-            <div className="hidden print-block">
-                {detailedReceiptData && <ReceiptView data={detailedReceiptData} paymentMethods={paymentMethods} />}
             </div>
         </RoleGuard>
     );
