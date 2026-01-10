@@ -44,10 +44,7 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
     const [isPrinting, setIsPrinting] = useState(false);
 
     const handleSelectReceipt = async (sale: Sale) => {
-        const [sessionSnap, billablesSnap, paymentsSnap, settingsSnap, receiptSnap] = await Promise.all([
-            getDoc(doc(db, "stores", storeId, "sessions", sale.id)),
-            getDocs(query(collection(db, "stores", storeId, "sessions", sale.id, "billableLines"), orderBy("createdAt", "asc"))),
-            getDocs(query(collection(db, "stores", storeId, "sessions", sale.id, "payments"), orderBy("createdAt", "asc"))),
+        const [settingsSnap, receiptSnap] = await Promise.all([
             getDoc(doc(db, "stores", storeId, "receiptSettings", "main")),
             getDoc(doc(db, "stores", storeId, "receipts", sale.id))
         ]);
@@ -57,10 +54,21 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
         const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
         const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
         
+        // For preview, we can get most data from the receipt snapshot itself
+        const sessionDataForPreview = {
+            id: receiptDocData.sessionId,
+            tableNumber: receiptDocData.tableNumber,
+            customerName: receiptDocData.customerName,
+            sessionMode: receiptDocData.sessionMode,
+            paymentSummary: receiptDocData.analytics,
+            closedAt: receiptDocData.createdAt,
+            startedByUid: "N/A", // This is not available in receipt, but can be added if needed
+        };
+        
         setSelectedReceipt({
-            session: sessionSnap.data() as any,
-            billables: billablesSnap.docs.map(d => d.data()) as any[],
-            payments: paymentsSnap.docs.map(d => d.data()) as any[],
+            session: sessionDataForPreview as any,
+            lines: receiptDocData.lines || [],
+            payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
             settings: settingsData,
             receiptCreatedAt: receiptDocData.createdAt,
             createdByUsername: receiptDocData.createdByUsername,
