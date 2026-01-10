@@ -95,24 +95,21 @@ export default function AccountPage() {
         setIsLinking(true);
         try {
             await linkWithGoogle();
-
+        
             // Ensure the user object updates its providerData
             await user.reload();
-
+        
             // Force re-memo of badges (since your memos depend on user/providerData)
             setProviderRefreshKey((k) => k + 1);
-
+        
             toast({ title: "Google Account Linked", description: "You can now sign in with Google." });
         } catch (error: any) {
-            let description = "Could not link Google account.";
-            if (error.code === "auth/credential-already-in-use") {
-            description = "This Google account is already linked to another user.";
-            } else if (error.code === "auth/provider-already-linked") {
-            description = "This account is already linked with Google.";
-            } else if (error.code === "auth/popup-blocked") {
-            description = "Popup was blocked by the browser. Please allow popups for this site.";
-            }
-            toast({ variant: "destructive", title: "Linking Failed", description });
+            console.error("Link Google error:", error);
+            toast({
+                variant: "destructive",
+                title: `Link failed: ${error?.code || "unknown"}`,
+                description: error?.message || "No message",
+            });
         } finally {
             setIsLinking(false);
         }
