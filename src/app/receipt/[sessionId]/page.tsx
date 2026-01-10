@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
+import type { ModeOfPayment, Store } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -207,7 +207,7 @@ export default function ReceiptPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={handlePrint} disabled={isPrinting} className="w-32">
+                        <Button onClick={handlePrint} disabled={!receiptData || isPrinting} className="w-32">
                              {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2"/>}
                              {printedCount > 0 ? 'Reprint' : 'Print'}
                         </Button>
