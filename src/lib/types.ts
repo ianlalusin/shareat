@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -334,6 +333,7 @@ export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;
   sessionStartedAtClientMs: number | null;
+  sessionStartedAtHour?: number | null;
   subtotal: number;
   discountsTotal: number;
   chargesTotal: number;
