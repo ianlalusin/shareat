@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect } from "react";
@@ -82,7 +83,7 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
                       {availableRefills.map(refill => (
                           <FormField key={refill.refillId} control={form.control} name="refillsAllowed" render={({ field }) => (
                               <FormItem className="flex items-center space-x-3 space-y-0 mb-2">
-                                  <FormControl><Checkbox checked={field.value?.includes(refill.refillId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), refill.refillId]) : field.onChange(field.value?.filter(id => id !== refill.refillId))}} /></FormControl>
+                                  <FormControl><Checkbox checked={field.value?.includes(refill.refillId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), refill.refillId]) : field.onChange(field.value?.filter((id: string) => id !== refill.refillId))}} /></FormControl>
                                   <FormLabel className="font-normal">{refill.refillName}</FormLabel>
                               </FormItem>
                           )} />
@@ -96,7 +97,7 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
                       {availableFlavors.map(flavor => (
                           <FormField key={flavor.flavorId} control={form.control} name="flavorsAllowed" render={({ field }) => (
                               <FormItem className="flex items-center space-x-3 space-y-0 mb-2">
-                                  <FormControl><Checkbox checked={field.value?.includes(flavor.flavorId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), flavor.flavorId]) : field.onChange(field.value?.filter(id => id !== flavor.flavorId))}} /></FormControl>
+                                  <FormControl><Checkbox checked={field.value?.includes(flavor.flavorId)} onCheckedChange={(checked) => {return checked ? field.onChange([...(field.value || []), flavor.flavorId]) : field.onChange(field.value?.filter((id: string) => id !== flavor.flavorId))}} /></FormControl>
                                   <FormLabel className="font-normal">{flavor.flavorName}</FormLabel>
                               </FormItem>
                           )} />
