@@ -1,6 +1,7 @@
 
 "use client";
 
+import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { RoleGuard } from "@/components/guards/RoleGuard";
@@ -303,4 +304,3 @@ export default function ReceiptsPage() {
         </React.Suspense>
     )
 }
-
