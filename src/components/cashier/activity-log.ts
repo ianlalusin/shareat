@@ -1,7 +1,8 @@
 
+
 "use client";
 
-import { collection, addDoc, serverTimestamp, doc, setDoc } from "firebase/firestore";
+import { collection, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import type { ActivityLog } from "@/lib/types";
@@ -12,14 +13,10 @@ type ActivityLogPayload = {
     user: AppUser | null;
     action: ActivityLog['action'];
     lineId?: string;
-    ticketIds?: string[];
-    fromLineId?: string | null;
-    toLineId?: string | null;
+    qty?: number;
     reason?: string | null;
     note?: string | null;
     meta?: ActivityLog['meta'];
-    before?: any;
-    after?: any;
 };
 
 /**
@@ -40,10 +37,9 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
   }
 
   try {
-    const sessionLogsRef = collection(db, "stores", storeId, "sessions", sessionId, "activityLogs");
-    const logDocRef = doc(sessionLogsRef); // Create a reference with a new auto-ID
+    const logDocRef = doc(collection(db, "stores", storeId, "activityLogs"));
 
-    const logDoc: Omit<ActivityLog, 'id'> = {
+    const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
       storeId,
       sessionId,
       action,
@@ -51,15 +47,16 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorRole: user.role || null,
       actorName: user.displayName || user.name || null,
       ...rest,
-      createdAt: serverTimestamp(),
     };
-
-    // 1. Write to the session-specific log
-    await setDoc(logDocRef, logDoc);
     
-    // 2. Write a mirror to the store-level log for dashboard querying
-    const storeLogRef = doc(db, "stores", storeId, "activityLogs", logDocRef.id);
-    await setDoc(storeLogRef, { ...logDoc, id: logDocRef.id });
+    // Add server timestamp on the client for immediate consistency
+    const finalPayload = { ...logDoc, createdAt: new Date() };
+
+    // Set with doc ref to ensure same ID in both locations
+    await setDoc(logDocRef, finalPayload);
+    // Don't write to the session subcollection anymore, query via collectionGroup
+    // const sessionLogRef = doc(db, "stores", storeId, "sessions", sessionId, "activityLogs", logDocRef.id);
+    // await setDoc(sessionLogRef, finalPayload);
 
 
   } catch (error) {

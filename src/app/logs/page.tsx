@@ -1,11 +1,12 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -113,7 +114,8 @@ export default function LogsPage() {
     setIsLoading(true);
 
     const logsQuery = query(
-        collection(db, "stores", activeStore.id, "activityLogs"),
+        collectionGroup(db, "activityLogs"),
+        where("storeId", "==", activeStore.id),
         where("createdAt", ">=", Timestamp.fromDate(start)),
         where("createdAt", "<=", Timestamp.fromDate(end)),
         orderBy("createdAt", "desc")

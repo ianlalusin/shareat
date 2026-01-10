@@ -1,49 +1,56 @@
 
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, orderBy, onSnapshot, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import { AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 
-
-function fmtTime(ts?: Timestamp | null) {
-  if (!ts) return "";
+function fmtTime(ts?: any) {
   const d = toJsDate(ts);
-  if (!d) return "";
-  return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (!d) return "—";
+  return format(d, "h:mm:ss a");
 }
 
 function actionLabel(a: ActivityLog['action']) {
   switch (a) {
     case "PAYMENT_COMPLETED": return "Payment";
-    case "DISCOUNT_APPLIED": return "Discount";
-    case "DISCOUNT_REMOVED": return "Discount removed";
-    case "MARK_FREE": return "Free";
-    case "UNMARK_FREE": return "Unfree";
+    case "DISCOUNT_APPLIED": return "Discount Applied";
+    case "DISCOUNT_REMOVED": return "Discount Removed";
+    case "MARK_FREE": return "Marked Free";
+    case "UNMARK_FREE": return "Unmarked Free";
     case "VOID_TICKETS": return "Void";
-    case "UNVOID": return "Unvoid";
-    case "PRICE_OVERRIDE": return "Price override";
+    case "UNVOID": return "Un-void";
+    case "PRICE_OVERRIDE": return "Price Override";
     case "edit_line": return "Bill Edit";
     default: return a;
   }
 }
 
-function actionVariant(a: ActivityLog['action']): "default" | "secondary" | "destructive" | "outline" {
-  if (a === "PAYMENT_COMPLETED") return "default";
-  if (a === "VOID_TICKETS") return "destructive";
-  if (a === "edit_line" || a === "DISCOUNT_APPLIED" || a === "PRICE_OVERRIDE" || a === "MARK_FREE") return "secondary";
-  return "outline";
+function formatAmount(log: ActivityLog): string {
+    const amount = log.meta?.amount ?? log.meta?.paymentTotal ?? log.meta?.discountValue;
+    if (typeof amount === 'number') {
+        const sign = log.action === 'DISCOUNT_REMOVED' || log.action === 'UNMARK_FREE' ? '+' : (amount < 0 ? '' : (log.action === 'PAYMENT_COMPLETED' ? '' : '-'));
+        return `${sign} ₱${Math.abs(amount).toFixed(2)}`;
+    }
+    return "—";
 }
 
+function formatDescription(log: ActivityLog): string {
+    if (log.action === 'PAYMENT_COMPLETED') return `Paid via ${Object.keys(log.meta?.mopSummary || {}).join(', ')}`;
+
+    const qty = log.qty ? `${log.qty}x ` : '';
+    const item = log.meta?.itemName ? `${log.meta.itemName}` : '';
+    const reason = log.reason || log.note ? ` - Reason: ${log.reason || log.note}` : "";
+
+    return `${qty}${item}${reason}`;
+}
 
 interface SessionLogCardProps {
     session: PendingSession;
@@ -69,34 +76,32 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                     </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                    <div className="px-4 pb-4 border-t">
-                        {initialLogs.length === 0 ? (
-                             <p className="text-sm text-muted-foreground text-center py-4">No activity logs for this session.</p>
-                        ) : (
-                            <ScrollArea className="h-[200px] pr-3">
-                                <div className="space-y-1 py-2">
-                                    {initialLogs.map(log => {
-                                        const who = log.actorName?.trim() || log.actorRole || (log.actorUid ? log.actorUid.slice(0, 6) : "unknown");
-                                        const item = log.meta?.itemName ? ` on ${log.meta.itemName}` : "";
-                                        const reason = log.reason || log.note ? ` - Reason: ${log.reason || log.note}` : "";
-
-                                        return (
-                                            <div key={log.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
-                                                <Badge variant={actionVariant(log.action)} className="whitespace-nowrap h-5">
-                                                    {actionLabel(log.action)}
-                                                </Badge>
-                                                <span className="font-medium">{who}</span>
-                                                <span className="text-muted-foreground truncate flex-1">
-                                                    {item}{reason}
-                                                </span>
-                                                <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">{fmtTime(log.createdAt)}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </ScrollArea>
-                        )}
-                    </div>
+                    {initialLogs.length === 0 ? (
+                         <p className="text-sm text-muted-foreground text-center py-4 px-4">No activity logs for this session.</p>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Action</TableHead>
+                                    <TableHead>Who</TableHead>
+                                    <TableHead>Description</TableHead>
+                                    <TableHead className="text-right">Amount</TableHead>
+                                    <TableHead className="text-right">Time</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {initialLogs.map(log => (
+                                    <TableRow key={log.id}>
+                                        <TableCell><Badge variant="secondary" className="whitespace-nowrap">{actionLabel(log.action)}</Badge></TableCell>
+                                        <TableCell>{log.actorName || log.actorRole || 'System'}</TableCell>
+                                        <TableCell>{formatDescription(log)}</TableCell>
+                                        <TableCell className="text-right font-mono">{formatAmount(log)}</TableCell>
+                                        <TableCell className="text-right text-muted-foreground">{fmtTime(log.createdAt)}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </AccordionContent>
             </Card>
         </AccordionItem>

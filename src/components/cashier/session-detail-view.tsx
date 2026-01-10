@@ -78,12 +78,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const unsubscribe = onSnapshot(sessionRef, (doc) => {
         if (doc.exists()) {
             const data = doc.data();
-            // Don't auto-redirect here anymore, as the receipt page now handles itself.
-            // This allows cashiers to revisit a closed session's bill if needed, before navigating away.
-            // if ((data.status === 'closed' || data.isPaid) && router) {
-            //     router.replace(`/receipt/${sessionId}`);
-            //     return;
-            // }
             setSession({ id: doc.id, ...data } as PendingSession);
         } else {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
@@ -145,26 +139,40 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (!appUser || !storeId || !sessionId) return;
     try {
         await updateSessionBillLine(storeId, sessionId, lineId, after, appUser);
+
+        const line = billLines.find(l => l.id === lineId);
+        if (!line) return;
+
+        // Determine specific action for logging
+        const diff = {
+            discount: (after.discountQty ?? 0) - (before.discountQty ?? 0),
+            free: (after.freeQty ?? 0) - (before.freeQty ?? 0),
+            void: (after.voidedQty ?? 0) - (before.voidedQty ?? 0),
+        };
+
+        if (diff.discount > 0) {
+            await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        } else if (diff.discount < 0) {
+            await writeActivityLog({ action: "DISCOUNT_REMOVED", qty: -diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        }
+
+        if (diff.free > 0) {
+            await writeActivityLog({ action: "MARK_FREE", qty: diff.free, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        } else if (diff.free < 0) {
+            await writeActivityLog({ action: "UNMARK_FREE", qty: -diff.free, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        }
         
-        await writeActivityLog({
-            storeId,
-            sessionId,
-            user: appUser,
-            action: 'edit_line',
-            lineId: lineId,
-            meta: {
-                itemName: billLines.find(l => l.id === lineId)?.itemName,
-            },
-            before: before,
-            after: after
-        });
+        if (diff.void > 0) {
+            await writeActivityLog({ action: "VOID_TICKETS", qty: diff.void, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        } else if (diff.void < 0) {
+            await writeActivityLog({ action: "UNVOID", qty: -diff.void, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+        }
 
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
   }
-
 
   const handleCompletePayment = async () => {
     if (isCompletingPayment || isBillingLocked) return;
