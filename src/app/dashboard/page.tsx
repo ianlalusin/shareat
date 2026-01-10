@@ -15,7 +15,6 @@ import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/context/auth-context";
 import { ReceiptView, type ReceiptData as BaseReceiptData } from "@/components/receipt/receipt-view";
-import type { ModeOfPayment, Receipt as ReceiptType, BillableLine, ReceiptAnalyticsV2 } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { Input } from "@/components/ui/input";
@@ -33,6 +32,7 @@ import { toast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { useRouter } from "next/navigation";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
+import type { Receipt as ReceiptType, ReceiptAnalyticsV2 } from "@/lib/types";
 
 
 // --- HELPERS ---
@@ -362,3 +362,5 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
+    
