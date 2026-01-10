@@ -69,19 +69,24 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
         const tally: ServeTimeTally = {};
         
         tickets.forEach(ticket => {
-            const startTs = toJsDate(ticket.preparedAt ?? ticket.createdAt);
-            const endTs = toJsDate(ticket.servedAt);
-            const type = ticket.type ?? "unknown";
+            let durationMs: number | undefined = (ticket as any).durationMs;
 
-            if (startTs && endTs) {
-                const durationMs = endTs.getTime() - startTs.getTime();
-                if (durationMs >= 0) {
-                     if (!tally[type]) {
-                        tally[type] = { totalMs: 0, count: 0 };
-                    }
-                    tally[type].totalMs += durationMs;
-                    tally[type].count += 1;
+            // Fallback for older tickets
+            if (typeof durationMs !== 'number' || durationMs <= 0) {
+                const startTs = toJsDate(ticket.createdAt);
+                const endTs = toJsDate(ticket.servedAt);
+                if (startTs && endTs) {
+                    durationMs = endTs.getTime() - startTs.getTime();
                 }
+            }
+
+            if (durationMs && durationMs > 0) {
+                const type = ticket.type ?? "unknown";
+                if (!tally[type]) {
+                    tally[type] = { totalMs: 0, count: 0 };
+                }
+                tally[type].totalMs += durationMs;
+                tally[type].count += 1;
             }
         });
 

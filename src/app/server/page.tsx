@@ -9,15 +9,16 @@ import { ReadyToServe, type ReadyItem } from "@/components/server/ready-to-serve
 import { ServedHistory } from "@/components/server/served-history";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { RequestChangeDialog } from "@/components/server/request-change-dialog";
 import { AddonsPOSModal } from "@/components/cashier/AddonsPOSModal";
-import type { StorePackage, MenuSchedule } from "@/lib/types";
+import type { StorePackage, MenuSchedule, KitchenTicket } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
+import { toJsDate } from "@/lib/utils/date";
 
 
 export default function ServerPage() {
@@ -155,23 +156,53 @@ export default function ServerPage() {
   }
 
   const handleMarkServed = async (item: ReadyItem) => {
-     if (!appUser || !activeStore || !item.docId) {
+    if (!appUser || !activeStore || !item.docId) {
         toast({ variant: 'destructive', title: 'Error', description: 'User, store, or ticket ID not found.' });
         return;
-     }
+    }
 
     setIsServing(prev => ({...prev, [item.docId!]: true}));
 
     const ticketRef = doc(db, "stores", activeStore.id, "sessions", item.sessionId, "kitchentickets", item.docId);
 
     try {
-        await updateDoc(ticketRef, {
-            status: "served",
-            servedAt: serverTimestamp(),
-            servedByUid: appUser.uid
+        await runTransaction(db, async (transaction) => {
+            const ticketSnap = await transaction.get(ticketRef);
+            if (!ticketSnap.exists()) throw new Error("Ticket not found.");
+
+            const ticket = ticketSnap.data() as KitchenTicket;
+            if (ticket.status === 'served') return; // Idempotency check
+
+            const now = Date.now();
+            const startTime = toJsDate(ticket.createdAt)?.getTime() ?? now;
+            const durationMs = now - startTime;
+
+            const updatePayload = {
+                status: "served",
+                servedAt: serverTimestamp(),
+                servedAtClientMs: now,
+                servedByUid: appUser.uid,
+                durationMs: durationMs > 0 ? durationMs : 0,
+            };
+
+            transaction.update(ticketRef, updatePayload);
+
+            // Also increment the session-level counters
+            const sessionRef = doc(db, "stores", activeStore.id, "sessions", item.sessionId);
+            const sessionUpdate: Record<string, any> = {
+                [`serveCountByType.${item.type}`]: increment(1),
+                [`serveTimeMsTotalByType.${item.type}`]: increment(durationMs),
+            };
+
+            if (item.type === 'refill') {
+                const refillName = item.itemName || "Refill";
+                const qty = item.qty || 1;
+                sessionUpdate.servedRefillsTotal = increment(qty);
+                sessionUpdate[`servedRefillsByName.${refillName}`] = increment(qty);
+            }
+            transaction.update(sessionRef, sessionUpdate);
         });
 
-        // The listener will automatically remove the item from the UI
         toast({ title: "Item Served", description: `${item.itemName} for Table ${item.tableNumber} marked as served.`});
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: error.message || "Could not mark item as served."});
