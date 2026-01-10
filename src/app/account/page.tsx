@@ -28,7 +28,7 @@ export default function AccountPage() {
     const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
     const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
     const [isLinking, setIsLinking] = useState(false);
-    const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
+    const { confirm, Dialog } = useConfirmDialog();
 
     useEffect(() => {
         if (!loading && !appUser) {
@@ -221,8 +221,7 @@ export default function AccountPage() {
                     </CardContent>
                 </Card>
             </div>
-            <ConfirmDialog />
+            {Dialog}
         </RoleGuard>
     );
 }
-
