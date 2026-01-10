@@ -9,8 +9,7 @@ import {
     GoogleAuthProvider,
     linkWithPopup,
     linkWithRedirect,
-    sendPasswordResetEmail,
-    type User
+    sendPasswordResetEmail
 } from 'firebase/auth';
 
 /**
@@ -34,23 +33,39 @@ export async function changePassword(currentPassword: string, newPassword: strin
 }
 
 /**
- * Links the current user's account with a Google account.
- * Handles popup and redirect flows.
- * @param user The current Firebase user object.
+ * Links the current user's account with Google.
+ * Uses popup first, falls back to redirect only when popup is blocked/unsupported.
  */
-export async function linkWithGoogle(user: User): Promise<void> {
-    const provider = new GoogleAuthProvider();
-    try {
-        await linkWithPopup(user, provider);
-    } catch (error: any) {
-        if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
-            // Fallback to redirect if popup is blocked or closed by user
-            await linkWithRedirect(user, provider);
-        } else {
-            // Re-throw other errors to be handled by the caller
-            throw error;
-        }
+export async function linkWithGoogle(): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) throw new Error("No authenticated user found.");
+
+  const provider = new GoogleAuthProvider();
+
+  try {
+    await linkWithPopup(fbUser, provider);
+  } catch (error: any) {
+    const code = error?.code ?? "";
+
+    // Only fallback to redirect when popup cannot work in this environment
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/operation-not-supported-in-this-environment"
+    ) {
+      await linkWithRedirect(fbUser, provider);
+      return;
     }
+
+    // If user simply closed the popup, don't redirect
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      return;
+    }
+
+    throw error;
+  } finally {
+    // Refresh providerData after linking (or even after popup close)
+    await fbUser.reload().catch(() => {});
+  }
 }
 
 /**
@@ -60,4 +75,3 @@ export async function linkWithGoogle(user: User): Promise<void> {
 export async function sendPasswordReset(email: string): Promise<void> {
     await sendPasswordResetEmail(auth, email);
 }
-
