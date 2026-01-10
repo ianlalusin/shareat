@@ -12,7 +12,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
-import { ActivityLogsCard } from "@/components/dashboard/activity-logs-card";
+import { SessionLogCard } from "@/components/dashboard/session-log-card";
+import { Accordion } from "@/components/ui/accordion";
+import type { PendingSession } from "@/lib/types";
 
 // Helper functions for date manipulation
 function startOfDay(d: Date) {
@@ -48,6 +50,8 @@ const presets: { label: string; value: DatePreset }[] = [
 
 export default function LogsPage() {
   const { activeStore, loading: storeLoading } = useStoreContext();
+  const [sessions, setSessions] = useState<PendingSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -87,6 +91,33 @@ export default function LogsPage() {
     }
     return { start: s, end: e };
   }, [datePreset, customRange]);
+  
+   useEffect(() => {
+    if (!activeStore?.id) {
+        setIsLoading(false);
+        return;
+    };
+    setIsLoading(true);
+
+    const sessionsQuery = query(
+        collection(db, "stores", activeStore.id, "sessions"),
+        where("startedAt", ">=", Timestamp.fromDate(start)),
+        where("startedAt", "<=", Timestamp.fromDate(end)),
+        orderBy("startedAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
+        const sessionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PendingSession));
+        setSessions(sessionsData);
+        setIsLoading(false);
+    }, (error) => {
+        console.error("Error fetching sessions for logs:", error);
+        setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [activeStore?.id, start, end]);
+
 
   const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
     const presetMap: Record<string, DatePreset> = {
@@ -162,7 +193,21 @@ export default function LogsPage() {
         </div>
       </PageHeader>
       <div className="mt-6">
-        <ActivityLogsCard storeId={activeStore.id} dateRange={{ start, end }} />
+        {isLoading ? (
+             <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
+        ) : sessions.length > 0 ? (
+            <Accordion type="single" collapsible className="w-full space-y-4">
+                {sessions.map(session => (
+                    <SessionLogCard key={session.id} session={session} />
+                ))}
+            </Accordion>
+        ) : (
+            <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                    No sessions found for the selected date range.
+                </CardContent>
+            </Card>
+        )}
       </div>
     </RoleGuard>
   );
