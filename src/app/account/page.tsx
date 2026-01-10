@@ -8,21 +8,27 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ImageIcon, Loader2, UploadCloud, View } from "lucide-react";
+import { ImageIcon, Loader2, UploadCloud, View, KeyRound, Link as LinkIcon } from "lucide-react";
 import { uploadUserAvatar } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RoleGuard } from "@/components/guards/RoleGuard";
+import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog";
+import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-security";
+import { useConfirmDialog } from "@/components/global/confirm-dialog";
 
 export default function AccountPage() {
-    const { appUser, loading } = useAuthContext();
+    const { appUser, user, loading } = useAuthContext();
     const router = useRouter();
     const { toast } = useToast();
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
+    const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+    const [isLinking, setIsLinking] = useState(false);
+    const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
 
     useEffect(() => {
         if (!loading && !appUser) {
@@ -30,15 +36,22 @@ export default function AccountPage() {
         }
     }, [appUser, loading, router]);
 
-    if (loading || !appUser) {
-        return <div className="flex items-center justify-center h-full">Loading...</div>;
+    const hasPasswordProvider = useMemo(() => {
+        return user?.providerData.some(p => p.providerId === 'password') ?? false;
+    }, [user]);
+
+    const hasGoogleProvider = useMemo(() => {
+        return user?.providerData.some(p => p.providerId === 'google.com') ?? false;
+    }, [user]);
+
+
+    if (loading || !appUser || !user) {
+        return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
 
-    const user = appUser;
-
-    const userInitials = user.displayName
-        ? user.displayName.split(' ').map(n => n[0]).join('')
-        : user.email ? user.email[0].toUpperCase() : 'U';
+    const userInitials = appUser.displayName
+        ? appUser.displayName.split(' ').map(n => n[0]).join('')
+        : appUser.email ? appUser.email[0].toUpperCase() : 'U';
 
     const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -64,83 +77,152 @@ export default function AccountPage() {
         }
     };
 
+    const handleLinkGoogle = async () => {
+        setIsLinking(true);
+        try {
+            await linkWithGoogle(user);
+            toast({ title: "Google Account Linked", description: "You can now sign in with Google."});
+        } catch(error: any) {
+            let description = "Could not link Google account.";
+            if (error.code === 'auth/credential-already-in-use') {
+                description = "This Google account is already linked to another user.";
+            } else if (error.code === 'auth/provider-already-linked') {
+                description = "This account is already linked with Google.";
+            } else if (error.code === 'auth/popup-blocked') {
+                description = "Popup was blocked by the browser. Please allow popups for this site.";
+            }
+            toast({ variant: "destructive", title: "Linking Failed", description });
+        } finally {
+            setIsLinking(false);
+        }
+    };
+    
+    const handleSendResetEmail = async () => {
+        if (!user?.email) return;
+        try {
+            await sendPasswordReset(user.email);
+            toast({ title: "Password Reset Email Sent", description: `An email has been sent to ${user.email}.`});
+        } catch (error) {
+            toast({ variant: "destructive", title: "Request Failed", description: "Could not send password reset email." });
+        }
+        setIsPasswordDialogOpen(false);
+    }
+
     return (
         <RoleGuard allow={["admin", "manager", "cashier", "kitchen", "server"]}>
             <PageHeader title="My Account" description="View and manage your account details." />
-            <div className="grid gap-8">
-                <div className="md:col-span-1">
-                    <Card>
-                        <CardHeader className="flex flex-col items-center text-center p-6">
-                             <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
-                                <DialogTrigger asChild>
-                                    <button className="relative rounded-full">
-                                        <Avatar className="h-24 w-24 mb-4 cursor-pointer ring-2 ring-offset-2 ring-transparent hover:ring-primary transition-all">
-                                            <AvatarImage src={user.photoURL || undefined} alt={user.displayName || 'User'} />
-                                            <AvatarFallback className="text-3xl">{userInitials}</AvatarFallback>
-                                        </Avatar>
-                                         <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                            <ImageIcon className="h-8 w-8 text-white" />
-                                        </div>
-                                    </button>
-                                </DialogTrigger>
-                                <DialogContent className="sm:max-w-[425px]">
-                                    <DialogHeader>
-                                        <DialogTitle>Profile Photo</DialogTitle>
-                                        <DialogDescription>Manage your avatar.</DialogDescription>
-                                    </DialogHeader>
-                                    <div className="flex justify-center py-4">
-                                        <Avatar className="h-40 w-40">
-                                            <AvatarImage src={user.photoURL || undefined} alt={user.displayName || 'User'}/>
-                                            <AvatarFallback className="text-6xl">{userInitials}</AvatarFallback>
-                                        </Avatar>
+            <div className="grid gap-8 md:grid-cols-2 items-start">
+                <Card>
+                    <CardHeader className="flex flex-col items-center text-center p-6">
+                            <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
+                            <DialogTrigger asChild>
+                                <button className="relative rounded-full">
+                                    <Avatar className="h-24 w-24 mb-4 cursor-pointer ring-2 ring-offset-2 ring-transparent hover:ring-primary transition-all">
+                                        <AvatarImage src={user.photoURL || undefined} alt={appUser.displayName || 'User'} />
+                                        <AvatarFallback className="text-3xl">{userInitials}</AvatarFallback>
+                                    </Avatar>
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                        <ImageIcon className="h-8 w-8 text-white" />
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        <Button variant="outline" asChild disabled={!user.photoURL}>
-                                            <a href={user.photoURL!} target="_blank" rel="noopener noreferrer">
-                                                <View className="mr-2" /> View Photo
-                                            </a>
-                                        </Button>
-                                        <Button onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-                                            {isUploading ? (
-                                                <Loader2 className="mr-2 animate-spin" />
-                                            ) : (
-                                                <UploadCloud className="mr-2" />
-                                            )}
-                                            Upload New
-                                        </Button>
-                                    </div>
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        onChange={handleAvatarUpload}
-                                        className="hidden"
-                                        accept="image/*"
-                                    />
-                                </DialogContent>
-                            </Dialog>
-                            <CardTitle className="text-xl">{user.displayName}</CardTitle>
-                            <CardDescription>{user.email}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Separator />
-                            <div className="py-4 grid gap-2">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-muted-foreground text-sm">Role</span>
-                                    <Badge variant="outline" className="capitalize">{user.role}</Badge>
+                                </button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[425px]">
+                                <DialogHeader>
+                                    <DialogTitle>Profile Photo</DialogTitle>
+                                    <DialogDescription>Manage your avatar.</DialogDescription>
+                                </DialogHeader>
+                                <div className="flex justify-center py-4">
+                                    <Avatar className="h-40 w-40">
+                                        <AvatarImage src={user.photoURL || undefined} alt={appUser.displayName || 'User'}/>
+                                        <AvatarFallback className="text-6xl">{userInitials}</AvatarFallback>
+                                    </Avatar>
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-muted-foreground text-sm">Store ID</span>
-                                    <span className="font-medium text-sm">{user.storeId || 'N/A'}</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <Button variant="outline" asChild disabled={!user.photoURL}>
+                                        <a href={user.photoURL!} target="_blank" rel="noopener noreferrer">
+                                            <View className="mr-2" /> View Photo
+                                        </a>
+                                    </Button>
+                                    <Button onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                                        {isUploading ? (
+                                            <Loader2 className="mr-2 animate-spin" />
+                                        ) : (
+                                            <UploadCloud className="mr-2" />
+                                        )}
+                                        Upload New
+                                    </Button>
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-muted-foreground text-sm">Status</span>
-                                     <Badge variant={user.status === 'active' ? 'default' : 'secondary'} className="capitalize">{user.status}</Badge>
-                                </div>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleAvatarUpload}
+                                    className="hidden"
+                                    accept="image/*"
+                                />
+                            </DialogContent>
+                        </Dialog>
+                        <CardTitle className="text-xl">{appUser.displayName}</CardTitle>
+                        <CardDescription>{appUser.email}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Separator />
+                        <div className="py-4 grid gap-2">
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground text-sm">Role</span>
+                                <Badge variant="outline" className="capitalize">{appUser.role}</Badge>
                             </div>
-                        </CardContent>
-                    </Card>
-                </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground text-sm">Store ID</span>
+                                <span className="font-medium text-sm">{appUser.storeId || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground text-sm">Status</span>
+                                    <Badge variant={appUser.status === 'active' ? 'default' : 'secondary'} className="capitalize">{appUser.status}</Badge>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Security</CardTitle>
+                        <CardDescription>Manage password and sign-in methods.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div>
+                            <h4 className="text-sm font-medium mb-2">Sign-in Methods</h4>
+                            <div className="flex flex-wrap gap-2">
+                                {hasPasswordProvider ? <Badge>Password enabled</Badge> : <Badge variant="secondary">No password</Badge>}
+                                {hasGoogleProvider ? <Badge>Google linked</Badge> : <Badge variant="secondary">Google not linked</Badge>}
+                            </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="space-y-2">
+                            <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="outline"><KeyRound /> Change Password</Button>
+                                </DialogTrigger>
+                                <ChangePasswordDialog
+                                    hasPasswordProvider={hasPasswordProvider}
+                                    onSendResetEmail={handleSendResetEmail}
+                                    onClose={() => setIsPasswordDialogOpen(false)}
+                                />
+                            </Dialog>
+
+                             {!hasGoogleProvider && (
+                                <Button variant="outline" onClick={handleLinkGoogle} disabled={isLinking}>
+                                    {isLinking ? <Loader2 className="animate-spin"/> : <LinkIcon />}
+                                    Link Google Account
+                                </Button>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
+            <ConfirmDialog />
         </RoleGuard>
     );
 }
+
