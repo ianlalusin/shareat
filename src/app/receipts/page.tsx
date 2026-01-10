@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -22,6 +23,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import * as XLSX from "xlsx";
 
 
 // --- HELPERS ---
@@ -87,10 +90,36 @@ type ReceiptData = BaseReceiptData & {
   analytics?: any;
 };
 
+const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || 0);
+
+
+function formatLocal(dtMs?: number) {
+    if (!dtMs) return "";
+    return new Date(dtMs).toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function mopToString(mop: any) {
+    if (!mop || typeof mop !== "object") return "";
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(mop)) {
+        const amt = toNum(v);
+        if (!k) continue;
+        parts.push(`${k}:${amt}`);
+    }
+    return parts.join("|");
+}
+
 
 export default function ReceiptsBrowserPage() {
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
+    const { toast } = useToast();
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -292,6 +321,96 @@ export default function ReceiptsBrowserPage() {
         setIsCalendarOpen(false);
     };
 
+    async function exportXlsx() {
+        if (!activeStore) return;
+    
+        toast({ title: "Exporting...", description: "Fetching all billable items for the selected range. This may take a moment." });
+    
+        // 1. Build Receipts Sheet
+        const receiptsRows = filteredReceipts.map(r => {
+            const a = r.analytics || {};
+            const grandTotal = toNum(a.grandTotal);
+            const discountsTotal = toNum(a.discountsTotal);
+            const chargesTotal = toNum(a.chargesTotal);
+            const totalPaid = toNum(a.totalPaid);
+            const change = toNum(a.change);
+            const netCollected = totalPaid - change;
+    
+            return {
+                DateTime: formatLocal(r.createdAtClientMs),
+                ReceiptNumber: r.receiptNumber ?? "",
+                SessionMode: r.sessionMode ?? "",
+                TableNumber: r.tableNumber ?? "",
+                CustomerName: r.customerName ?? "",
+                GrandTotal: grandTotal,
+                Discounts: discountsTotal,
+                Charges: chargesTotal,
+                TotalPaid: totalPaid,
+                Change: change,
+                NetCollected: netCollected,
+                PaymentMix: mopToString(a.mop),
+                DiscountsBreakdown: a.discounts ? JSON.stringify(a.discounts) : "",
+                ChargesBreakdown: a.charges ? JSON.stringify(a.charges) : "",
+            };
+        });
+        const receiptsSheet = XLSX.utils.json_to_sheet(receiptsRows);
+    
+        // 2. Build Items Sheet
+        const itemsRows: any[] = [];
+        
+        for (const receipt of filteredReceipts) {
+            const lines = receipt.lines || [];
+            
+            for (const item of lines) {
+                const qty = toNum(item.qtyOrdered || 1);
+                const unitPrice = toNum(item.unitPrice || 0);
+                const lineSubtotal = qty * unitPrice;
+    
+                const lineDiscount = item.discountType === 'percent'
+                    ? lineSubtotal * (toNum(item.discountValue) / 100)
+                    : Math.min(toNum(item.discountValue) * qty, lineSubtotal);
+                
+                const lineTotal = lineSubtotal - lineDiscount;
+    
+                const a = receipt.analytics || {};
+                const netCollected = toNum(a.totalPaid) - toNum(a.change);
+    
+                itemsRows.push({
+                    ReceiptNumber: receipt.receiptNumber ?? "",
+                    DateTime: formatLocal(receipt.createdAtClientMs),
+                    SessionMode: receipt.sessionMode ?? "",
+                    TableNumber: receipt.tableNumber ?? "",
+                    CustomerName: receipt.customerName ?? "",
+                    ItemName: item.itemName,
+                    Category: (item as any).category ?? "",
+                    Qty: qty,
+                    UnitPrice: unitPrice,
+                    LineSubtotal: lineSubtotal,
+                    LineDiscount: lineDiscount,
+                    LineTotal: lineTotal,
+                    ReceiptDiscountsTotal: toNum(a.discountsTotal),
+                    ReceiptChargesTotal: toNum(a.chargesTotal),
+                    ReceiptNetCollected: netCollected,
+                    DiscountsBreakdown: a.discounts ? JSON.stringify(a.discounts) : "",
+                    ChargesBreakdown: a.charges ? JSON.stringify(a.charges) : "",
+                });
+            }
+        }
+        const itemsSheet = XLSX.utils.json_to_sheet(itemsRows);
+    
+        // 3. Create and Download Workbook
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, receiptsSheet, "Receipts");
+        XLSX.utils.book_append_sheet(workbook, itemsSheet, "Items");
+    
+        const from = start.toISOString().slice(0, 10);
+        const to = end.toISOString().slice(0, 10);
+        const filename = `receipts_${from}_to_${to}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+    
+        toast({ title: "Export Complete", description: "Your XLSX file has been downloaded." });
+    }
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -315,6 +434,7 @@ export default function ReceiptsBrowserPage() {
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
                             </Popover>
+                             <Button variant="outline" size="sm" onClick={exportXlsx} disabled={filteredReceipts.length === 0}><Download />Export XLSX</Button>
                         </div>
                         <p className="text-sm text-muted-foreground">{dateRangeLabel}</p>
                     </div>
@@ -375,4 +495,5 @@ export default function ReceiptsBrowserPage() {
         </RoleGuard>
     );
 }
+
 
