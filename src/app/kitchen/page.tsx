@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, increment } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, increment, orderBy } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
