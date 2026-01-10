@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { SessionLogCard } from "@/components/dashboard/session-log-card";
 import { Accordion } from "@/components/ui/accordion";
-import type { PendingSession } from "@/lib/types";
+import type { ActivityLog, PendingSession } from "@/lib/types";
 
 // Helper functions for date manipulation
 function startOfDay(d: Date) {
@@ -48,9 +48,15 @@ const presets: { label: string; value: DatePreset }[] = [
   { label: "This Month", value: "month" },
 ];
 
+type GroupedLog = {
+    session: PendingSession;
+    logs: ActivityLog[];
+};
+
+
 export default function LogsPage() {
   const { activeStore, loading: storeLoading } = useStoreContext();
-  const [sessions, setSessions] = useState<PendingSession[]>([]);
+  const [groupedLogs, setGroupedLogs] = useState<GroupedLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -99,19 +105,60 @@ export default function LogsPage() {
     };
     setIsLoading(true);
 
-    const sessionsQuery = query(
-        collection(db, "stores", activeStore.id, "sessions"),
-        where("startedAt", ">=", Timestamp.fromDate(start)),
-        where("startedAt", "<=", Timestamp.fromDate(end)),
-        orderBy("startedAt", "desc")
+    const logsQuery = query(
+        collection(db, "stores", activeStore.id, "activityLogs"),
+        where("createdAt", ">=", Timestamp.fromDate(start)),
+        where("createdAt", "<=", Timestamp.fromDate(end)),
+        orderBy("createdAt", "desc")
     );
 
-    const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
-        const sessionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PendingSession));
-        setSessions(sessionsData);
+    const unsubscribe = onSnapshot(logsQuery, async (snapshot) => {
+        const logsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+        
+        // Group logs by session ID
+        const logsBySessionId = new Map<string, ActivityLog[]>();
+        for (const log of logsData) {
+            if (!logsBySessionId.has(log.sessionId)) {
+                logsBySessionId.set(log.sessionId, []);
+            }
+            logsBySessionId.get(log.sessionId)!.push(log);
+        }
+        
+        const sessionIds = Array.from(logsBySessionId.keys());
+        if (sessionIds.length === 0) {
+            setGroupedLogs([]);
+            setIsLoading(false);
+            return;
+        }
+
+        // Fetch all required session documents
+        const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where("id", "in", sessionIds));
+        const sessionsSnap = await getDocs(sessionQuery);
+        const sessionsMap = new Map<string, PendingSession>();
+        sessionsSnap.forEach(doc => {
+            sessionsMap.set(doc.id, { id: doc.id, ...doc.data() } as PendingSession);
+        });
+
+        // Combine sessions and their logs
+        const finalGroupedLogs: GroupedLog[] = [];
+        for (const [sessionId, logs] of logsBySessionId.entries()) {
+            const session = sessionsMap.get(sessionId);
+            if (session) {
+                finalGroupedLogs.push({ session, logs });
+            }
+        }
+        
+        // Sort the groups by the most recent log in each group
+        finalGroupedLogs.sort((a, b) => {
+            const lastLogA = a.logs[0]?.createdAt.toMillis() || 0;
+            const lastLogB = b.logs[0]?.createdAt.toMillis() || 0;
+            return lastLogB - lastLogA;
+        });
+
+        setGroupedLogs(finalGroupedLogs);
         setIsLoading(false);
     }, (error) => {
-        console.error("Error fetching sessions for logs:", error);
+        console.error("Error fetching logs:", error);
         setIsLoading(false);
     });
 
@@ -195,16 +242,16 @@ export default function LogsPage() {
       <div className="mt-6">
         {isLoading ? (
              <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
-        ) : sessions.length > 0 ? (
+        ) : groupedLogs.length > 0 ? (
             <Accordion type="single" collapsible className="w-full space-y-4">
-                {sessions.map(session => (
-                    <SessionLogCard key={session.id} session={session} />
+                {groupedLogs.map(({ session, logs }) => (
+                    <SessionLogCard key={session.id} session={session} initialLogs={logs} />
                 ))}
             </Accordion>
         ) : (
             <Card>
                 <CardContent className="p-10 text-center text-muted-foreground">
-                    No sessions found for the selected date range.
+                    No activity found for the selected date range.
                 </CardContent>
             </Card>
         )}

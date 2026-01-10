@@ -47,40 +47,15 @@ function actionVariant(a: ActivityLog['action']): "default" | "secondary" | "des
 
 interface SessionLogCardProps {
     session: PendingSession;
+    initialLogs: ActivityLog[];
 }
 
-export function SessionLogCard({ session }: SessionLogCardProps) {
-    const [logs, setLogs] = useState<ActivityLog[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasFetched, setHasFetched] = useState(false);
-
-    const handleOpen = (isOpen: boolean) => {
-        if (isOpen && !hasFetched && !isLoading) {
-            setIsLoading(true);
-            const activityQuery = query(
-                collection(db, "stores", session.storeId, "activityLogs"),
-                where("sessionId", "==", session.id),
-                orderBy("createdAt", "desc")
-            );
-            
-            const unsubscribe = onSnapshot(activityQuery, (snapshot) => {
-                setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog)));
-                setIsLoading(false);
-                setHasFetched(true);
-                // Unsubscribe after the first fetch to avoid too many live listeners
-                unsubscribe();
-            }, (error) => {
-                console.error(`Failed to fetch logs for session ${session.id}:`, error);
-                setIsLoading(false);
-            });
-        }
-    };
-    
+export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
     const sessionLabel = computeSessionLabel(session);
     const sessionStarted = toJsDate(session.startedAt);
 
     return (
-        <AccordionItem value={session.id} onOpenChange={handleOpen}>
+        <AccordionItem value={session.id}>
             <Card>
                 <AccordionTrigger className="p-4 w-full">
                     <div className="flex justify-between items-center w-full">
@@ -95,17 +70,12 @@ export function SessionLogCard({ session }: SessionLogCardProps) {
                 </AccordionTrigger>
                 <AccordionContent>
                     <div className="p-4 border-t">
-                        {isLoading ? (
-                            <div className="space-y-2">
-                                <Skeleton className="h-10 w-full" />
-                                <Skeleton className="h-10 w-full" />
-                            </div>
-                        ) : logs.length === 0 ? (
+                        {initialLogs.length === 0 ? (
                              <p className="text-sm text-muted-foreground text-center py-4">No activity logs for this session.</p>
                         ) : (
                             <ScrollArea className="h-[200px] pr-3">
                                 <div className="space-y-2">
-                                    {logs.map(log => {
+                                    {initialLogs.map(log => {
                                         const who = log.actorName?.trim() || log.actorRole || (log.actorUid ? log.actorUid.slice(0, 6) : "unknown");
                                         const item = log.meta?.itemName ? ` • ${log.meta.itemName}` : "";
                                         const receipt = log.meta?.receiptNumber ? ` • ${log.meta.receiptNumber}` : "";
