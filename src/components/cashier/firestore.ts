@@ -296,47 +296,53 @@ export async function completePaymentFromUnits(
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-        const salesAnalytics = billLines.reduce((acc, line) => {
-            if (line.type !== 'package' && line.type !== 'addon') return acc;
-            
-            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
-            if (netQty <= 0) return acc;
+        const salesAnalytics = billLines.reduce(
+            (acc, line) => {
+                if (line.type !== 'package' && line.type !== 'addon') return acc;
+                
+                const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
+                if (netQty <= 0) return acc;
 
-            const grossAmount = netQty * line.unitPrice;
-            const discountQty = Math.min(line.discountQty || 0, netQty);
-            
-            let discountAmount = 0;
-            if (discountQty > 0) {
-                 const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
-                    ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
-                    : line.unitPrice;
+                const grossAmount = netQty * line.unitPrice;
+                const discountQty = Math.min(line.discountQty || 0, netQty);
+                
+                let discountAmount = 0;
+                if (discountQty > 0) {
+                    const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
+                        ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
+                        : line.unitPrice;
 
-                if (line.discountType === 'percent') {
-                    discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
-                } else { // fixed
-                    discountAmount = Math.min(discountBaseUnit, (line.discountValue || 0)) * discountQty;
+                    if (line.discountType === 'percent') {
+                        discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
+                    } else { // fixed
+                        discountAmount = Math.min(discountBaseUnit, (line.discountValue || 0)) * discountQty;
+                    }
                 }
-            }
-            const netAmount = grossAmount - discountAmount;
-            
-            const categoryName = line.category || 'Uncategorized';
-            
-            // By Item
-            if (!acc.salesByItem[line.itemName]) {
-                acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
-            }
-            acc.salesByItem[line.itemName].qty += netQty;
-            acc.salesByItem[line.itemName].amount += netAmount;
-            
-            // By Category
-            if (!acc.salesByCategory[categoryName]) {
-                 acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
-            }
-            acc.salesByCategory[categoryName].qty += netQty;
-            acc.salesByCategory[categoryName].amount += netAmount;
+                const netAmount = grossAmount - discountAmount;
+                
+                const categoryName = line.category || 'Uncategorized';
+                
+                // By Item
+                if (!acc.salesByItem[line.itemName]) {
+                    acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
+                }
+                acc.salesByItem[line.itemName].qty += netQty;
+                acc.salesByItem[line.itemName].amount += netAmount;
+                
+                // By Category
+                if (!acc.salesByCategory[categoryName]) {
+                    acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
+                }
+                acc.salesByCategory[categoryName].qty += netQty;
+                acc.salesByCategory[categoryName].amount += netAmount;
 
-            return acc;
-        }, { salesByItem: {}, salesByCategory: {} } as { salesByItem: ReceiptAnalyticsV2['salesByItem'], salesByCategory: ReceiptAnalyticsV2['salesByCategory'] });
+                return acc;
+            },
+            { salesByItem: {}, salesByCategory: {} } as {
+                salesByItem: ReceiptAnalyticsV2['salesByItem'];
+                salesByCategory: ReceiptAnalyticsV2['salesByCategory'];
+            }
+        );
         
         const startedDate = new Date(sessionData.startedAtClientMs);
         const sessionStartedAtHour = startedDate.getHours();
