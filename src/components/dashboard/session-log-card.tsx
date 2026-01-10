@@ -19,7 +19,7 @@ function fmtTime(ts?: Timestamp | null) {
   if (!ts) return "";
   const d = toJsDate(ts);
   if (!d) return "";
-  return d.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function actionLabel(a: ActivityLog['action']) {
@@ -69,36 +69,27 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                     </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                    <div className="p-4 border-t">
+                    <div className="px-4 pb-4 border-t">
                         {initialLogs.length === 0 ? (
                              <p className="text-sm text-muted-foreground text-center py-4">No activity logs for this session.</p>
                         ) : (
                             <ScrollArea className="h-[200px] pr-3">
-                                <div className="space-y-2">
+                                <div className="space-y-1 py-2">
                                     {initialLogs.map(log => {
                                         const who = log.actorName?.trim() || log.actorRole || (log.actorUid ? log.actorUid.slice(0, 6) : "unknown");
-                                        const item = log.meta?.itemName ? ` • ${log.meta.itemName}` : "";
-                                        const receipt = log.meta?.receiptNumber ? ` • ${log.meta.receiptNumber}` : "";
+                                        const item = log.meta?.itemName ? ` on ${log.meta.itemName}` : "";
+                                        const reason = log.reason || log.note ? ` - Reason: ${log.reason || log.note}` : "";
 
                                         return (
-                                            <div key={log.id} className="flex items-start gap-3 rounded-md border p-2">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <Badge variant={actionVariant(log.action)} className="whitespace-nowrap">
-                                                        {actionLabel(log.action)}
-                                                        </Badge>
-                                                        <span className="text-xs text-muted-foreground">{fmtTime(log.createdAt)}</span>
-                                                    </div>
-                                                    <div className="text-sm mt-1">
-                                                        <span className="font-medium">{who}</span>
-                                                        <span className="text-muted-foreground">{item}{receipt}</span>
-                                                    </div>
-                                                    {(log.reason || log.note) && (
-                                                        <div className="text-xs text-muted-foreground mt-1">
-                                                            {log.reason ? `Reason: ${log.reason}` : log.note}
-                                                        </div>
-                                                    )}
-                                                </div>
+                                            <div key={log.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                                                <Badge variant={actionVariant(log.action)} className="whitespace-nowrap h-5">
+                                                    {actionLabel(log.action)}
+                                                </Badge>
+                                                <span className="font-medium">{who}</span>
+                                                <span className="text-muted-foreground truncate flex-1">
+                                                    {item}{reason}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">{fmtTime(log.createdAt)}</span>
                                             </div>
                                         );
                                     })}
