@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import type { KitchenTicket } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { formatKitchenQty } from "@/lib/uom";
+import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;
@@ -26,11 +27,14 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null 
     const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
 
     useEffect(() => {
+        if (!jsDate || !Number.isFinite(jsDate.getTime())) {
+            return;
+        }
         const timer = setInterval(() => {
             setNow(new Date());
         }, 1000); // Tick every second for live updates
         return () => clearInterval(timer);
-    }, []);
+    }, [jsDate]);
 
     if (!jsDate || !Number.isFinite(jsDate.getTime())) {
         return (
@@ -46,16 +50,16 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null 
 
     let elapsed = "...";
     if (totalSeconds < 0) {
-        elapsed = "0s ago";
+        elapsed = "0s";
     } else if (totalSeconds < 60) {
-        elapsed = `${totalSeconds}s ago`;
+        elapsed = `${totalSeconds}s`;
     } else if (totalMinutes < 60) {
-        elapsed = `${totalMinutes}m ago`;
+        elapsed = `${totalMinutes}m`;
     } else {
         const hours = Math.floor(totalMinutes / 60);
         const minutes = totalMinutes % 60;
         const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-        elapsed = `${hours}h ${paddedMinutes}m ago`;
+        elapsed = `${hours}h ${paddedMinutes}m`;
     }
 
     return (
@@ -84,6 +88,9 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
             confirmText: "Yes, Cancel Item",
             destructive: true,
         });
+
+        // This cleanup is crucial to prevent screen freeze on mobile/browsers.
+        cleanupRadixOverlays();
 
         if (confirmed) {
             onUpdateStatus(ticket.id, ticket.sessionId, "cancelled", reason);
