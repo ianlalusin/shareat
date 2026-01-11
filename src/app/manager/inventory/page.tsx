@@ -20,6 +20,7 @@ import { EditInventoryDialog } from "@/components/manager/inventory/edit-invento
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
+import { getDisplayName } from "@/lib/products/variants";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -97,12 +98,12 @@ export default function InventoryManagementPage() {
         continue;
       }
 
-      const newDocRef = doc(inventoryRef);
+      const newDocRef = doc(inventoryRef, product.id); // Use product ID as inventory ID
       batch.set(newDocRef, {
         id: newDocRef.id,
         productId: product.id,
         name: product.name,
-        variant: product.variant || "",
+        variantLabel: product.variantLabel || null,
         category: product.category || "",
         subCategory: product.subCategory || "",
         uom: normalizeUom(product.uom),
@@ -140,7 +141,7 @@ export default function InventoryManagementPage() {
             ...data,
             updatedAt: serverTimestamp(),
         });
-        toast({ title: "Item Updated", description: `${item.name} details have been saved.`});
+        toast({ title: "Item Updated", description: `${getDisplayName(item)} details have been saved.`});
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     } finally {
@@ -155,7 +156,7 @@ export default function InventoryManagementPage() {
     const action = newStatus ? "Enable" : "Disable";
     
     const confirmed = await confirm({
-        title: `${action} ${item.name}?`,
+        title: `${action} ${getDisplayName(item)}?`,
         description: `Are you sure you want to ${action.toLowerCase()} this item in your inventory?`,
         confirmText: `Yes, ${action}`,
     });
@@ -223,7 +224,7 @@ export default function InventoryManagementPage() {
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium py-1">{item.name}</TableCell>
+                        <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">
