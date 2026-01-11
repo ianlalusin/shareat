@@ -1,10 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Providers } from './providers';
 import { AppLayout } from '@/components/layout/AppLayout';
+import PwaInstaller from '@/components/pwa-installer';
 
 // Define fonts
 const fontSans = Poppins({
@@ -18,6 +19,51 @@ const fontSerif = Baloo_2({
   variable: "--font-serif",
   weight: ['400', '700']
 })
+
+// PWA Metadata
+const APP_NAME = "SharEat Hub";
+const APP_DEFAULT_TITLE = "SharEat Hub";
+const APP_TITLE_TEMPLATE = "%s - SharEat Hub";
+const APP_DESCRIPTION = "A complete POS, KDS, and ERP solution for restaurants.";
+
+export const metadata: Metadata = {
+  applicationName: APP_NAME,
+  title: {
+    default: APP_DEFAULT_TITLE,
+    template: APP_TITLE_TEMPLATE,
+  },
+  description: APP_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: APP_DEFAULT_TITLE,
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: "website",
+    siteName: APP_NAME,
+    title: {
+      default: APP_DEFAULT_TITLE,
+      template: APP_TITLE_TEMPLATE,
+    },
+    description: APP_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary",
+    title: {
+      default: APP_DEFAULT_TITLE,
+      template: APP_TITLE_TEMPLATE,
+    },
+    description: APP_DESCRIPTION,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#FFFFFF",
+};
+
 
 export default function RootLayout({
   children,
@@ -33,6 +79,7 @@ export default function RootLayout({
           </AppLayout>
         </Providers>
         <Toaster />
+        <PwaInstaller />
       </body>
     </html>
   );
