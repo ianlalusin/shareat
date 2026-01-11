@@ -37,7 +37,7 @@ export function PackageCountCheckCard({ storeId, dateRange }: PackageCountCheckC
         const q = query(
             receiptsRef,
             where("status", "==", "final"),
-            where("sessionMode", "==", "package_dinein"),
+            where("sessionMode", "==", "package_dinein"), // Ensure we only get package sessions
             where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
             where("createdAt", "<=", Timestamp.fromDate(dateRange.end)),
             orderBy("createdAt", "desc"),

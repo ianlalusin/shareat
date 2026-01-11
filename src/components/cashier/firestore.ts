@@ -360,7 +360,7 @@ export async function completePaymentFromUnits(
         const sessionStartedAtHour = startedDate.getHours();
         
         // --- GUEST COUNT SNAPSHOT LOGIC ---
-        let guestCountSnapshot = undefined;
+        let guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] | undefined = undefined;
         if (sessionData.sessionMode === 'package_dinein') {
             const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
             const serverVerified = sessionData.guestCountServerVerified ?? 0;
@@ -373,7 +373,7 @@ export async function completePaymentFromUnits(
             const packageOfferingId = sessionData.packageOfferingId ?? null;
             const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
 
-            const guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] = {
+            guestCountSnapshot = {
                 packageOfferingId,
                 packageName,
                 finalGuestCount,
@@ -381,7 +381,7 @@ export async function completePaymentFromUnits(
                 discrepancy,
                 computedAtClientMs: Date.now(),
                 rule: "MAX",
-              };
+            };
         }
         // --- END GUEST COUNT SNAPSHOT ---
 
@@ -617,5 +617,3 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
-
-
