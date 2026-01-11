@@ -29,14 +29,17 @@ export interface UserDocument {
 export type Product = {
   id: string;
   name: string;
-  // Variant Management
+  
+  // Legacy single-variant label. Use getEffectiveVariantLabel() helper.
+  variant?: string;
+  
+  // New Variant Management
   kind?: "single" | "group" | "variant";
   groupId?: string | null;
   groupName?: string | null;
   variantLabel?: string | null;
   isSku?: boolean;
   
-  variant?: string; // Legacy field
   category: string;
   subCategory?: string;
   uom: string;

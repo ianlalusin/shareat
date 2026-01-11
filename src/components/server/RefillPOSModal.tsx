@@ -535,4 +535,3 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
-
