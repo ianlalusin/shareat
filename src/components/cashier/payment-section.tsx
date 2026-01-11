@@ -14,17 +14,14 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     const [displayValue, setDisplayValue] = useState(value.toString());
 
     useEffect(() => {
+        // Update display value only if not focused to prevent interrupting user input.
         if (document.activeElement?.id !== `currency-input-${value}`) {
           setDisplayValue(value.toString());
         }
     }, [value]);
 
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-        if (parseFloat(e.target.value) === 0) {
-            setDisplayValue("");
-        } else {
-            e.target.select();
-        }
+        e.target.select();
     };
 
     const handleBlur = () => {
@@ -63,6 +60,16 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
             />
         </div>
     )
+}
+
+interface PaymentSectionProps {
+    paymentMethods: PaymentMethod[];
+    payments: Payment[];
+    setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
+    totalPaid: number;
+    remainingBalance: number;
+    change: number;
+    isLocked?: boolean;
 }
 
 export function PaymentSection({ 

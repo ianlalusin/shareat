@@ -14,6 +14,11 @@ export interface TaxAndTotals {
   vatExemptSales: number;
 }
 
+function round(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+
 /**
  * Calculates all billing totals, including tax, based on the store's tax settings.
  * @param billLines The array of all billable line items.
@@ -69,11 +74,9 @@ export function calculateBillTotals(
       }
     }
   });
-
-  const grossSalesBeforeDiscounts = activeLines.reduce((sum, line) => {
-      const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
-      return sum + (billableQty * line.unitPrice);
-  }, 0);
+  
+  grossSubtotal = round(grossSubtotal);
+  lineDiscountsTotal = round(lineDiscountsTotal);
 
   let billDiscountTotal = 0;
   if (billDiscount) {
@@ -89,6 +92,8 @@ export function calculateBillTotals(
       billDiscountTotal = Math.min(discountBaseTotal, billDiscount.value);
     }
   }
+  
+  billDiscountTotal = round(billDiscountTotal);
 
   const totalDiscounts = lineDiscountsTotal + billDiscountTotal;
   const netSalesAfterAllDiscounts = grossSubtotal - totalDiscounts;
@@ -105,20 +110,20 @@ export function calculateBillTotals(
       taxTotal = 0;
   }
   
-  const chargesTotal = customAdjustments.reduce((sum, charge) => sum + charge.amount, 0);
+  const chargesTotal = round(customAdjustments.reduce((sum, charge) => sum + charge.amount, 0));
 
   const grandTotal = netSalesAfterAllDiscounts + taxTotal + chargesTotal;
 
   return {
     subtotal: grossSubtotal,
-    taxableAmount: vatableSales, 
-    taxTotal,
-    lineDiscountsTotal,
-    billDiscountTotal,
-    totalDiscounts: totalDiscounts,
+    taxableAmount: round(vatableSales), 
+    taxTotal: round(taxTotal),
+    lineDiscountsTotal: lineDiscountsTotal,
+    billDiscountTotal: billDiscountTotal,
+    totalDiscounts: round(totalDiscounts),
     chargesTotal,
-    grandTotal,
-    vatableSales,
-    vatExemptSales,
+    grandTotal: round(grandTotal),
+    vatableSales: round(vatableSales),
+    vatExemptSales: round(vatExemptSales),
   };
 }
