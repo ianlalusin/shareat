@@ -48,16 +48,25 @@ export function useConfirmDialog() {
     });
   }
 
-  function close(v: boolean) {
-    setOpen(false);
-    resolverRef.current?.(v);
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      // Resolve false only if a resolver exists (wasn't already resolved by Action)
+      resolverRef.current?.(false);
+      resolverRef.current = null;
+      setTimeout(cleanupRadixOverlays, 200);
+    }
+  };
+
+  const handleActionClick = () => {
+    resolverRef.current?.(true);
     resolverRef.current = null;
-    // Add a slight delay to allow the dialog's own animation to finish
-    setTimeout(cleanupRadixOverlays, 150);
-  }
+    setOpen(false);
+    setTimeout(cleanupRadixOverlays, 200);
+  };
 
   const Dialog = (
-    <AlertDialog open={open} onOpenChange={(v) => !v && close(false)}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{opts.title}</AlertDialogTitle>
@@ -66,11 +75,9 @@ export function useConfirmDialog() {
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => close(false)}>
-            {opts.cancelText}
-          </AlertDialogCancel>
+          <AlertDialogCancel>{opts.cancelText}</AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => close(true)}
+            onClick={handleActionClick}
             className={
               opts.destructive
                 ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
