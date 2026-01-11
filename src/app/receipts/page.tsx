@@ -282,68 +282,6 @@ function ReceiptsPageContents() {
             setIsPrinting(false);
         }
     }
-    
-    const handleExport = async () => {
-        if (filteredReceipts.length === 0) {
-            toast({ title: "No data to export." });
-            return;
-        }
-        setIsExporting(true);
-        try {
-            // Dynamic import for client-side execution
-            const XLSX = await import("xlsx");
-
-            // 1. Create Receipts Sheet
-            const receiptsExportData = filteredReceipts.map(r => ({
-                "Receipt #": r.receiptNumber || 'N/A',
-                "Date": format(toJsDate(r.createdAt)!, 'yyyy-MM-dd'),
-                "Time": format(toJsDate(r.createdAt)!, 'HH:mm:ss'),
-                "Cashier": r.createdByUsername || 'N/A',
-                "Identifier": r.customerName || r.tableNumber || 'N/A',
-                "Subtotal": r.analytics?.subtotal ?? 0,
-                "Discounts": r.analytics?.discountsTotal ?? 0,
-                "Charges": r.analytics?.chargesTotal ?? 0,
-                "Tax": r.analytics?.taxAmount ?? 0,
-                "Total": r.total,
-                "Total Paid": r.totalPaid,
-                "Change": r.change,
-            }));
-            const receiptsSheet = XLSX.utils.json_to_sheet(receiptsExportData);
-
-            // 2. Create Items Sheet
-            const itemsExportData = filteredReceipts.flatMap(r => 
-                (r.lines || []).map(line => ({
-                    "Receipt #": r.receiptNumber || 'N/A',
-                    "Item Name": line.itemName,
-                    "Unit Price": line.unitPrice,
-                    "Ordered": line.qtyOrdered,
-                    "Voided": line.voidedQty,
-                    "Free": line.freeQty,
-                    "Net Qty": line.qtyOrdered - line.voidedQty,
-                    "Line Total": (line.qtyOrdered - line.voidedQty) * line.unitPrice,
-                    "Discounted Qty": line.discountQty,
-                    "Discount Type": line.discountType,
-                    "Discount Value": line.discountValue,
-                }))
-            );
-            const itemsSheet = XLSX.utils.json_to_sheet(itemsExportData);
-
-            // 3. Create Workbook and Download
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, receiptsSheet, "Receipts");
-            XLSX.utils.book_append_sheet(workbook, itemsSheet, "Line Items");
-
-            const filename = `Receipts_${activeStore?.code}_${format(start, 'yyyyMMdd')}_${format(end, 'yyyyMMdd')}.xlsx`;
-            XLSX.writeFile(workbook, filename);
-            
-            toast({ title: "Export successful!" });
-        } catch (err: any) {
-            console.error("Export failed:", err);
-            toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
-        } finally {
-            setIsExporting(false);
-        }
-    };
 
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
@@ -378,10 +316,6 @@ function ReceiptsPageContents() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
                 <div className="flex items-center gap-2">
-                    <Button onClick={handleExport} variant="outline" disabled={isExporting || isLoadingReceipts}>
-                        {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2" />}
-                        Export
-                    </Button>
                     <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                 </div>
             </PageHeader>
