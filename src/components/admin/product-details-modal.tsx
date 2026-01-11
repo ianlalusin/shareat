@@ -5,18 +5,21 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Edit, Package, Tag, Hash, Barcode, Ruler, FileText, Image as ImageIcon } from "lucide-react";
+import { Edit, Package, Tag, Hash, Barcode, Ruler, FileText, Image as ImageIcon, Trash2 } from "lucide-react";
 import Image from "next/image";
 import type { Product } from "@/lib/types";
+import { useAuthContext } from "@/context/auth-context";
 
 interface ProductDetailsModalProps {
   product: Product;
   isOpen: boolean;
   onClose: () => void;
   onEdit: (product: Product) => void;
+  onDelete: (product: Product) => void;
 }
 
-export function ProductDetailsModal({ product, isOpen, onClose, onEdit }: ProductDetailsModalProps) {
+export function ProductDetailsModal({ product, isOpen, onClose, onEdit, onDelete }: ProductDetailsModalProps) {
+  const { appUser } = useAuthContext();
   if (!product) return null;
 
   return (
@@ -70,11 +73,18 @@ export function ProductDetailsModal({ product, isOpen, onClose, onEdit }: Produc
                 </div>
             </div>
             
-             <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end w-full">
-                <Button variant="secondary" onClick={onClose}>Close</Button>
-                <Button variant="outline" onClick={() => onEdit(product)}>
-                    <Edit className="mr-2 h-4 w-4" /> Edit
-                </Button>
+             <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between w-full">
+                {appUser?.role === 'admin' ? (
+                     <Button variant="destructive" onClick={() => onDelete(product)}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                    </Button>
+                ) : <div/>}
+                <div className="flex gap-2 justify-end">
+                    <Button variant="secondary" onClick={onClose}>Close</Button>
+                    <Button variant="outline" onClick={() => onEdit(product)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                    </Button>
+                </div>
             </DialogFooter>
         </DialogContent>
     </Dialog>

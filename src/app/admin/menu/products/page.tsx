@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs, deleteDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import * as XLSX from "xlsx";
+import { getKind } from "@/lib/products/variants";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -197,6 +198,47 @@ export default function ProductManagementPage() {
     handleOpenDialog(product);
   };
   
+  const handleDeleteProduct = async (product: Product) => {
+    if (!appUser || appUser.role !== 'admin') {
+      toast({ variant: "destructive", title: "Permission Denied" });
+      return;
+    }
+    
+    const isGroup = getKind(product) === 'group';
+    const confirmed = await confirm({
+      title: `Permanently Delete ${product.name}?`,
+      description: isGroup 
+        ? "This action is irreversible and will also delete all of its variants. This cannot be undone."
+        : "This action is irreversible and cannot be undone.",
+      confirmText: "Yes, Delete Permanently",
+      destructive: true,
+    });
+  
+    if (!confirmed) return;
+  
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+  
+      if (isGroup) {
+        const variantsQuery = query(collection(db, "products"), where("groupId", "==", product.id));
+        const variantsSnap = await getDocs(variantsQuery);
+        variantsSnap.forEach(doc => batch.delete(doc.ref));
+      }
+  
+      batch.delete(doc(db, "products", product.id));
+      
+      await batch.commit();
+      
+      toast({ title: "Product Deleted", description: `${product.name} and its data have been removed.` });
+      setSelectedProduct(null); // Close the modal
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Delete Failed", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !appUser) return;
@@ -388,6 +430,7 @@ export default function ProductManagementPage() {
             onClose={() => setSelectedProduct(null)}
             product={selectedProduct}
             onEdit={handleEditFromDetails}
+            onDelete={handleDeleteProduct}
         />
       )}
 
@@ -395,5 +438,3 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
-
-    
