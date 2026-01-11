@@ -7,14 +7,16 @@ import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, documentId } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Loader2 } from "lucide-react";
+import { Loader2, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
-import { SessionLogCard } from "@/components/logs/SessionLogCard";
+import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLogCard";
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
+import * as XLSX from "xlsx";
+import { format as formatDate } from "date-fns";
 
 // Helper functions for date manipulation
 function startOfDay(d: Date) {
@@ -205,6 +207,14 @@ export default function LogsPage() {
     }
     setIsCalendarOpen(false);
   };
+  
+  const handleExport = () => {
+    const allLogs = groupedLogs.flatMap(g => g.logs.map(log => formatLogForExport(log)));
+    const worksheet = XLSX.utils.json_to_sheet(allLogs);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Activity Logs");
+    XLSX.writeFile(workbook, `activity_logs_${formatDate(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
 
   if (storeLoading) {
     return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
@@ -228,7 +238,7 @@ export default function LogsPage() {
         description={`Audit trail for ${activeStore.name}.`}
         className="flex-col items-start gap-4 md:flex-row md:items-center"
       >
-        <div className="space-y-2">
+        <div className="flex items-center gap-2">
             <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
                 {presets.map((p) => (
                 <Button
@@ -259,8 +269,9 @@ export default function LogsPage() {
                 </PopoverContent>
                 </Popover>
             </div>
-            <p className="text-sm text-muted-foreground">{dateRangeLabel}</p>
+             <Button variant="outline" onClick={handleExport} disabled={groupedLogs.length === 0}><Download className="mr-2"/> Export</Button>
         </div>
+        <p className="text-sm text-muted-foreground w-full md:w-auto md:text-right">{dateRangeLabel}</p>
       </PageHeader>
       <div className="mt-6">
         {isLoading ? (

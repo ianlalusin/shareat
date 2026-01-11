@@ -68,6 +68,19 @@ function formatDescription(log: ActivityLog): string {
     return `${qty}${item}${reason}`;
 }
 
+export function formatLogForExport(log: ActivityLog) {
+  const d = toJsDate(log.createdAt);
+  return {
+    "Session ID": log.sessionId.substring(0, 8),
+    "Date": d ? format(d, 'yyyy-MM-dd') : 'N/A',
+    "Time": d ? format(d, 'HH:mm:ss') : 'N/A',
+    "Action": actionLabel(log.action),
+    "Actor": log.actorName || log.actorUid,
+    "Description": formatDescription(log),
+    "Amount": formatAmount(log),
+  };
+}
+
 interface SessionLogCardProps {
     session: PendingSession;
     initialLogs: ActivityLog[];
@@ -129,4 +142,3 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
         </AccordionItem>
     );
 }
-
