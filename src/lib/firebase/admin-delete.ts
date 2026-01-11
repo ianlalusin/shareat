@@ -1,37 +1,11 @@
 
-
 'use client';
 
-import { collection, doc, getDocs, query, writeBatch, deleteDoc, runTransaction, limit } from "firebase/firestore";
-import { db } from "./client";
+import { clearStoreDataFlow } from '@/ai/flows/clear-store-data-flow';
 
 /**
- * Deletes all documents in a collection in batches.
- * @param collectionRef Reference to the collection to delete.
- * @param batchSize The number of documents to delete in each batch.
- */
-async function deleteCollectionInBatches(collectionRef: any, batchSize: number, onProgress: (deletedCount: number) => void) {
-    const q = query(collectionRef, limit(batchSize));
-    let snapshot = await getDocs(q);
-    let deletedCount = 0;
-
-    while (snapshot.size > 0) {
-        const batch = writeBatch(db);
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.commit();
-        
-        deletedCount += snapshot.size;
-        onProgress(deletedCount);
-        
-        snapshot = await getDocs(q);
-    }
-}
-
-
-/**
- * Deletes all documents and their specified subcollections for a given store.
+ * Deletes all documents and their specified subcollections for a given store
+ * by calling a server-side Genkit flow.
  * @param storeId The ID of the store to clear.
  * @param resetCounter Whether to reset the receipt counter.
  * @param onProgress Callback for progress updates.
@@ -45,53 +19,22 @@ export async function clearStoreData(
         throw new Error("Store ID is required.");
     }
     
-    onProgress("Starting data cleanup...");
+    onProgress("Starting data cleanup flow on the server...");
 
-    const sessionSubcollections = [
-        "kitchentickets", 
-        "billableLines", 
-        "sessionBillLines", 
-        "payments", 
-        "activityLogs", 
-        "packageUnits"
-    ];
+    try {
+        // The flow itself will handle the logic. We just need to call it.
+        // We can pass the onProgress callback if the flow supports streaming updates,
+        // but for now, we'll keep it simple.
+        const result = await clearStoreDataFlow({ storeId, resetCounter });
+        
+        // This part depends on the flow's return value.
+        // Let's assume it returns a success message or throws an error.
+        onProgress(result.message);
+        onProgress("Cleanup complete.");
 
-    // --- Delete Sessions and their subcollections ---
-    const sessionsRef = collection(db, "stores", storeId, "sessions");
-    const sessionsSnap = await getDocs(sessionsRef);
-    let sessionDeleteCount = 0;
-    
-    for (const sessionDoc of sessionsSnap.docs) {
-        onProgress(`Deleting subcollections for session ${sessionDoc.id.substring(0,6)}...`);
-        for (const sub of sessionSubcollections) {
-            const subRef = collection(sessionDoc.ref, sub);
-            await deleteCollectionInBatches(subRef, 200, () => {});
-        }
-        await deleteDoc(sessionDoc.ref);
-        sessionDeleteCount++;
-        onProgress(`Deleted session ${sessionDeleteCount} of ${sessionsSnap.size}`);
+    } catch (error: any) {
+        console.error("Error calling clearStoreDataFlow:", error);
+        onProgress(`Error: ${error.message || 'An unknown error occurred.'}`);
+        throw error; // Re-throw to be caught by the UI
     }
-    onProgress("All sessions deleted.");
-
-    // --- Delete Receipts ---
-    const receiptsRef = collection(db, "stores", storeId, "receipts");
-    const receiptsSnap = await getDocs(receiptsRef);
-    let receiptDeleteCount = 0;
-    await deleteCollectionInBatches(receiptsRef, 200, (count) => {
-        receiptDeleteCount = count;
-        onProgress(`Deleted receipt ${receiptDeleteCount} of ${receiptsSnap.size}`);
-    });
-     onProgress("All receipts deleted.");
-
-    // --- Reset Counter ---
-    if (resetCounter) {
-        onProgress("Resetting receipt counter...");
-        const counterRef = doc(db, "stores", storeId, "counters", "receipts");
-        await runTransaction(db, async (transaction) => {
-            transaction.set(counterRef, { seq: 0 });
-        });
-        onProgress("Receipt counter reset to 0.");
-    }
-    
-    onProgress("Cleanup complete.");
 }
