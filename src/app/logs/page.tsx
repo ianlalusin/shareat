@@ -16,6 +16,7 @@ import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLog
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { format as formatDate } from "date-fns";
+import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 
 // Helper functions for date manipulation
 function startOfDay(d: Date) {
@@ -191,25 +192,16 @@ export default function LogsPage() {
 
   const handleExport = async () => {
     setIsExporting(true);
-    try {
-      // Dynamically import xlsx
-      const XLSX = await import("xlsx");
-      
-      const allLogs = groupedLogs.flatMap(g => g.logs);
-      const dataToExport = allLogs.map(formatLogForExport);
-      
-      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Activity Logs");
-      
-      const filename = `ActivityLogs_${activeStore?.code}_${formatDate(start, 'yyyyMMdd')}_${formatDate(end, 'yyyyMMdd')}.xlsx`;
-      XLSX.writeFile(workbook, filename);
+    const allLogs = groupedLogs.flatMap(g => g.logs);
+    const dataToExport = allLogs.map(formatLogForExport);
+    
+    await exportToXlsx({
+        rows: dataToExport,
+        sheetName: "Activity Logs",
+        filename: `ActivityLogs_${activeStore?.code}_${formatDate(start, 'yyyyMMdd')}_${formatDate(end, 'yyyyMMdd')}.xlsx`
+    });
 
-    } catch (err: any) {
-      console.error("Export failed:", err);
-    } finally {
-      setIsExporting(false);
-    }
+    setIsExporting(false);
   };
 
   const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
