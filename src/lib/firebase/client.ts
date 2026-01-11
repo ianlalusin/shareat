@@ -77,19 +77,19 @@ export async function uploadStoreLogo(storeId: string, file: File): Promise<stri
 }
 
 export async function uploadReceiptLogo(storeId: string, file: File): Promise<string> {
-    if (!storeId) {
-        throw new Error("Store ID is required to upload a logo.");
-    }
+  if (!storeId) {
+    throw new Error('Store ID is required to upload a logo.');
+  }
 
-    const storageRef = ref(storage, `stores/${storeId}/receipt_logo.png`);
-    
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
+  const storageRef = ref(storage, `stores/${storeId}/receipt_logo.png`);
 
-    const settingsDocRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
-    await setDoc(settingsDocRef, { logoUrl: downloadURL }, { merge: true });
+  await uploadBytes(storageRef, file);
+  const downloadURL = await getDownloadURL(storageRef);
 
-    return downloadURL;
+  const settingsDocRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
+  await setDoc(settingsDocRef, { logoUrl: downloadURL }, { merge: true });
+
+  return downloadURL;
 }
 
 
