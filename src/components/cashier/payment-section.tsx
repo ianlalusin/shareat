@@ -151,11 +151,11 @@ export function PaymentSection({
                 <div className="space-y-1 pt-2 text-sm">
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">Total Paid</span>
-                        <span className="font-medium">₱{totalPaid.toFixed(2)}</span>
+                        <span className="font-medium">₱{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                      <div className={`flex justify-between ${remainingBalance > 0 ? 'text-destructive' : 'text-green-600'}`}>
                         <span className="text-muted-foreground">{remainingBalance > 0 ? "Balance" : "Change"}</span>
-                        <span className="font-medium">₱{(remainingBalance > 0 ? remainingBalance : change).toFixed(2)}</span>
+                        <span className="font-medium">₱{(remainingBalance > 0 ? remainingBalance : change).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 </div>
 
