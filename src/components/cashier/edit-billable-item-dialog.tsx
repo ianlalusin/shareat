@@ -172,8 +172,16 @@ export function EditBillableItemDialog({
         let currentTotal = (discountQty || 0) + (freeQty || 0) + (voidQty || 0);
         
         const otherTotal = currentTotal - (getValues(field) || 0);
-        const maxAllowed = qtyOrdered - otherTotal;
-        const clampedValue = Math.max(0, Math.min(newValue, maxAllowed));
+        
+        const maxAllowedForThisField = qtyOrdered - otherTotal;
+
+        // Special rule for voiding packages
+        if (isPackage && field === 'voidQty' && (newValue >= qtyOrdered)) {
+             toast({ variant: 'destructive', title: 'Action Not Allowed', description: 'At least 1 package quantity must remain. Cannot void all.' });
+             newValue = qtyOrdered - 1;
+        }
+
+        const clampedValue = Math.max(0, Math.min(newValue, maxAllowedForThisField));
 
         if (clampedValue !== newValue) {
             toast({ variant: 'destructive', title: 'Counts Adjusted', description: 'Allocated quantities cannot exceed total ordered.'});
@@ -247,6 +255,15 @@ export function EditBillableItemDialog({
             });
             return;
         }
+        
+        if (isPackage && data.voidQty >= data.qtyOrdered) {
+             toast({
+                variant: 'destructive',
+                title: 'Action Not Allowed',
+                description: 'You cannot void all package items. At least 1 must remain.'
+            });
+            return;
+        }
 
         setIsSubmitting(true);
         const { applyDiscount, applyFree, applyVoid, ...payload } = data;
@@ -301,6 +318,12 @@ export function EditBillableItemDialog({
     const showSyncPrice = inventoryItem && inventoryItem.sellingPrice !== watchedValues.unitPrice;
     const allowDecimal = inventoryItem ? allowsDecimalQty(inventoryItem.uom) : false;
     const canDecreaseQty = !(isPackage || isAddon);
+    
+    const maxVoidQty = isPackage ? Math.max(0, watchedValues.qtyOrdered - 1) : watchedValues.qtyOrdered;
+    const voidDescription = isPackage 
+      ? `of ${watchedValues.qtyOrdered} total. At least 1 must remain.`
+      : `of ${watchedValues.qtyOrdered} total`;
+
 
     if (!line) return null;
 
@@ -393,7 +416,13 @@ export function EditBillableItemDialog({
                                     {watchedValues.applyVoid && (
                                         <div className="p-3 border rounded-md space-y-2">
                                             <FormField name="voidQty" control={control} render={({ field }) => (
-                                                <QuantityStepper label="Void Quantity" value={field.value || 0} onChange={(v) => handleQtyChange('voidQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total`}/>
+                                                <QuantityStepper 
+                                                    label="Void Quantity" 
+                                                    value={field.value || 0} 
+                                                    onChange={(v) => handleQtyChange('voidQty', v)} 
+                                                    max={maxVoidQty}
+                                                    description={voidDescription}
+                                                />
                                             )} />
                                             <FormField name="voidReason" control={control} render={({ field }) => (
                                                 <FormItem>
