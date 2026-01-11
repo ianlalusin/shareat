@@ -254,11 +254,10 @@ function POSContent({
                 qty: 1,
                 uom: selectedAddon.uom,
                 kitchenLocationId: selectedAddon.kitchenLocationId,
-                // kitchenLocationName will be populated by cloud function or another process
                 status: "preparing",
                 createdAt: serverTimestamp(),
                 createdByUid: appUser.uid,
-                orderedByRole: appUser.role, // Track where the order came from
+                orderedByRole: appUser.role, 
                 sessionId: session.id, 
                 storeId,
                 tableNumber: session.tableNumber,
@@ -266,13 +265,6 @@ function POSContent({
                 sessionMode: session.sessionMode,
                 sessionLabel: computeSessionLabel(session),
                 guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-                billing: {
-                    isVoided: false,
-                    isFree: false,
-                    itemId: selectedAddon.id,
-                    itemName: selectedAddon.displayName,
-                    unitPrice: selectedAddon.sellingPrice || 0,
-                }
             });
             batch.set(ticketRef, ticketPayload);
         }

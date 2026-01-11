@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -23,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment, ReceiptAnalyticsV2, Receipt } from '@/lib/types';
+import type { Store, StorePackage, Payment, ModeOfPayment, InventoryItem, ActivityLog, SessionBillLine, Discount, Adjustment, ReceiptAnalyticsV2, Receipt } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
@@ -539,7 +538,7 @@ export async function voidSession({
 export async function upsertAddonToBill(
   storeId: string,
   sessionId: string,
-  addon: StoreAddon,
+  addon: InventoryItem, // Changed from StoreAddon
   qtyToAdd: number,
   user: AppUser
 ) {
@@ -564,16 +563,13 @@ export async function upsertAddonToBill(
       });
     } else {
       // Line doesn't exist, create it
-      const productSnap = await getDoc(doc(db, "products", addon.id));
-      const productData = productSnap.data();
-
       const newLine: Omit<SessionBillLine, "id" | "createdAt"> = {
         type: "addon",
         itemId: addon.id,
         itemName: addon.name,
-        category: productData?.subCategory ?? null,
-        barcode: productData?.barcode ?? null,
-        unitPrice: addon.price,
+        category: addon.subCategory ?? null,
+        barcode: addon.barcode ?? null,
+        unitPrice: addon.sellingPrice,
         qtyOrdered: qtyToAdd,
         discountType: null,
         discountValue: 0,
