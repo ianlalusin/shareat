@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -18,11 +19,10 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase/client";
 import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAuthContext } from "@/context/auth-context";
-import { type PendingSession } from "./pending-tables";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { QuantityInput } from "../cashier/quantity-input";
-import type { StorePackage, MenuSchedule } from "@/lib/types";
+import type { PendingSession, StorePackage, MenuSchedule } from "@/lib/types";
 
 const REASON_OPTIONS = {
   guest_request: "Guest Request",
