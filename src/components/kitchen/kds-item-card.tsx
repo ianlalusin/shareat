@@ -20,19 +20,45 @@ interface KdsItemCardProps {
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled", reason?: string) => void;
 }
 
-function CreationTime({ startTime }: { startTime: Timestamp | Date }) {
-    const date = toJsDate(startTime);
-    
-    if (!date) {
-        return null;
-    }
-    
-    const timeString = format(date, "HH:mm");
+function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
+    const [elapsed, setElapsed] = useState("...");
+    const jsDate = toJsDate(startTime);
+
+    useEffect(() => {
+        if (!jsDate) {
+            setElapsed("...");
+            return;
+        }
+
+        const updateElapsed = () => {
+            const now = Date.now();
+            const totalMinutes = Math.floor((now - jsDate.getTime()) / 60000);
+            
+            if (totalMinutes < 0) { // Handle client/server time differences
+                setElapsed("0m");
+                return;
+            }
+
+            if (totalMinutes < 60) {
+                setElapsed(`${totalMinutes}m ago`);
+            } else {
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+                setElapsed(`${hours}h ${paddedMinutes}m ago`);
+            }
+        };
+
+        updateElapsed();
+        const timer = setInterval(updateElapsed, 30000); // Update every 30 seconds
+
+        return () => clearInterval(timer);
+    }, [jsDate]);
 
     return (
-        <div className={cn("flex items-center gap-1.5 text-sm text-muted-foreground")}>
+        <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
             <Clock size={14} />
-            <span>{timeString}</span>
+            <span>{elapsed}</span>
         </div>
     );
 }
@@ -83,7 +109,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                     </div>
                      <CardDescription className="flex items-center justify-between">
                         <span>{identifier} {isPackage && `(${ticket.guestCount} guests)`}</span>
-                        <CreationTime startTime={ticket.createdAt} />
+                        <TimeLapse startTime={ticket.createdAt} />
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2">
