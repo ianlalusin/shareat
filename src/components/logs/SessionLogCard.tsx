@@ -82,13 +82,13 @@ export function formatLogForExport(log: ActivityLog) {
 }
 
 interface SessionLogCardProps {
-    session: PendingSession;
+    session: PendingSession & { createdAt?: any, startedAtClientMs?: number };
     initialLogs: ActivityLog[];
 }
 
 export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
     const sessionLabel = computeSessionLabel(session);
-    const sessionStarted = toJsDate(session.startedAt);
+    const sessionStarted = toJsDate(session.startedAt) || toJsDate(session.createdAt) || (session.startedAtClientMs ? new Date(session.startedAtClientMs) : null);
 
     // Deduplicate logs just in case, using the unique document ID
     const logs = useMemo(() => {
