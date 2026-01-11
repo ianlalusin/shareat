@@ -71,18 +71,18 @@ function normalizeDiscountType(t: any): "fixed" | "percent" | null {
     return null;
 }
 
-function QuantityStepper({ label, value, onChange, max, min = 0, description }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string }) {
+function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string, step?: number, canDecrease?: boolean }) {
     return (
         <FormItem>
             <FormLabel>{label}</FormLabel>
             <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - 1))}><Minus/></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - step))} disabled={!canDecrease}><Minus/></Button>
                 <QuantityInput 
                     value={value}
                     onChange={onChange}
                     className="text-center"
                 />
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + 1))}><Plus/></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))}><Plus/></Button>
             </div>
             {description && <FormDescription className="text-xs">{description}</FormDescription>}
              <FormMessage />
@@ -258,7 +258,14 @@ export function EditBillableItemDialog({
                                         </FormItem>
                                     )} />
                                     <FormField name="qtyOrdered" control={control} render={({ field }) => (
-                                        <QuantityStepper label="Total Quantity" value={field.value} onChange={handleQtyOrderedChange} max={50} min={0}/>
+                                        <QuantityStepper 
+                                            label="Total Quantity" 
+                                            value={field.value} 
+                                            onChange={handleQtyOrderedChange} 
+                                            max={50} 
+                                            min={isPackage ? line.qtyOrdered : 0}
+                                            canDecrease={!isPackage}
+                                        />
                                     )} />
                                 </div>
                                 <Alert>
@@ -307,7 +314,7 @@ export function EditBillableItemDialog({
                                 </div>
 
                                 {/* Void Section (Add-ons only) */}
-                               
+                                
                                     <>
                                         <Separator />
                                         <div className="space-y-2">
@@ -346,3 +353,5 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
+
+    
