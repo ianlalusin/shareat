@@ -18,6 +18,7 @@ import Image from "next/image";
 import type { Store, InventoryItem, KitchenLocation, StoreAddon } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getDisplayName } from "@/lib/products/variants";
+import { Switch } from "@/components/ui/switch";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
