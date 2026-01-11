@@ -46,7 +46,11 @@ const formSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-type ProductFormValues = z.infer<typeof formSchema>;
+export type ProductFormValues = z.infer<typeof formSchema> & {
+    imageUrl?: string | null,
+    imageFile?: File | null,
+    variants?: Product[]
+};
 
 const variantSchema = z.object({
     id: z.string().optional(),
@@ -106,7 +110,7 @@ function VariantForm({ form, onSave, onCancel, parentProduct }: { form: any, onS
 interface ProductEditDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: ProductFormValues & { imageUrl?: string | null, imageFile?: File | null, variants?: Product[] }) => void;
+  onSave: (data: ProductFormValues) => void;
   product: Product | null;
   isSubmitting: boolean;
 }
@@ -125,7 +129,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [editingVariant, setEditingVariant] = useState<Product | null>(null);
   const [showVariantForm, setShowVariantForm] = useState(false);
   
-  const form = useForm<ProductFormValues>({
+  const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: { name: "", hasVariants: false, variant: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, },
   });
@@ -237,7 +241,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   }
 
 
-  const onSubmit = (data: ProductFormValues) => {
+  const onSubmit = (data: z.infer<typeof formSchema>) => {
     onSave({ ...data, subCategory: subCategoryInput, imageUrl, imageFile, variants });
   };
 

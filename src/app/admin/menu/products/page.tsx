@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader, PlusCircle, Power, PowerOff, Upload, Download } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ProductEditDialog } from "@/components/admin/product-edit-dialog";
+import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
@@ -87,12 +87,24 @@ export default function ProductManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSaveProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'category' | 'imageUrl'> & { category?: string; imageUrl?: string | null, imageFile?: File | null }) => {
+  const handleSaveProduct = async (formData: ProductFormValues) => {
     if (!appUser) return;
     setIsSubmitting(true);
     
-    const { imageFile, ...dataToSave } = productData;
-    dataToSave.category = "Add-on";
+    const { imageFile, ...productData } = formData;
+
+    // Normalize data to ensure required fields are present
+    const dataToSave = {
+        name: productData.name,
+        isActive: productData.isActive,
+        variant: productData.variant || "",
+        uom: productData.uom || "pcs",
+        barcode: productData.barcode || "",
+        category: "Add-on", // Default category
+        subCategory: productData.subCategory || "Uncategorized",
+        kind: productData.hasVariants ? "group" : "single",
+        isSku: !productData.hasVariants,
+    };
 
     try {
         if (editingProduct) { // --- UPDATE EXISTING PRODUCT ---
