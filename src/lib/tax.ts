@@ -47,10 +47,10 @@ export function calculateBillTotals(
   let vatExemptSales = 0;
   let taxTotal = 0;
 
-  const activeLines = billLines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
+  const activeLines = billLines.filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0);
 
   activeLines.forEach(line => {
-    const billableQty = line.qtyOrdered - line.voidedQty - (line.freeQty || 0);
+    const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
     const unitPrice = line.unitPrice || 0;
     
     grossSubtotal += billableQty * unitPrice;
@@ -70,44 +70,52 @@ export function calculateBillTotals(
     }
   });
 
-  const grossSalesBeforeDiscounts = billLines.reduce((sum, line) => {
-      const billableQty = line.qtyOrdered - line.voidedQty - (line.freeQty || 0);
+  const grossSalesBeforeDiscounts = activeLines.reduce((sum, line) => {
+      const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
       return sum + (billableQty * line.unitPrice);
   }, 0);
 
-  if (isVatInclusive) {
-      vatableSales = grossSalesBeforeDiscounts / (1 + taxRate);
-      taxTotal = grossSalesBeforeDiscounts - vatableSales;
-  } else if (isVatExclusive) {
-      vatableSales = grossSalesBeforeDiscounts;
-      taxTotal = vatableSales * taxRate;
-  } else { // NON_VAT
-      vatableSales = grossSalesBeforeDiscounts;
-      taxTotal = 0;
-  }
-
   let billDiscountTotal = 0;
   if (billDiscount) {
-    // Bill-wide discount is applied on the gross subtotal after line discounts
-    const subtotalAfterLineDiscounts = grossSubtotal - lineDiscountsTotal;
+    const subtotalForBillDiscount = grossSubtotal - lineDiscountsTotal;
+    
+    const discountBaseTotal = isVatInclusive && taxRate > 0
+      ? (subtotalForBillDiscount / (1 + taxRate))
+      : subtotalForBillDiscount;
+      
     if (billDiscount.type === 'percent') {
-      billDiscountTotal = subtotalAfterLineDiscounts * (billDiscount.value / 100);
+      billDiscountTotal = discountBaseTotal * (billDiscount.value / 100);
     } else { // fixed
-      billDiscountTotal = Math.min(subtotalAfterLineDiscounts, billDiscount.value);
+      billDiscountTotal = Math.min(discountBaseTotal, billDiscount.value);
     }
+  }
+
+  const totalDiscounts = lineDiscountsTotal + billDiscountTotal;
+  const netSalesAfterAllDiscounts = grossSubtotal - totalDiscounts;
+
+
+  if (isVatInclusive) {
+      vatableSales = netSalesAfterAllDiscounts / (1 + taxRate);
+      taxTotal = netSalesAfterAllDiscounts - vatableSales;
+  } else if (isVatExclusive) {
+      vatableSales = netSalesAfterAllDiscounts;
+      taxTotal = vatableSales * taxRate;
+  } else { // NON_VAT
+      vatableSales = netSalesAfterAllDiscounts;
+      taxTotal = 0;
   }
   
   const chargesTotal = customAdjustments.reduce((sum, charge) => sum + charge.amount, 0);
 
-  const grandTotal = grossSubtotal - lineDiscountsTotal - billDiscountTotal + chargesTotal;
+  const grandTotal = netSalesAfterAllDiscounts + taxTotal + chargesTotal;
 
   return {
     subtotal: grossSubtotal,
-    taxableAmount: vatableSales, // For display consistency, taxableAmount is the base for tax
+    taxableAmount: vatableSales, 
     taxTotal,
     lineDiscountsTotal,
     billDiscountTotal,
-    totalDiscounts: lineDiscountsTotal + billDiscountTotal,
+    totalDiscounts: totalDiscounts,
     chargesTotal,
     grandTotal,
     vatableSales,
