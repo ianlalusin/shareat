@@ -236,42 +236,43 @@ export default function LogsPage() {
       <PageHeader
         title="Activity Logs"
         description={`Audit trail for ${activeStore.name}.`}
-        className="flex-col items-start gap-4 md:flex-row md:items-center"
       >
-        <div className="flex items-center gap-2">
-            <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
-                {presets.map((p) => (
-                <Button
-                    key={p.value}
-                    variant={datePreset === p.value ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => {
-                    setDatePreset(p.value);
-                    setCustomRange(null);
-                    }}
-                    className="h-8"
-                >
-                    {p.label}
-                </Button>
-                ))}
-                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                <PopoverTrigger asChild>
+        <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                    {presets.map((p) => (
                     <Button
-                    variant={datePreset === "custom" ? "default" : "ghost"}
-                    size="sm"
-                    className="h-8 min-w-[100px]"
+                        key={p.value}
+                        variant={datePreset === p.value ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => {
+                        setDatePreset(p.value);
+                        setCustomRange(null);
+                        }}
+                        className="h-8"
                     >
-                    {customBtnLabel(customRange, datePreset === "custom")}
+                        {p.label}
                     </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                    <CompactCalendar onChange={handleCalendarChange} />
-                </PopoverContent>
-                </Popover>
+                    ))}
+                    <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                        variant={datePreset === "custom" ? "default" : "ghost"}
+                        size="sm"
+                        className="h-8 min-w-[100px]"
+                        >
+                        {customBtnLabel(customRange, datePreset === "custom")}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                        <CompactCalendar onChange={handleCalendarChange} />
+                    </PopoverContent>
+                    </Popover>
+                </div>
+                <Button variant="outline" onClick={handleExport} disabled={groupedLogs.length === 0}><Download className="mr-2"/> Export</Button>
             </div>
-             <Button variant="outline" onClick={handleExport} disabled={groupedLogs.length === 0}><Download className="mr-2"/> Export</Button>
+            <p className="text-sm text-muted-foreground w-full md:w-auto text-right">{dateRangeLabel}</p>
         </div>
-        <p className="text-sm text-muted-foreground w-full md:w-auto md:text-right">{dateRangeLabel}</p>
       </PageHeader>
       <div className="mt-6">
         {isLoading ? (
