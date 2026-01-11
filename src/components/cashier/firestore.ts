@@ -538,7 +538,7 @@ export async function voidSession({
 export async function upsertAddonToBill(
   storeId: string,
   sessionId: string,
-  addon: InventoryItem, // Changed from StoreAddon
+  addon: InventoryItem,
   qtyToAdd: number,
   user: AppUser
 ) {

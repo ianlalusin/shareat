@@ -163,14 +163,13 @@ function POSContent({
                 console.error("Error fetching product details for addon:", item.id, e);
             }
             
-            // The store inventory item's data should take precedence
             const combined = { ...productData, ...item };
             const sp = Number(combined.sellingPrice);
             const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
 
             return { 
               ...combined,
-              sellingPrice: safeSellingPrice, // Ensure sellingPrice is a number
+              sellingPrice: safeSellingPrice,
               displayName: getDisplayName(combined),
               groupKey: getGroupKey(combined),
               groupTitle: productData?.groupName || item.name,
@@ -248,30 +247,29 @@ function POSContent({
         const batch = writeBatch(db);
         const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
         
-        for (let i = 0; i < quantity; i++) {
-            const ticketRef = doc(ticketsColRef);
+        const ticketRef = doc(ticketsColRef);
 
-            const ticketPayload = stripUndefined({
-                id: ticketRef.id,
-                type: "addon",
-                itemName: selectedAddon.displayName,
-                qty: 1,
-                uom: selectedAddon.uom,
-                kitchenLocationId: selectedAddon.kitchenLocationId,
-                status: "preparing",
-                createdAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-                orderedByRole: appUser.role, 
-                sessionId: session.id, 
-                storeId,
-                tableNumber: session.tableNumber,
-                customerName: session.customer?.name || session.customerName,
-                sessionMode: session.sessionMode,
-                sessionLabel: computeSessionLabel(session),
-                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-            });
-            batch.set(ticketRef, ticketPayload);
-        }
+        const ticketPayload = stripUndefined({
+            id: ticketRef.id,
+            type: "addon",
+            itemName: selectedAddon.displayName,
+            qty: quantity,
+            uom: selectedAddon.uom,
+            kitchenLocationId: selectedAddon.kitchenLocationId,
+            status: "preparing",
+            createdAt: serverTimestamp(),
+            createdByUid: appUser.uid,
+            orderedByRole: appUser.role, 
+            sessionId: session.id, 
+            storeId,
+            tableNumber: session.tableNumber,
+            customerName: session.customer?.name || session.customerName,
+            sessionMode: session.sessionMode,
+            sessionLabel: computeSessionLabel(session),
+            guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+        });
+        batch.set(ticketRef, ticketPayload);
+        
 
         // Upsert the billable line item
         await upsertAddonToBill(storeId, session.id, selectedAddon, quantity, appUser);
