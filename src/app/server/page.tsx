@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
-import { PendingTables, type PendingSession } from "@/components/server/pending-tables";
+import { PendingTables } from "@/components/server/pending-tables";
 import { ReadyToServe, type ReadyItem } from "@/components/server/ready-to-serve";
 import { ServedHistory } from "@/components/server/served-history";
 import { useAuthContext } from "@/context/auth-context";
@@ -16,7 +16,7 @@ import { Loader } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { RequestChangeDialog } from "@/components/server/request-change-dialog";
 import { AddonsPOSModal } from "@/components/cashier/AddonsPOSModal";
-import type { StorePackage, MenuSchedule, KitchenTicket } from "@/lib/types";
+import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { toJsDate } from "@/lib/utils/date";
 
@@ -259,6 +259,7 @@ export default function ServerPage() {
     ...sessionForRequest, 
     storeId: activeStore.id,
     guestCountChange: normalizeGuestCountChange(sessionForRequest?.guestCountChange),
+    packageChange: sessionForRequest?.packageChange,
   } as PendingSession : null;
 
   if (isLoading || storeLoading) {

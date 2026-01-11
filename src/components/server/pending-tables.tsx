@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -11,27 +10,7 @@ import { Timestamp } from "firebase/firestore";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { QuantityInput } from "../cashier/quantity-input";
 import { toJsDate } from "@/lib/utils/date";
-
-export type PendingSession = {
-  id: string;
-  tableNumber: string;
-  packageName: string;
-  status: 'pending_verification' | 'active' | 'closed';
-  sessionMode: 'package_dinein' | 'alacarte';
-  customerName?: string | null;
-  isPaid?: boolean;
-  packageOfferingId: string;
-  initialFlavorIds?: string[];
-  startedAt: Timestamp;
-  // Guest Count Model
-  guestCountCashierInitial: number;
-  guestCountServerVerified: number | null;
-  guestCountFinal: number | null;
-  guestCountVerifyLocked: boolean;
-  // Change Request Models
-  guestCountChange?: { status: string };
-  packageChange?: { status: string };
-};
+import type { PendingSession } from "@/lib/types";
 
 
 interface PendingTablesProps {
