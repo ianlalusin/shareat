@@ -30,6 +30,17 @@ const refinedFormSchema = (isAddon: boolean) => formSchema.refine(
     message: "Selling price must be greater than 0 for an add-on.",
     path: ["sellingPrice"],
   }
+).refine(
+    (data) => {
+        if (isAddon) {
+            return !!data.kitchenLocationId;
+        }
+        return true;
+    },
+    {
+        message: "Kitchen location is required for an add-on.",
+        path: ["kitchenLocationId"],
+    }
 );
 
 

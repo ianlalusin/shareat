@@ -60,7 +60,7 @@ export default function InventoryManagementPage() {
     });
     
     const kitchenRef = collection(db, "stores", activeStore.id, "kitchenLocations");
-    const unsubKitchen = onSnapshot(kitchenRef, (snapshot) => {
+    const unsubKitchen = onSnapshot(query(kitchenRef, where("isActive", "==", true)), (snapshot) => {
         setKitchenLocations(snapshot.docs.map(doc => doc.data() as KitchenLocation));
     });
 
@@ -165,18 +165,22 @@ export default function InventoryManagementPage() {
   const handleToggle = async (item: InventoryItem, field: 'isActive' | 'isAddon') => {
     if (!activeStore || !appUser) return;
     const newStatus = !item[field];
+
+    if (field === 'isAddon' && newStatus) {
+        if ((item.sellingPrice ?? 0) <= 0 || !item.kitchenLocationId) {
+            toast({
+                variant: "default",
+                title: "Additional Info Required",
+                description: `Please set a selling price and kitchen location to enable "${getDisplayName(item)}" as an add-on.`
+            });
+            setSelectedItem(item);
+            setIsEditOpen(true);
+            return;
+        }
+    }
+    
     const action = newStatus ? "Enable" : "Disable";
     const fieldName = field === 'isActive' ? 'availability' : 'add-on status';
-
-    // Prevent enabling as add-on if price is zero
-    if (field === 'isAddon' && newStatus && (item.sellingPrice || 0) <= 0) {
-        toast({
-            variant: "destructive",
-            title: "Price Required",
-            description: `You must set a selling price for "${getDisplayName(item)}" before enabling it as an add-on.`
-        });
-        return;
-    }
     
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
@@ -253,14 +257,13 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={5} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
                     <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Cost</TableHead>
-                        <TableHead>Selling Price</TableHead>
                         <TableHead>Is Add-on</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -271,7 +274,6 @@ export default function InventoryManagementPage() {
                       <TableRow key={item.id}>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">
                           <Switch
                             checked={item.isAddon}
