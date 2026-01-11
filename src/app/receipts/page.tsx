@@ -13,11 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings, Download } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,29 @@ import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
 import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
 import * as XLSX from "xlsx";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import CompactCalendar from "@/components/ui/CompactCalendar";
+
+// --- Date Helpers ---
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function endOfDay(d: Date) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
+function isSameDay(a: Date, b: Date) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
+function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
+    if (!active || !range) return "Custom";
+    return isSameDay(range.start, range.end)
+        ? `Custom: ${fmtDate(range.start)}`
+        : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
+type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
+const presets: { label: string, value: DatePreset }[] = [
+    { label: "Today", value: "today" },
+    { label: "Yesterday", value: "yesterday" },
+    { label: "This Week", value: "week" },
+    { label: "This Month", value: "month" },
+];
+
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -54,6 +77,54 @@ function ReceiptsPageContents() {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
+    // --- Date State ---
+    const [datePreset, setDatePreset] = useState<DatePreset>("today");
+    const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+
+    const { start, end } = useMemo(() => {
+        const now = new Date();
+        let s = new Date();
+        let e = new Date();
+
+        switch (datePreset) {
+            case "today":
+                s.setHours(0, 0, 0, 0);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "yesterday":
+                s.setDate(now.getDate() - 1);
+                s.setHours(0, 0, 0, 0);
+                e.setDate(now.getDate() - 1);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "week":
+                s.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+                s.setHours(0, 0, 0, 0);
+                break;
+            case "month":
+                s = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case "custom":
+                if (customRange) {
+                    s = startOfDay(customRange.start);
+                    e = endOfDay(customRange.end);
+                } else {
+                    s.setHours(0, 0, 0, 0);
+                    e.setHours(23, 59, 59, 999);
+                }
+                break;
+        }
+        return { start: s, end: e };
+    }, [datePreset, customRange]);
+
+    const dateRangeLabel = useMemo(() => {
+        if (isSameDay(start, end)) {
+            return fmtDate(start);
+        }
+        return `${fmtDate(start)} - ${fmtDate(end)}`;
+    }, [start, end]);
 
     const form = useForm({
         resolver: zodResolver(receiptSettingsSchema),
@@ -93,7 +164,12 @@ function ReceiptsPageContents() {
         }
 
         setIsLoadingReceipts(true);
-        const q = query(collection(db, "stores", activeStore.id, "receipts"), orderBy("createdAt", "desc"));
+        const q = query(
+            collection(db, "stores", activeStore.id, "receipts"), 
+            where("createdAt", ">=", start),
+            where("createdAt", "<=", end),
+            orderBy("createdAt", "desc")
+        );
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType)));
             setIsLoadingReceipts(false);
@@ -104,7 +180,7 @@ function ReceiptsPageContents() {
         });
 
         return () => unsubscribe();
-    }, [activeStore, toast]);
+    }, [activeStore, start, end, toast]);
 
     const filteredReceipts = useMemo(() => {
         if (!debouncedSearchTerm) return receipts;
@@ -224,6 +300,20 @@ function ReceiptsPageContents() {
         toast({ title: "Export Started", description: "Your download will begin shortly." });
     };
 
+    const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
+        const presetMap: Record<string, DatePreset> = {
+          today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
+        };
+        if (preset && preset !== "custom" && presetMap[preset]) {
+          setDatePreset(presetMap[preset]);
+          setCustomRange(null);
+        } else {
+          setCustomRange({ start: range.start, end: range.end });
+          setDatePreset("custom");
+        }
+        setIsCalendarOpen(false);
+    };
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -237,9 +327,26 @@ function ReceiptsPageContents() {
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
-                <Button variant="outline" onClick={handleExport} disabled={filteredReceipts.length === 0}><Download className="mr-2"/> Export</Button>
-                <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-2">
+                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                            {presets.map(p => (
+                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                            ))}
+                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                            </Popover>
+                        </div>
+                    </div>
+                    <Button variant="outline" onClick={handleExport} disabled={filteredReceipts.length === 0}><Download className="mr-2"/> Export</Button>
+                    <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                </div>
             </PageHeader>
+            
+            <p className="text-sm text-muted-foreground mt-4">{dateRangeLabel}</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
                 <Card>
