@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader } from "lucide-react";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { RequestChangeDialog } from "@/components/server/request-change-dialog";
-import { AddonsPOSModal } from "@/components/cashier/AddonsPOSModal";
+import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { toJsDate } from "@/lib/utils/date";
