@@ -79,7 +79,7 @@ export function ReadyToServe({ items, onMarkServed, onViewTimeline, isServing }:
                  {itemsWithLabels.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No items are ready.</p>
                 ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                     {itemsWithLabels.map(item => {
                         const displayLocation = item.sessionLabel;
                         
