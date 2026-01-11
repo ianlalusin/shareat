@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -8,16 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, X } from "lucide-react";
 import type { Payment, ModeOfPayment as PaymentMethod } from "@/lib/types";
-
-interface PaymentSectionProps {
-    paymentMethods: PaymentMethod[];
-    payments: Payment[];
-    setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
-    totalPaid: number;
-    remainingBalance: number;
-    change: number;
-    isLocked?: boolean;
-}
 
 function CurrencyInput({ value, onChange, disabled }: { value: number, onChange: (val: number) => void, disabled?: boolean }) {
     const [displayValue, setDisplayValue] = useState(value.toString());
@@ -29,7 +20,11 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     }, [value]);
 
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-        e.target.select();
+        if (parseFloat(e.target.value) === 0) {
+            setDisplayValue("");
+        } else {
+            e.target.select();
+        }
     };
 
     const handleBlur = () => {
@@ -161,3 +156,5 @@ export function PaymentSection({
         </Card>
     );
 }
+
+    

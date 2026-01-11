@@ -145,12 +145,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }, [billLines, activeStore, billDiscount, customAdjustments]);
   
   const { grandTotal } = billTotals;
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const remainingBalance = grandTotal - totalPaid;
-  const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
   
-  // Use a small epsilon for floating point comparison
-  const canCompletePayment = grandTotal > 0 && remainingBalance <= 0.001;
+  const grandTotalCents = Math.round(grandTotal * 100);
+  const totalPaidCents = payments.reduce((sum, p) => sum + Math.round(Number(p.amount || 0) * 100), 0);
+  const remainingCents = grandTotalCents - totalPaidCents;
+  
+  const totalPaid = totalPaidCents / 100;
+  const remainingBalance = remainingCents / 100;
+  const change = Math.max(0, -remainingCents) / 100;
+  
+  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 0;
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId) return;
@@ -309,3 +313,5 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
+
+    
