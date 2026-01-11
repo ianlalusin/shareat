@@ -20,6 +20,16 @@ import type { StorePackage, MenuSchedule, KitchenTicket } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { toJsDate } from "@/lib/utils/date";
 
+type GCC = PendingSession["guestCountChange"];
+
+function normalizeGuestCountChange(raw: any): GCC {
+  const s = raw?.status;
+  if (s === "none" || s === "pending" || s === "approved" || s === "rejected") {
+    return { ...raw, status: s };
+  }
+  return { status: "none" };
+}
+
 
 export default function ServerPage() {
   const { appUser } = useAuthContext();
@@ -245,7 +255,11 @@ export default function ServerPage() {
     }
   };
 
-  const sessionForRequestWithStore = sessionForRequest && activeStore ? { ...sessionForRequest, storeId: activeStore.id } : null;
+  const sessionForRequestWithStore = sessionForRequest && activeStore ? { 
+    ...sessionForRequest, 
+    storeId: activeStore.id,
+    guestCountChange: normalizeGuestCountChange(sessionForRequest?.guestCountChange),
+  } as PendingSession : null;
 
   if (isLoading || storeLoading) {
       return (
