@@ -34,6 +34,7 @@ interface AddonsPOSModalProps {
 type EnrichedStoreAddon = InventoryItem & {
     displayName: string;
     groupKey: string;
+    imageUrl?: string | null;
 };
 
 type AddonGroup = {
@@ -161,7 +162,7 @@ function POSContent({
                 console.error("Error fetching product details for addon:", item.id, e);
             }
             
-            const combined = { ...productData, ...item, barcode: item.barcode ?? productData.barcode ?? null };
+            const combined = { ...productData, ...item, barcode: item.barcode ?? productData.barcode ?? null, imageUrl: productData.imageUrl ?? null };
             const sp = Number(combined.sellingPrice);
             const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
 
