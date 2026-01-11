@@ -304,9 +304,9 @@ export function EditBillableItemDialog({
                                         <FormItem>
                                             <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
                                             <div className="flex items-center gap-2">
-                                            <FormControl><Input type="number" step="0.01" {...field} readOnly={isPackage} disabled={isPackage}/></FormControl>
+                                            <FormControl><Input type="number" step="0.01" {...field} readOnly/></FormControl>
                                             {showSyncPrice && (
-                                                <Button type="button" size="sm" variant="outline" onClick={() => setValue('unitPrice', inventoryPrice, { shouldDirty: true, shouldValidate: true })}><RefreshCw className="h-4 w-4"/> Sync</Button>
+                                                <Button type="button" size="sm" variant="outline" onClick={() => setValue('unitPrice', inventoryPrice ?? 0, { shouldDirty: true, shouldValidate: true })}><RefreshCw className="h-4 w-4"/> Sync</Button>
                                             )}
                                             </div>
                                         </FormItem>
@@ -408,5 +408,3 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
-
-    
