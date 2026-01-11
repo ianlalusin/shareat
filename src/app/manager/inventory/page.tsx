@@ -18,9 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import type { InventoryItem } from "@/lib/types";
+import type { InventoryItem, KitchenLocation } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
 import { getDisplayName } from "@/lib/products/variants";
+import { Switch } from "@/components/ui/switch";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -29,6 +30,7 @@ export default function InventoryManagementPage() {
   const { confirm, Dialog } = useConfirmDialog();
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,10 +46,10 @@ export default function InventoryManagementPage() {
       return;
     }
     setIsLoading(true);
+    
     const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
     const q = query(inventoryRef);
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubInv = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(items);
       setIsLoading(false);
@@ -56,8 +58,16 @@ export default function InventoryManagementPage() {
       toast({ variant: "destructive", title: "Error", description: "Could not fetch inventory." });
       setIsLoading(false);
     });
+    
+    const kitchenRef = collection(db, "stores", activeStore.id, "kitchenLocations");
+    const unsubKitchen = onSnapshot(kitchenRef, (snapshot) => {
+        setKitchenLocations(snapshot.docs.map(doc => doc.data() as KitchenLocation));
+    });
 
-    return () => unsubscribe();
+    return () => { 
+        unsubInv();
+        unsubKitchen();
+    };
   }, [activeStore, toast]);
 
   const groupedInventory = useMemo(() => {
@@ -72,7 +82,7 @@ export default function InventoryManagementPage() {
 
     // Sort items within each group
     for (const key in grouped) {
-        grouped[key].sort((a, b) => a.name.localeCompare(b.name));
+        grouped[key].sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
     }
     
     // Sort subcategories
@@ -110,6 +120,8 @@ export default function InventoryManagementPage() {
         cost: 0,
         sellingPrice: 0,
         isActive: true,
+        isAddon: false, // Default to not being an add-on
+        kitchenLocationId: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -132,7 +144,7 @@ export default function InventoryManagementPage() {
     }
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number }) => {
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -150,14 +162,15 @@ export default function InventoryManagementPage() {
     }
   };
   
-  const handleToggleActive = async (item: InventoryItem) => {
+  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'isAddon') => {
     if (!activeStore || !appUser) return;
-    const newStatus = !item.isActive;
+    const newStatus = !item[field];
     const action = newStatus ? "Enable" : "Disable";
+    const fieldName = field === 'isActive' ? 'availability' : 'add-on status';
     
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}?`,
-        description: `Are you sure you want to ${action.toLowerCase()} this item in your inventory?`,
+        description: `This will change the item's ${fieldName}.`,
         confirmText: `Yes, ${action}`,
     });
 
@@ -165,7 +178,7 @@ export default function InventoryManagementPage() {
     
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
     try {
-        await updateDoc(itemDocRef, { isActive: newStatus, updatedAt: serverTimestamp() });
+        await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
@@ -238,6 +251,8 @@ export default function InventoryManagementPage() {
                     <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Cost</TableHead>
+                        <TableHead>Selling Price</TableHead>
+                        <TableHead>Is Add-on</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -247,6 +262,13 @@ export default function InventoryManagementPage() {
                       <TableRow key={item.id}>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-1">
+                          <Switch
+                            checked={item.isAddon}
+                            onCheckedChange={() => handleToggle(item, 'isAddon')}
+                          />
+                        </TableCell>
                         <TableCell className="py-1">
                           <Badge variant={item.isActive ? "default" : "secondary"}>
                             {item.isActive ? "Active" : "Inactive"}
@@ -256,7 +278,7 @@ export default function InventoryManagementPage() {
                           <Button variant="outline" size="sm" onClick={() => { setSelectedItem(item); setIsEditOpen(true); }} className="mr-2">
                             <Pencil />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleToggleActive(item)}>
+                          <Button variant="ghost" size="icon" onClick={() => handleToggle(item, 'isActive')}>
                             {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
                           </Button>
                           {appUser?.role === 'admin' && (
@@ -292,6 +314,7 @@ export default function InventoryManagementPage() {
             isOpen={isEditOpen}
             onClose={() => setIsEditOpen(false)}
             item={selectedItem}
+            kitchenLocations={kitchenLocations}
             onSave={handleEditItem}
             isSubmitting={isSubmitting}
         />

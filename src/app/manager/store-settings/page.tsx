@@ -16,12 +16,10 @@ import { StoreRefillsSettings } from "@/components/manager/store-settings/store-
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { AddonsSettings } from "@/components/manager/store-settings/addons-settings";
 
 
 const TABS = [
     { value: "store_packages", label: "Packages" },
-    { value: "addons", label: "Add-ons" },
     { value: "refills", label: "Refills" },
     { value: "flavors", label: "Flavors" },
     { value: "schedules", label: "Schedules" },
@@ -66,7 +64,7 @@ export default function StoreSettingsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-7">
+                    <TabsList className="grid w-full grid-cols-6">
                         {TABS.map(tab => (
                              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -75,9 +73,6 @@ export default function StoreSettingsPage() {
 
                 <TabsContent value="store_packages">
                    <StorePackagesSettings store={activeStore} />
-                </TabsContent>
-                <TabsContent value="addons">
-                   <AddonsSettings store={activeStore} />
                 </TabsContent>
                 <TabsContent value="refills">
                    <StoreRefillsSettings store={activeStore} />

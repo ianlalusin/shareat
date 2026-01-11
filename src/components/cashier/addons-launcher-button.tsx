@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { AddonsPOSModal } from "./AddonsPOSModal";
+import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { PendingSession } from "@/lib/types";
 
 interface AddonsLauncherButtonProps {
@@ -34,5 +34,3 @@ export function AddonsLauncherButton({ storeId, session, sessionIsLocked }: Addo
     </>
   );
 }
-
-    

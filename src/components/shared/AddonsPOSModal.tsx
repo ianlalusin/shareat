@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -17,12 +16,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { Product, StoreAddon, PendingSession, BillableLine } from "@/lib/types";
+import type { InventoryItem, PendingSession, BillableLine } from "@/lib/types";
 import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
-import { QuantityInput } from "./quantity-input";
+import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { upsertAddonToBill } from "./firestore";
+import { upsertAddonToBill } from "../cashier/firestore";
 import { getDisplayName, getGroupKey } from "@/lib/products/variants";
 
 interface AddonsPOSModalProps {
@@ -33,19 +32,16 @@ interface AddonsPOSModalProps {
   sessionIsLocked?: boolean;
 }
 
-type EnrichedStoreAddon = StoreAddon & {
+type EnrichedStoreAddon = InventoryItem & {
     displayName: string;
     groupKey: string;
-    groupTitle: string;
-    kind?: Product['kind'];
-    variantLabel?: string | null;
 };
 
 type AddonGroup = {
     title: string;
     key: string;
     items: EnrichedStoreAddon[];
-    isGroup: boolean; // True if it should open a variant picker
+    isGroup: boolean; 
 }
 
 function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon, onSelect: (addon: EnrichedStoreAddon) => void }) {
@@ -60,7 +56,7 @@ function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon, onSelect: (
         )}
       </div>
       <span className="text-xs font-medium leading-tight line-clamp-2">{addon.displayName}</span>
-      <span className="text-xs text-muted-foreground mt-auto">₱{(addon.price || 0).toFixed(2)}</span>
+      <span className="text-xs text-muted-foreground mt-auto">₱{(addon.sellingPrice || 0).toFixed(2)}</span>
     </button>
   );
 }
@@ -148,46 +144,36 @@ function POSContent({
         return;
     };
     const addonsQuery = query(
-        collection(db, "stores", storeId, "storeAddons"),
-        where("isEnabled", "==", true),
-        where("isArchived", "==", false),
-        orderBy("sortOrder", "asc"),
-        orderBy("name", "asc")
+        collection(db, "stores", storeId, "inventory"),
+        where("isActive", "==", true),
+        where("isAddon", "==", true)
     );
 
     const unsub = onSnapshot(addonsQuery, async (snapshot) => {
-        const storeAddonsData = snapshot.docs.map(d => ({...d.data(), id: d.id}) as StoreAddon);
+        const inventoryAddons = snapshot.docs.map(d => ({...d.data(), id: d.id}) as InventoryItem);
 
-        const addonsWithDetails = await Promise.all(storeAddonsData.map(async (addon) => {
-            let productData: Product | null = null;
+        const addonsWithDetails = await Promise.all(inventoryAddons.map(async (item) => {
+            let productData: any = {};
             try {
-                const productDoc = await getDoc(doc(db, "products", addon.id));
+                const productDoc = await getDoc(doc(db, "products", item.productId));
                 if (productDoc.exists()) {
-                    productData = productDoc.data() as Product;
+                    productData = productDoc.data();
                 }
             } catch (e) {
-                console.error("Error fetching product details for addon:", addon.id, e);
+                console.error("Error fetching product details for addon:", item.id, e);
             }
             
-            const name = productData?.name || addon.name;
+            const combined = { ...item, ...productData };
 
             return { 
-              ...addon,
-              name: name,
-              kind: productData?.kind,
-              groupId: productData?.groupId,
-              groupName: productData?.groupName,
-              variantLabel: productData?.variantLabel,
-              displayName: getDisplayName(productData || addon),
-              groupKey: getGroupKey(productData || addon),
-              groupTitle: productData?.groupName || name,
-              uom: productData?.uom || addon.uom,
-              imageUrl: productData?.imageUrl || addon.imageUrl,
-              barcode: productData?.barcode || undefined,
+              ...combined,
+              displayName: getDisplayName(combined),
+              groupKey: getGroupKey(combined),
+              groupTitle: productData?.groupName || item.name,
             } as EnrichedStoreAddon;
         }));
 
-        setAddons(addonsWithDetails);
+        setAddons(addonsWithDetails.sort((a,b) => a.displayName.localeCompare(b.displayName)));
         setIsLoading(false);
     }, (error) => {
         console.error("[AddonsPOSModal] Query error:", error);
@@ -199,13 +185,13 @@ function POSContent({
   }, [storeId, toast]);
   
   const categories = useMemo(() => {
-    return ["All", ...Array.from(new Set(addons.map(a => a.category || "Uncategorized")))];
+    return ["All", ...Array.from(new Set(addons.map(a => a.subCategory || "Uncategorized")))];
   }, [addons]);
   
   const groupedAddons = useMemo(() => {
     let result = addons;
     if (activeCategory !== "All") {
-      result = result.filter(a => (a.category || "Uncategorized") === activeCategory);
+      result = result.filter(a => (a.subCategory || "Uncategorized") === activeCategory);
     }
     if (search) {
       result = result.filter(a => a.displayName.toLowerCase().includes(search.toLowerCase()));
@@ -218,7 +204,7 @@ function POSContent({
         if (!groups[key]) {
             groups[key] = {
                 key: key,
-                title: addon.groupTitle,
+                title: addon.groupName || addon.name,
                 items: [],
                 isGroup: false,
             };
@@ -227,10 +213,9 @@ function POSContent({
     });
     
     return Object.values(groups).map(group => {
-        // A group is a 'group' if it has multiple items, or its single item is a variant.
-        const isGroup = group.items.length > 1 || (group.items.length === 1 && group.items[0].kind === 'variant');
+        const isGroup = group.items.length > 1;
         return { ...group, isGroup };
-    });
+    }).sort((a,b) => a.title.localeCompare(b.title));
 
   }, [addons, search, activeCategory]);
 
@@ -249,7 +234,7 @@ function POSContent({
         return;
     }
     if (!selectedAddon.kitchenLocationId) {
-        toast({ variant: "destructive", title: "Kitchen Not Assigned", description: `"${selectedAddon.name}" has no kitchen location assigned.`});
+        toast({ variant: "destructive", title: "Kitchen Not Assigned", description: `"${selectedAddon.displayName}" has no kitchen location assigned.`});
         return;
     }
 
@@ -269,10 +254,11 @@ function POSContent({
                 qty: 1,
                 uom: selectedAddon.uom,
                 kitchenLocationId: selectedAddon.kitchenLocationId,
-                kitchenLocationName: selectedAddon.kitchenLocationName,
+                // kitchenLocationName will be populated by cloud function or another process
                 status: "preparing",
                 createdAt: serverTimestamp(),
                 createdByUid: appUser.uid,
+                orderedByRole: appUser.role, // Track where the order came from
                 sessionId: session.id, 
                 storeId,
                 tableNumber: session.tableNumber,
@@ -285,7 +271,7 @@ function POSContent({
                     isFree: false,
                     itemId: selectedAddon.id,
                     itemName: selectedAddon.displayName,
-                    unitPrice: selectedAddon.price || 0,
+                    unitPrice: selectedAddon.sellingPrice || 0,
                 }
             });
             batch.set(ticketRef, ticketPayload);
@@ -370,7 +356,7 @@ function POSContent({
                 <div className="flex justify-between items-center">
                     <div>
                         <p className="font-semibold">{selectedAddon.displayName}</p>
-                        <p className="text-sm text-muted-foreground">₱{(selectedAddon.price || 0).toFixed(2)}</p>
+                        <p className="text-sm text-muted-foreground">₱{(selectedAddon.sellingPrice || 0).toFixed(2)}</p>
                     </div>
                      <div className="flex items-center gap-2">
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => Math.max(qtyMin, q - qtyStep))}><Minus/></Button>
@@ -385,7 +371,7 @@ function POSContent({
                      <div className="flex items-center gap-2">
                         <Button variant="ghost" size="sm" onClick={() => setSelectedAddon(null)}>Cancel</Button>
                         <Button size="sm" onClick={handleAddToOrder} disabled={isSubmitting || quantity <= 0 || !selectedAddon.kitchenLocationId || sessionIsLocked}>
-                           {isSubmitting ? <Loader2 className="animate-spin" /> : `Add (₱${((selectedAddon.price || 0) * quantity).toFixed(2)})`}
+                           {isSubmitting ? <Loader2 className="animate-spin" /> : `Add (₱${((selectedAddon.sellingPrice || 0) * quantity).toFixed(2)})`}
                         </Button>
                      </div>
                 </div>
@@ -446,9 +432,3 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
     </Dialog>
   );
 }
-
-  
-
-    
-
-    

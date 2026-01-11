@@ -9,10 +9,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import type { InventoryItem } from "@/lib/types";
+import type { InventoryItem, KitchenLocation } from "@/lib/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
+  sellingPrice: z.coerce.number().min(0, "Selling price must be a positive number."),
+  kitchenLocationId: z.string().nullable().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -21,11 +24,12 @@ interface EditInventoryDialogProps {
   isOpen: boolean;
   onClose: () => void;
   item: InventoryItem;
+  kitchenLocations: KitchenLocation[];
   onSave: (item: InventoryItem, data: any) => void;
   isSubmitting: boolean;
 }
 
-function CurrencyFormField({ name, label, form, uom }: { name: "cost", label: string, form: any, uom: string }) {
+function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "sellingPrice", label: string, form: any, uom: string }) {
     const [displayValue, setDisplayValue] = React.useState(form.getValues(name)?.toString() || '0');
 
     React.useEffect(() => {
@@ -79,11 +83,13 @@ function CurrencyFormField({ name, label, form, uom }: { name: "cost", label: st
     );
 }
 
-export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmitting }: EditInventoryDialogProps) {
+export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       cost: item.cost || 0,
+      sellingPrice: item.sellingPrice || 0,
+      kitchenLocationId: item.kitchenLocationId || null,
     },
   });
 
@@ -91,6 +97,8 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
     if (isOpen) {
       form.reset({
         cost: item.cost || 0,
+        sellingPrice: item.sellingPrice || 0,
+        kitchenLocationId: item.kitchenLocationId || null,
       });
     }
   }, [isOpen, item, form]);
@@ -104,11 +112,29 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Inventory Item: {item.name}</DialogTitle>
-          <DialogDescription>Update the cost for this item.</DialogDescription>
+          <DialogDescription>Update pricing and kitchen assignment for this item.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="edit-item-form" className="space-y-4">
             <CurrencyFormField name="cost" label="Cost" form={form} uom={item.uom} />
+            <CurrencyFormField name="sellingPrice" label="Selling Price" form={form} uom={item.uom} />
+            <FormField
+              control={form.control}
+              name="kitchenLocationId"
+              render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Kitchen Location (for Add-ons)</FormLabel>
+                    <Select onValueChange={(val) => field.onChange(val === 'none' ? null : val)} value={field.value || 'none'}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger></FormControl>
+                        <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {kitchenLocations.map(loc => <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <FormMessage />
+                </FormItem>
+              )}
+            />
           </form>
         </Form>
         <DialogFooter>
