@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import * as React from "react";
-import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -172,6 +172,28 @@ export default function InventoryManagementPage() {
     }
   };
 
+  const handleDeleteItem = async (item: InventoryItem) => {
+    if (!activeStore || !appUser) return;
+    
+    const confirmed = await confirm({
+        title: `Delete ${getDisplayName(item)}?`,
+        description: "This will permanently remove the item from this store's inventory. This action cannot be undone.",
+        confirmText: "Yes, Delete",
+        destructive: true,
+    });
+
+    if (!confirmed) return;
+    
+    const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
+    try {
+        await deleteDoc(itemDocRef);
+        toast({ title: "Inventory Item Deleted" });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Delete Failed", description: error.message });
+    }
+  };
+
+
   if (!activeStore) {
     return (
       <RoleGuard allow={["admin", "manager"]}>
@@ -239,6 +261,11 @@ export default function InventoryManagementPage() {
                           <Button variant="ghost" size="icon" onClick={() => handleToggleActive(item)}>
                             {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
                           </Button>
+                          {appUser?.role === 'admin' && (
+                             <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteItem(item)}>
+                                <Trash2 />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
