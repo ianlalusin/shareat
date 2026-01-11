@@ -105,7 +105,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   // Sync session guestCountFinal to package billable line
   useEffect(() => {
-    if (!session || !appUser || billLines.length === 0 || session.sessionMode !== 'package_dinein') {
+    if (!session || !appUser || billLines.length === 0 || session.sessionMode !== 'package_dinein' || !storeId) {
       return;
     }
   
@@ -114,7 +114,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
     if (packageLine && finalGuestCount !== null && packageLine.qtyOrdered !== finalGuestCount) {
       console.log(`Syncing package qty: session has ${finalGuestCount}, bill has ${packageLine.qtyOrdered}. Updating...`);
-      updateSessionBillLine(storeId!, sessionId, packageLine.id, { qtyOrdered: finalGuestCount }, appUser)
+      updateSessionBillLine(storeId, sessionId, packageLine.id, { qtyOrdered: finalGuestCount }, appUser)
         .catch(err => console.error("Failed to auto-sync package quantity:", err));
     }
   }, [session, billLines, appUser, storeId, sessionId]);
@@ -141,7 +141,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
   const billTotals = useMemo(() => {
-    return calculateBillTotals(billLines, activeStore as Store, billDiscount, customAdjustments);
+    return calculateBillTotals(billLines, activeStore, billDiscount, customAdjustments);
   }, [billLines, activeStore, billDiscount, customAdjustments]);
   
   const { grandTotal } = billTotals;
@@ -149,7 +149,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const remainingBalance = grandTotal - totalPaid;
   const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
   
-  const canCompletePayment = grandTotal > 0 && remainingBalance <= 0;
+  // Use a small epsilon for floating point comparison
+  const canCompletePayment = grandTotal > 0 && remainingBalance <= 0.001;
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId) return;
