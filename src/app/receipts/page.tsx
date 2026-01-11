@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
@@ -26,6 +26,7 @@ import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } fro
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
 import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
+import * as XLSX from "xlsx";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -206,6 +207,23 @@ function ReceiptsPageContents() {
         }
     }
 
+    const handleExport = () => {
+        const dataToExport = filteredReceipts.map(r => ({
+            "Receipt Number": r.receiptNumber || 'N/A',
+            "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
+            "Customer/Table": r.sessionMode === 'alacarte' ? r.customerName || 'Ala Carte' : `Table ${r.tableNumber || 'N/A'}`,
+            "Cashier": r.createdByUsername || 'N/A',
+            "Total": r.total
+        }));
+        
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Receipts");
+        
+        XLSX.writeFile(workbook, "receipts_export.xlsx");
+        toast({ title: "Export Started", description: "Your download will begin shortly." });
+    };
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -219,6 +237,7 @@ function ReceiptsPageContents() {
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
+                <Button variant="outline" onClick={handleExport} disabled={filteredReceipts.length === 0}><Download className="mr-2"/> Export</Button>
                 <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
             </PageHeader>
 
