@@ -23,13 +23,13 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     const [displayValue, setDisplayValue] = useState(value.toString());
 
     useEffect(() => {
-        setDisplayValue(value.toString());
+        if (document.activeElement?.id !== `currency-input-${value}`) {
+          setDisplayValue(value.toString());
+        }
     }, [value]);
 
-    const handleFocus = () => {
-        if (parseFloat(displayValue) === 0) {
-            setDisplayValue("");
-        }
+    const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+        e.target.select();
     };
 
     const handleBlur = () => {
@@ -56,6 +56,7 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
         <div className="relative">
            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">₱</span>
            <Input 
+                id={`currency-input-${value}`}
                 type="number" 
                 value={displayValue}
                 onChange={handleChange}
