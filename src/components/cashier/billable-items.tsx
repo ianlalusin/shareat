@@ -35,6 +35,7 @@ function BillableLineRow({
     const totalFreeQty = line.freeQty;
 
     const netQty = line.qtyOrdered - line.voidedQty;
+    const unitPrice = line.unitPrice ?? 0;
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
@@ -42,7 +43,7 @@ function BillableLineRow({
                 <div className="flex-1">
                     <p className="font-medium">{netQty > 1 && `${netQty}x `}{line.itemName}</p>
                      <div className="text-xs text-muted-foreground">
-                        <p>{netQty} x ₱{line.unitPrice.toFixed(2)} each = ₱{(netQty * line.unitPrice).toFixed(2)}</p>
+                        <p>{netQty} x ₱{unitPrice.toFixed(2)} each = ₱{(netQty * unitPrice).toFixed(2)}</p>
                     </div>
                     {totalDiscountQty > 0 && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">{totalDiscountQty} discounted</Badge>}
                     {totalFreeQty > 0 && <Badge variant="outline" className="mt-1 border-green-500 text-green-600">{totalFreeQty} free</Badge>}
@@ -110,7 +111,7 @@ export function BillableItems({
                                     <div key={`${line.id}-voided`} className="py-2">
                                         <div className="flex justify-between">
                                             <p className="font-medium text-muted-foreground line-through">{line.voidedQty}x {line.itemName}</p>
-                                            <p className="text-muted-foreground line-through">₱{(line.voidedQty * line.unitPrice).toFixed(2)}</p>
+                                            <p className="text-muted-foreground line-through">₱{(line.voidedQty * (line.unitPrice ?? 0)).toFixed(2)}</p>
                                         </div>
                                     </div>
                                 ))}
