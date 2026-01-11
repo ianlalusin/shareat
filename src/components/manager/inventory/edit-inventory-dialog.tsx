@@ -11,6 +11,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import type { InventoryItem, KitchenLocation } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
@@ -142,6 +144,15 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="edit-item-form" className="space-y-4">
+            {item.isAddon && (
+                <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Add-on Requirements</AlertTitle>
+                    <AlertDescription>
+                        A selling price and kitchen location must be set for items marked as add-ons.
+                    </AlertDescription>
+                </Alert>
+            )}
             <CurrencyFormField name="cost" label="Cost" form={form} uom={item.uom} />
             <CurrencyFormField name="sellingPrice" label="Selling Price" form={form} uom={item.uom} />
             <FormField
@@ -149,7 +160,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
               name="kitchenLocationId"
               render={({ field }) => (
                 <FormItem>
-                    <FormLabel>Kitchen Location (for Add-ons)</FormLabel>
+                    <FormLabel>Kitchen Location</FormLabel>
                     <Select onValueChange={(val) => field.onChange(val === 'none' ? null : val)} value={field.value || 'none'}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger></FormControl>
                         <SelectContent>
