@@ -18,9 +18,9 @@ const PesoSign = ({ className }: { className?: string }) => (
     className={className}
   >
     <path d="M8 19V5" />
+    <path d="M12 12h4" />
+    <path d="M12 8h4" />
     <path d="M8 12h8" />
-    <path d="M8 8h8" />
-    <path d="M12 19V5" />
   </svg>
 );
 
