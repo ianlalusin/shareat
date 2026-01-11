@@ -1,24 +1,9 @@
 /** @type {import('next').NextConfig} */
-
-const isCI = process.env.CI === "true";
-const isProd = process.env.NODE_ENV === "production";
-
 const nextConfig = {
-  typescript: {
-    // ✅ fail builds in prod/CI
-    ignoreBuildErrors: !(isCI || isProd),
-  },
-  eslint: {
-    // ✅ fail builds in prod/CI
-    ignoreDuringBuilds: !(isCI || isProd),
-  },
+  output: 'export',
+  distDir: 'out',
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "placehold.co", pathname: "/**" },
-      { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
-      { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
-      { protocol: "https", hostname: "firebasestorage.googleapis.com", pathname: "/**" },
-    ],
+    unoptimized: true,
   },
 };
 

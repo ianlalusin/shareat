@@ -1,4 +1,14 @@
+
 {
+  "hosting": {
+    "public": "out",
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "firestore": {
     "database": "shareatv5",
     "location": "asia-southeast1",
