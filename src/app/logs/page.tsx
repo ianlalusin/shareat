@@ -246,7 +246,7 @@ export default function LogsPage() {
   }
 
   return (
-    <RoleGuard allow={["admin", "manager"]}>
+    <RoleGuard allow={["admin", "manager", "cashier"]}>
       <PageHeader
         title="Activity Logs"
         description={`Audit trail for ${activeStore.name}.`}

@@ -104,7 +104,7 @@ export default function DashboardPage() {
     }
     
     return (
-        <RoleGuard allow={["admin", "manager"]}>
+        <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`}>
                 {/* <DateRangePicker /> */}
             </PageHeader>
