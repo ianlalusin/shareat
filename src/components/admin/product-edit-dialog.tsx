@@ -19,11 +19,10 @@ import { slugify } from "@/lib/utils/slugify";
 import { Badge } from "../ui/badge";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, UploadCloud, ScanLine, Package, Trash2, Pencil } from "lucide-react";
+import { Loader2, UploadCloud, Package, Trash2, Pencil } from "lucide-react";
 import Image from "next/image";
 import { Label } from "@/components/ui/label";
 import type { Product } from "@/lib/types";
-import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { UOM_OPTIONS, normalizeUom } from "@/lib/uom";
 import { Separator } from "../ui/separator";
 import { getDisplayName } from "@/lib/products/variants";
@@ -123,7 +122,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
   
   const [variants, setVariants] = useState<Product[]>([]);
   const [editingVariant, setEditingVariant] = useState<Product | null>(null);
@@ -182,12 +180,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     setImageFile(file);
     setImageUrl(URL.createObjectURL(file));
   };
-
-  const handleBarcodeScanned = (barcode: string) => {
-    form.setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
-    setIsScannerOpen(false);
-    toast({ title: "Barcode Scanned", description: `Set barcode to: ${barcode}` });
-  }
   
   const handleEditVariant = (variant: Product) => {
     setEditingVariant(variant);
@@ -299,7 +291,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                 ) : (
                     <div className="grid grid-cols-2 gap-4">
                         <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                        <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><div className="flex gap-2"><FormControl><Input placeholder="Optional" {...field} /></FormControl><Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}><ScanLine/></Button></div><FormMessage /></FormItem> )}/>
+                        <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><div className="flex gap-2"><FormControl><Input placeholder="Optional" {...field} /></FormControl></div><FormMessage /></FormItem> )}/>
                     </div>
                 )}
               </form>
@@ -312,7 +304,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    <SingleScanBarcodeScanner open={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScan={handleBarcodeScanned}/>
     </>
   );
 }

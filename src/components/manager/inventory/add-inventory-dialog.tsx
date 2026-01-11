@@ -129,7 +129,8 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
                                         <Checkbox
                                             id={`product-${product.id}`}
                                             checked={!!selectedProducts[product.id]}
-                                            readOnly
+                                            onCheckedChange={() => {}}
+                                            aria-readonly="true"
                                         />
                                         <label htmlFor={`product-${product.id}`} className="flex-grow cursor-pointer">
                                             <div className="font-medium">{getDisplayName(product)}</div>

@@ -7,7 +7,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Minus, Plus, Loader2, ScanLine, Layers } from "lucide-react";
+import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
@@ -17,7 +17,6 @@ import { useAuthContext } from "@/context/auth-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { InventoryItem, PendingSession, BillableLine } from "@/lib/types";
-import { SingleScanBarcodeScanner } from "../shared/SingleScanBarcodeScanner";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
@@ -134,7 +133,6 @@ function POSContent({
   const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
   
   const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
 
@@ -286,19 +284,6 @@ function POSContent({
     }
   };
 
-  const handleBarcodeScanned = async (code: string) => {
-    setIsScannerOpen(false);
-
-    const foundAddon = addons.find(addon => addon.barcode === code);
-    
-    if (foundAddon) {
-        handleSelectAddon(foundAddon);
-        toast({ title: "Item Found", description: `Selected: ${foundAddon.displayName}`});
-    } else {
-        toast({ variant: "destructive", title: "Not Found", description: "No add-on with this barcode was found in the store's active items."});
-    }
-  };
-
   const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
   const qtyStep = allowDecimal ? 0.1 : 1;
   const qtyMin = allowDecimal ? 0.1 : 1;
@@ -312,7 +297,6 @@ function POSContent({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search items..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9"/>
                 </div>
-                <Button variant="outline" onClick={() => setIsScannerOpen(true)}><ScanLine className="mr-2"/> Scan Item</Button>
             </div>
             <ScrollArea className="w-full mt-2">
                  <div className="flex space-x-2 pb-2">
@@ -375,11 +359,6 @@ function POSContent({
             <Button onClick={onClose} className="w-full">Done</Button>
         </div>
     </div>
-    <SingleScanBarcodeScanner 
-        open={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        onScan={handleBarcodeScanned}
-    />
     <VariantPicker
         open={!!variantPickerGroup}
         onOpenChange={(isOpen) => !isOpen && setVariantPickerGroup(null)}
