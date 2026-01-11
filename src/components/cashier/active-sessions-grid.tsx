@@ -25,9 +25,9 @@ export type ActiveSession = {
     startedAt?: Timestamp | null;
     startedAtClientMs?: number | null;
     packageName?: string;
-    guestCountCashier?: number;
-    guestCountServer?: number;
-    guestCountFinal?: number;
+    guestCountCashierInitial?: number;
+    guestCountServerVerified?: number | null;
+    guestCountFinal?: number | null;
     isPaid?: boolean; // Added for validation
 };
 
@@ -114,10 +114,10 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
                         const title = isAlaCarte ? (session.customer?.name || 'Ala Carte') : `Table ${session.tableNumber}`;
                         const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
                         
-                        const final = Number(session.guestCountFinal ?? NaN);
-                        const cashier = Number(session.guestCountCashier ?? 0);
-                        const server = Number(session.guestCountServer ?? 0);
-                        const guests = Number.isFinite(final) ? final : Math.max(cashier, server);
+                        const cashier = Number(session.guestCountCashierInitial ?? 0);
+                        const server = Number(session.guestCountServerVerified ?? 0);
+                        const final = session.guestCountFinal ?? Math.max(cashier, server);
+                        const guests = final > 0 ? final : Math.max(cashier, server);
 
                         const isPending = session.status === 'pending_verification';
                         

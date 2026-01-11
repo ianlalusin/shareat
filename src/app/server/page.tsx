@@ -9,7 +9,7 @@ import { ReadyToServe, type ReadyItem } from "@/components/server/ready-to-serve
 import { ServedHistory } from "@/components/server/served-history";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader } from "lucide-react";
@@ -217,19 +217,28 @@ export default function ServerPage() {
     const cashierInitial = session.guestCountCashierInitial ?? 0;
     const finalCount = Math.max(cashierInitial, serverCount);
     
-    const sessionDoc = doc(db, 'stores', activeStore.id, 'sessions', session.id);
+    const batch = writeBatch(db);
+    const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', session.id);
     
-    try {
-      await updateDoc(sessionDoc, {
-        guestCountServerVerified: serverCount,
-        guestCountFinal: finalCount,
-        guestCountVerifyLocked: true,
-        status: "active",
-        verifiedAt: serverTimestamp(),
-        verifiedByUid: appUser.uid,
+    batch.update(sessionRef, {
+      guestCountServerVerified: serverCount,
+      guestCountFinal: finalCount,
+      guestCountVerifyLocked: true,
+      status: "active",
+      verifiedAt: serverTimestamp(),
+      verifiedByUid: appUser.uid,
+      updatedAt: serverTimestamp(),
+    });
+
+    // Also update the quantity on the package billable line item
+    const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
+    batch.update(packageLineRef, {
+        qtyOrdered: finalCount,
         updatedAt: serverTimestamp(),
-        guestCountCashierInitial: cashierInitial
-      });
+    });
+
+    try {
+      await batch.commit();
       toast({ title: 'Session Verified' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Verification Failed', description: e.message });

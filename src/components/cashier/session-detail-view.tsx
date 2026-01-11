@@ -103,6 +103,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return () => unsubLines();
   }, [sessionId, storeId]);
 
+  // Sync session guestCountFinal to package billable line
+  useEffect(() => {
+    if (!session || !appUser || billLines.length === 0 || session.sessionMode !== 'package_dinein') {
+      return;
+    }
+  
+    const finalGuestCount = session.guestCountFinal;
+    const packageLine = billLines.find(line => line.type === 'package');
+  
+    if (packageLine && finalGuestCount !== null && packageLine.qtyOrdered !== finalGuestCount) {
+      console.log(`Syncing package qty: session has ${finalGuestCount}, bill has ${packageLine.qtyOrdered}. Updating...`);
+      updateSessionBillLine(storeId!, sessionId, packageLine.id, { qtyOrdered: finalGuestCount }, appUser)
+        .catch(err => console.error("Failed to auto-sync package quantity:", err));
+    }
+  }, [session, billLines, appUser, storeId, sessionId]);
+
 
   useEffect(() => {
     if (!storeId) return;
