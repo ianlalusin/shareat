@@ -22,6 +22,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
+import { allowsDecimalQty } from "@/lib/uom";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -74,7 +75,17 @@ function normalizeDiscountType(t: any): "fixed" | "percent" | null {
     return null;
 }
 
-function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true }: { label: string, value: number, onChange: (val: number) => void, max: number, min?: number, description?: string, step?: number, canDecrease?: boolean }) {
+function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true, allowDecimal = false }: { 
+    label: string, 
+    value: number, 
+    onChange: (val: number) => void, 
+    max: number, 
+    min?: number, 
+    description?: string, 
+    step?: number, 
+    canDecrease?: boolean,
+    allowDecimal?: boolean,
+}) {
     return (
         <FormItem>
             <FormLabel>{label}</FormLabel>
@@ -84,6 +95,7 @@ function QuantityStepper({ label, value, onChange, max, min = 0, description, st
                     value={value}
                     onChange={onChange}
                     className="text-center"
+                    allowDecimal={allowDecimal}
                 />
                 <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))}><Plus/></Button>
             </div>
@@ -105,7 +117,7 @@ export function EditBillableItemDialog({
     const { activeStore } = useStoreContext();
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [inventoryPrice, setInventoryPrice] = useState<number | null>(null);
+    const [inventoryItem, setInventoryItem] = useState<InventoryItem | null>(null);
 
     const isPackage = line?.type === 'package';
     
@@ -138,17 +150,17 @@ export function EditBillableItemDialog({
                 voidNote: '',
             });
             
-            // Fetch current inventory price
-            if (activeStore && line.itemId && line.type === 'addon') {
+            // Fetch current inventory item details
+            if (activeStore && line.itemId) {
                 const invItemRef = doc(db, 'stores', activeStore.id, 'inventory', line.itemId);
                 getDoc(invItemRef).then(snap => {
                     if (snap.exists()) {
-                        const invItem = snap.data() as InventoryItem;
-                        setInventoryPrice(invItem.sellingPrice ?? 0);
+                        const itemData = snap.data() as InventoryItem;
+                        setInventoryItem(itemData);
                     }
-                }).catch(() => setInventoryPrice(null));
+                }).catch(() => setInventoryItem(null));
             } else {
-                setInventoryPrice(null);
+                setInventoryItem(null);
             }
 
         }
@@ -285,7 +297,8 @@ export function EditBillableItemDialog({
 
     const remainingQty = watchedValues.qtyOrdered - ((watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0));
     
-    const showSyncPrice = inventoryPrice !== null && inventoryPrice !== watchedValues.unitPrice;
+    const showSyncPrice = inventoryItem && inventoryItem.sellingPrice !== watchedValues.unitPrice;
+    const allowDecimal = inventoryItem ? allowsDecimalQty(inventoryItem.uom) : false;
 
     if (!line) return null;
 
@@ -306,7 +319,7 @@ export function EditBillableItemDialog({
                                             <div className="flex items-center gap-2">
                                             <FormControl><Input type="number" step="0.01" {...field} readOnly/></FormControl>
                                             {showSyncPrice && (
-                                                <Button type="button" size="sm" variant="outline" onClick={() => setValue('unitPrice', inventoryPrice ?? 0, { shouldDirty: true, shouldValidate: true })}><RefreshCw className="h-4 w-4"/> Sync</Button>
+                                                <Button type="button" size="sm" variant="outline" onClick={() => setValue('unitPrice', inventoryItem?.sellingPrice ?? 0, { shouldDirty: true, shouldValidate: true })}><RefreshCw className="h-4 w-4"/> Sync</Button>
                                             )}
                                             </div>
                                         </FormItem>
@@ -319,12 +332,14 @@ export function EditBillableItemDialog({
                                             max={50} 
                                             min={isPackage ? line.qtyOrdered : 0}
                                             canDecrease={!isPackage}
+                                            allowDecimal={allowDecimal}
+                                            step={allowDecimal ? 0.1 : 1}
                                         />
                                     )} />
                                 </div>
                                 {isPackage && <FormDescription className="text-xs -mt-2">Decrease not allowed. Use Void Covers to reduce billable covers.</FormDescription>}
                                 <Alert>
-                                    <AlertTitle>Remaining to Allocate: {remainingQty}</AlertTitle>
+                                    <AlertTitle>Remaining to Allocate: {remainingQty.toFixed(allowDecimal ? 2 : 0)}</AlertTitle>
                                 </Alert>
 
                                 <Separator />
