@@ -94,3 +94,5 @@ export async function uploadReceiptLogo(storeId: string, file: File): Promise<st
 
 
 export { app, auth, db, storage };
+
+    
