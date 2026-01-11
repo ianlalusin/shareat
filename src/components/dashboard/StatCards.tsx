@@ -48,7 +48,7 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
             <StatCard title="Gross Sales" value={stats.grossSales} icon={<DollarSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
             <StatCard title="Active Sessions" value={activeSessions} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
-            <StatCard title="Average Ticket" value={stats.avgTicket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
+            <StatCard title="Average Basket" value={stats.avgTicket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
         </>
     );
 }

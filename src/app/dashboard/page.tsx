@@ -8,19 +8,16 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { StatCards, type DashboardStats } from "@/components/dashboard/StatCards";
-import { RecentSales, type Sale } from "@/components/dashboard/RecentSales";
 import { PaymentMix, type PaymentMethodTally } from "@/components/dashboard/PaymentMix";
 import { Loader2 } from "lucide-react";
 import { collection, onSnapshot, query, where, Timestamp, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Receipt } from "@/lib/types";
-import { toJsDate } from "@/lib/utils/date";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
-import { VoidedOrdersCard } from "@/components/dashboard/voided-orders-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -67,23 +64,13 @@ export default function DashboardPage() {
         return () => unsubscribe();
     }, [activeStore?.id, dateRange]);
 
-    const { stats, recentSales, paymentTally, activeSessionsCount } = useMemo(() => {
+    const { stats, paymentTally, activeSessionsCount } = useMemo(() => {
         const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
         
         const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
         const transactions = v2Receipts.length;
         const avgTicket = transactions > 0 ? grossSales / transactions : 0;
         
-        const sales: Sale[] = v2Receipts.slice(0, 10).map(r => ({
-            id: r.id,
-            receiptNumber: r.receiptNumber,
-            customerName: r.customerName,
-            tableNumber: r.tableNumber,
-            sessionMode: r.sessionMode,
-            total: r.total,
-            createdAtClientMs: r.createdAtClientMs
-        }));
-
         const tally: PaymentMethodTally = {};
         v2Receipts.forEach(r => {
             const mop = r.analytics?.mop;
@@ -100,7 +87,6 @@ export default function DashboardPage() {
         
         return {
             stats: { grossSales, transactions, avgTicket },
-            recentSales: sales,
             paymentTally: tally,
             activeSessionsCount,
         };
@@ -117,8 +103,6 @@ export default function DashboardPage() {
         );
     }
     
-    // Note: DateRangePicker component needs to be created or implemented
-    // For now, we will just show a placeholder for the date picker
     return (
         <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`}>
@@ -131,15 +115,6 @@ export default function DashboardPage() {
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                     <Card className="lg:col-span-1">
                         <CardHeader>
-                            <CardTitle>Recent Sales</CardTitle>
-                            <CardDescription>Top 10 most recent transactions.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                             <RecentSales sales={recentSales} storeId={activeStore.id} isLoading={isLoading} />
-                        </CardContent>
-                    </Card>
-                    <Card className="lg:col-span-1">
-                        <CardHeader>
                             <CardTitle>Payment Mix</CardTitle>
                             <CardDescription>Breakdown of payments by method.</CardDescription>
                         </CardHeader>
@@ -147,21 +122,22 @@ export default function DashboardPage() {
                            <PaymentMix tally={paymentTally} isLoading={isLoading} />
                         </CardContent>
                     </Card>
+                    <div className="lg:col-span-2 space-y-6">
+                      <PackageCountCheckCard storeId={activeStore.id} dateRange={dateRange} />
+                    </div>
+                </div>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                      <Card className="lg:col-span-1">
                         <TopPackagesCard receipts={receipts} isLoading={isLoading}/>
                     </Card>
+                     <div className="lg:col-span-2">
+                       <TopCategoryCard receipts={receipts} isLoading={isLoading} />
+                    </div>
                 </div>
                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                     <PeakHoursCard storeId={activeStore.id} dateRange={dateRange} />
                     <AvgServingTimeCard storeId={activeStore.id} dateRange={dateRange} />
                     <AvgRefillsCard storeId={activeStore.id} dateRange={dateRange} />
-                </div>
-                 <div className="grid gap-6 md:grid-cols-1 items-start">
-                     <TopCategoryCard receipts={receipts} isLoading={isLoading} />
-                </div>
-                 <div className="grid gap-6 md:grid-cols-2 items-start">
-                    <VoidedOrdersCard storeId={activeStore.id} dateRange={dateRange} />
-                    <PackageCountCheckCard storeId={activeStore.id} dateRange={dateRange} />
                 </div>
             </div>
         </RoleGuard>
