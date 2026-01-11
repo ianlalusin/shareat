@@ -28,6 +28,7 @@ import { toJsDate } from "@/lib/utils/date";
 import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
+import { formatLogForExport } from "@/components/logs/SessionLogCard";
 
 // --- Date Helpers ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -283,6 +284,43 @@ function ReceiptsPageContents() {
         }
     }
 
+    const handleExport = async () => {
+        if (!activeStore) return;
+        setIsExporting(true);
+        try {
+            const XLSX = await import("xlsx");
+            const dataToExport = filteredReceipts.map(r => ({
+                "Receipt #": r.receiptNumber || 'N/A',
+                "Date": format(toJsDate(r.createdAt)!, 'yyyy-MM-dd'),
+                "Time": format(toJsDate(r.createdAt)!, 'HH:mm:ss'),
+                "Identifier": r.tableNumber || r.customerName || 'N/A',
+                "Cashier": r.createdByUsername || 'N/A',
+                "Subtotal": r.analytics?.subtotal ?? 0,
+                "Discounts": r.analytics?.discountsTotal ?? 0,
+                "Charges": r.analytics?.chargesTotal ?? 0,
+                "VAT": r.analytics?.taxAmount ?? 0,
+                "Total": r.total,
+                "Total Paid": r.totalPaid,
+                "Change": r.change,
+                ...r.analytics?.mop
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Receipts");
+
+            const filename = `Receipts_${activeStore.code}_${format(start, 'yyyyMMdd')}_${format(end, 'yyyyMMdd')}.xlsx`;
+            XLSX.writeFile(workbook, filename);
+
+        } catch (err) {
+            console.error("Export failed:", err);
+            toast({ variant: 'destructive', title: 'Export failed', description: 'Could not generate the file.' });
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
           today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
@@ -316,6 +354,10 @@ function ReceiptsPageContents() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
                 <div className="flex items-center gap-2">
+                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
+                        {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
+                        Export
+                    </Button>
                     <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                 </div>
             </PageHeader>
