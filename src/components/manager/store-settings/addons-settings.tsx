@@ -167,39 +167,42 @@ export function AddonsSettings({ store }: { store: Store }) {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {inventoryItemsWithAddonStatus.filter(item => getDisplayName(item).toLowerCase().includes(search.toLowerCase())).map(item => (
-                            <TableRow key={item.id}>
-                                <TableCell className="font-medium flex items-center gap-2 py-1.5">
-                                    <div className="w-8 h-8 rounded-md bg-muted relative flex-shrink-0">
-                                    {item.imageUrl && (
-                                        <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" className="rounded-md" />
-                                    )}
-                                    </div>
-                                    <div>
-                                        <span className="truncate font-medium">{getDisplayName(item)}</span>
-                                        <p className="text-xs text-muted-foreground">{item.subCategory}</p>
-                                    </div>
-                                </TableCell>
-                                <TableCell className="py-1.5"><Badge variant="outline">{item.storeAddonData?.kitchenLocationName || 'N/A'}</Badge></TableCell>
-                                <TableCell className="py-1.5">₱{(item.storeAddonData?.price ?? item.sellingPrice).toFixed(2)}</TableCell>
-                                <TableCell className="py-1.5">
-                                    <Switch
-                                        checked={item.isEnabledAsAddon}
-                                        onCheckedChange={() => handleToggleEnabled(item.storeAddonData || { id: item.id, isEnabled: false } as any)}
-                                    />
-                                </TableCell>
-                                <TableCell className="text-right py-1.5">
-                                     <Button 
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={!item.isEnabledAsAddon}
-                                        onClick={() => { setSelectedAddon(item.storeAddonData || {id: item.id, name: getDisplayName(item), price: item.sellingPrice} as any); setEditDialogOpen(true); }}
-                                    >
-                                        <Edit className="mr-2 h-4 w-4" /> Edit
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                        {inventoryItemsWithAddonStatus.filter(item => getDisplayName(item).toLowerCase().includes(search.toLowerCase())).map(item => {
+                            const name = item ? getDisplayName(item) : 'Loading...';
+                            return (
+                                <TableRow key={item.id}>
+                                    <TableCell className="font-medium flex items-center gap-2 py-1.5">
+                                        <div className="w-8 h-8 rounded-md bg-muted relative flex-shrink-0">
+                                        {item.imageUrl && (
+                                            <Image src={item.imageUrl} alt={name} layout="fill" objectFit="cover" className="rounded-md" />
+                                        )}
+                                        </div>
+                                        <div>
+                                            <span className="truncate font-medium">{name}</span>
+                                            <p className="text-xs text-muted-foreground">{item.subCategory}</p>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="py-1.5"><Badge variant="outline">{item.storeAddonData?.kitchenLocationName || 'N/A'}</Badge></TableCell>
+                                    <TableCell className="py-1.5">₱{(item.storeAddonData?.price ?? item.sellingPrice).toFixed(2)}</TableCell>
+                                    <TableCell className="py-1.5">
+                                        <Switch
+                                            checked={item.isEnabledAsAddon}
+                                            onCheckedChange={() => handleToggleEnabled(item.storeAddonData || { id: item.id, isEnabled: false } as any)}
+                                        />
+                                    </TableCell>
+                                    <TableCell className="text-right py-1.5">
+                                        <Button 
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={!item.isEnabledAsAddon}
+                                            onClick={() => { setSelectedAddon(item.storeAddonData || {id: item.id, name: name, price: item.sellingPrice} as any); setEditDialogOpen(true); }}
+                                        >
+                                            <Edit className="mr-2 h-4 w-4" /> Edit
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            )
+                        })}
                     </TableBody>
                 </Table>
             </CardContent>
