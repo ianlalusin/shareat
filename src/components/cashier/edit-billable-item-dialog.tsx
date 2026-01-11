@@ -120,6 +120,7 @@ export function EditBillableItemDialog({
     const [inventoryItem, setInventoryItem] = useState<InventoryItem | null>(null);
 
     const isPackage = line?.type === 'package';
+    const isAddon = line?.type === 'addon';
     
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -227,22 +228,22 @@ export function EditBillableItemDialog({
     const handleSave = async (data: FormValues) => {
         if (!line) return;
 
-        if (isPackage && data.applyVoid && data.voidQty > 0 && !data.voidReason) {
+        if ((isPackage || isAddon) && data.applyVoid && data.voidQty > 0 && !data.voidReason) {
             toast({
                 variant: 'destructive',
                 title: 'Reason Required',
-                description: 'A reason is required to void package covers.'
+                description: 'A reason is required to void items.'
             });
             form.setError("voidReason", { type: "manual", message: "Please select a reason." });
             return;
         }
 
         const isIncreasingQty = data.qtyOrdered > line.qtyOrdered;
-        if (isPackage && data.qtyOrdered < line.qtyOrdered) {
+        if ((isPackage || isAddon) && data.qtyOrdered < line.qtyOrdered) {
             toast({
                 variant: 'destructive',
-                title: 'Cannot Decrease Covers',
-                description: 'Use the "Void Covers" option to reduce billable guest count.'
+                title: 'Cannot Decrease Quantity',
+                description: 'Use the "Void Item(s)" option to reduce the quantity.'
             });
             return;
         }
@@ -299,6 +300,7 @@ export function EditBillableItemDialog({
     
     const showSyncPrice = inventoryItem && inventoryItem.sellingPrice !== watchedValues.unitPrice;
     const allowDecimal = inventoryItem ? allowsDecimalQty(inventoryItem.uom) : false;
+    const canDecreaseQty = !(isPackage || isAddon);
 
     if (!line) return null;
 
@@ -330,14 +332,14 @@ export function EditBillableItemDialog({
                                             value={field.value} 
                                             onChange={handleQtyOrderedChange} 
                                             max={50} 
-                                            min={isPackage ? line.qtyOrdered : 0}
-                                            canDecrease={!isPackage}
+                                            min={canDecreaseQty ? 0 : line.qtyOrdered}
+                                            canDecrease={canDecreaseQty}
                                             allowDecimal={allowDecimal}
                                             step={allowDecimal ? 0.1 : 1}
                                         />
                                     )} />
                                 </div>
-                                {isPackage && <FormDescription className="text-xs -mt-2">Decrease not allowed. Use Void Covers to reduce billable covers.</FormDescription>}
+                                {!canDecreaseQty && <FormDescription className="text-xs -mt-2">Decrease not allowed. Use Void option to reduce billed items.</FormDescription>}
                                 <Alert>
                                     <AlertTitle>Remaining to Allocate: {remainingQty.toFixed(allowDecimal ? 2 : 0)}</AlertTitle>
                                 </Alert>
@@ -395,7 +397,7 @@ export function EditBillableItemDialog({
                                             )} />
                                             <FormField name="voidReason" control={control} render={({ field }) => (
                                                 <FormItem>
-                                                    <FormLabel>Reason {isPackage && <span className="text-destructive">*</span>}</FormLabel>
+                                                    <FormLabel>Reason {(isPackage || isAddon) && <span className="text-destructive">*</span>}</FormLabel>
                                                     <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select>
                                                     <FormMessage/>
                                                 </FormItem>
