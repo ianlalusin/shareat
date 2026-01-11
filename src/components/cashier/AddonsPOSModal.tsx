@@ -8,9 +8,9 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Minus, Plus, Loader2, ScanLine } from "lucide-react";
+import { Search, Minus, Plus, Loader2, ScanLine, Layers } from "lucide-react";
 import Image from "next/image";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,7 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "./quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
 import { upsertAddonToBill } from "./firestore";
+import { getDisplayName, getGroupKey } from "@/lib/products/variants";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -32,8 +33,22 @@ interface AddonsPOSModalProps {
   sessionIsLocked?: boolean;
 }
 
-function AddonItem({ addon, onSelect }: { addon: StoreAddon, onSelect: (addon: StoreAddon) => void }) {
-  const displayName = addon.name || '(Unnamed)';
+type EnrichedStoreAddon = StoreAddon & {
+    displayName: string;
+    groupKey: string;
+    groupTitle: string;
+    kind?: Product['kind'];
+    variantLabel?: string | null;
+};
+
+type AddonGroup = {
+    title: string;
+    key: string;
+    items: EnrichedStoreAddon[];
+    isGroup: boolean; // True if it should open a variant picker
+}
+
+function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon, onSelect: (addon: EnrichedStoreAddon) => void }) {
   return (
     <button
       onClick={() => onSelect(addon)}
@@ -41,13 +56,65 @@ function AddonItem({ addon, onSelect }: { addon: StoreAddon, onSelect: (addon: S
     >
       <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden">
         {addon.imageUrl && (
-          <Image src={addon.imageUrl} alt={displayName} layout="fill" objectFit="cover" />
+          <Image src={addon.imageUrl} alt={addon.displayName} layout="fill" objectFit="cover" />
         )}
       </div>
-      <span className="text-xs font-medium leading-tight line-clamp-2">{displayName}</span>
+      <span className="text-xs font-medium leading-tight line-clamp-2">{addon.displayName}</span>
       <span className="text-xs text-muted-foreground mt-auto">₱{(addon.price || 0).toFixed(2)}</span>
     </button>
   );
+}
+
+function GroupTile({ group, onSelect }: { group: AddonGroup, onSelect: (group: AddonGroup) => void }) {
+  return (
+    <button
+      onClick={() => onSelect(group)}
+      className="flex flex-col items-center justify-center p-2 border rounded-md hover:bg-muted/50 transition-colors text-center h-32 focus:outline-none focus:ring-2 focus:ring-ring"
+    >
+      <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden flex items-center justify-center">
+        {group.items[0].imageUrl ? (
+          <Image src={group.items[0].imageUrl} alt={group.title} layout="fill" objectFit="cover" />
+        ) : <Layers className="h-8 w-8 text-muted-foreground"/> }
+      </div>
+      <span className="text-xs font-medium leading-tight line-clamp-2">{group.title}</span>
+      <span className="text-xs text-primary mt-auto">Choose variant</span>
+    </button>
+  )
+}
+
+function VariantPicker({ 
+    group, 
+    open, 
+    onOpenChange,
+    onSelectVariant 
+}: { 
+    group: AddonGroup | null,
+    open: boolean, 
+    onOpenChange: (open: boolean) => void,
+    onSelectVariant: (addon: EnrichedStoreAddon) => void 
+}) {
+    if (!group) return null;
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Select Variant: {group.title}</DialogTitle>
+                </DialogHeader>
+                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 py-4">
+                    {group.items.map(addon => (
+                        <AddonItem 
+                            key={addon.id} 
+                            addon={addon} 
+                            onSelect={() => {
+                                onSelectVariant(addon);
+                                onOpenChange(false);
+                            }} 
+                        />
+                    ))}
+                </div>
+            </DialogContent>
+        </Dialog>
+    )
 }
 
 function POSContent({
@@ -63,15 +130,17 @@ function POSContent({
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
-  const [addons, setAddons] = useState<StoreAddon[]>([]);
+  const [addons, setAddons] = useState<EnrichedStoreAddon[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   
-  const [selectedAddon, setSelectedAddon] = useState<StoreAddon | null>(null);
+  const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  
+  const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
 
   useEffect(() => {
     if (!storeId) {
@@ -99,12 +168,23 @@ function POSContent({
             } catch (e) {
                 console.error("Error fetching product details for addon:", addon.id, e);
             }
+            
+            const name = productData?.name || addon.name;
+
             return { 
-              ...addon, 
+              ...addon,
+              name: name,
+              kind: productData?.kind,
+              groupId: productData?.groupId,
+              groupName: productData?.groupName,
+              variantLabel: productData?.variantLabel,
+              displayName: getDisplayName(productData || addon),
+              groupKey: getGroupKey(productData || addon),
+              groupTitle: productData?.groupName || name,
               uom: productData?.uom || addon.uom,
               imageUrl: productData?.imageUrl || addon.imageUrl,
               barcode: productData?.barcode || undefined,
-            };
+            } as EnrichedStoreAddon;
         }));
 
         setAddons(addonsWithDetails);
@@ -122,18 +202,39 @@ function POSContent({
     return ["All", ...Array.from(new Set(addons.map(a => a.category || "Uncategorized")))];
   }, [addons]);
   
-  const filteredAddons = useMemo(() => {
+  const groupedAddons = useMemo(() => {
     let result = addons;
     if (activeCategory !== "All") {
       result = result.filter(a => (a.category || "Uncategorized") === activeCategory);
     }
     if (search) {
-      result = result.filter(a => a.name.toLowerCase().includes(search.toLowerCase()));
+      result = result.filter(a => a.displayName.toLowerCase().includes(search.toLowerCase()));
     }
-    return result;
+    
+    const groups: Record<string, AddonGroup> = {};
+
+    result.forEach(addon => {
+        const key = addon.groupKey;
+        if (!groups[key]) {
+            groups[key] = {
+                key: key,
+                title: addon.groupTitle,
+                items: [],
+                isGroup: false,
+            };
+        }
+        groups[key].items.push(addon);
+    });
+    
+    return Object.values(groups).map(group => {
+        // A group is a 'group' if it has multiple items, or its single item is a variant.
+        const isGroup = group.items.length > 1 || (group.items.length === 1 && group.items[0].kind === 'variant');
+        return { ...group, isGroup };
+    });
+
   }, [addons, search, activeCategory]);
 
-  const handleSelectAddon = (addon: StoreAddon) => {
+  const handleSelectAddon = (addon: EnrichedStoreAddon) => {
     setSelectedAddon(addon);
     setQuantity(1);
   };
@@ -158,14 +259,13 @@ function POSContent({
         const batch = writeBatch(db);
         const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
         
-        const ticketPayloads = [];
         for (let i = 0; i < quantity; i++) {
             const ticketRef = doc(ticketsColRef);
 
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
                 type: "addon",
-                itemName: selectedAddon.name,
+                itemName: selectedAddon.displayName,
                 qty: 1,
                 uom: selectedAddon.uom,
                 kitchenLocationId: selectedAddon.kitchenLocationId,
@@ -184,7 +284,7 @@ function POSContent({
                     isVoided: false,
                     isFree: false,
                     itemId: selectedAddon.id,
-                    itemName: selectedAddon.name,
+                    itemName: selectedAddon.displayName,
                     unitPrice: selectedAddon.price || 0,
                 }
             });
@@ -196,7 +296,7 @@ function POSContent({
 
         await batch.commit();
 
-        toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.name} sent to kitchen.`});
+        toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.displayName} sent to kitchen.`});
         setSelectedAddon(null);
     } catch(e: any) {
         console.error("Order Failed:", e);
@@ -213,7 +313,7 @@ function POSContent({
     
     if (foundAddon) {
         handleSelectAddon(foundAddon);
-        toast({ title: "Item Found", description: `Selected: ${foundAddon.name}`});
+        toast({ title: "Item Found", description: `Selected: ${foundAddon.displayName}`});
     } else {
         toast({ variant: "destructive", title: "Not Found", description: "No add-on with this barcode was found in the store's active items."});
     }
@@ -252,12 +352,16 @@ function POSContent({
         <ScrollArea className="flex-1 p-4">
             {isLoading ? <Loader2 className="mx-auto my-16 animate-spin"/> : (
                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {filteredAddons.map(addon => (
-                        <AddonItem key={addon.id} addon={addon} onSelect={handleSelectAddon} />
-                    ))}
+                    {groupedAddons.map(group => {
+                        if (group.isGroup) {
+                            return <GroupTile key={group.key} group={group} onSelect={() => setVariantPickerGroup(group)} />
+                        } else {
+                            return <AddonItem key={group.key} addon={group.items[0]} onSelect={handleSelectAddon} />
+                        }
+                    })}
                 </div>
             )}
-            {filteredAddons.length === 0 && !isLoading && (
+            {groupedAddons.length === 0 && !isLoading && (
                  <p className="text-center text-muted-foreground py-10">No add-ons available.</p>
             )}
         </ScrollArea>
@@ -265,7 +369,7 @@ function POSContent({
              <div className="p-4 border-t bg-muted/50">
                 <div className="flex justify-between items-center">
                     <div>
-                        <p className="font-semibold">{selectedAddon.name}</p>
+                        <p className="font-semibold">{selectedAddon.displayName}</p>
                         <p className="text-sm text-muted-foreground">₱{(selectedAddon.price || 0).toFixed(2)}</p>
                     </div>
                      <div className="flex items-center gap-2">
@@ -295,6 +399,12 @@ function POSContent({
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScan={handleBarcodeScanned}
+    />
+    <VariantPicker
+        open={!!variantPickerGroup}
+        onOpenChange={(isOpen) => !isOpen && setVariantPickerGroup(null)}
+        group={variantPickerGroup}
+        onSelectVariant={handleSelectAddon}
     />
     </>
   )
@@ -338,5 +448,7 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
 }
 
   
+
+    
 
     
