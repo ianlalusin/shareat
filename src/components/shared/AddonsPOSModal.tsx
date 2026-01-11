@@ -34,6 +34,7 @@ interface AddonsPOSModalProps {
 type EnrichedStoreAddon = InventoryItem & {
     displayName: string;
     groupKey: string;
+    groupName?: string;
     imageUrl?: string | null;
 };
 
@@ -164,14 +165,14 @@ function POSContent({
             
             const combined = { ...productData, ...item, barcode: item.barcode ?? productData.barcode ?? null, imageUrl: productData.imageUrl ?? null };
             const sp = Number(combined.sellingPrice);
-            const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
+            const safeSellingPrice = Number.is.finite(sp) ? sp : 0;
 
             return { 
               ...combined,
               sellingPrice: safeSellingPrice,
               displayName: getDisplayName(combined),
               groupKey: getGroupKey(combined),
-              groupTitle: productData?.groupName || item.name,
+              groupName: productData?.groupName || item.name,
             } as EnrichedStoreAddon;
         }));
 
@@ -406,3 +407,5 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
     </Dialog>
   );
 }
+
+    

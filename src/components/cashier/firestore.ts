@@ -27,7 +27,6 @@ import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
-import sha1 from 'js-sha1';
 import { calculateBillTotals } from '@/lib/tax';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
@@ -553,7 +552,7 @@ export async function upsertAddonToBill(
   }
 
   // Use a deterministic ID for the line item.
-  const lineId = sha1(`addon_${addon.id}`);
+  const lineId = `addon_${addon.id}_${String(Date.now()).slice(-5)}`;
   const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
   const actor = getActorStamp(user);
 
