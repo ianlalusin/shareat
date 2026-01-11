@@ -58,6 +58,7 @@ export type InventoryItem = {
   category?: string;
   subCategory?: string;
   uom: string;
+  barcode?: string | null;
   cost: number;
   sellingPrice: number;
   taxId?: string;
