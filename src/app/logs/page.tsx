@@ -59,6 +59,7 @@ export default function LogsPage() {
   const { activeStore, loading: storeLoading } = useStoreContext();
   const [groupedLogs, setGroupedLogs] = useState<GroupedLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -188,6 +189,28 @@ export default function LogsPage() {
     return () => unsubscribe();
   }, [activeStore?.id, start, end]);
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // Dynamically import xlsx
+      const XLSX = await import("xlsx");
+      
+      const allLogs = groupedLogs.flatMap(g => g.logs);
+      const dataToExport = allLogs.map(formatLogForExport);
+      
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Activity Logs");
+      
+      const filename = `ActivityLogs_${activeStore?.code}_${formatDate(start, 'yyyyMMdd')}_${formatDate(end, 'yyyyMMdd')}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+
+    } catch (err: any) {
+      console.error("Export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
     const presetMap: Record<string, DatePreset> = {
@@ -230,6 +253,10 @@ export default function LogsPage() {
       >
         <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
+                 <Button onClick={handleExport} disabled={isExporting || isLoading || groupedLogs.length === 0} variant="outline" size="sm">
+                    {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
+                    Export
+                </Button>
                 <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
                     {presets.map((p) => (
                     <Button
