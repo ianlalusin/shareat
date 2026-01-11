@@ -30,9 +30,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import CompactCalendar from "@/components/ui/CompactCalendar";
 
 // --- Date Helpers ---
-function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
-function endOfDay(d: Date) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
-function isSameDay(a: Date, b: Date) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
+function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
     if (!active || !range) return "Custom";
@@ -302,7 +302,12 @@ function ReceiptsPageContents() {
 
     if (!activeStore) {
         return (
-            <Card className="w-full max-w-md mx-auto text-center"><CardHeader><CardTitle>No Store Selected</CardTitle><CardDescription>Please select a store to view receipts.</CardDescription></CardHeader>
+            <Card className="w-full max-w-md mx-auto text-center">
+                <CardHeader>
+                    <CardTitle>No Store Selected</CardTitle>
+                    <CardDescription>Please select a store to view receipts.</CardDescription>
+                </CardHeader>
+            </Card>
         );
     }
     
@@ -425,3 +430,5 @@ export default function ReceiptsPage() {
         </React.Suspense>
     )
 }
+
+    
