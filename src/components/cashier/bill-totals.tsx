@@ -25,7 +25,11 @@ export function BillTotals({
 }: BillTotalsProps) {
     
     const totals = useMemo(() => {
-        if (!store) return null; // Add guard for store
+        if (!store) return {
+          subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
+          billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
+          vatableSales: 0, vatExemptSales: 0
+        };
         return calculateBillTotals(lines, store, billDiscount, customAdjustments);
     }, [lines, store, billDiscount, customAdjustments]);
 
@@ -44,7 +48,6 @@ export function BillTotals({
             const lineGross = billableQty * line.unitPrice;
             const hasDiscount = line.discountValue && line.discountValue > 0 && line.discountQty > 0;
             const hasFree = line.freeQty > 0;
-            const hasVoid = line.voidedQty > 0;
             
             const lineSubRows: React.ReactNode[] = [];
             
@@ -73,14 +76,6 @@ export function BillTotals({
                     <div key={`${line.id}-free`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.freeQty}x Free`}</span>
                         <span>-₱{(line.freeQty * line.unitPrice).toFixed(2)}</span>
-                    </div>
-                );
-            }
-             if (hasVoid) {
-                lineSubRows.push(
-                    <div key={`${line.id}-void`} className="flex justify-between pl-4 text-destructive">
-                        <span>{` - ${line.voidedQty}x Voided`}</span>
-                        <span>-₱{(line.voidedQty * line.unitPrice).toFixed(2)}</span>
                     </div>
                 );
             }
