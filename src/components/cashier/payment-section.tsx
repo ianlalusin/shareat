@@ -80,11 +80,12 @@ export function PaymentSection({
 }: PaymentSectionProps) {
     
     const addPayment = () => {
-        // Find the 'cash' payment method to use its ID as the default
         const cashMethod = paymentMethods.find(pm => pm.type === 'cash');
         const defaultMethodId = cashMethod?.id || (paymentMethods.length > 0 ? paymentMethods[0].id : '');
         
-        setPayments(prev => [...prev, { id: `pay-${Date.now()}`, methodId: defaultMethodId, amount: 0, reference: '' }]);
+        const newAmount = remainingBalance > 0 ? Math.round(remainingBalance * 100) / 100 : 0;
+
+        setPayments(prev => [...prev, { id: `pay-${Date.now()}`, methodId: defaultMethodId, amount: newAmount, reference: '' }]);
     };
 
     const removePayment = (id: string) => {
