@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,18 +20,19 @@ interface KdsItemCardProps {
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled", reason?: string) => void;
 }
 
-function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
+function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null | undefined }) {
     const [now, setNow] = useState(() => new Date());
-    const jsDate = toJsDate(startTime);
+
+    const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
 
     useEffect(() => {
         const timer = setInterval(() => {
             setNow(new Date());
-        }, 5000); // Update every 5 seconds
+        }, 1000); // Tick every second for live updates
         return () => clearInterval(timer);
-    }, [jsDate]);
+    }, []);
 
-    if (!jsDate) {
+    if (!jsDate || !Number.isFinite(jsDate.getTime())) {
         return (
             <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
                 <Clock size={14} />
@@ -40,14 +41,14 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
         );
     }
     
-    const totalMinutes = Math.floor((now.getTime() - jsDate.getTime()) / 60000);
+    const totalSeconds = Math.floor((now.getTime() - jsDate.getTime()) / 1000);
+    const totalMinutes = Math.floor(totalSeconds / 60);
 
     let elapsed = "...";
-    if (totalMinutes < 0) {
-        elapsed = "0m ago";
-    } else if (totalMinutes < 1) {
-        const totalSeconds = Math.floor((now.getTime() - jsDate.getTime()) / 1000);
-        elapsed = `${Math.max(0, totalSeconds)}s ago`;
+    if (totalSeconds < 0) {
+        elapsed = "0s ago";
+    } else if (totalSeconds < 60) {
+        elapsed = `${totalSeconds}s ago`;
     } else if (totalMinutes < 60) {
         elapsed = `${totalMinutes}m ago`;
     } else {
@@ -58,7 +59,7 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
     }
 
     return (
-        <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
+        <div className={cn("flex items-center gap-1.5 text-sm", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
             <Clock size={14} />
             <span>{elapsed}</span>
         </div>
