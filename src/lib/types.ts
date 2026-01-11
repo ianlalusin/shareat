@@ -211,6 +211,9 @@ export type SessionBillLine = {
   discountQty: number;
   freeQty: number;
   voidedQty: number;
+  qtyOverrideActive?: boolean;
+  qtyOverrideAt?: any;
+  qtyLastSyncedApprovedAt?: string | null;
   createdAt: any;
   updatedAt: any;
   updatedByUid?: string | null;
@@ -325,7 +328,7 @@ export type PendingSession = {
   guestCountFinal: number | null;
   guestCountVerifyLocked: boolean;
   // Change Request Models
-  guestCountChange?: { status: string };
+  guestCountChange?: { status: "none" | "pending" | "approved" | "rejected", approvedAt?: any };
   packageChange?: { status: string };
   customer?: { name?: string | null, tin?: string | null, address?: string | null };
 };
@@ -402,7 +405,7 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line";
+  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE";
 
   actorUid: string;
   actorRole?: string | null;
@@ -433,6 +436,12 @@ export type ActivityLog = {
     receiptNumber?: string;
     paymentTotal?: number;
     mopSummary?: any;
+    
+    // For overrides and syncs
+    beforeQty?: number;
+    afterQty?: number;
+    approvedAt?: any;
+    newQty?: number;
   };
 
   createdAt: any; // serverTimestamp()

@@ -106,19 +106,35 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return () => unsubLines();
   }, [sessionId, storeId]);
 
-  // Sync session guestCountFinal to package billable line
+  // Sync package quantity based on approved guest count changes
   useEffect(() => {
-    if (!session || !appUser || billLines.length === 0 || session.sessionMode !== 'package_dinein' || !storeId) {
-      return;
-    }
-  
-    const finalGuestCount = session.guestCountFinal;
+    if (!session || !appUser || !storeId || billLines.length === 0) return;
+
     const packageLine = billLines.find(line => line.type === 'package');
-  
-    if (packageLine && finalGuestCount !== null && packageLine.qtyOrdered !== finalGuestCount) {
-      console.log(`Syncing package qty: session has ${finalGuestCount}, bill has ${packageLine.qtyOrdered}. Updating...`);
-      updateSessionBillLine(storeId, sessionId, packageLine.id, { qtyOrdered: finalGuestCount }, appUser)
-        .catch(err => console.error("Failed to auto-sync package quantity:", err));
+    if (!packageLine) return;
+
+    const guestChange = session.guestCountChange;
+    const approvedAt = guestChange?.status === 'approved' ? guestChange.approvedAt : null;
+
+    if (approvedAt) {
+      // A new approval has occurred. Check if we've already synced for this approval.
+      if (packageLine.qtyLastSyncedApprovedAt !== approvedAt.toString()) {
+        console.log(`New approval detected. Re-syncing package qty to ${session.guestCountFinal}.`);
+        updateSessionBillLine(storeId, sessionId, packageLine.id, {
+          qtyOrdered: session.guestCountFinal || packageLine.qtyOrdered,
+          qtyOverrideActive: false, // Reset the override
+          qtyLastSyncedApprovedAt: approvedAt.toString(),
+        }, appUser).catch(err => console.error("Failed to re-sync package qty after approval:", err));
+      }
+    } else {
+      // No current approval. If no override is active, ensure qty matches final count.
+      // This handles initial load and any other state corrections.
+      if (!packageLine.qtyOverrideActive && session.guestCountFinal !== null && packageLine.qtyOrdered !== session.guestCountFinal) {
+        console.log(`No override active. Aligning package qty to ${session.guestCountFinal}.`);
+        updateSessionBillLine(storeId, sessionId, packageLine.id, {
+          qtyOrdered: session.guestCountFinal
+        }, appUser).catch(err => console.error("Failed to align package quantity:", err));
+      }
     }
   }, [session, billLines, appUser, storeId, sessionId]);
 
@@ -169,11 +185,15 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
         // Determine specific action for logging
         const diff = {
+            qtyOrdered: (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0),
             discount: (after.discountQty ?? 0) - (before.discountQty ?? 0),
             free: (after.freeQty ?? 0) - (before.freeQty ?? 0),
             void: (after.voidedQty ?? 0) - (before.voidedQty ?? 0),
         };
 
+        if (line.type === 'package' && diff.qtyOrdered > 0) {
+            await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser });
+        }
         if (diff.discount > 0) {
             await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
         } else if (diff.discount < 0) {

@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
@@ -206,6 +207,16 @@ export function EditBillableItemDialog({
             return;
         }
 
+        const isIncreasingQty = data.qtyOrdered > line.qtyOrdered;
+        if (isPackage && data.qtyOrdered < line.qtyOrdered) {
+            toast({
+                variant: 'destructive',
+                title: 'Cannot Decrease Covers',
+                description: 'Use the "Void Covers" option to reduce billable guest count.'
+            });
+            return;
+        }
+
         setIsSubmitting(true);
         const { applyDiscount, applyFree, applyVoid, ...payload } = data;
 
@@ -238,6 +249,11 @@ export function EditBillableItemDialog({
             freeQty: payload.freeQty,
             voidedQty: payload.voidQty,
         };
+        
+        if (isPackage && isIncreasingQty) {
+            (after as any).qtyOverrideActive = true;
+            (after as any).qtyOverrideAt = serverTimestamp();
+        }
 
         try {
             onSave(line.id, before, after);
@@ -293,7 +309,7 @@ export function EditBillableItemDialog({
                                     {watchedValues.applyDiscount && (
                                         <div className="p-3 border rounded-md space-y-2">
                                             <FormField name="discountQty" control={control} render={({ field }) => (
-                                                <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('discountQty', v)} max={watchedValues.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total items`}/>
+                                                <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('discountQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total items`}/>
                                             )} />
                                             <FormField name="discountId" control={control} render={({ field }) => (
                                                 <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
@@ -319,38 +335,37 @@ export function EditBillableItemDialog({
                                     {watchedValues.applyFree && (
                                         <div className="p-3 border rounded-md">
                                             <FormField name="freeQty" control={control} render={({ field }) => (
-                                            <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('freeQty', v)} max={watchedValues.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total items`}/>
+                                            <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('freeQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total items`}/>
                                             )} />
                                         </div>
                                     )}
                                 </div>
-                                    <>
-                                        <Separator />
-                                        <div className="space-y-2">
-                                            <FormField name="applyVoid" control={control} render={({ field }) => (
-                                                <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>{isPackage ? "Void Covers" : "Void Item(s)"}</FormLabel></FormItem>
+                                    
+                                <Separator />
+                                <div className="space-y-2">
+                                    <FormField name="applyVoid" control={control} render={({ field }) => (
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>{isPackage ? "Void Covers" : "Void Item(s)"}</FormLabel></FormItem>
+                                    )} />
+                                    {watchedValues.applyVoid && (
+                                        <div className="p-3 border rounded-md space-y-2">
+                                            <FormField name="voidQty" control={control} render={({ field }) => (
+                                                <QuantityStepper label="Void Quantity" value={field.value || 0} onChange={(v) => handleQtyChange('voidQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total`}/>
                                             )} />
-                                            {watchedValues.applyVoid && (
-                                                <div className="p-3 border rounded-md space-y-2">
-                                                    <FormField name="voidQty" control={control} render={({ field }) => (
-                                                        <QuantityStepper label="Void Quantity" value={field.value || 0} onChange={(v) => handleQtyChange('voidQty', v)} max={watchedValues.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total`}/>
-                                                    )} />
-                                                    <FormField name="voidReason" control={control} render={({ field }) => (
-                                                        <FormItem>
-                                                            <FormLabel>Reason {isPackage && <span className="text-destructive">*</span>}</FormLabel>
-                                                            <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select>
-                                                            <FormMessage/>
-                                                        </FormItem>
-                                                    )} />
-                                                    {watchedValues.voidReason === 'other' && (
-                                                        <FormField name="voidNote" control={control} render={({ field }) => (
-                                                            <FormItem><FormLabel>Note</FormLabel><FormControl><Textarea {...field}/></FormControl></FormItem>
-                                                        )} />
-                                                    )}
-                                                </div>
+                                            <FormField name="voidReason" control={control} render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Reason {isPackage && <span className="text-destructive">*</span>}</FormLabel>
+                                                    <Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a reason..."/></SelectTrigger></FormControl><SelectContent>{Object.entries(VOID_REASONS).map(([key, val]) => <SelectItem key={key} value={key}>{val}</SelectItem>)}</SelectContent></Select>
+                                                    <FormMessage/>
+                                                </FormItem>
+                                            )} />
+                                            {watchedValues.voidReason === 'other' && (
+                                                <FormField name="voidNote" control={control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Note</FormLabel><FormControl><Textarea {...field}/></FormControl></FormItem>
+                                                )} />
                                             )}
                                         </div>
-                                    </>
+                                    )}
+                                </div>
                                 
                             </form>
                         </Form>
