@@ -284,17 +284,63 @@ function ReceiptsPageContents() {
     }
 
     const handleExport = () => {
-        const dataToExport = filteredReceipts.map(r => ({
-            "Receipt Number": r.receiptNumber || 'N/A',
-            "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
-            "Customer/Table": r.sessionMode === 'alacarte' ? r.customerName || 'Ala Carte' : `Table ${r.tableNumber || 'N/A'}`,
-            "Cashier": r.createdByUsername || 'N/A',
-            "Total": r.total
-        }));
+        // Sheet 1: Receipts Summary
+        const summaryData = filteredReceipts.map(r => {
+            const analytics = r.analytics || {};
+            const paymentMethods = analytics.mop ? Object.keys(analytics.mop).join(', ') : 'N/A';
+            return {
+                "Receipt Number": r.receiptNumber || 'N/A',
+                "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
+                "Cashier": r.createdByUsername || 'N/A',
+                "Subtotal": analytics.subtotal || 0,
+                "Discounts": analytics.discountsTotal || 0,
+                "Charges": analytics.chargesTotal || 0,
+                "Grand Total": analytics.grandTotal || r.total,
+                "Total Paid": analytics.totalPaid || 0,
+                "Payment Methods": paymentMethods,
+            };
+        });
+
+        // Sheet 2: Itemized Sales
+        const itemizedData: any[] = [];
+        filteredReceipts.forEach(r => {
+            if (r.lines && Array.isArray(r.lines)) {
+                r.lines.forEach(line => {
+                    const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0);
+                    if (billableQty <= 0) return;
+
+                    const lineTotal = billableQty * (line.unitPrice || 0);
+                    let discountAmount = 0;
+                    if ((line.discountValue ?? 0) > 0 && (line.discountQty ?? 0) > 0) {
+                         const discountedQty = Math.min(line.discountQty, billableQty);
+                        if (line.discountType === 'percent') {
+                            discountAmount = (discountedQty * (line.unitPrice || 0)) * (line.discountValue! / 100);
+                        } else {
+                            discountAmount = (line.discountValue ?? 0) * discountedQty;
+                        }
+                    }
+                    
+                    itemizedData.push({
+                        "Receipt Number": r.receiptNumber || 'N/A',
+                        "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
+                        "Item Name": line.itemName,
+                        "Category": line.category || 'N/A',
+                        "Quantity": billableQty,
+                        "Unit Price": line.unitPrice || 0,
+                        "Line Total": lineTotal,
+                        "Discount Applied": discountAmount,
+                        "Free Quantity": line.freeQty || 0,
+                    });
+                });
+            }
+        });
+
+        const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+        const itemizedSheet = XLSX.utils.json_to_sheet(itemizedData);
         
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Receipts");
+        XLSX.utils.book_append_sheet(workbook, summarySheet, "Receipts Summary");
+        XLSX.utils.book_append_sheet(workbook, itemizedSheet, "Itemized Sales");
         
         XLSX.writeFile(workbook, "receipts_export.xlsx");
         toast({ title: "Export Started", description: "Your download will begin shortly." });
@@ -328,39 +374,49 @@ function ReceiptsPageContents() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
                 <div className="flex items-center gap-2">
-                    <div className="flex flex-col items-end gap-2">
-                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
-                            {presets.map(p => (
-                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                            ))}
-                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                                <PopoverTrigger asChild>
-                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
-                            </Popover>
-                        </div>
-                    </div>
                     <Button variant="outline" onClick={handleExport} disabled={filteredReceipts.length === 0}><Download className="mr-2"/> Export</Button>
                     <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                 </div>
             </PageHeader>
             
-            <p className="text-sm text-muted-foreground mt-4">{dateRangeLabel}</p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
+                <div className="relative flex-1 w-full sm:w-auto">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                <div className="flex flex-col items-start sm:items-end gap-2">
+                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                        {presets.map(p => (
+                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                        ))}
+                        <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                        </Popover>
+                    </div>
+                     <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                </div>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Recent Transactions</CardTitle>
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                        </div>
+                        <CardTitle>Transactions</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {isLoadingReceipts ? <Loader2 className="mx-auto animate-spin" /> : (
+                        {isLoadingReceipts ? <div className="flex justify-center p-8"><Loader2 className="mx-auto animate-spin" /></div> : (
                             <Table>
-                                <TableHeader><TableRow><TableHead>Identifier</TableHead><TableHead>Date/Time</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Identifier</TableHead>
+                                        <TableHead className="text-right">Subtotal</TableHead>
+                                        <TableHead className="text-right">Discounts</TableHead>
+                                        <TableHead className="text-right">Charges</TableHead>
+                                        <TableHead className="text-right">Total</TableHead>
+                                    </TableRow>
+                                </TableHeader>
                                 <TableBody>
                                     {filteredReceipts.map(r => (
                                         <TableRow 
@@ -368,17 +424,20 @@ function ReceiptsPageContents() {
                                             onClick={() => handleSelectReceipt(r.id)}
                                             className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted")}
                                         >
-                                            <TableCell className="font-medium">
+                                            <TableCell className="font-medium py-2">
                                                 <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName}</div>
-                                                <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'}</div>
+                                                <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
-                                            <TableCell>{format(toJsDate(r.createdAt)!, 'MM/dd/yy p')}</TableCell>
-                                            <TableCell className="text-right">₱{r.total.toFixed(2)}</TableCell>
+                                            <TableCell className="text-right py-2">₱{(r.analytics?.subtotal ?? 0).toFixed(2)}</TableCell>
+                                            <TableCell className="text-right py-2 text-destructive">₱{(r.analytics?.discountsTotal ?? 0).toFixed(2)}</TableCell>
+                                            <TableCell className="text-right py-2 text-green-600">₱{(r.analytics?.chargesTotal ?? 0).toFixed(2)}</TableCell>
+                                            <TableCell className="text-right font-bold py-2">₱{r.total.toFixed(2)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
                             </Table>
                         )}
+                         {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
                     </CardContent>
                 </Card>
 
