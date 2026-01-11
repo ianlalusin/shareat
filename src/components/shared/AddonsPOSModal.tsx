@@ -165,7 +165,7 @@ function POSContent({
             
             const combined = { ...productData, ...item, barcode: item.barcode ?? productData.barcode ?? null, imageUrl: productData.imageUrl ?? null };
             const sp = Number(combined.sellingPrice);
-            const safeSellingPrice = Number.is.finite(sp) ? sp : 0;
+            const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
 
             return { 
               ...combined,
@@ -173,6 +173,7 @@ function POSContent({
               displayName: getDisplayName(combined),
               groupKey: getGroupKey(combined),
               groupName: productData?.groupName || item.name,
+              imageUrl: productData.imageUrl
             } as EnrichedStoreAddon;
         }));
 
@@ -357,9 +358,9 @@ function POSContent({
                 </div>
             </div>
         )}
-        <div className="p-4 border-t">
+        <DialogFooter className="p-4 border-t">
             <Button onClick={onClose} className="w-full">Done</Button>
-        </div>
+        </DialogFooter>
     </div>
     <VariantPicker
         open={!!variantPickerGroup}
@@ -407,5 +408,3 @@ export function AddonsPOSModal(props: AddonsPOSModalProps) {
     </Dialog>
   );
 }
-
-    

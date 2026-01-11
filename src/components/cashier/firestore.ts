@@ -552,7 +552,7 @@ export async function upsertAddonToBill(
   }
 
   // Use a deterministic ID for the line item.
-  const lineId = `addon_${addon.id}_${String(Date.now()).slice(-5)}`;
+  const lineId = `addon_${addon.id}`;
   const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
   const actor = getActorStamp(user);
 
