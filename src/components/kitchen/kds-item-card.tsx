@@ -26,7 +26,9 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
 
     useEffect(() => {
         if (!jsDate) {
-            setElapsed("...");
+            // Handle cases where startTime is a serverTimestamp() placeholder
+            // by showing a temporary, optimistic value.
+            setElapsed("just now");
             return;
         }
 
@@ -35,11 +37,14 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
             const totalMinutes = Math.floor((now - jsDate.getTime()) / 60000);
             
             if (totalMinutes < 0) { // Handle client/server time differences
-                setElapsed("0m");
+                setElapsed("0m ago");
                 return;
             }
 
-            if (totalMinutes < 60) {
+            if (totalMinutes < 1) {
+                const totalSeconds = Math.floor((now - jsDate.getTime()) / 1000);
+                setElapsed(`${Math.max(0, totalSeconds)}s ago`);
+            } else if (totalMinutes < 60) {
                 setElapsed(`${totalMinutes}m ago`);
             } else {
                 const hours = Math.floor(totalMinutes / 60);
@@ -50,7 +55,7 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
         };
 
         updateElapsed();
-        const timer = setInterval(updateElapsed, 30000); // Update every 30 seconds
+        const timer = setInterval(updateElapsed, 5000); // Update every 5 seconds
 
         return () => clearInterval(timer);
     }, [jsDate]);
