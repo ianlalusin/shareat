@@ -26,21 +26,24 @@ import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
 
-// Validation logic remains the same
-function validatePayments(payments: Payment[], grandTotal: number, paymentMethods: ModeOfPayment[]): string | null {
+// Validation logic using cents
+function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
     if (!payments || payments.length === 0) return "Add at least one payment method.";
     for (const p of payments) {
         if (!p.methodId) return "Select a payment method.";
-        if (typeof p.amount !== "number" || isNaN(p.amount) || p.amount <= 0) return "Payment amounts must be greater than zero.";
+        const amountCents = Math.round(Number(p.amount || 0) * 100);
+        if (amountCents <= 0) return "Payment amounts must be greater than zero.";
+        
         const methodDetails = paymentMethods.find(pm => pm.id === p.methodId);
         if (methodDetails?.hasRef && (!p.reference || String(p.reference).trim().length === 0)) {
             return `Reference is required for ${methodDetails.name}.`;
         }
     }
-    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-    if (totalPaid < grandTotal) return "Payment is not enough to cover the total.";
+    const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
+    if (totalPaidCents < grandTotalCents) return "Payment is not enough to cover the total.";
     return null;
 }
+
 
 export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
@@ -198,7 +201,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleCompletePayment = async () => {
     if (isCompletingPayment || isBillingLocked) return;
 
-    const paymentError = validatePayments(payments, grandTotal, paymentMethods);
+    const paymentError = validatePayments(payments, grandTotalCents, paymentMethods);
     if (paymentError) {
         toast({ variant: "destructive", title: "Cannot Complete", description: paymentError });
         return;
@@ -210,7 +213,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     setIsCompletingPayment(true);
     try {
         if (!appUser || !activeStore || !session) return;
-        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(p.amount * 100) / 100}));
+        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
         
         await completePaymentFromUnits(
             activeStore.id,
@@ -313,5 +316,3 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   )
 }
-
-    
