@@ -1,12 +1,29 @@
 import type { Product } from "@/lib/types";
 
 /**
+ * A minimal, product-like interface to allow variant helpers
+ * to work on different but related types like Product and InventoryItem.
+ */
+type ProductLike = {
+  id?: string;
+  name?: string | null;
+  kind?: "single" | "group" | "variant" | null;
+  groupId?: string | null;
+  groupName?: string | null;
+  variantLabel?: string | null;
+  variant?: string | null; // legacy
+  uom?: string;
+  barcode?: string | null; // allow null
+};
+
+
+/**
  * Gets the kind of the product, defaulting to "single" if not specified.
  * This ensures backward compatibility with older product documents.
  * @param product The product object.
  * @returns The kind of the product: "single", "group", or "variant".
  */
-export function getKind(product: Partial<Product>): "single" | "group" | "variant" {
+export function getKind(product: ProductLike): "single" | "group" | "variant" {
     return product.kind ?? "single";
 }
 
@@ -16,7 +33,7 @@ export function getKind(product: Partial<Product>): "single" | "group" | "varian
  * @param product The product object.
  * @returns The variant label string, or null if none exists.
  */
-export function getEffectiveVariantLabel(product: Partial<Product>): string | null {
+export function getEffectiveVariantLabel(product: ProductLike): string | null {
     return product.variantLabel ?? product.variant ?? null;
 }
 
@@ -26,7 +43,7 @@ export function getEffectiveVariantLabel(product: Partial<Product>): string | nu
  * @param product The product object.
  * @returns True if the product is a sellable SKU.
  */
-export function isSellableSku(product: Partial<Product>): boolean {
+export function isSellableSku(product: ProductLike): boolean {
     const kind = getKind(product);
     return kind !== "group";
 }
@@ -38,7 +55,7 @@ export function isSellableSku(product: Partial<Product>): boolean {
  * @param product The product object.
  * @returns The group key string.
  */
-export function getGroupKey(product: Partial<Product>): string {
+export function getGroupKey(product: ProductLike): string {
     const kind = getKind(product);
     if (kind === "variant" && product.groupId) {
         return product.groupId;
@@ -52,7 +69,7 @@ export function getGroupKey(product: Partial<Product>): string {
  * @param product The product object.
  * @returns The group title string.
  */
-export function getGroupTitle(product: Partial<Product>): string {
+export function getGroupTitle(product: ProductLike): string {
     return product.groupName ?? product.name ?? "";
 }
 
@@ -63,7 +80,7 @@ export function getGroupTitle(product: Partial<Product>): string {
  * @param product The product object.
  * @returns The formatted display name string.
  */
-export function getDisplayName(product: Partial<Product>): string {
+export function getDisplayName(product: ProductLike): string {
     const vLabel = getEffectiveVariantLabel(product);
     const kind = getKind(product);
 

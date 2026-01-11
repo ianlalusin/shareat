@@ -20,7 +20,6 @@ import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
-import * as XLSX from "xlsx";
 import { getKind, getDisplayName } from "@/lib/products/variants";
 
 export default function ProductManagementPage() {
@@ -94,7 +93,7 @@ export default function ProductManagementPage() {
     const { imageFile, ...productData } = formData;
 
     // Normalize data to ensure required fields are present
-    const dataToSave = {
+    const dataToSave: Partial<Product> = {
         name: productData.name,
         isActive: productData.isActive,
         variant: productData.variant || "",
@@ -254,112 +253,9 @@ export default function ProductManagementPage() {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !appUser) return;
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const data = e.target?.result;
-        if (!data) {
-            toast({ variant: "destructive", title: "File Read Error" });
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const workbook = XLSX.read(data, { type: 'binary' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-
-            const productsRef = collection(db, "products");
-            const categoriesRef = collection(db, "addonCategories");
-            const existingProductsSnap = await getDocs(productsRef);
-            const existingProductNames = new Set(existingProductsSnap.docs.map(doc => doc.data().name.toLowerCase()));
-            const batch = writeBatch(db);
-            let importedCount = 0;
-
-            for (const item of json) {
-                if (!item.name || !item.uom) continue;
-                if (existingProductNames.has(item.name.toLowerCase())) continue;
-
-                const newProductRef = doc(productsRef);
-                batch.set(newProductRef, {
-                    id: newProductRef.id,
-                    name: item.name,
-                    variant: item.variant || "",
-                    uom: item.uom,
-                    category: "Add-on", // Default to Add-on
-                    subCategory: item.subCategory || "Uncategorized",
-                    barcode: item.barcode || "",
-                    isActive: item.isActive !== undefined ? item.isActive : true,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                });
-                
-                if (item.subCategory) {
-                    const subCategorySlug = slugify(item.subCategory);
-                    const categoryRef = doc(categoriesRef, subCategorySlug);
-                    batch.set(categoryRef, { id: categoryRef.id, name: item.subCategory, slug: subCategorySlug, isActive: true, sortOrder: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
-                }
-
-                importedCount++;
-            }
-
-            await batch.commit();
-            toast({ title: "Import Complete", description: `${importedCount} new products were imported.` });
-        } catch (error: any) {
-            toast({ variant: "destructive", title: "Import Failed", description: error.message });
-        } finally {
-            setIsSubmitting(false);
-            if(fileInputRef.current) fileInputRef.current.value = "";
-        }
-    };
-    reader.readAsBinaryString(file);
-  };
-  
-  const handleDownloadTemplate = () => {
-    const headers = ["name", "uom", "subCategory", "variant", "barcode", "isActive"];
-    const sampleData = [
-        {
-            name: "Sample Product Name",
-            uom: "pcs",
-            subCategory: "Sample Category",
-            variant: "Large",
-            barcode: "1234567890123",
-            isActive: "TRUE"
-        }
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(sampleData, { header: headers });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
-
-    // Set column widths
-    worksheet["!cols"] = [
-        { wch: 30 }, // name
-        { wch: 10 }, // uom
-        { wch: 20 }, // subCategory
-        { wch: 20 }, // variant
-        { wch: 20 }, // barcode
-        { wch: 10 }, // isActive
-    ];
-    
-    XLSX.writeFile(workbook, "product_import_template.xlsx");
-};
-
-
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
-        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
-        <Button variant="outline" onClick={handleDownloadTemplate} disabled={isSubmitting}>
-            <Download className="mr-2" /> Template
-        </Button>
-        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isSubmitting}>
-            <Upload className="mr-2" /> Import
-        </Button>
         <Button onClick={() => handleOpenDialog()}>
           <PlusCircle className="mr-2" /> New Product
         </Button>

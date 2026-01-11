@@ -26,7 +26,6 @@ import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } fro
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
 import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
-import * as XLSX from "xlsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 
@@ -283,69 +282,6 @@ function ReceiptsPageContents() {
         }
     }
 
-    const handleExport = () => {
-        // Sheet 1: Receipts Summary
-        const summaryData = filteredReceipts.map(r => {
-            const analytics = r.analytics || {};
-            const paymentMethods = analytics.mop ? Object.keys(analytics.mop).join(', ') : 'N/A';
-            return {
-                "Receipt Number": r.receiptNumber || 'N/A',
-                "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
-                "Cashier": r.createdByUsername || 'N/A',
-                "Subtotal": analytics.subtotal || 0,
-                "Discounts": analytics.discountsTotal || 0,
-                "Charges": analytics.chargesTotal || 0,
-                "Grand Total": analytics.grandTotal || r.total,
-                "Total Paid": analytics.totalPaid || 0,
-                "Payment Methods": paymentMethods,
-            };
-        });
-
-        // Sheet 2: Itemized Sales
-        const itemizedData: any[] = [];
-        filteredReceipts.forEach(r => {
-            if (r.lines && Array.isArray(r.lines)) {
-                r.lines.forEach(line => {
-                    const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0);
-                    if (billableQty <= 0) return;
-
-                    const lineTotal = billableQty * (line.unitPrice || 0);
-                    let discountAmount = 0;
-                    if ((line.discountValue ?? 0) > 0 && (line.discountQty ?? 0) > 0) {
-                         const discountedQty = Math.min(line.discountQty, billableQty);
-                        if (line.discountType === 'percent') {
-                            discountAmount = (discountedQty * (line.unitPrice || 0)) * (line.discountValue! / 100);
-                        } else {
-                            discountAmount = (line.discountValue ?? 0) * discountedQty;
-                        }
-                    }
-                    
-                    itemizedData.push({
-                        "Receipt Number": r.receiptNumber || 'N/A',
-                        "Date": r.createdAt ? format(toJsDate(r.createdAt)!, 'MM/dd/yy p') : 'N/A',
-                        "Item Name": line.itemName,
-                        "Category": line.category || 'N/A',
-                        "Quantity": billableQty,
-                        "Unit Price": line.unitPrice || 0,
-                        "Line Total": lineTotal,
-                        "Discount Applied": discountAmount,
-                        "Free Quantity": line.freeQty || 0,
-                    });
-                });
-            }
-        });
-
-        const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-        const itemizedSheet = XLSX.utils.json_to_sheet(itemizedData);
-        
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, summarySheet, "Receipts Summary");
-        XLSX.utils.book_append_sheet(workbook, itemizedSheet, "Itemized Sales");
-        
-        XLSX.writeFile(workbook, "receipts_export.xlsx");
-        toast({ title: "Export Started", description: "Your download will begin shortly." });
-    };
-
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
           today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
@@ -366,7 +302,7 @@ function ReceiptsPageContents() {
 
     if (!activeStore) {
         return (
-            <Card className="w-full max-w-md mx-auto text-center"><CardHeader><CardTitle>No Store Selected</CardTitle><CardDescription>Please select a store to view receipts.</CardDescription></CardHeader></Card>
+            <Card className="w-full max-w-md mx-auto text-center"><CardHeader><CardTitle>No Store Selected</CardTitle><CardDescription>Please select a store to view receipts.</CardDescription></CardHeader>
         );
     }
     
@@ -374,7 +310,6 @@ function ReceiptsPageContents() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={handleExport} disabled={filteredReceipts.length === 0}><Download className="mr-2"/> Export</Button>
                     <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                 </div>
             </PageHeader>
