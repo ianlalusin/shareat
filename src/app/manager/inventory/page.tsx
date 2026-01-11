@@ -238,7 +238,6 @@ export default function InventoryManagementPage() {
                     <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Cost</TableHead>
-                        <TableHead>Selling Price</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -248,7 +247,6 @@ export default function InventoryManagementPage() {
                       <TableRow key={item.id}>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">
                           <Badge variant={item.isActive ? "default" : "secondary"}>
                             {item.isActive ? "Active" : "Inactive"}

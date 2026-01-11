@@ -13,7 +13,6 @@ import type { InventoryItem } from "@/lib/types";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
-  sellingPrice: z.coerce.number().min(0, "Price must be a positive number."),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -22,11 +21,11 @@ interface EditInventoryDialogProps {
   isOpen: boolean;
   onClose: () => void;
   item: InventoryItem;
-  onSave: (item: InventoryItem, data: FormValues) => void;
+  onSave: (item: InventoryItem, data: any) => void;
   isSubmitting: boolean;
 }
 
-function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "sellingPrice", label: string, form: any, uom: string }) {
+function CurrencyFormField({ name, label, form, uom }: { name: "cost", label: string, form: any, uom: string }) {
     const [displayValue, setDisplayValue] = React.useState(form.getValues(name)?.toString() || '0');
 
     React.useEffect(() => {
@@ -85,7 +84,6 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
     resolver: zodResolver(formSchema),
     defaultValues: {
       cost: item.cost || 0,
-      sellingPrice: item.sellingPrice || 0,
     },
   });
 
@@ -93,7 +91,6 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
     if (isOpen) {
       form.reset({
         cost: item.cost || 0,
-        sellingPrice: item.sellingPrice || 0,
       });
     }
   }, [isOpen, item, form]);
@@ -107,12 +104,11 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Inventory Item: {item.name}</DialogTitle>
-          <DialogDescription>Update the cost and selling price for this item.</DialogDescription>
+          <DialogDescription>Update the cost for this item.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="edit-item-form" className="space-y-4">
             <CurrencyFormField name="cost" label="Cost" form={form} uom={item.uom} />
-            <CurrencyFormField name="sellingPrice" label="Selling Price" form={form} uom={item.uom} />
           </form>
         </Form>
         <DialogFooter>
