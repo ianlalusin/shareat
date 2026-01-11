@@ -21,7 +21,7 @@ import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import * as XLSX from "xlsx";
-import { getKind } from "@/lib/products/variants";
+import { getKind, getDisplayName } from "@/lib/products/variants";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -65,7 +65,7 @@ export default function ProductManagementPage() {
 
     // Sort products within each sub-category
     for (const subCategory in grouped) {
-        grouped[subCategory].sort((a, b) => a.name.localeCompare(b.name));
+        grouped[subCategory].sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
     }
     
     // Sort subcategories
@@ -166,7 +166,7 @@ export default function ProductManagementPage() {
     const action = newStatus ? "Activate" : "Deactivate";
     
     const confirmed = await confirm({
-        title: `${action} ${product.name}?`,
+        title: `${action} ${getDisplayName(product)}?`,
         description: `Are you sure you want to ${action.toLowerCase()} this product?`,
         confirmText: `Yes, ${action}`,
         destructive: !newStatus,
@@ -181,7 +181,7 @@ export default function ProductManagementPage() {
             isActive: newStatus,
             updatedAt: serverTimestamp(),
         });
-        toast({ title: "Product Status Updated", description: `${product.name} has been ${action.toLowerCase()}d.` });
+        toast({ title: "Product Status Updated", description: `${getDisplayName(product)} has been ${action.toLowerCase()}d.` });
     } catch (error: any) {
         toast({
             variant: "destructive",
@@ -199,6 +199,10 @@ export default function ProductManagementPage() {
   };
   
   const handleDeleteProduct = async (product: Product) => {
+    // This is the key change: ensure the details modal is closed
+    // so its overlay doesn't interfere with the confirmation dialog.
+    setSelectedProduct(null);
+    
     if (!appUser || appUser.role !== 'admin') {
       toast({ variant: "destructive", title: "Permission Denied" });
       return;
@@ -206,7 +210,7 @@ export default function ProductManagementPage() {
     
     const isGroup = getKind(product) === 'group';
     const confirmed = await confirm({
-      title: `Permanently Delete ${product.name}?`,
+      title: `Permanently Delete ${getDisplayName(product)}?`,
       description: isGroup 
         ? "This action is irreversible and will also delete all of its variants. This cannot be undone."
         : "This action is irreversible and cannot be undone.",
@@ -230,8 +234,7 @@ export default function ProductManagementPage() {
       
       await batch.commit();
       
-      toast({ title: "Product Deleted", description: `${product.name} and its data have been removed.` });
-      setSelectedProduct(null); // Close the modal
+      toast({ title: "Product Deleted", description: `${getDisplayName(product)} and its data have been removed.` });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Delete Failed", description: error.message });
     } finally {
@@ -380,7 +383,7 @@ export default function ProductManagementPage() {
                          <TableBody>
                             {items.map((product) => (
                                 <TableRow key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
-                                    <TableCell className="font-medium">{product.name}</TableCell>
+                                    <TableCell className="font-medium">{getDisplayName(product)}</TableCell>
                                     <TableCell>{product.uom}</TableCell>
                                     <TableCell>{product.barcode || '—'}</TableCell>
                                     <TableCell>
@@ -393,7 +396,7 @@ export default function ProductManagementPage() {
                                         Edit
                                     </Button>
                                     <Button
-                                        variant={product.isActive ? "destructive" : "default"}
+                                        variant={product.isActive ? "secondary" : "default"}
                                         size="sm"
                                         onClick={(e) => { e.stopPropagation(); handleToggleActive(product);}}
                                         disabled={isSubmitting}
