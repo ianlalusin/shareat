@@ -18,6 +18,21 @@ const formSchema = z.object({
   kitchenLocationId: z.string().nullable().optional(),
 });
 
+// We need a conditional validator
+const refinedFormSchema = (isAddon: boolean) => formSchema.refine(
+  (data) => {
+    if (isAddon) {
+      return data.sellingPrice > 0;
+    }
+    return true;
+  },
+  {
+    message: "Selling price must be greater than 0 for an add-on.",
+    path: ["sellingPrice"],
+  }
+);
+
+
 type FormValues = z.infer<typeof formSchema>;
 
 interface EditInventoryDialogProps {
@@ -85,7 +100,7 @@ function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "selling
 
 export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(refinedFormSchema(item.isAddon || false)),
     defaultValues: {
       cost: item.cost || 0,
       sellingPrice: item.sellingPrice || 0,

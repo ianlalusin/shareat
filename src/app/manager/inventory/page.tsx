@@ -167,10 +167,19 @@ export default function InventoryManagementPage() {
     const newStatus = !item[field];
     const action = newStatus ? "Enable" : "Disable";
     const fieldName = field === 'isActive' ? 'availability' : 'add-on status';
+
+    // Prevent enabling as add-on if price is zero
+    if (field === 'isAddon' && newStatus && (item.sellingPrice || 0) <= 0) {
+        toast({
+            variant: "destructive",
+            title: "Price Required",
+            description: `You must set a selling price for "${getDisplayName(item)}" before enabling it as an add-on.`
+        });
+        return;
+    }
     
     const confirmed = await confirm({
-        title: `${action} ${getDisplayName(item)}?`,
-        description: `This will change the item's ${fieldName}.`,
+        title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
         confirmText: `Yes, ${action}`,
     });
 
