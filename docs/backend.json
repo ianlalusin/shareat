@@ -447,33 +447,6 @@
       },
       "required": ["id", "name", "slug", "isActive", "sortOrder"]
     },
-    "StoreAddon": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "StoreAddon",
-      "type": "object",
-      "description": "Represents store-specific settings for a global Addon, including pricing.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the StoreAddon, mirroring the global Addon ID."
-        },
-        "isEnabled": {
-          "type": "boolean",
-          "description": "Indicates whether this addon is available for sale in this specific store."
-        },
-        "price": {
-          "type": "number",
-          "description": "The price for this addon in this specific store."
-        },
-        "imageUrl": {
-            "type": "string",
-            "description": "Denormalized URL for the add-on image from the global product."
-        },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "isEnabled", "price"]
-    },
     "Session": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Session",
@@ -997,18 +970,6 @@
           "schema": { "$ref": "#/backend/entities/AddonCategory" },
           "description": "Global add-on categories.",
           "params": [{"name": "addonCategoryId", "description": "Unique ID for the add-on category."}]
-        }
-      },
-      {
-        "path": "/stores/{storeId}/storeAddons/{addonId}",
-        "definition": {
-          "entityName": "StoreAddon",
-          "schema": { "$ref": "#/backend/entities/StoreAddon" },
-          "description": "Store-specific settings for global addons.",
-          "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "addonId", "description": "The unique identifier for the addon being configured."}
-          ]
         }
       },
       {

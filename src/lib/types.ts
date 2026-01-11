@@ -62,6 +62,8 @@ export type InventoryItem = {
   sellingPrice: number;
   taxId?: string;
   isActive: boolean;
+  isAddon?: boolean;
+  kitchenLocationId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -176,6 +178,7 @@ export type KitchenTicket = {
     sessionMode?: 'package_dinein' | 'alacarte';
     customerName?: string | null;
     sessionLabel?: string;
+    orderedByRole?: UserRole | null;
     billing?: {
         isVoided: boolean;
         voidReason?: string | null;
@@ -394,21 +397,6 @@ export type Receipt = {
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
 }
-
-export type StoreAddon = {
-  id: string;
-  name: string;
-  category?: string;
-  uom?: string;
-  price: number;
-  isEnabled: boolean;
-  isArchived: boolean;
-  sortOrder: number;
-  kitchenLocationId: string | null;
-  kitchenLocationName: string | null;
-  imageUrl?: string;
-  barcode?: string;
-};
 
 export type ActivityLog = {
   id: string;

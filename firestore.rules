@@ -130,7 +130,6 @@ service cloud.firestore {
       allow list, create, update, delete: if isAdmin(); // Only admins manage the store documents themselves
 
       // -- Store-Level Settings (Manager/Admin only) --
-      match /storeAddons/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storePackages/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeRefills/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }
       match /storeFlavors/{docId} { allow read: if isStoreMember(storeId); allow write: if isManager() && isStoreMember(storeId); }

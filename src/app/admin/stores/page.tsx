@@ -43,7 +43,7 @@ async function getSubCollections(docRef: any) {
     const collectionsSnapshot = await getDocs(collection(docRef, 'subcollections')); // This is a placeholder, Firestore SDK doesn't have a direct way to list subcollections client-side. A better approach would be to know the subcollection names.
     
     // For this implementation, we will assume we know the subcollection names.
-    const knownSubcollections = ["inventory", "menu", "tables", "orders", "storePackages", "storeAddons", "sessions", "kitchenLocations", "activityLogs"];
+    const knownSubcollections = ["inventory", "menu", "tables", "orders", "storePackages", "sessions", "kitchenLocations", "activityLogs"];
 
     for (const subCollectionName of knownSubcollections) {
         const subCollectionRef = collection(docRef, subCollectionName);
@@ -215,7 +215,7 @@ export default function StoreManagementPage() {
             const storeData = { [storeId]: { ...storeDoc.data() } };
             
             // Known subcollections to export
-            const subcollections = ["inventory", "menu", "tables", "orders", "storePackages", "storeAddons", "sessions"];
+            const subcollections = ["inventory", "menu", "tables", "orders", "storePackages", "sessions"];
             for (const subcollection of subcollections) {
                 const subRef = collection(storeRef, subcollection);
                 const subSnapshot = await getDocs(subRef);
