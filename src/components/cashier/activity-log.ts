@@ -24,7 +24,7 @@ type ActivityLogPayload = {
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
-  const { storeId, sessionId, user, action, ...rest } = payload;
+  const { storeId, sessionId, user, action, qty, ...rest } = payload;
 
   if (!user) {
     console.warn("Activity log skipped: User is not authenticated.");
@@ -37,6 +37,9 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
 
   try {
     const logDocRef = doc(collection(db, `stores/${storeId}/sessions/${sessionId}/activityLogs`));
+    
+    // Combine explicit meta with the qty if it exists
+    const meta = { ...rest.meta, ...(qty !== undefined && { qty }) };
 
     const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
       storeId,
@@ -46,6 +49,7 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorRole: user.role || null,
       actorName: user.displayName || user.name || null,
       ...rest,
+      meta, // Use the combined meta object
     };
     
     const finalPayload = { ...logDoc, createdAt: serverTimestamp() };
