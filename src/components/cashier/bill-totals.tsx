@@ -45,7 +45,8 @@ export function BillTotals({
     <div className="p-3 bg-background space-y-2 text-sm">
         {activeLines.map(line => {
             const billableQty = line.qtyOrdered - line.voidedQty;
-            const lineGross = billableQty * line.unitPrice;
+            const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+            const lineGross = billableQty * unitPrice;
             const hasDiscount = line.discountValue && line.discountValue > 0 && line.discountQty > 0;
             const hasFree = line.freeQty > 0;
             
@@ -55,7 +56,7 @@ export function BillTotals({
                 const taxRate = (store.taxRatePct || 0) / 100;
                 const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
 
-                const baseUnitPrice = isVatInclusive ? (line.unitPrice / (1 + taxRate)) : line.unitPrice;
+                const baseUnitPrice = isVatInclusive ? (unitPrice / (1 + taxRate)) : unitPrice;
 
                 const discountBasePerUnit =
                   line.discountType === "percent"
@@ -75,7 +76,7 @@ export function BillTotals({
                 lineSubRows.push(
                     <div key={`${line.id}-free`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.freeQty}x Free`}</span>
-                        <span>-₱{(line.freeQty * line.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span>-₱{(line.freeQty * unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 );
             }

@@ -56,7 +56,7 @@ export function calculateBillTotals(
 
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
-    const unitPrice = line.unitPrice || 0;
+    const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
     
     grossSubtotal += billableQty * unitPrice;
     

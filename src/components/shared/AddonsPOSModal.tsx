@@ -163,10 +163,14 @@ function POSContent({
                 console.error("Error fetching product details for addon:", item.id, e);
             }
             
-            const combined = { ...item, ...productData };
+            // The store inventory item's data should take precedence
+            const combined = { ...productData, ...item };
+            const sp = Number(combined.sellingPrice);
+            const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
 
             return { 
               ...combined,
+              sellingPrice: safeSellingPrice, // Ensure sellingPrice is a number
               displayName: getDisplayName(combined),
               groupKey: getGroupKey(combined),
               groupTitle: productData?.groupName || item.name,

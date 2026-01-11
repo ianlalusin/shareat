@@ -545,6 +545,13 @@ export async function upsertAddonToBill(
   if (!addon || !addon.id) throw new Error("Valid addon is required.");
   if (qtyToAdd <= 0) return;
 
+  const unitPriceNum = Number((addon as any).sellingPrice);
+  const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
+
+  if (safeUnitPrice <= 0) {
+      throw new Error(`Invalid selling price for "${addon.name}". Check store inventory selling price.`);
+  }
+
   // Use a deterministic ID for the line item.
   const lineId = sha1(`addon_${addon.id}`);
   const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
@@ -569,7 +576,7 @@ export async function upsertAddonToBill(
         itemName: addon.name,
         category: addon.subCategory ?? null,
         barcode: addon.barcode ?? null,
-        unitPrice: addon.sellingPrice,
+        unitPrice: safeUnitPrice,
         qtyOrdered: qtyToAdd,
         discountType: null,
         discountValue: 0,
