@@ -78,7 +78,7 @@ function VariantRow({ variant, onEdit, onDelete }: { variant: Product, onEdit: (
 function VariantForm({ form, onSave, onCancel, parentProduct }: { form: any, onSave: (data: VariantFormValues) => void, onCancel: () => void, parentProduct: Product }) {
     return (
         <Form {...form}>
-             <form onSubmit={form.handleSubmit(onSave)} id="variant-form" className="space-y-4 p-4 border rounded-lg bg-muted/50">
+             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
                 <FormField control={form.control} name="variantLabel" render={({ field }) => (
                     <FormItem><FormLabel>Variant Label</FormLabel><FormControl><Input placeholder="e.g., 500ml, Large" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
@@ -95,9 +95,9 @@ function VariantForm({ form, onSave, onCancel, parentProduct }: { form: any, onS
                 )} />
                  <div className="flex justify-end gap-2">
                     <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-                    <Button type="submit">Save Variant</Button>
+                    <Button type="button" onClick={form.handleSubmit(onSave)}>Save Variant</Button>
                 </div>
-            </form>
+            </div>
         </Form>
     )
 }
@@ -312,5 +312,3 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     </>
   );
 }
-
-    
