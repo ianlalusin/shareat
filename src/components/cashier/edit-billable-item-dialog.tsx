@@ -14,12 +14,14 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
-import { Minus, Plus, Loader2 } from "lucide-react";
+import { Minus, Plus, Loader2, RefreshCw } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import type { Discount, SessionBillLine } from "@/lib/types";
+import type { Discount, SessionBillLine, InventoryItem } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
-import { serverTimestamp } from "firebase/firestore";
+import { serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
+import { useStoreContext } from "@/context/store-context";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -100,8 +102,10 @@ export function EditBillableItemDialog({
     onSave,
 }: EditBillableItemDialogProps) {
     const { appUser } = useAuthContext();
+    const { activeStore } = useStoreContext();
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [inventoryPrice, setInventoryPrice] = useState<number | null>(null);
 
     const isPackage = line?.type === 'package';
     
@@ -120,7 +124,7 @@ export function EditBillableItemDialog({
             
             reset({
                 qtyOrdered: line.qtyOrdered,
-                unitPrice: line.unitPrice,
+                unitPrice: line.unitPrice ?? 0,
                 applyDiscount: isDiscounted,
                 discountId: savedDiscount?.id || 'custom',
                 discountType: normalizeDiscountType(line.discountType),
@@ -133,8 +137,22 @@ export function EditBillableItemDialog({
                 voidReason: undefined,
                 voidNote: '',
             });
+            
+            // Fetch current inventory price
+            if (activeStore && line.itemId && line.type === 'addon') {
+                const invItemRef = doc(db, 'stores', activeStore.id, 'inventory', line.itemId);
+                getDoc(invItemRef).then(snap => {
+                    if (snap.exists()) {
+                        const invItem = snap.data() as InventoryItem;
+                        setInventoryPrice(invItem.sellingPrice ?? 0);
+                    }
+                }).catch(() => setInventoryPrice(null));
+            } else {
+                setInventoryPrice(null);
+            }
+
         }
-    }, [line, isOpen, reset, discounts]);
+    }, [line, isOpen, reset, discounts, activeStore]);
     
     const handleQtyChange = (field: 'discountQty' | 'freeQty' | 'voidQty', newValue: number) => {
         const { qtyOrdered, discountQty, freeQty, voidQty } = getValues();
@@ -239,6 +257,7 @@ export function EditBillableItemDialog({
             discountValue: line.discountValue,
             freeQty: line.freeQty,
             voidedQty: line.voidedQty,
+            unitPrice: line.unitPrice
         };
 
         const after: Partial<SessionBillLine> = {
@@ -248,6 +267,7 @@ export function EditBillableItemDialog({
             discountValue: payload.discountValue,
             freeQty: payload.freeQty,
             voidedQty: payload.voidQty,
+            unitPrice: payload.unitPrice,
         };
         
         if (isPackage && isIncreasingQty) {
@@ -264,6 +284,8 @@ export function EditBillableItemDialog({
     };
 
     const remainingQty = watchedValues.qtyOrdered - ((watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0));
+    
+    const showSyncPrice = inventoryPrice !== null && inventoryPrice !== watchedValues.unitPrice;
 
     if (!line) return null;
 
@@ -278,10 +300,15 @@ export function EditBillableItemDialog({
                         <Form {...form}>
                             <form onSubmit={handleSubmit(handleSave)} id="edit-item-form" className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <FormField name="unitPrice" control={control} render={({ field }) => (
+                                     <FormField name="unitPrice" control={control} render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
-                                            <FormControl><Input type="number" step="0.01" {...field} readOnly disabled/></FormControl>
+                                            <div className="flex items-center gap-2">
+                                            <FormControl><Input type="number" step="0.01" {...field} readOnly={isPackage} disabled={isPackage}/></FormControl>
+                                            {showSyncPrice && (
+                                                <Button type="button" size="sm" variant="outline" onClick={() => setValue('unitPrice', inventoryPrice, { shouldDirty: true, shouldValidate: true })}><RefreshCw className="h-4 w-4"/> Sync</Button>
+                                            )}
+                                            </div>
                                         </FormItem>
                                     )} />
                                     <FormField name="qtyOrdered" control={control} render={({ field }) => (
@@ -381,3 +408,5 @@ export function EditBillableItemDialog({
         </Dialog>
     );
 }
+
+    
