@@ -291,7 +291,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                 ) : (
                     <div className="grid grid-cols-2 gap-4">
                         <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                        <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><div className="flex gap-2"><FormControl><Input placeholder="Optional" {...field} /></FormControl></div><FormMessage /></FormItem> )}/>
+                        <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
                     </div>
                 )}
               </form>
