@@ -18,12 +18,13 @@ import { StoreAddonEditDialog } from "@/components/manager/store-settings/StoreA
 import Image from "next/image";
 import type { Store, InventoryItem, KitchenLocation, Product, StoreAddon } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { getDisplayName } from "@/lib/products/variants";
 
 export function AddonsSettings({ store }: { store: Store }) {
     const { appUser } = useAuthContext();
     const { toast } = useToast();
 
-    const [inventoryItems, setInventoryItems] = useState<Product[]>([]);
+    const [allAddonProducts, setAllAddonProducts] = useState<Product[]>([]);
     const [storeAddons, setStoreAddons] = useState<StoreAddon[]>([]);
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     
@@ -39,13 +40,14 @@ export function AddonsSettings({ store }: { store: Store }) {
             return;
         }
 
+        // Get all GLOBAL products that are add-ons and are sellable SKUs
         const unsubInventory = onSnapshot(
-            query(collection(db, "products"), where("category", "==", "Add-on"), where("isActive", "==", true)), 
+            query(collection(db, "products"), where("category", "==", "Add-on"), where("isActive", "==", true), where("isSku", "==", true)), 
             (snap) => {
                  const list = snap.docs
                     .map(d => ({id: d.id, ...d.data()} as Product))
                     .filter(p => (p as any).isArchived !== true);
-                setInventoryItems(list);
+                setAllAddonProducts(list);
             }
         );
 
@@ -70,7 +72,7 @@ export function AddonsSettings({ store }: { store: Store }) {
                 }
                 return {
                     ...addon,
-                    name: productData?.name || addon.name,
+                    name: getDisplayName(productData || addon),
                     category: productData?.subCategory || addon.category,
                     imageUrl: productData?.imageUrl || addon.imageUrl,
                 };
@@ -100,11 +102,23 @@ export function AddonsSettings({ store }: { store: Store }) {
         );
     }, [storeAddons, showEnabledOnly, search]);
     
-    const availableInventoryItems = useMemo(() => {
+    const availableGlobalAddons = useMemo(() => {
         const storeAddonIds = new Set(storeAddons.map(s => s.id));
-        return inventoryItems
-            .filter(item => item.id && !storeAddonIds.has(item.id));
-    }, [inventoryItems, storeAddons]);
+        const available = allAddonProducts.filter(item => item.id && !storeAddonIds.has(item.id));
+        
+        const grouped: Record<string, { groupName: string; items: Product[] }> = {};
+        available.forEach(p => {
+            const groupId = p.groupId || p.id;
+            const groupName = p.groupName || p.name;
+            if (!grouped[groupId]) {
+                grouped[groupId] = { groupName: groupName, items: [] };
+            }
+            grouped[groupId].items.push(p);
+        });
+
+        return Object.values(grouped).sort((a,b) => a.groupName.localeCompare(b.groupName));
+
+    }, [allAddonProducts, storeAddons]);
 
     const handleToggleEnabled = async (addon: StoreAddon) => {
         if (!appUser) return;
@@ -128,7 +142,7 @@ export function AddonsSettings({ store }: { store: Store }) {
         try {
             const newAddonData: StoreAddon = {
                 id: addonId,
-                name: product.name,
+                name: getDisplayName(product),
                 category: product.subCategory,
                 uom: product.uom,
                 price: 0, // Default price to 0
@@ -256,15 +270,24 @@ export function AddonsSettings({ store }: { store: Store }) {
                 </CardHeader>
                 <CardContent>
                      <ScrollArea className="h-96">
-                        {availableInventoryItems.length > 0 ? availableInventoryItems.map(item => (
-                            <div key={item.id} className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
-                                <div>
-                                    <p className="font-medium">{item.name}</p>
-                                    <p className="text-xs text-muted-foreground">{item.subCategory}</p>
+                        {availableGlobalAddons.length > 0 ? (
+                             availableGlobalAddons.map(({ groupName, items }) => (
+                                <div key={groupName} className="mb-2">
+                                    <h4 className="font-semibold text-sm mb-1">{groupName}</h4>
+                                    <div className="space-y-1 pl-2 border-l">
+                                    {items.map(item => (
+                                        <div key={item.id} className="flex items-center justify-between p-1 hover:bg-muted/50 rounded-md">
+                                            <div>
+                                                <p className="font-medium text-sm">{getDisplayName(item)}</p>
+                                                <p className="text-xs text-muted-foreground">{item.subCategory}</p>
+                                            </div>
+                                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleAddAddon(item)}><PlusCircle size={16}/></Button>
+                                        </div>
+                                    ))}
+                                    </div>
                                 </div>
-                                <Button size="sm" onClick={() => handleAddAddon(item)}><PlusCircle /></Button>
-                            </div>
-                        )) : (
+                            ))
+                        ) : (
                             <p className="text-center text-sm text-muted-foreground p-4">All "Add-on" products have been added to this store.</p>
                         )}
                     </ScrollArea>

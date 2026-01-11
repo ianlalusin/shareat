@@ -11,6 +11,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader, Search } from "lucide-react";
 import type { Product } from "@/lib/types";
+import { getDisplayName } from "@/lib/products/variants";
 
 interface AddInventoryDialogProps {
   isOpen: boolean;
@@ -29,8 +30,9 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
   const existingIdsSet = useMemo(() => new Set(existingProductIds), [existingProductIds]);
 
   useEffect(() => {
+    // Fetch only sellable SKUs (not group parents)
     const productsRef = collection(db, "products");
-    const q = query(productsRef, where("isActive", "==", true));
+    const q = query(productsRef, where("isActive", "==", true), where("isSku", "==", true));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
@@ -51,9 +53,25 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
     return products.filter(p => !existingIdsSet.has(p.id));
   }, [products, existingIdsSet]);
 
-  const filteredProducts = useMemo(() => {
-    return availableProducts.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const groupedAndFilteredProducts = useMemo(() => {
+    const filtered = availableProducts.filter(p => getDisplayName(p).toLowerCase().includes(search.toLowerCase()));
+
+    const grouped: Record<string, { groupName: string; items: Product[] }> = {};
+    
+    filtered.forEach(p => {
+        const groupId = p.groupId || p.id;
+        const groupName = p.groupName || p.name;
+        
+        if (!grouped[groupId]) {
+            grouped[groupId] = { groupName: groupName, items: [] };
+        }
+        grouped[groupId].items.push(p);
+    });
+
+    return Object.values(grouped).sort((a,b) => a.groupName.localeCompare(b.groupName));
+
   }, [availableProducts, search]);
+
 
   const handleToggleSelect = (product: Product) => {
     setSelectedProducts(prev => {
@@ -99,30 +117,31 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
             ) : (
                 <Command>
                     <CommandList>
-                        <CommandGroup>
-                        {filteredProducts.length > 0 ? (
-                             filteredProducts.map(product => (
-                                <CommandItem 
-                                  key={product.id} 
-                                  onSelect={() => {
-                                      handleToggleSelect(product)
-                                    }} 
-                                  className="flex items-center gap-3"
-                                >
-                                    <Checkbox
-                                        id={`product-${product.id}`}
-                                        checked={!!selectedProducts[product.id]}
-                                    />
-                                    <label htmlFor={`product-${product.id}`} className="flex-grow cursor-pointer">
-                                        <div className="font-medium">{product.name}</div>
-                                        <div className="text-xs text-muted-foreground capitalize">{product.category} / {product.uom}</div>
-                                    </label>
-                                </CommandItem>
+                        {groupedAndFilteredProducts.length > 0 ? (
+                             groupedAndFilteredProducts.map(({ groupName, items }) => (
+                                <CommandGroup key={groupName} heading={groupName}>
+                                {items.map(product => (
+                                    <CommandItem 
+                                    key={product.id} 
+                                    onSelect={() => handleToggleSelect(product)} 
+                                    className="flex items-center gap-3"
+                                    >
+                                        <Checkbox
+                                            id={`product-${product.id}`}
+                                            checked={!!selectedProducts[product.id]}
+                                            readOnly
+                                        />
+                                        <label htmlFor={`product-${product.id}`} className="flex-grow cursor-pointer">
+                                            <div className="font-medium">{getDisplayName(product)}</div>
+                                            <div className="text-xs text-muted-foreground capitalize">{product.subCategory} / {product.uom}</div>
+                                        </label>
+                                    </CommandItem>
+                                ))}
+                                </CommandGroup>
                             ))
                         ) : (
                             <CommandEmpty>No available products found.</CommandEmpty>
                         )}
-                        </CommandGroup>
                     </CommandList>
                 </Command>
             )}
