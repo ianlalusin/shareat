@@ -113,7 +113,7 @@ export default function DashboardPage() {
     
     return (
         <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
-            <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`}>
+            <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`} className="mb-4">
                 {/* <DateRangePicker /> */}
             </PageHeader>
             <div className="grid gap-6">
@@ -152,3 +152,6 @@ export default function DashboardPage() {
     );
 }
 
+
+
+    
