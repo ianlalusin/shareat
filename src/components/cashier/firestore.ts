@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
-import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment, ReceiptAnalyticsV2 } from '@/lib/types';
+import type { Store, StorePackage, Payment, ModeOfPayment, StoreAddon, ActivityLog, SessionBillLine, Discount, Adjustment, ReceiptAnalyticsV2, Receipt } from '@/lib/types';
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
@@ -155,7 +155,7 @@ export async function startSession(
         discountValue: 0,
         discountQty: 0,
         freeQty: 0,
-        voidedQty: 0, // Packages cannot be voided this way
+        voidedQty: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         updatedByUid: user.uid,
@@ -430,7 +430,7 @@ export async function completePaymentFromUnits(
             receiptNoFormatUsed: receiptNoFormat,
             analytics: analyticsV2,
             lines: billLines, // Snapshot the bill lines
-        });
+        } as Receipt);
 
         tx.set(receiptRef, {
             ...receiptPayload,

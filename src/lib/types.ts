@@ -210,7 +210,7 @@ export type SessionBillLine = {
   discountValue: number | null;
   discountQty: number;
   freeQty: number;
-  voidedQty: number; // addons only
+  voidedQty: number;
   createdAt: any;
   updatedAt: any;
   updatedByUid?: string | null;

@@ -307,7 +307,7 @@ export function EditBillableItemDialog({
                                 </div>
 
                                 {/* Void Section (Add-ons only) */}
-                                {!isPackage && (
+                               
                                     <>
                                         <Separator />
                                         <div className="space-y-2">
@@ -331,7 +331,7 @@ export function EditBillableItemDialog({
                                             )}
                                         </div>
                                     </>
-                                )}
+                                
                             </form>
                         </Form>
                     </div>

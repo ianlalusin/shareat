@@ -628,7 +628,7 @@
         "discountValue": { "type": ["number", "null"] },
         "discountQty": { "type": "number" },
         "freeQty": { "type": "number" },
-        "voidedQty": { "type": "number" },
+        "voidedQty": { "type": "number", "description": "Number of units from this line that have been voided." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
         "updatedByUid": { "type": ["string", "null"] },
