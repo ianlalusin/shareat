@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import * as React from "react";
-import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -62,6 +62,8 @@ export default function InventoryManagementPage() {
     const kitchenRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     const unsubKitchen = onSnapshot(query(kitchenRef, where("isActive", "==", true)), (snapshot) => {
         setKitchenLocations(snapshot.docs.map(doc => doc.data() as KitchenLocation));
+    }, (err) => {
+      console.error("Failed to fetch kitchen locations:", err);
     });
 
     return () => { 
@@ -212,10 +214,10 @@ export default function InventoryManagementPage() {
     
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
     try {
-        await deleteDoc(itemDocRef);
-        toast({ title: "Inventory Item Deleted" });
+        await updateDoc(itemDocRef, { isActive: false, isArchived: true, archivedAt: serverTimestamp() });
+        toast({ title: "Inventory Item Archived" });
     } catch (error: any) {
-        toast({ variant: "destructive", title: "Delete Failed", description: error.message });
+        toast({ variant: "destructive", title: "Archive Failed", description: error.message });
     }
   };
 
@@ -257,13 +259,14 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={5} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
                     <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Cost</TableHead>
+                        <TableHead>Selling Price</TableHead>
                         <TableHead>Is Add-on</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -274,6 +277,7 @@ export default function InventoryManagementPage() {
                       <TableRow key={item.id}>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">
                           <Switch
                             checked={item.isAddon}
