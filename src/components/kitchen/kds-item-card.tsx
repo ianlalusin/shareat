@@ -21,44 +21,41 @@ interface KdsItemCardProps {
 }
 
 function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
-    const [elapsed, setElapsed] = useState("...");
+    const [now, setNow] = useState(() => new Date());
     const jsDate = toJsDate(startTime);
 
     useEffect(() => {
-        if (!jsDate) {
-            // Handle cases where startTime is a serverTimestamp() placeholder
-            // by showing a temporary, optimistic value.
-            setElapsed("just now");
-            return;
-        }
-
-        const updateElapsed = () => {
-            const now = Date.now();
-            const totalMinutes = Math.floor((now - jsDate.getTime()) / 60000);
-            
-            if (totalMinutes < 0) { // Handle client/server time differences
-                setElapsed("0m ago");
-                return;
-            }
-
-            if (totalMinutes < 1) {
-                const totalSeconds = Math.floor((now - jsDate.getTime()) / 1000);
-                setElapsed(`${Math.max(0, totalSeconds)}s ago`);
-            } else if (totalMinutes < 60) {
-                setElapsed(`${totalMinutes}m ago`);
-            } else {
-                const hours = Math.floor(totalMinutes / 60);
-                const minutes = totalMinutes % 60;
-                const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-                setElapsed(`${hours}h ${paddedMinutes}m ago`);
-            }
-        };
-
-        updateElapsed();
-        const timer = setInterval(updateElapsed, 5000); // Update every 5 seconds
-
+        const timer = setInterval(() => {
+            setNow(new Date());
+        }, 5000); // Update every 5 seconds
         return () => clearInterval(timer);
-    }, [jsDate]);
+    }, []);
+
+    if (!jsDate) {
+        return (
+            <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
+                <Clock size={14} />
+                <span>just now</span>
+            </div>
+        );
+    }
+    
+    const totalMinutes = Math.floor((now.getTime() - jsDate.getTime()) / 60000);
+
+    let elapsed = "...";
+    if (totalMinutes < 0) {
+        elapsed = "0m ago";
+    } else if (totalMinutes < 1) {
+        const totalSeconds = Math.floor((now.getTime() - jsDate.getTime()) / 1000);
+        elapsed = `${Math.max(0, totalSeconds)}s ago`;
+    } else if (totalMinutes < 60) {
+        elapsed = `${totalMinutes}m ago`;
+    } else {
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+        elapsed = `${hours}h ${paddedMinutes}m ago`;
+    }
 
     return (
         <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
