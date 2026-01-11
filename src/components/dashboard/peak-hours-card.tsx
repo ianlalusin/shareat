@@ -27,7 +27,7 @@ type Receipt = {
 const chartConfig = {
   sales: {
     label: "Sales",
-    color: "hsl(var(--primary))",
+    color: "hsl(var(--destructive))",
   },
 } satisfies ChartConfig;
 
