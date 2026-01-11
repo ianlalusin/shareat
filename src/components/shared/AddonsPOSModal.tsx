@@ -248,31 +248,33 @@ function POSContent({
         const batch = writeBatch(db);
         const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
         
-        const ticketRef = doc(ticketsColRef);
+        // Loop to create one ticket per quantity
+        for (let i = 0; i < quantity; i++) {
+            const ticketRef = doc(ticketsColRef);
 
-        const ticketPayload = stripUndefined({
-            id: ticketRef.id,
-            type: "addon",
-            itemName: selectedAddon.displayName,
-            qty: quantity,
-            uom: selectedAddon.uom,
-            kitchenLocationId: selectedAddon.kitchenLocationId,
-            status: "preparing",
-            createdAt: serverTimestamp(),
-            createdByUid: appUser.uid,
-            orderedByRole: appUser.role, 
-            sessionId: session.id, 
-            storeId,
-            tableNumber: session.tableNumber,
-            customerName: session.customer?.name || session.customerName,
-            sessionMode: session.sessionMode,
-            sessionLabel: computeSessionLabel(session),
-            guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-        });
-        batch.set(ticketRef, ticketPayload);
-        
+            const ticketPayload = stripUndefined({
+                id: ticketRef.id,
+                type: "addon",
+                itemName: selectedAddon.displayName,
+                qty: 1, // Always 1 per ticket
+                uom: selectedAddon.uom,
+                kitchenLocationId: selectedAddon.kitchenLocationId,
+                status: "preparing",
+                createdAt: serverTimestamp(),
+                createdByUid: appUser.uid,
+                orderedByRole: appUser.role, 
+                sessionId: session.id, 
+                storeId,
+                tableNumber: session.tableNumber,
+                customerName: session.customer?.name || session.customerName,
+                sessionMode: session.sessionMode,
+                sessionLabel: computeSessionLabel(session),
+                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+            });
+            batch.set(ticketRef, ticketPayload);
+        }
 
-        // Upsert the billable line item
+        // Upsert the billable line item (this still correctly handles total quantity)
         await upsertAddonToBill(storeId, session.id, selectedAddon, quantity, appUser);
 
         await batch.commit();
