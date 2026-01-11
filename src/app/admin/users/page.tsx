@@ -206,12 +206,15 @@ export default function UserManagementPage() {
     }
 
     async function handleDeleteUser(uid: string, name?: string) {
+        // Always close the parent modal BEFORE showing the confirmation
+        setSelectedUser(null);
+
         const confirmed = await confirm({
             title: `Permanently delete ${name || 'user'}?`,
             description: "This action cannot be undone. This will permanently delete the user's data.",
             confirmText: "Yes, Delete Permanently",
             destructive: true,
-});
+        });
 
         if (!confirmed) return;
 
@@ -223,7 +226,6 @@ export default function UserManagementPage() {
                 title: "User Deleted",
                 description: "The user account has been permanently removed.",
             });
-            setSelectedUser(null);
         } catch (error: any) {
             toast({
                 variant: "destructive",

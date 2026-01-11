@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
 
 type ConfirmOptions = {
   title: string;
@@ -51,6 +52,8 @@ export function useConfirmDialog() {
     setOpen(false);
     resolverRef.current?.(v);
     resolverRef.current = null;
+    // Add a slight delay to allow the dialog's own animation to finish
+    setTimeout(cleanupRadixOverlays, 150);
   }
 
   const Dialog = (
