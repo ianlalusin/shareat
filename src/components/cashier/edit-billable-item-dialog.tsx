@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
@@ -20,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import type { Discount, SessionBillLine } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
+import { serverTimestamp } from "firebase/firestore";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
