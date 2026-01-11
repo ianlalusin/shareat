@@ -157,6 +157,7 @@ export type KitchenTicket = {
     tableId: string;
     tableNumber: string;
     type: OrderItemType;
+    itemId?: string;
     itemName: string;
     guestCount: number;
     status: OrderItemStatus;

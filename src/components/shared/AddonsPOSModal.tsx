@@ -255,6 +255,7 @@ function POSContent({
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
                 type: "addon",
+                itemId: selectedAddon.id,
                 itemName: selectedAddon.displayName,
                 qty: 1, // Always 1 per ticket
                 uom: selectedAddon.uom,

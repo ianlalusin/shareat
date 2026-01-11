@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -205,7 +206,7 @@ function POSContent({
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
                 type: "refill",
-                itemId: item.refill.refillId, // Link to billable item
+                itemId: item.refill.refillId,
                 itemName: item.refill.refillName,
                 qty: 1,
                 kitchenLocationId: item.refill.kitchenLocationId,
@@ -271,7 +272,7 @@ function POSContent({
             const payload = {
                 id: ticketRef.id,
                 type: "refill",
-                itemId: refill.refillId, // Link to billable item
+                itemId: refill.refillId,
                 itemName: refill.refillName,
                 qty: 1,
                 notes: notes,
