@@ -29,7 +29,7 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date }) {
             setNow(new Date());
         }, 5000); // Update every 5 seconds
         return () => clearInterval(timer);
-    }, []);
+    }, [jsDate]);
 
     if (!jsDate) {
         return (
