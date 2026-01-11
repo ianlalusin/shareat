@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -174,6 +175,7 @@ export async function startSession(
         tableId: payload.tableId,
         tableNumber: payload.tableNumber,
         type: "package",
+        itemId: payload.package.packageId, // Link to billable item
         itemName: payload.package.packageName,
         guestCount: payload.guestCount,
         status: "preparing",

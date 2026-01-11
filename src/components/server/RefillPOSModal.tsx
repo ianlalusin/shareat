@@ -205,6 +205,7 @@ function POSContent({
             const ticketPayload = stripUndefined({
                 id: ticketRef.id,
                 type: "refill",
+                itemId: item.refill.refillId, // Link to billable item
                 itemName: item.refill.refillName,
                 qty: 1,
                 kitchenLocationId: item.refill.kitchenLocationId,
@@ -270,6 +271,7 @@ function POSContent({
             const payload = {
                 id: ticketRef.id,
                 type: "refill",
+                itemId: refill.refillId, // Link to billable item
                 itemName: refill.refillName,
                 qty: 1,
                 notes: notes,
