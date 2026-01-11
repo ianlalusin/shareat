@@ -3,7 +3,27 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DollarSign, Receipt, Users, BarChart } from "lucide-react";
+import { Receipt, Users, BarChart } from "lucide-react";
+
+// Inline SVG for Peso Sign
+const PesoSign = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M8 19V5" />
+    <path d="M8 12h8" />
+    <path d="M8 8h8" />
+    <path d="M12 19V5" />
+  </svg>
+);
+
 
 export type DashboardStats = {
     grossSales: number;
@@ -46,7 +66,7 @@ function StatCard({ title, value, icon, isLoading, format = "number" }: { title:
 export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) {
     return (
         <>
-            <StatCard title="Gross Sales" value={stats.grossSales} icon={<DollarSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
+            <StatCard title="Gross Sales" value={stats.grossSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
             <StatCard title="Active Sessions" value={activeSessions} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
             <StatCard title="Average Basket" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
