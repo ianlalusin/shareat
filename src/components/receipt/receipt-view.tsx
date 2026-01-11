@@ -74,12 +74,15 @@ interface ReceiptViewProps {
     forcePaperWidth?: "58mm" | "80mm" | "A4";
 }
 
-function ReceiptRow({ label, value, isBold = false, isEmphasized = false }: { label: string, value: string, isBold?: boolean, isEmphasized?: boolean }) {
+function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string }) {
     const valueClass = isEmphasized ? 'text-lg' : '';
+    const formattedValue = isCurrency && typeof value === 'number'
+      ? `${prefix}${(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : value;
     return (
         <div className={`flex justify-between items-baseline ${isBold ? 'font-bold' : ''} ${valueClass} receipt-section`}>
             <span>{label}</span>
-            <span className="text-right">{value}</span>
+            <span className="text-right">{formattedValue}</span>
         </div>
     );
 }
@@ -220,12 +223,12 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
-                <ReceiptRow label="Subtotal" value={(subtotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                <ReceiptRow label="Subtotal" value={subtotal} isCurrency />
                 {(discountsTotal > 0) && (
-                    <ReceiptRow label="Discounts" value={`(${(discountsTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />
+                    <ReceiptRow label="Discounts" value={discountsTotal} isCurrency prefix="(- " suffix=")" />
                 )}
                  {(chargesTotal > 0) && (
-                    <ReceiptRow label="Charges" value={(chargesTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                    <ReceiptRow label="Charges" value={chargesTotal} isCurrency prefix="+ " />
                 )}
              </section>
              
@@ -233,9 +236,9 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                  <>
                     <hr className="border-dashed border-black my-2" />
                     <section className="space-y-px mb-2 text-xs receipt-section">
-                         <ReceiptRow label="VATable Sales" value={vatableSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                         <ReceiptRow label="VAT Exempt Sales" value={"0.00"} />
-                         <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                         <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
+                         <ReceiptRow label="VAT Exempt Sales" value={0} isCurrency />
+                         <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
                     </section>
                 </>
              )}
@@ -243,16 +246,16 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={`PHP ${(grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} isBold={true} isEmphasized={true} />
+                <ReceiptRow label="TOTAL" value={grandTotal} isBold={true} isEmphasized={true} isCurrency prefix="PHP " />
              </section>
             
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 text-xs receipt-section">
                 {paymentsFromAnalytics.map((p, i) => (
-                    <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                    <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
                 ))}
-                 <ReceiptRow label="Total Paid" value={(totalPaid).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
-                 <ReceiptRow label="CHANGE" value={(change).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} isBold={true} isEmphasized={true} />
+                 <ReceiptRow label="Total Paid" value={totalPaid} isCurrency />
+                 <ReceiptRow label="CHANGE" value={change} isBold={true} isEmphasized={true} isCurrency />
              </section>
 
              {freeItems.length > 0 && (

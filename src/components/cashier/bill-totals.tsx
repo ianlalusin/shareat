@@ -67,7 +67,7 @@ export function BillTotals({
                 lineSubRows.push(
                     <div key={`${line.id}-disc`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.discountQty}x Discount`}</span>
-                        <span>-₱{discountAmount.toFixed(2)}</span>
+                        <span>-₱{discountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 );
             }
@@ -75,7 +75,7 @@ export function BillTotals({
                 lineSubRows.push(
                     <div key={`${line.id}-free`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.freeQty}x Free`}</span>
-                        <span>-₱{(line.freeQty * line.unitPrice).toFixed(2)}</span>
+                        <span>-₱{(line.freeQty * line.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 );
             }
@@ -84,7 +84,7 @@ export function BillTotals({
                 <div key={line.id} className="space-y-1">
                     <div className="flex justify-between">
                         <span>{billableQty}x {line.itemName}</span>
-                        <span>₱{lineGross.toFixed(2)}</span>
+                        <span>₱{lineGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {lineSubRows}
                 </div>

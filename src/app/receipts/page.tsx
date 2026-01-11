@@ -428,10 +428,10 @@ function ReceiptsPageContents() {
                                                 <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName}</div>
                                                 <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
-                                            <TableCell className="text-right py-2">₱{(r.analytics?.subtotal ?? 0).toFixed(2)}</TableCell>
-                                            <TableCell className="text-right py-2 text-destructive">₱{(r.analytics?.discountsTotal ?? 0).toFixed(2)}</TableCell>
-                                            <TableCell className="text-right py-2 text-green-600">₱{(r.analytics?.chargesTotal ?? 0).toFixed(2)}</TableCell>
-                                            <TableCell className="text-right font-bold py-2">₱{r.total.toFixed(2)}</TableCell>
+                                            <TableCell className="text-right py-2">₱{(r.analytics?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                            <TableCell className="text-right py-2 text-destructive">₱{(r.analytics?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                            <TableCell className="text-right py-2 text-green-600">₱{(r.analytics?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                            <TableCell className="text-right font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
