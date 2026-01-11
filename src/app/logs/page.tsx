@@ -15,7 +15,6 @@ import CompactCalendar from "@/components/ui/CompactCalendar";
 import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLogCard";
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
-import * as XLSX from "xlsx";
 import { format as formatDate } from "date-fns";
 
 // Helper functions for date manipulation
@@ -207,14 +206,6 @@ export default function LogsPage() {
     }
     setIsCalendarOpen(false);
   };
-  
-  const handleExport = () => {
-    const allLogs = groupedLogs.flatMap(g => g.logs.map(log => formatLogForExport(log)));
-    const worksheet = XLSX.utils.json_to_sheet(allLogs);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Activity Logs");
-    XLSX.writeFile(workbook, `activity_logs_${formatDate(new Date(), 'yyyy-MM-dd')}.xlsx`);
-  };
 
   if (storeLoading) {
     return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
@@ -269,7 +260,6 @@ export default function LogsPage() {
                     </PopoverContent>
                     </Popover>
                 </div>
-                <Button variant="outline" onClick={handleExport} disabled={groupedLogs.length === 0}><Download className="mr-2"/> Export</Button>
             </div>
             <p className="text-sm text-muted-foreground w-full md:w-auto text-right">{dateRangeLabel}</p>
         </div>
