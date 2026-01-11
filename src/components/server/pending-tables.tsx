@@ -225,6 +225,7 @@ export function PendingTables({ sessions, onVerify, onRequestChange, onViewTimel
   
   return (
     <div className="space-y-4">
+       {pendingVerificationSessions.length > 0 ? (
         <Accordion type="single" collapsible defaultValue="pending" className="w-full">
             <AccordionItem value="pending">
                  <Card>
@@ -239,7 +240,6 @@ export function PendingTables({ sessions, onVerify, onRequestChange, onViewTimel
                     </CardHeader>
                     <AccordionContent>
                         <CardContent className="grid sm:grid-cols-2 gap-4 pt-4">
-                            {pendingVerificationSessions.length === 0 ? <p className="text-muted-foreground text-center py-4 sm:col-span-2">No sessions are waiting for verification.</p> : null}
                             {pendingVerificationSessions.map(session => (
                                 <SessionCard
                                     key={session.id}
@@ -258,6 +258,18 @@ export function PendingTables({ sessions, onVerify, onRequestChange, onViewTimel
                  </Card>
             </AccordionItem>
         </Accordion>
+       ) : (
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between p-6">
+                    <div className="text-left">
+                        <CardTitle>Pending Verification</CardTitle>
+                        <CardDescription>Sessions waiting for server confirmation.</CardDescription>
+                    </div>
+                    <Badge variant="secondary">0</Badge>
+                </CardHeader>
+            </Card>
+       )}
+
 
         <Card>
             <CardHeader>
