@@ -29,7 +29,14 @@ export interface UserDocument {
 export type Product = {
   id: string;
   name: string;
-  variant?: string;
+  // Variant Management
+  kind?: "single" | "group" | "variant";
+  groupId?: string | null;
+  groupName?: string | null;
+  variantLabel?: string | null;
+  isSku?: boolean;
+  
+  variant?: string; // Legacy field
   category: string;
   subCategory?: string;
   uom: string;

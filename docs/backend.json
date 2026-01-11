@@ -55,42 +55,20 @@
       "type": "object",
       "description": "Represents a globally managed product available across all stores.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Product entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the product."
-        },
-        "variant": {
-          "type": "string",
-          "description": "A specific variant of the product (e.g., color, size)."
-        },
-        "uom": {
-          "type": "string",
-          "description": "The unit of measurement for the product (e.g., kg, piece)."
-        },
-        "category": {
-            "type": "string",
-            "description": "The category of the product."
-        },
-        "subCategory": {
-            "type": "string",
-            "description": "The sub-category of the product."
-        },
-        "barcode": {
-            "type": "string",
-            "description": "The barcode of the product."
-        },
-        "imageUrl": {
-            "type": "string",
-            "description": "URL for the product image."
-        },
-        "isActive": {
-            "type": "boolean",
-            "description": "Indicates whether the product is currently active."
-        }
+        "id": { "type": "string", "description": "Unique identifier for the Product entity." },
+        "name": { "type": "string", "description": "The name of the product." },
+        "variant": { "type": "string", "description": "A specific variant of the product (e.g., color, size)." },
+        "uom": { "type": "string", "description": "The unit of measurement for the product (e.g., kg, piece)." },
+        "category": { "type": "string", "description": "The category of the product." },
+        "subCategory": { "type": "string", "description": "The sub-category of the product." },
+        "barcode": { "type": "string", "description": "The barcode of the product." },
+        "imageUrl": { "type": "string", "description": "URL for the product image." },
+        "isActive": { "type": "boolean", "description": "Indicates whether the product is currently active." },
+        "kind": { "type": "string", "enum": ["single", "group", "variant"], "description": "The type of product: a single item, a group parent, or a variant." },
+        "groupId": { "type": ["string", "null"], "description": "For variants, the ID of the parent group product." },
+        "groupName": { "type": ["string", "null"], "description": "Denormalized name of the group for display." },
+        "variantLabel": { "type": ["string", "null"], "description": "The specific label for this variant (e.g., '500ml', 'Large')." },
+        "isSku": { "type": "boolean", "description": "True if the product is a sellable SKU (single or variant)." }
       },
       "required": [
         "id",
