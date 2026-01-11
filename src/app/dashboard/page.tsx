@@ -69,14 +69,19 @@ export default function DashboardPage() {
         
         const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
         const transactions = v2Receipts.length;
-        const avgTicket = transactions > 0 ? grossSales / transactions : 0;
+        const avgBasket = transactions > 0 ? grossSales / transactions : 0;
         
         const tally: PaymentMethodTally = {};
         v2Receipts.forEach(r => {
             const mop = r.analytics?.mop;
             if (mop) {
-                for (const [method, amount] of Object.entries(mop)) {
-                    tally[method] = (tally[method] || 0) + amount;
+                // Safely iterate over the MOP object
+                for (const [method, amount] of Object.entries(mop as Record<string, unknown>)) {
+                    // Safely convert amount to a number, defaulting to 0 if invalid
+                    const numAmount = typeof amount === "number" ? amount : Number(amount || 0);
+                    if (Number.isFinite(numAmount)) {
+                        tally[method] = (tally[method] || 0) + numAmount;
+                    }
                 }
             }
         });
@@ -86,7 +91,7 @@ export default function DashboardPage() {
         const activeSessionsCount = 0; 
         
         return {
-            stats: { grossSales, transactions, avgTicket },
+            stats: { grossSales, transactions, avgBasket },
             paymentTally: tally,
             activeSessionsCount,
         };
