@@ -70,6 +70,7 @@ export default function DashboardPage() {
         const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
         const transactions = v2Receipts.length;
         const avgBasket = transactions > 0 ? grossSales / transactions : 0;
+        const avgTicket = transactions > 0 ? grossSales / transactions : 0;
         
         const tally: PaymentMethodTally = {};
         v2Receipts.forEach(r => {
@@ -90,8 +91,10 @@ export default function DashboardPage() {
         // A more complex implementation would listen to the sessions collection.
         const activeSessionsCount = 0; 
         
+        const stats: DashboardStats = { grossSales, transactions, avgBasket, avgTicket };
+
         return {
-            stats: { grossSales, transactions, avgBasket },
+            stats,
             paymentTally: tally,
             activeSessionsCount,
         };
@@ -118,7 +121,7 @@ export default function DashboardPage() {
                     <StatCards stats={stats} activeSessions={activeSessionsCount} isLoading={isLoading} />
                 </div>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                    <Card className="lg:col-span-1">
+                     <Card className="lg:col-span-1">
                         <CardHeader>
                             <CardTitle>Payment Mix</CardTitle>
                             <CardDescription>Breakdown of payments by method.</CardDescription>
@@ -148,3 +151,4 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+

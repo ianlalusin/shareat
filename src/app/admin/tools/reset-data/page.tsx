@@ -15,10 +15,10 @@ import { AlertCircle, Loader, Trash2 } from 'lucide-react';
 import { useStoreContext } from '@/context/store-context';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { clearStoreData } from '@/lib/firebase/admin-delete';
 import { useToast } from '@/hooks/use-toast';
 import type { Store } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { clearStoreData } from './actions';
 
 export default function ResetDataPage() {
     const { allowedStores } = useStoreContext();
@@ -75,14 +75,20 @@ export default function ResetDataPage() {
         if (!isConfirmationMatch || !selectedStoreId) return;
 
         setIsDeleting(true);
-        setProgressLog([]);
+        setProgressLog(['Starting data cleanup...']);
 
         try {
-            await clearStoreData(selectedStoreId, resetCounter, (message) => {
-                setProgressLog(prev => [...prev, message]);
-            });
-            toast({ title: 'Data Reset Complete', description: `All session and receipt data for ${selectedStore?.name} has been deleted.` });
+            const result = await clearStoreData({ storeId: selectedStoreId, resetCounter });
+            
+            if (result.success) {
+                setProgressLog(prev => [...prev, result.message, 'Cleanup complete.']);
+                toast({ title: 'Data Reset Complete', description: `All session and receipt data for ${selectedStore?.name} has been deleted.` });
+            } else {
+                 throw new Error(result.message);
+            }
+
         } catch (error: any) {
+            setProgressLog(prev => [...prev, `Error: ${error.message}`]);
             toast({ variant: 'destructive', title: 'Deletion Failed', description: error.message });
         } finally {
             setIsDeleting(false);
