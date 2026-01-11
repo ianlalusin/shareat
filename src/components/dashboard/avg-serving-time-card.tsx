@@ -23,12 +23,17 @@ type ServeTimeTally = {
 };
 
 function formatDuration(ms: number): string {
-    if (isNaN(ms) || ms < 0) return "00:00";
+    if (isNaN(ms) || ms < 0) return "00:00:00";
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    const paddedSeconds = seconds < 10 ? `0${seconds}` : seconds;
-    return `${minutes}:${paddedSeconds}`;
+    
+    const paddedHours = hours.toString().padStart(2, '0');
+    const paddedMinutes = minutes.toString().padStart(2, '0');
+    const paddedSeconds = seconds.toString().padStart(2, '0');
+
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
 
@@ -69,15 +74,17 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
         const tally: ServeTimeTally = {};
         
         tickets.forEach(ticket => {
-            let durationMs: number | undefined = (ticket as any).durationMs;
+            let durationMs: number | undefined;
 
-            // Fallback for older tickets
-            if (typeof durationMs !== 'number' || durationMs <= 0) {
-                const startTs = toJsDate(ticket.createdAt);
-                const endTs = toJsDate(ticket.servedAt);
-                if (startTs && endTs) {
-                    durationMs = endTs.getTime() - startTs.getTime();
-                }
+            // Prioritize calculation from prepared to served
+            const preparedTs = toJsDate(ticket.preparedAt);
+            const servedTs = toJsDate(ticket.servedAt);
+
+            if (preparedTs && servedTs) {
+                durationMs = servedTs.getTime() - preparedTs.getTime();
+            } else if ((ticket as any).durationMs && (ticket as any).durationMs > 0) {
+                // Fallback to pre-calculated duration for older tickets
+                durationMs = (ticket as any).durationMs;
             }
 
             if (durationMs && durationMs > 0) {
@@ -143,7 +150,7 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
                     <TableHeader>
                         <TableRow>
                             <TableHead>Item Type</TableHead>
-                            <TableHead className="text-right">Avg (mm:ss)</TableHead>
+                            <TableHead className="text-right">Avg (hh:mm:ss)</TableHead>
                             <TableHead className="text-right">Count</TableHead>
                         </TableRow>
                     </TableHeader>

@@ -205,10 +205,19 @@ export default function KitchenPage() {
                 }
                 transaction.update(sessionRef, sessionUpdate);
 
-            } else { // cancelled or void
+            } else { // cancelled
                 updatePayload.cancelledAt = serverTimestamp();
                 updatePayload.cancelledByUid = appUser.uid;
                 updatePayload.cancelReason = reason;
+
+                // Also update the corresponding billable item if it's an add-on
+                if (ticket.type === 'addon' && ticket.itemId) {
+                    const billLineId = `addon_${ticket.itemId}`;
+                    const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", billLineId);
+                    transaction.update(billLineRef, {
+                        voidedQty: increment(1)
+                    });
+                }
             }
             transaction.update(ticketRef, updatePayload);
         });
