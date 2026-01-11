@@ -74,11 +74,12 @@ interface ReceiptViewProps {
     forcePaperWidth?: "58mm" | "80mm" | "A4";
 }
 
-function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string }) {
+function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '', suffix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string, suffix?: string }) {
     const valueClass = isEmphasized ? 'text-lg' : '';
     const formattedValue = isCurrency && typeof value === 'number'
-      ? `${prefix}${(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : value;
+      ? `${prefix}${(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${suffix}`
+      : `${prefix}${value}${suffix}`;
+
     return (
         <div className={`flex justify-between items-baseline ${isBold ? 'font-bold' : ''} ${valueClass} receipt-section`}>
             <span>{label}</span>
