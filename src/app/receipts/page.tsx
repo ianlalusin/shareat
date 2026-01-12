@@ -64,7 +64,7 @@ function ReceiptsPageContents() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
-    const { confirm, Dialog } = useConfirmDialog();
+    const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
 
@@ -536,7 +536,7 @@ function ReceiptsPageContents() {
             <div className="hidden print-block">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
-            {Dialog}
+            {ConfirmDialog}
         </RoleGuard>
     )
 }
@@ -548,5 +548,7 @@ export default function ReceiptsPage() {
         </React.Suspense>
     )
 }
+
+    
 
     
