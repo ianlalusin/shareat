@@ -11,7 +11,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader, Search } from "lucide-react";
 import type { Product } from "@/lib/types";
-import { getDisplayName } from "@/lib/products/variants";
+import { getDisplayName, getGroupKey } from "@/lib/products/variants";
 
 interface AddInventoryDialogProps {
   isOpen: boolean;
@@ -45,6 +45,7 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
   
   useEffect(() => {
     if (isOpen) {
+        setSearch("");
         setSelectedProducts({});
     }
   }, [isOpen]);
@@ -56,16 +57,16 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
   const groupedAndFilteredProducts = useMemo(() => {
     const filtered = availableProducts.filter(p => getDisplayName(p).toLowerCase().includes(search.toLowerCase()));
 
-    const grouped: Record<string, { groupName: string; items: Product[] }> = {};
+    const grouped: Record<string, { groupName: string; groupKey: string; items: Product[] }> = {};
     
     filtered.forEach(p => {
-        const groupId = p.groupId || p.id;
+        const groupKey = getGroupKey(p);
         const groupName = p.groupName || p.name;
         
-        if (!grouped[groupId]) {
-            grouped[groupId] = { groupName: groupName, items: [] };
+        if (!grouped[groupKey]) {
+            grouped[groupKey] = { groupName: groupName, groupKey: groupKey, items: [] };
         }
-        grouped[groupId].items.push(p);
+        grouped[groupKey].items.push(p);
     });
 
     return Object.values(grouped).sort((a,b) => a.groupName.localeCompare(b.groupName));
@@ -118,8 +119,8 @@ export function AddInventoryDialog({ isOpen, onClose, onAddItems, isSubmitting, 
                 <Command>
                     <CommandList>
                         {groupedAndFilteredProducts.length > 0 ? (
-                             groupedAndFilteredProducts.map(({ groupName, items }) => (
-                                <CommandGroup key={groupName} heading={groupName}>
+                             groupedAndFilteredProducts.map(({ groupKey, groupName, items }) => (
+                                <CommandGroup key={groupKey} heading={groupName}>
                                 {items.map(product => (
                                     <CommandItem 
                                     key={product.id} 
