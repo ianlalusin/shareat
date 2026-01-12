@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import * as React from "react";
@@ -65,7 +64,7 @@ function ReceiptsPageContents() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
-    const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
+    const { confirm, Dialog } = useConfirmDialog();
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
 
@@ -537,7 +536,7 @@ function ReceiptsPageContents() {
             <div className="hidden print-block">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
-            <ConfirmDialog />
+            {Dialog}
         </RoleGuard>
     )
 }
@@ -549,3 +548,5 @@ export default function ReceiptsPage() {
         </React.Suspense>
     )
 }
+
+    
