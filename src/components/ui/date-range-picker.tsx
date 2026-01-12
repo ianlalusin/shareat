@@ -20,14 +20,26 @@ type CalendarOnChange = NonNullable<
 >;
 type CalendarRange = Parameters<CalendarOnChange>[0];
 
+interface DateRangePickerProps extends React.HTMLAttributes<HTMLDivElement> {
+    onDateChange: (range: { start: Date, end: Date }) => void;
+}
+
 
 export function DateRangePicker({
   className,
-}: React.HTMLAttributes<HTMLDivElement>) {
+  onDateChange,
+}: DateRangePickerProps) {
   const [date, setDate] = React.useState<CalendarRange | undefined>({
     start: new Date(),
     end: new Date(),
   })
+
+  const handleApply = (range: CalendarRange, preset: string) => {
+    if (range.start && range.end) {
+      setDate(range);
+      onDateChange({start: range.start, end: range.end});
+    }
+  }
 
   return (
     <div className={cn("grid gap-2", className)}>
@@ -58,14 +70,7 @@ export function DateRangePicker({
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
           <CompactCalendar
-            onChange={(range) => {
-              // Safely handle potentially incomplete ranges from the calendar component.
-              if (!range?.start || !range?.end) {
-                setDate(undefined);
-                return;
-              }
-              setDate(range);
-            }}
+            onChange={handleApply}
           />
         </PopoverContent>
       </Popover>

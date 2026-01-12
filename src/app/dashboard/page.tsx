@@ -19,9 +19,13 @@ import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
+import { isSameDay } from "date-fns";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
+function fmtDate(d: Date) {
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
 
 export default function DashboardPage() {
     const { activeStore } = useStoreContext();
@@ -115,6 +119,13 @@ export default function DashboardPage() {
         };
     }, [receipts]);
 
+    const dateRangeLabel = useMemo(() => {
+        if (isSameDay(dateRange.start, dateRange.end)) {
+            return fmtDate(dateRange.start);
+        }
+        return `${fmtDate(dateRange.start)} - ${fmtDate(dateRange.end)}`;
+    }, [dateRange]);
+
     if (!activeStore) {
         return (
             <Card className="w-full max-w-md mx-auto mt-10">
@@ -129,7 +140,12 @@ export default function DashboardPage() {
     return (
         <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`} className="mb-4">
-                {/* <DateRangePicker /> */}
+                 <div className="flex flex-col items-end gap-2">
+                    <DateRangePicker 
+                        onDateChange={(range) => setDateRange({start: startOfDay(range.start), end: endOfDay(range.end)})}
+                    />
+                    <p className="text-sm text-muted-foreground w-full md:w-auto text-right">{dateRangeLabel}</p>
+                </div>
             </PageHeader>
             <div className="grid gap-6">
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
