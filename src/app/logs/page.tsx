@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLogCard";
+import { VoidsAndCompsCard } from "@/components/logs/VoidsAndCompsCard";
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { format as formatDate } from "date-fns";
@@ -142,11 +143,12 @@ export default function LogsPage() {
         
         if (missingSessionIds.length > 0) {
             const idChunks: string[][] = [];
-            for (let i = 0; i < missingSessionIds.length; i += 10) {
-                idChunks.push(missingSessionIds.slice(i, i + 10));
+            for (let i = 0; i < missingSessionIds.length; i += 30) { // Firestore 'in' query limit is 30
+                idChunks.push(missingSessionIds.slice(i, i + 30));
             }
             
             for (const chunk of idChunks) {
+                if (chunk.length === 0) continue;
                 const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(documentId(), "in", chunk));
                 const sessionsSnap = await getDocs(sessionQuery);
                 sessionsSnap.forEach(doc => {
@@ -189,6 +191,17 @@ export default function LogsPage() {
 
     return () => unsubscribe();
   }, [activeStore?.id, start, end]);
+
+  const voidAndFreeLogs = useMemo(() => {
+    const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE"];
+    return groupedLogs
+        .flatMap(({ session, logs }) => 
+            logs
+                .filter(log => relevantActions.includes(log.action))
+                .map(log => ({ ...log, session })) // Attach session to each log
+        )
+        .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
+  }, [groupedLogs]);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -283,22 +296,33 @@ export default function LogsPage() {
             <p className="text-sm text-muted-foreground w-full md:w-auto text-right">{dateRangeLabel}</p>
         </div>
       </PageHeader>
-      <div className="mt-6">
-        {isLoading ? (
-             <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
-        ) : groupedLogs.length > 0 ? (
-            <Accordion type="single" collapsible className="w-full space-y-4">
-                {groupedLogs.map(({ session, logs }) => (
-                    <SessionLogCard key={session.id} session={session} initialLogs={logs} />
-                ))}
-            </Accordion>
-        ) : (
-            <Card>
-                <CardContent className="p-10 text-center text-muted-foreground">
-                    No activity found for the selected date range.
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="space-y-4">
+             <Card>
+                <CardHeader>
+                    <CardTitle>Session Logs</CardTitle>
+                    <CardDescription>All activities grouped by session.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {isLoading ? (
+                        <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
+                    ) : groupedLogs.length > 0 ? (
+                        <Accordion type="single" collapsible className="w-full space-y-4">
+                            {groupedLogs.map(({ session, logs }) => (
+                                <SessionLogCard key={session.id} session={session} initialLogs={logs} />
+                            ))}
+                        </Accordion>
+                    ) : (
+                        <p className="p-10 text-center text-muted-foreground">
+                            No activity found for the selected date range.
+                        </p>
+                    )}
                 </CardContent>
             </Card>
-        )}
+        </div>
+        <div>
+            <VoidsAndCompsCard logs={voidAndFreeLogs} isLoading={isLoading} />
+        </div>
       </div>
     </RoleGuard>
   );
