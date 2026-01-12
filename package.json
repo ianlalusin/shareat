@@ -2,6 +2,7 @@
   "name": "culinaryflow",
   "version": "0.1.20",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",

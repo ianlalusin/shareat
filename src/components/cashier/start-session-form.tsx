@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, PlusCircle, Minus, Plus } from "lucide-react";
+import { Loader2, PlusCircle, Minus, Plus, MessageSquarePlus } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +37,8 @@ const unlimitedSchema = z.object({
     tableId: z.string({ required_error: "Please select a table." }),
     packageId: z.string({ required_error: "Please select a package." }),
     guestCount: z.coerce.number().min(1, "At least one guest is required."),
+    riceQty: z.coerce.number().min(0),
+    cheeseQty: z.coerce.number().min(0),
     initialFlavorIds: z.array(z.string()).min(1, "Select at least one flavor.").max(3, "You can select up to 3 flavors."),
     notes: z.string().optional(),
     customerName: z.string().optional(),
@@ -69,10 +71,16 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [mode, setMode] = useState<"unlimited" | "alacarte">("unlimited");
 
+    // State for rice/cheese qty touched status
+    const [riceTouched, setRiceTouched] = useState(false);
+    const [cheeseTouched, setCheeseTouched] = useState(false);
+
     const unlimitedForm = useForm<UnlimitedFormValues>({
         resolver: zodResolver(unlimitedSchema),
         defaultValues: {
             guestCount: 2,
+            riceQty: 2,
+            cheeseQty: 2,
             initialFlavorIds: [],
             notes: "",
             customerName: "",
@@ -89,6 +97,37 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
             customerAddress: "",
         }
     });
+    
+    const guestCount = unlimitedForm.watch("guestCount");
+    const riceQty = unlimitedForm.watch("riceQty");
+    const cheeseQty = unlimitedForm.watch("cheeseQty");
+
+    // Effect to sync rice/cheese with guest count if not manually touched
+    useEffect(() => {
+        if (!riceTouched) {
+            unlimitedForm.setValue('riceQty', guestCount);
+        }
+        if (!cheeseTouched) {
+            unlimitedForm.setValue('cheeseQty', guestCount);
+        }
+    }, [guestCount, riceTouched, cheeseTouched, unlimitedForm]);
+
+    const handleRiceChange = (value: number) => {
+        setRiceTouched(true);
+        unlimitedForm.setValue('riceQty', value);
+    }
+    
+    const handleCheeseChange = (value: number) => {
+        setCheeseTouched(true);
+        unlimitedForm.setValue('cheeseQty', value);
+    }
+    
+    const handleAddNotes = () => {
+        const currentNotes = unlimitedForm.getValues('notes') || '';
+        const newNote = `Rice: ${riceQty}, Cheese: ${cheeseQty}`;
+        const updatedNotes = currentNotes ? `${currentNotes}\n${newNote}` : newNote;
+        unlimitedForm.setValue('notes', updatedNotes);
+    };
 
     const onSubmitUnlimited = async (data: UnlimitedFormValues) => {
         if (!user || !storeId) {
@@ -191,8 +230,6 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         }
     }
     
-    const guestCount = unlimitedForm.watch("guestCount");
-
     return (
         <Card>
             <CardHeader>
@@ -241,6 +278,28 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                                 <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', guestCount + 1)}><Plus /></Button>
                                             </div>
                                         </div>
+                                    </div>
+
+                                     <div className="grid grid-cols-3 gap-4 items-end">
+                                        <div className="space-y-2">
+                                            <Label>Rice</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(Math.max(0, riceQty - 1))}><Minus /></Button>
+                                                <QuantityInput value={riceQty} onChange={handleRiceChange} className="w-12 text-center" />
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(riceQty + 1)}><Plus /></Button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Cheese</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(Math.max(0, cheeseQty - 1))}><Minus /></Button>
+                                                <QuantityInput value={cheeseQty} onChange={handleCheeseChange} className="w-12 text-center" />
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(cheeseQty + 1)}><Plus /></Button>
+                                            </div>
+                                        </div>
+                                        <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
+                                            <MessageSquarePlus className="mr-2"/> Add to Notes
+                                        </Button>
                                     </div>
                                 </div>
                                 <Separator />
