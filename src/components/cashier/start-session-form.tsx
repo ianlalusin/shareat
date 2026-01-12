@@ -279,28 +279,6 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                             </div>
                                         </div>
                                     </div>
-
-                                     <div className="grid grid-cols-3 gap-4 items-end">
-                                        <div className="space-y-2">
-                                            <Label>Rice</Label>
-                                            <div className="flex items-center gap-2">
-                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(Math.max(0, riceQty - 1))}><Minus /></Button>
-                                                <QuantityInput value={riceQty} onChange={handleRiceChange} className="w-12 text-center" />
-                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(riceQty + 1)}><Plus /></Button>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Cheese</Label>
-                                            <div className="flex items-center gap-2">
-                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(Math.max(0, cheeseQty - 1))}><Minus /></Button>
-                                                <QuantityInput value={cheeseQty} onChange={handleCheeseChange} className="w-12 text-center" />
-                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(cheeseQty + 1)}><Plus /></Button>
-                                            </div>
-                                        </div>
-                                        <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
-                                            <MessageSquarePlus className="mr-2"/> Add to Notes
-                                        </Button>
-                                    </div>
                                 </div>
                                 <Separator />
                                 {/* Step 2: Package */}
@@ -363,6 +341,29 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                 <Separator />
                                 {/* Step 4: Notes and Customer */}
                                 <div className="space-y-4">
+                                    <div className="p-4 border rounded-md space-y-4">
+                                        <div className="grid grid-cols-3 gap-4 items-end">
+                                            <div className="space-y-2">
+                                                <Label>Rice</Label>
+                                                <div className="flex items-center gap-2">
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(Math.max(0, riceQty - 1))}><Minus /></Button>
+                                                    <QuantityInput value={riceQty} onChange={handleRiceChange} className="w-12 text-center" />
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(riceQty + 1)}><Plus /></Button>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Cheese</Label>
+                                                <div className="flex items-center gap-2">
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(Math.max(0, cheeseQty - 1))}><Minus /></Button>
+                                                    <QuantityInput value={cheeseQty} onChange={handleCheeseChange} className="w-12 text-center" />
+                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(cheeseQty + 1)}><Plus /></Button>
+                                                </div>
+                                            </div>
+                                            <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
+                                                <MessageSquarePlus className="mr-2"/> Add to Notes
+                                            </Button>
+                                        </div>
+                                    </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="notes">Notes (Optional)</Label>
                                         <Textarea id="notes" placeholder="e.g., birthday celebration, allergies..." {...unlimitedForm.register('notes')} />
