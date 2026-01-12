@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs, deleteDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs, deleteDoc, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,8 @@ import { uploadProductImage } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { read, utils } from "xlsx";
+import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
+import { normalizeUom } from "@/lib/uom";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -35,6 +37,9 @@ export default function ProductManagementPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const { confirm, Dialog } = useConfirmDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [parsedImportData, setParsedImportData] = useState<any[]>([]);
+  const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!appUser) return;
@@ -255,72 +260,95 @@ export default function ProductManagementPage() {
     }
   };
 
-  const handleExportTemplate = () => {
-    const headers = ["name", "variantLabel", "uom", "subCategory", "barcode"];
-    const sampleData = [{
-      name: "Sample Product",
-      variantLabel: "Large",
-      uom: "pcs",
-      subCategory: "Sample Category",
-      barcode: "1234567890123"
-    }];
-    exportToXlsx({ rows: [headers, ...sampleData.map(Object.values)], sheetName: "Products", filename: "product_import_template.xlsx" });
-  };
+    const handleExportTemplate = () => {
+        const headers = ["name", "variantLabel", "uom", "category", "subCategory", "barcode", "isActive"];
+        const sampleData = [{
+            name: "Sample Product",
+            variantLabel: "Large",
+            uom: "pcs",
+            category: "Add-on",
+            subCategory: "Drinks",
+            barcode: "1234567890123",
+            isActive: "true"
+        }];
+        exportToXlsx({ 
+            rows: sampleData.map(row => ({
+                name: row.name,
+                variantLabel: row.variantLabel,
+                uom: row.uom,
+                category: row.category,
+                subCategory: row.subCategory,
+                barcode: row.barcode,
+                isActive: row.isActive,
+            })), 
+            sheetName: "Products", 
+            filename: "product_import_template.xlsx" 
+        });
+    };
   
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
 
-    setIsSubmitting(true);
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = read(data);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const json: any[] = utils.sheet_to_json(worksheet);
+        setIsSubmitting(true);
+        try {
+            const data = await file.arrayBuffer();
+            const workbook = read(data);
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json: any[] = utils.sheet_to_json(worksheet);
 
-      if (json.length === 0) {
-        toast({ variant: 'destructive', title: 'Empty File', description: 'The selected file has no data to import.' });
-        return;
-      }
-      
-      const batch = writeBatch(db);
-      let count = 0;
+            if (json.length === 0) {
+                toast({ variant: 'destructive', title: 'Empty File', description: 'The selected file has no data to import.' });
+                return;
+            }
+            
+            setParsedImportData(json);
+            setIsImportPreviewOpen(true);
 
-      for (const row of json) {
-        if (!row.name) continue;
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Import Failed', description: error.message });
+        } finally {
+            setIsSubmitting(false);
+            if(fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+        }
+    };
+    
+    const handleConfirmImport = async (validatedData: any[]) => {
+        setIsImportPreviewOpen(false);
+        setIsSubmitting(true);
+        
+        try {
+            const batch = writeBatch(db);
+            const productsRef = collection(db, "products");
+            
+            validatedData.forEach(row => {
+                const docRef = row.barcode ? doc(productsRef, slugify(row.barcode)) : doc(productsRef);
+                const newProduct: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
+                    name: row.name,
+                    variantLabel: row.variantLabel || null,
+                    uom: normalizeUom(row.uom || "pcs"),
+                    category: row.category || "Add-on",
+                    subCategory: row.subCategory || "Uncategorized",
+                    barcode: row.barcode || null,
+                    isActive: row.isActive,
+                    isSku: true,
+                    kind: row.variantLabel ? "variant" : "single",
+                };
+                
+                batch.set(docRef, { ...newProduct, id: docRef.id, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+            });
 
-        const newDocRef = doc(collection(db, "products"));
-        const newProduct: Partial<Product> = {
-            id: newDocRef.id,
-            name: row.name,
-            variantLabel: row.variantLabel || null,
-            uom: row.uom || "pcs",
-            subCategory: row.subCategory || "Uncategorized",
-            barcode: row.barcode || "",
-            isActive: row.isActive === false ? false : true,
-            isSku: true,
-            kind: "single",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-        };
-        batch.set(newDocRef, newProduct);
-        count++;
-      }
-
-      await batch.commit();
-      toast({ title: "Import Successful", description: `Added ${count} new products.` });
-
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Import Failed', description: error.message });
-    } finally {
-      setIsSubmitting(false);
-      // Reset file input
-      if(fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
+            await batch.commit();
+            toast({ title: "Import Successful", description: `Added ${validatedData.length} new products.` });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Import Failed', description: error.message });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
 
   return (
@@ -399,6 +427,15 @@ export default function ProductManagementPage() {
           )}
         </CardContent>
       </Card>
+      
+      {isImportPreviewOpen && (
+        <ProductImportPreviewDialog
+            isOpen={isImportPreviewOpen}
+            onClose={() => setIsImportPreviewOpen(false)}
+            data={parsedImportData}
+            onConfirm={handleConfirmImport}
+        />
+      )}
 
       {isDialogOpen && (
         <ProductEditDialog
@@ -424,3 +461,5 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
+
+    
