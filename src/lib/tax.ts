@@ -112,7 +112,12 @@ export function calculateBillTotals(
   
   const chargesTotal = round(customAdjustments.reduce((sum, charge) => sum + charge.amount, 0));
 
-  const grandTotal = netSalesAfterAllDiscounts + taxTotal + chargesTotal;
+  // Corrected grand total calculation
+  const totalBeforeCharges = isVatExclusive
+    ? netSalesAfterAllDiscounts + taxTotal
+    : netSalesAfterAllDiscounts;
+
+  const grandTotal = totalBeforeCharges + chargesTotal;
 
   return {
     subtotal: grossSubtotal,
