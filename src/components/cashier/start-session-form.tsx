@@ -360,7 +360,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                                 </div>
                                             </div>
                                             <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
-                                                <MessageSquarePlus className="mr-2"/> Add to Notes
+                                                <MessageSquarePlus className="mr-2"/> Add
                                             </Button>
                                         </div>
                                     </div>
