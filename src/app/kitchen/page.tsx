@@ -21,6 +21,7 @@ import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
+import { Badge } from "@/components/ui/badge";
 
 export type KitchenStation = {
     id: string;
@@ -233,6 +234,16 @@ export default function KitchenPage() {
 
   const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
   
+  const preparingItemsByStation = useMemo(() => {
+    return preparingItems.reduce((acc, ticket) => {
+      const stationId = ticket.kitchenLocationId;
+      if (stationId) {
+        acc[stationId] = (acc[stationId] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+  }, [preparingItems]);
+  
   const readyItems = useMemo(() => {
       const items = ticketsWithData.filter(t => t.status === 'ready');
       const getTime = (date: any): number => {
@@ -271,16 +282,29 @@ export default function KitchenPage() {
                                 <SelectValue placeholder="Select a station..." />
                             </SelectTrigger>
                             <SelectContent>
-                                {stations.map(station => (
-                                    <SelectItem key={station.id} value={station.key}>{station.name}</SelectItem>
-                                ))}
+                                {stations.map(station => {
+                                    const count = preparingItemsByStation[station.id] || 0;
+                                    return (
+                                        <SelectItem key={station.id} value={station.key}>
+                                            {station.name} {count > 0 && `(${count})`}
+                                        </SelectItem>
+                                    )
+                                })}
                             </SelectContent>
                         </Select>
                     ) : (
                         <TabsList>
-                            {stations.map(station => (
-                                <TabsTrigger key={station.id} value={station.key}>{station.name}</TabsTrigger>
-                            ))}
+                            {stations.map(station => {
+                                const count = preparingItemsByStation[station.id] || 0;
+                                return (
+                                    <TabsTrigger key={station.id} value={station.key} className="relative">
+                                        {station.name}
+                                        {count > 0 && (
+                                            <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{count}</Badge>
+                                        )}
+                                    </TabsTrigger>
+                                )
+                            })}
                         </TabsList>
                     )}
                     {stations.map(station => (
