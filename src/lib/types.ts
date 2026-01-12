@@ -389,6 +389,8 @@ export type Receipt = {
     tableId: string | null;
     tableNumber: string | null;
     customerName: string | null;
+    customerAddress?: string | null;
+    customerTin?: string | null;
     lines: SessionBillLine[];
     total: number;
     totalPaid: number;
@@ -405,7 +407,7 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE";
+  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED";
 
   actorUid: string;
   actorRole?: string | null;
@@ -442,6 +444,7 @@ export type ActivityLog = {
     afterQty?: number;
     approvedAt?: any;
     newQty?: number;
+    amount?: number;
   };
 
   createdAt: any; // serverTimestamp()

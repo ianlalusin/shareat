@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -13,11 +14,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -28,8 +29,9 @@ import { toJsDate } from "@/lib/utils/date";
 import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
-import { formatLogForExport } from "@/components/logs/SessionLogCard";
+import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
+import { useConfirmDialog } from "@/components/global/confirm-dialog";
 
 // --- Date Helpers ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -63,6 +65,7 @@ function ReceiptsPageContents() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
+    const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
     const { appUser } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
 
@@ -76,6 +79,7 @@ function ReceiptsPageContents() {
     const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
+    const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -285,35 +289,110 @@ function ReceiptsPageContents() {
         }
     }
 
+    const handleDeleteReceipt = async (receipt: ReceiptType) => {
+        if (!appUser || !activeStore || appUser.role !== 'admin') {
+            toast({ variant: 'destructive', title: "Permission Denied" });
+            return;
+        }
+
+        const confirmed = await confirm({
+            title: `Delete Receipt ${receipt.receiptNumber}?`,
+            description: "This action is irreversible and will permanently delete the receipt. This cannot be undone.",
+            confirmText: "Yes, Delete Permanently",
+            destructive: true,
+        });
+
+        if (!confirmed) return;
+
+        setIsDeleting(receipt.id);
+        try {
+            await deleteDoc(doc(db, "stores", activeStore.id, "receipts", receipt.id));
+            await writeActivityLog({
+                action: "RECEIPT_DELETED",
+                storeId: activeStore.id,
+                sessionId: receipt.sessionId,
+                user: appUser,
+                meta: { receiptNumber: receipt.receiptNumber, amount: receipt.total }
+            });
+            toast({ title: "Receipt Deleted", description: `Receipt ${receipt.receiptNumber} has been removed.` });
+            if (selectedReceiptId === receipt.id) {
+                setSelectedReceiptId(null);
+            }
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
+        } finally {
+            setIsDeleting(null);
+        }
+    };
+
     const handleExport = async () => {
         if (!activeStore) return;
         setIsExporting(true);
-        
-        const dataToExport = filteredReceipts.map(r => ({
-            "Receipt #": r.receiptNumber || 'N/A',
-            "Date": format(toJsDate(r.createdAt)!, 'yyyy-MM-dd'),
-            "Time": format(toJsDate(r.createdAt)!, 'HH:mm:ss'),
-            "Identifier": r.tableNumber || r.customerName || 'N/A',
-            "Cashier": r.createdByUsername || 'N/A',
-            "Subtotal": r.analytics?.subtotal ?? 0,
-            "Discounts": r.analytics?.discountsTotal ?? 0,
-            "Charges": r.analytics?.chargesTotal ?? 0,
-            "VAT": r.analytics?.taxAmount ?? 0,
-            "Total": r.total,
-            "Total Paid": r.totalPaid,
-            "Change": r.change,
-            ...r.analytics?.mop
-        }));
+    
+        // Sheet 1: Summary Data
+        const summaryData = filteredReceipts.map(r => {
+            const date = toJsDate(r.createdAt);
+            return {
+                "Receipt #": r.receiptNumber || 'N/A',
+                "Date": date ? format(date, 'yyyy-MM-dd') : 'N/A',
+                "Time": date ? format(date, 'HH:mm:ss') : 'N/A',
+                "Customer Name": r.customerName || 'N/A',
+                "Address": r.customerAddress || 'N/A',
+                "TIN": r.customerTin || 'N/A',
+                "Table No.": r.tableNumber || 'N/A',
+                "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
+                "Subtotal": r.analytics?.subtotal ?? 0,
+                "Discount": r.analytics?.discountsTotal ?? 0,
+                "Charges": r.analytics?.chargesTotal ?? 0,
+                "VAT": r.analytics?.taxAmount ?? 0,
+                "Total": r.total,
+                "Paid": r.totalPaid,
+                "Mode of Payment": Object.keys(r.analytics?.mop || {}).join(', '),
+            };
+        });
+    
+        // Sheet 2: Itemized Data
+        const itemizedData: any[] = [];
+        filteredReceipts.forEach(r => {
+            const date = toJsDate(r.createdAt);
+            r.lines?.forEach(line => {
+                const billableQty = line.qtyOrdered - (line.voidedQty || 0);
+                if (billableQty <= 0) return; // Skip voided/zero-qty lines
 
+                const lineSubtotal = billableQty * line.unitPrice;
+                let lineDiscount = 0;
+                if ((line.discountValue ?? 0) > 0 && line.discountQty > 0) {
+                     const discountedQty = Math.min(line.discountQty, billableQty);
+                     if (line.discountType === 'percent') {
+                         lineDiscount = discountedQty * line.unitPrice * (line.discountValue! / 100);
+                     } else {
+                         lineDiscount = discountedQty * line.discountValue!;
+                     }
+                }
+                
+                itemizedData.push({
+                    "Receipt #": r.receiptNumber || 'N/A',
+                    "Date": date ? format(date, 'yyyy-MM-dd') : 'N/A',
+                    "Time": date ? format(date, 'HH:mm:ss') : 'N/A',
+                    "QTY": billableQty,
+                    "Package/Add-on": line.itemName,
+                    "Price": line.unitPrice,
+                    "Discount": lineDiscount,
+                    "Subtotal": lineSubtotal - lineDiscount,
+                });
+            });
+        });
+    
         await exportToXlsx({
-            rows: dataToExport,
-            sheetName: "Receipts",
+            sheets: [
+                { data: summaryData, name: "Summary" },
+                { data: itemizedData, name: "Items" }
+            ],
             filename: `Receipts_${activeStore.code}_${format(start, 'yyyyMMdd')}_${format(end, 'yyyyMMdd')}.xlsx`,
         });
-
+    
         setIsExporting(false);
     };
-
 
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
@@ -388,10 +467,8 @@ function ReceiptsPageContents() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Identifier</TableHead>
-                                        <TableHead className="text-right">Subtotal</TableHead>
-                                        <TableHead className="text-right">Discounts</TableHead>
-                                        <TableHead className="text-right">Charges</TableHead>
-                                        <TableHead className="text-right">Total</TableHead>
+                                        <TableHead>Total</TableHead>
+                                        {appUser?.role === 'admin' && <TableHead className="text-right">Actions</TableHead>}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -405,10 +482,14 @@ function ReceiptsPageContents() {
                                                 <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName}</div>
                                                 <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
-                                            <TableCell className="text-right py-2">₱{(r.analytics?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            <TableCell className="text-right py-2 text-destructive">₱{(r.analytics?.discountsTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            <TableCell className="text-right py-2 text-green-600">₱{(r.analytics?.chargesTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            <TableCell className="text-right font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                            <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                            {appUser?.role === 'admin' && (
+                                                <TableCell className="text-right py-2">
+                                                    <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
+                                                        {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
+                                                    </Button>
+                                                </TableCell>
+                                            )}
                                         </TableRow>
                                     ))}
                                 </TableBody>
@@ -456,6 +537,7 @@ function ReceiptsPageContents() {
             <div className="hidden print-block">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
+            <ConfirmDialog />
         </RoleGuard>
     )
 }
