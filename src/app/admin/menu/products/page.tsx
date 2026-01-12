@@ -21,6 +21,8 @@ import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
+import { exportToXlsx } from "@/lib/export/export-xlsx-client";
+import { read, utils } from "xlsx";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -253,12 +255,85 @@ export default function ProductManagementPage() {
     }
   };
 
+  const handleExportTemplate = () => {
+    const headers = ["name", "variantLabel", "uom", "subCategory", "barcode"];
+    const sampleData = [{
+      name: "Sample Product",
+      variantLabel: "Large",
+      uom: "pcs",
+      subCategory: "Sample Category",
+      barcode: "1234567890123"
+    }];
+    exportToXlsx({ rows: [headers, ...sampleData.map(Object.values)], sheetName: "Products", filename: "product_import_template.xlsx" });
+  };
+  
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsSubmitting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = read(data);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json: any[] = utils.sheet_to_json(worksheet);
+
+      if (json.length === 0) {
+        toast({ variant: 'destructive', title: 'Empty File', description: 'The selected file has no data to import.' });
+        return;
+      }
+      
+      const batch = writeBatch(db);
+      let count = 0;
+
+      for (const row of json) {
+        if (!row.name) continue;
+
+        const newDocRef = doc(collection(db, "products"));
+        const newProduct: Partial<Product> = {
+            id: newDocRef.id,
+            name: row.name,
+            variantLabel: row.variantLabel || null,
+            uom: row.uom || "pcs",
+            subCategory: row.subCategory || "Uncategorized",
+            barcode: row.barcode || "",
+            isActive: row.isActive === false ? false : true,
+            isSku: true,
+            kind: "single",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        };
+        batch.set(newDocRef, newProduct);
+        count++;
+      }
+
+      await batch.commit();
+      toast({ title: "Import Successful", description: `Added ${count} new products.` });
+
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Import Failed', description: error.message });
+    } finally {
+      setIsSubmitting(false);
+      // Reset file input
+      if(fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
-        <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" /> New Product
-        </Button>
+        <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
+            <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>
+            <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".xlsx, .xls, .csv" />
+            <Button onClick={() => handleOpenDialog()}>
+            <PlusCircle className="mr-2" /> New Product
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader>
