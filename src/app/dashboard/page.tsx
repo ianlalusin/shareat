@@ -27,6 +27,7 @@ export default function DashboardPage() {
     const { activeStore } = useStoreContext();
     const [receipts, setReceipts] = useState<Receipt[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [activeSessionsCount, setActiveSessionsCount] = useState(0);
     
     // Default to today
     const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
@@ -64,7 +65,26 @@ export default function DashboardPage() {
         return () => unsubscribe();
     }, [activeStore?.id, dateRange]);
 
-    const { stats, paymentTally, activeSessionsCount } = useMemo(() => {
+    useEffect(() => {
+        if (!activeStore?.id) {
+            setActiveSessionsCount(0);
+            return;
+        }
+
+        const sessionsRef = collection(db, "stores", activeStore.id, "sessions");
+        const q = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setActiveSessionsCount(snapshot.size);
+        }, (error) => {
+            console.error("Error fetching active sessions:", error);
+            setActiveSessionsCount(0);
+        });
+
+        return () => unsubscribe();
+    }, [activeStore?.id]);
+
+    const { stats, paymentTally } = useMemo(() => {
         const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
         
         const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
@@ -86,17 +106,12 @@ export default function DashboardPage() {
                 }
             }
         });
-
-        // This is a placeholder as we don't have live session counts here.
-        // A more complex implementation would listen to the sessions collection.
-        const activeSessionsCount = 0; 
         
         const stats: DashboardStats = { grossSales, transactions, avgBasket, avgTicket };
 
         return {
             stats,
             paymentTally: tally,
-            activeSessionsCount,
         };
     }, [receipts]);
 
