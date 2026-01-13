@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -174,6 +175,7 @@ export type KitchenTicket = {
     servedCounted?: boolean;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
+    durationMs?: number;
     initialFlavorIds?: string[];
     initialFlavorNames?: string[];
     sessionMode?: 'package_dinein' | 'alacarte';

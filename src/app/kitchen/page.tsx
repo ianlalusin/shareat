@@ -56,7 +56,6 @@ export default function KitchenPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
-  const [isServing, setIsServing] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!activeStore) {
@@ -189,6 +188,7 @@ export default function KitchenPage() {
                 updatePayload.servedByUid = appUser.uid;
                 updatePayload.preparedAt = serverTimestamp(); // Mark as prepared at the same time
                 updatePayload.preparedByUid = appUser.uid;
+                updatePayload.durationMs = durationMs;
                 
                 const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                 const sessionUpdate: Record<string, any> = {

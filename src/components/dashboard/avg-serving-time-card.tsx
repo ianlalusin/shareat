@@ -74,17 +74,15 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
         const tally: ServeTimeTally = {};
         
         tickets.forEach(ticket => {
-            let durationMs: number | undefined;
+            let durationMs: number | undefined = (ticket as any).durationMs;
 
-            // Prioritize calculation from prepared to served
-            const preparedTs = toJsDate(ticket.preparedAt);
-            const servedTs = toJsDate(ticket.servedAt);
-
-            if (preparedTs && servedTs) {
-                durationMs = servedTs.getTime() - preparedTs.getTime();
-            } else if ((ticket as any).durationMs && (ticket as any).durationMs > 0) {
-                // Fallback to pre-calculated duration for older tickets
-                durationMs = (ticket as any).durationMs;
+            // Fallback for older tickets before durationMs was added
+            if (durationMs === undefined || durationMs <= 0) {
+                 const preparedTs = toJsDate(ticket.preparedAt);
+                 const servedTs = toJsDate(ticket.servedAt);
+                 if (preparedTs && servedTs) {
+                     durationMs = servedTs.getTime() - preparedTs.getTime();
+                 }
             }
 
             if (durationMs && durationMs > 0) {
