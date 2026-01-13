@@ -43,6 +43,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
+    "deep-object-diff": "^1.1.9",
     "dotenv": "^16.5.0",
     "embla-carousel-react": "^8.0.0",
     "firebase": "^10.12.2",
