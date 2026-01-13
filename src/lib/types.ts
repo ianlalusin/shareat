@@ -400,6 +400,12 @@ export type Receipt = {
     receiptNumber: string;
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
+    // Fields for editing audit trail
+    isEdited?: boolean;
+    editVersion?: number;
+    editedAt?: any;
+    editedByUid?: string;
+    editReason?: string;
 }
 
 export type ActivityLog = {
@@ -407,7 +413,7 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED";
+  action: "SESSION_STARTED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED";
 
   actorUid: string;
   actorRole?: string | null;
@@ -445,6 +451,7 @@ export type ActivityLog = {
     approvedAt?: any;
     newQty?: number;
     amount?: number;
+    editVersion?: number;
   };
 
   createdAt: any; // serverTimestamp()
