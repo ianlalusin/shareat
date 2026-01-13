@@ -7,7 +7,7 @@ import type { KitchenTicket } from "@/lib/types";
 
 interface KdsViewProps {
     tickets: KitchenTicket[];
-    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled", reason?: string) => void;
+    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
 }
 
 export function KdsView({ tickets, onUpdateStatus }: KdsViewProps) {

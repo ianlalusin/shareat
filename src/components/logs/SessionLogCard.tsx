@@ -21,6 +21,7 @@ function fmtTime(ts?: any) {
 function actionLabel(a: ActivityLog['action']) {
   switch (a) {
     case "SESSION_STARTED": return "Session Started";
+    case "SESSION_VOIDED": return "Session Voided";
     case "PAYMENT_COMPLETED": return "Payment";
     case "DISCOUNT_APPLIED": return "Discount Applied";
     case "DISCOUNT_REMOVED": return "Discount Removed";
@@ -54,6 +55,9 @@ function formatDescription(log: ActivityLog): string {
     }
     if (log.action === "SESSION_STARTED") {
         return "Session created by cashier.";
+    }
+    if (log.action === "SESSION_VOIDED") {
+        return `Session voided. Reason: ${log.reason || "N/A"}`;
     }
 
     const qtyNum =
@@ -93,7 +97,12 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
 
     // Deduplicate logs just in case, using the unique document ID
     const logs = useMemo(() => {
-        return Array.from(new Map(initialLogs.map((l, i) => [(l.id ?? `__${i}`), l])).values());
+        const sorted = initialLogs.sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            return timeB - timeA;
+        });
+        return Array.from(new Map(sorted.map((l, i) => [(l.id ?? `__${i}`), l])).values());
     }, [initialLogs]);
 
 
