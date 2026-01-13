@@ -158,15 +158,6 @@ export default function KitchenPage() {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
         return;
     }
-    const updateTicketStatusFromKds = (
-        ticketId: string,
-        sessionId: string,
-        newStatus: "ready" | "cancelled",
-        reason?: string
-      ) => {
-        const mapped: "served" | "cancelled" = newStatus === "ready" ? "served" : "cancelled";
-        void updateTicketStatus(ticketId, sessionId, mapped, reason);
-      };      
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -238,6 +229,17 @@ export default function KitchenPage() {
         toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
     }
   };
+
+const updateTicketStatusFromKds = (
+  ticketId: string,
+  sessionId: string,
+  newStatus: "ready" | "cancelled",
+  reason?: string
+) => {
+  const mapped: "served" | "cancelled" = newStatus === "ready" ? "served" : "cancelled";
+  void updateTicketStatus(ticketId, sessionId, mapped, reason);
+};
+
 
   const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
   
