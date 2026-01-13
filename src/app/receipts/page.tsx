@@ -13,24 +13,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2 } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
 import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } from "@/components/receipts/ReceiptTemplateSettings";
+import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
-import type { Receipt as ReceiptType, ModeOfPayment, Store } from "@/lib/types";
+import type { Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { diff } from 'deep-object-diff';
 
 // --- Date Helpers ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -76,6 +78,7 @@ function ReceiptsPageContents() {
 
     const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
     const [selectedReceiptData, setSelectedReceiptData] = useState<ReceiptData | null>(null);
+    const [editingReceipt, setEditingReceipt] = useState<ReceiptType | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -184,7 +187,15 @@ function ReceiptsPageContents() {
             setIsLoadingReceipts(false);
         });
 
-        return () => unsubscribe();
+        const unsubPm = onSnapshot(
+            query(collection(db, "stores", activeStore.id, "storeModesOfPayment"), where("isArchived", "==", false), orderBy("sortOrder")),
+            snap => setPaymentMethods(snap.docs.map(d => ({id: d.id, ...d.data()}) as ModeOfPayment))
+        );
+
+        return () => {
+            unsubscribe();
+            unsubPm();
+        };
     }, [activeStore, start, end, toast]);
 
     const filteredReceipts = useMemo(() => {
@@ -203,6 +214,73 @@ function ReceiptsPageContents() {
         const newUrl = `${window.location.pathname}?rid=${receiptId}`;
         window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, '', newUrl);
     }, []);
+
+    const handleEditReceipt = (receipt: ReceiptType) => {
+        setEditingReceipt(receipt);
+    }
+
+    const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
+        if (!appUser || !activeStore || !editingReceipt) return;
+
+        try {
+            const batch = writeBatch(db);
+            const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
+            
+            const nextVersion = (editingReceipt.editVersion || 0) + 1;
+            const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
+            const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
+
+            const structuredDiff = diff(editingReceipt, updatedReceipt);
+            const diffSummary = Object.keys(structuredDiff).join(', ');
+            
+            // 1. Write revision snapshot
+            batch.set(revisionRef, {
+                version: nextVersion,
+                editedAt: serverTimestamp(),
+                editedByUid: appUser.uid,
+                editedByEmail: appUser.email,
+                reason,
+                diffSummary,
+                diff: structuredDiff,
+                snapshot: editingReceipt, // The full old receipt data
+            });
+
+            // 2. Overwrite original receipt
+            batch.update(originalReceiptRef, {
+                ...updatedReceipt,
+                isEdited: true,
+                editVersion: nextVersion,
+                editedAt: serverTimestamp(),
+                editedByUid: appUser.uid,
+                editedByEmail: appUser.email,
+                editReason: reason,
+                lastDiffSummary: diffSummary,
+            });
+
+            await batch.commit();
+
+            // 3. Log activity
+            await writeActivityLog({
+                action: "RECEIPT_EDITED",
+                storeId: activeStore.id,
+                sessionId: editingReceipt.sessionId,
+                user: appUser,
+                meta: { 
+                    receiptId: editingReceipt.id, 
+                    receiptNumber: editingReceipt.receiptNumber,
+                    editVersion: nextVersion,
+                    diffSummary,
+                }
+            });
+
+            toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
+            setEditingReceipt(null);
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Correction Failed', description: error.message });
+            throw error;
+        }
+    }
+
 
     useEffect(() => {
         if (!selectedReceiptId || !activeStore) {
@@ -354,7 +432,7 @@ function ReceiptsPageContents() {
         const itemizedData: any[] = [];
         filteredReceipts.forEach(r => {
             const date = toJsDate(r.createdAt);
-            r.lines?.forEach(line => {
+            (r.lines as SessionBillLine[])?.forEach(line => {
                 const billableQty = line.qtyOrdered - (line.voidedQty || 0);
                 if (billableQty <= 0) return; // Skip voided/zero-qty lines
 
@@ -484,6 +562,9 @@ function ReceiptsPageContents() {
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             {appUser?.role === 'admin' && (
                                                 <TableCell className="text-right py-2">
+                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2">
+                                                        <Edit className="mr-2" /> Edit
+                                                    </Button>
                                                     <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
                                                         {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
                                                     </Button>
@@ -532,6 +613,19 @@ function ReceiptsPageContents() {
                 </DialogContent>
             </Dialog>
 
+             {editingReceipt && activeStore && (
+                <EditReceiptDialog
+                    isOpen={!!editingReceipt}
+                    onClose={() => setEditingReceipt(null)}
+                    receipt={editingReceipt}
+                    store={activeStore}
+                    discounts={discounts}
+                    charges={charges}
+                    paymentMethods={paymentMethods}
+                    onSave={handleSaveCorrection}
+                />
+            )}
+
             {/* This div is only for printing */}
             <div className="hidden print-block">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
@@ -548,7 +642,3 @@ export default function ReceiptsPage() {
         </React.Suspense>
     )
 }
-
-    
-
-    
