@@ -5,8 +5,6 @@ import { useState, useEffect } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { PendingTables } from "@/components/server/pending-tables";
-import { ReadyToServe, type ReadyItem } from "@/components/server/ready-to-serve";
-import { ServedHistory } from "@/components/server/served-history";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
@@ -38,8 +36,6 @@ export default function ServerPage() {
 
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [activeSessions, setActiveSessions] = useState<PendingSession[]>([]);
-  const [readyItems, setReadyItems] = useState<ReadyItem[]>([]);
-  const [servedItems, setServedItems] = useState<ReadyItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
@@ -52,16 +48,12 @@ export default function ServerPage() {
   const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
   const [schedules, setSchedules] = useState<Map<string, MenuSchedule>>(new Map());
   
-  const [isServing, setIsServing] = useState<Record<string, boolean>>({});
-
 
   useEffect(() => {
     if (!activeStore) {
       setIsLoading(false);
       setPendingSessions([]);
       setActiveSessions([]);
-      setReadyItems([]);
-      setServedItems([]);
       return;
     }
     setIsLoading(true);
@@ -104,36 +96,6 @@ export default function ServerPage() {
         setActiveSessions(allSessions.filter(s => s.status === 'active'));
     }));
     
-    // Refactored listener for ready items using collectionGroup
-    const readyTicketsQuery = query(
-        collectionGroup(db, 'kitchentickets'),
-        where('storeId', '==', activeStore.id),
-        where('status', '==', 'ready'),
-        orderBy('preparedAt', 'asc')
-    );
-    unsubs.push(onSnapshot(readyTicketsQuery, (snapshot) => {
-        setReadyItems(snapshot.docs.map(doc => ({
-            docId: doc.id,
-            ...(doc.data() as any)
-        } as ReadyItem)));
-    }));
-    
-    // Listener for recently served items
-    const servedTicketsQuery = query(
-        collectionGroup(db, 'kitchentickets'),
-        where('storeId', '==', activeStore.id),
-        where('status', '==', 'served'),
-        orderBy('servedAt', 'desc'),
-        limit(20)
-    );
-    unsubs.push(onSnapshot(servedTicketsQuery, (snapshot) => {
-         setServedItems(snapshot.docs.map(doc => ({
-            docId: doc.id,
-            ...(doc.data() as any)
-        } as ReadyItem)));
-    }));
-
-    
     // Fetch data needed for dialogs
     unsubs.push(onSnapshot(collection(db, "stores", activeStore.id, "storePackages"), s => setStorePackages(s.docs.map(d => d.data() as StorePackage))));
     const schedulesRef = collection(db, "stores", activeStore.id, "menuSchedules");
@@ -164,62 +126,6 @@ export default function ServerPage() {
     setSessionForRequest(session);
     setIsRefillDialogOpen(true);
   }
-
-  const handleMarkServed = async (item: ReadyItem) => {
-    if (!appUser || !activeStore || !item.docId) {
-        toast({ variant: 'destructive', title: 'Error', description: 'User, store, or ticket ID not found.' });
-        return;
-    }
-
-    setIsServing(prev => ({...prev, [item.docId!]: true}));
-
-    const ticketRef = doc(db, "stores", activeStore.id, "sessions", item.sessionId, "kitchentickets", item.docId);
-
-    try {
-        await runTransaction(db, async (transaction) => {
-            const ticketSnap = await transaction.get(ticketRef);
-            if (!ticketSnap.exists()) throw new Error("Ticket not found.");
-
-            const ticket = ticketSnap.data() as KitchenTicket;
-            if (ticket.status === 'served') return; // Idempotency check
-
-            const now = Date.now();
-            const startTime = toJsDate(ticket.createdAt)?.getTime() ?? now;
-            const durationMs = now - startTime;
-
-            const updatePayload = {
-                status: "served",
-                servedAt: serverTimestamp(),
-                servedAtClientMs: now,
-                servedByUid: appUser.uid,
-                durationMs: durationMs > 0 ? durationMs : 0,
-            };
-
-            transaction.update(ticketRef, updatePayload);
-
-            // Also increment the session-level counters
-            const sessionRef = doc(db, "stores", activeStore.id, "sessions", item.sessionId);
-            const sessionUpdate: Record<string, any> = {
-                [`serveCountByType.${item.type}`]: increment(1),
-                [`serveTimeMsTotalByType.${item.type}`]: increment(durationMs),
-            };
-
-            if (item.type === 'refill') {
-                const refillName = item.itemName || "Refill";
-                const qty = item.qty || 1;
-                sessionUpdate.servedRefillsTotal = increment(qty);
-                sessionUpdate[`servedRefillsByName.${refillName}`] = increment(qty);
-            }
-            transaction.update(sessionRef, sessionUpdate);
-        });
-
-        toast({ title: "Item Served", description: `${item.itemName} for Table ${item.tableNumber} marked as served.`});
-    } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Update Failed', description: error.message || "Could not mark item as served."});
-    } finally {
-        setIsServing(prev => ({...prev, [item.docId!]: false}));
-    }
-  };
   
   const handleVerify = async (session: PendingSession, serverCount: number) => {
     if (!activeStore || !appUser) return;
@@ -273,26 +179,15 @@ export default function ServerPage() {
   return (
     <RoleGuard allow={["admin", "manager", "server"]}>
       <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <div className="lg:col-span-2">
-            <PendingTables
-                sessions={[...pendingSessions, ...activeSessions]}
-                onVerify={handleVerify}
-                onRequestChange={handleOpenRequestDialog}
-                onViewTimeline={(sid) => setTimelineSessionId(sid)}
-                onAddRefill={handleOpenRefillDialog}
-                onAddAddon={handleOpenAddonDialog}
-            />
-        </div>
-        <div className="lg:col-span-1 space-y-6">
-            <ReadyToServe
-                items={readyItems}
-                onMarkServed={handleMarkServed}
-                onViewTimeline={(sid) => setTimelineSessionId(sid)}
-                isServing={isServing}
-            />
-            <ServedHistory servedItems={servedItems.slice(0, 20)} />
-        </div>
+      <div className="grid grid-cols-1 gap-6 items-start">
+        <PendingTables
+            sessions={[...pendingSessions, ...activeSessions]}
+            onVerify={handleVerify}
+            onRequestChange={handleOpenRequestDialog}
+            onViewTimeline={(sid) => setTimelineSessionId(sid)}
+            onAddRefill={handleOpenRefillDialog}
+            onAddAddon={handleOpenAddonDialog}
+        />
       </div>
        {timelineSessionId && activeStore && (
         <SessionTimelineDrawer

@@ -16,7 +16,6 @@ import { SessionTimelineDrawer } from "@/components/session/session-timeline-dra
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ReadyToServe } from "@/components/kitchen/ReadyToServe";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
@@ -155,7 +154,7 @@ export default function KitchenPage() {
     });
   }, [tickets, sessionsMap, flavorsMap]);
   
-  const updateTicketStatus = async (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled" | "served", reason?: string) => {
+  const updateTicketStatus = async (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => {
     if (!appUser || !activeStore) {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
         return;
@@ -180,10 +179,7 @@ export default function KitchenPage() {
 
             const updatePayload: any = { status: newStatus };
             
-            if (newStatus === 'ready') {
-                updatePayload.preparedAt = serverTimestamp();
-                updatePayload.preparedByUid = appUser.uid;
-            } else if (newStatus === 'served') {
+            if (newStatus === 'served') {
                 const nowMs = Date.now();
                 const createdAtMs = toJsDate(ticket.createdAt)?.getTime() ?? nowMs;
                 const durationMs = Math.max(0, nowMs - createdAtMs);
@@ -191,6 +187,8 @@ export default function KitchenPage() {
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
+                updatePayload.preparedAt = serverTimestamp(); // Mark as prepared at the same time
+                updatePayload.preparedByUid = appUser.uid;
                 
                 const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                 const sessionUpdate: Record<string, any> = {
@@ -243,15 +241,6 @@ export default function KitchenPage() {
       return acc;
     }, {} as Record<string, number>);
   }, [preparingItems]);
-  
-  const readyItems = useMemo(() => {
-      const items = ticketsWithData.filter(t => t.status === 'ready');
-      const getTime = (date: any): number => {
-            if (!date) return 0;
-            return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
-        };
-      return items.sort((a,b) => getTime(a.preparedAt) - getTime(b.preparedAt));
-  }, [ticketsWithData]);
   
   const historyItems = useMemo(() => ticketsWithData
     .filter(t => t.status === 'served' || t.status === 'cancelled' || t.status === 'void')
@@ -315,7 +304,6 @@ export default function KitchenPage() {
                  </Tabs>
             </div>
             <div className="lg:col-span-1 space-y-4">
-                <ReadyToServe items={readyItems} onMarkServed={(item) => updateTicketStatus(item.id, item.sessionId, 'served')} isServing={isServing} />
                 <HistoryView items={historyItems} />
             </div>
         </div>

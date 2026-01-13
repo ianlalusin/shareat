@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle, XCircle, Info } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Info, Send } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { Timestamp } from "firebase/firestore";
@@ -18,7 +18,7 @@ import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;
-    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "ready" | "cancelled", reason?: string) => void;
+    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
 }
 
 function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null | undefined }) {
@@ -107,12 +107,12 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
 
     return (
         <>
-            <Card className={cn("flex flex-col", ticket.status === 'ready' && 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800')}>
+            <Card className={cn("flex flex-col", ticket.status === 'served' && 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800')}>
                 <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                          <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
-                         {ticket.status === 'ready' ? (
-                            <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Ready</Badge>
+                         {ticket.status === 'served' ? (
+                            <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Served</Badge>
                         ) : (
                             <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
                         )}
@@ -156,8 +156,8 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                                 </DropdownMenuContent>
                             </DropdownMenu>
 
-                            <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'ready')}>
-                               <CheckCircle className="mr-2" /> Mark as Ready
+                            <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                               <Send className="mr-2" /> Mark as Served
                             </Button>
                         </>
                     )}
