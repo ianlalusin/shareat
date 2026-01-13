@@ -36,7 +36,7 @@ function actionLabel(a: ActivityLog['action']) {
 
 function formatAmount(log: ActivityLog): string {
     const meta = log.meta || {};
-    const amount = 'amount' in meta ? meta.amount : 'paymentTotal' in meta ? meta.paymentTotal : 'discountValue' in meta ? meta.discountValue : undefined;
+    const amount = 'amount' in meta && typeof meta.amount === 'number' ? meta.amount : 'paymentTotal' in meta && typeof meta.paymentTotal === 'number' ? meta.paymentTotal : 'discountValue' in meta && typeof meta.discountValue === 'number' ? meta.discountValue : undefined;
 
     if (typeof amount === 'number') {
         const sign = log.action === 'DISCOUNT_REMOVED' || log.action === 'UNMARK_FREE' ? '+' : (amount < 0 ? '' : (log.action === 'PAYMENT_COMPLETED' ? '' : '-'));
@@ -44,6 +44,7 @@ function formatAmount(log: ActivityLog): string {
     }
     return "—";
 }
+
 
 function formatDescription(log: ActivityLog): string {
     const meta = (log.meta ?? {}) as any;

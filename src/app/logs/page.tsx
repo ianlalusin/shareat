@@ -171,7 +171,7 @@ export default function LogsPage() {
         for (const [sessionId, logs] of logsBySessionId.entries()) {
             const session = sessionCacheRef.current.get(sessionId);
             if (session) {
-                logs.sort((a,b)=> (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))
+                logs.sort((a,b)=> ((b.createdAt?.toMillis && b.createdAt.toMillis()) ?? 0) - ((a.createdAt?.toMillis && a.createdAt.toMillis()) ?? 0))
                 finalGroupedLogs.push({ session, logs });
             }
         }
@@ -200,7 +200,11 @@ export default function LogsPage() {
                 .filter(log => relevantActions.includes(log.action))
                 .map(log => ({ ...log, session })) // Attach session to each log
         )
-        .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
+        .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            return timeB - timeA;
+        });
   }, [groupedLogs]);
 
   const handleExport = async () => {
