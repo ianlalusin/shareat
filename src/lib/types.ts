@@ -405,7 +405,9 @@ export type Receipt = {
     editVersion?: number;
     editedAt?: any;
     editedByUid?: string;
+    editedByEmail?: string | null;
     editReason?: string;
+    lastDiffSummary?: string;
 }
 
 export type ActivityLog = {
@@ -452,6 +454,7 @@ export type ActivityLog = {
     newQty?: number;
     amount?: number;
     editVersion?: number;
+    diffSummary?: string;
   };
 
   createdAt: any; // serverTimestamp()

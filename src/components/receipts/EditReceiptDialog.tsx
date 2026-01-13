@@ -88,7 +88,7 @@ function EditReceiptContent({
     setIsSubmitting(true);
     
     // Reconstruct the receipt data
-    const updatedReceiptData = {
+    const updatedReceiptData: Partial<Receipt> = {
       ...receipt,
       customerName,
       customerTin,
