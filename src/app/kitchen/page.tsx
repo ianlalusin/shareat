@@ -230,16 +230,6 @@ export default function KitchenPage() {
     }
   };
 
-const updateTicketStatusFromKds = (
-  ticketId: string,
-  sessionId: string,
-  newStatus: "ready" | "cancelled",
-  reason?: string
-) => {
-  const mapped: "served" | "cancelled" = newStatus === "ready" ? "served" : "cancelled";
-  void updateTicketStatus(ticketId, sessionId, mapped, reason);
-};
-
 
   const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
   
@@ -309,7 +299,7 @@ const updateTicketStatusFromKds = (
                     )}
                     {stations.map(station => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems.filter(t => t.kitchenLocationId === station.id)} onUpdateStatus={updateTicketStatusFromKds} />
+                            <KdsView tickets={preparingItems.filter(t => t.kitchenLocationId === station.id)} onUpdateStatus={updateTicketStatus} />
                         </TabsContent>
                     ))}
                  </Tabs>
