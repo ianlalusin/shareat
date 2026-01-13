@@ -158,6 +158,15 @@ export default function KitchenPage() {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
         return;
     }
+    const updateTicketStatusFromKds = (
+        ticketId: string,
+        sessionId: string,
+        newStatus: "ready" | "cancelled",
+        reason?: string
+      ) => {
+        const mapped: "served" | "cancelled" = newStatus === "ready" ? "served" : "cancelled";
+        void updateTicketStatus(ticketId, sessionId, mapped, reason);
+      };      
 
     try {
         await runTransaction(db, async (transaction) => {
@@ -298,7 +307,7 @@ export default function KitchenPage() {
                     )}
                     {stations.map(station => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems.filter(t => t.kitchenLocationId === station.id)} onUpdateStatus={updateTicketStatus} />
+                            <KdsView tickets={preparingItems.filter(t => t.kitchenLocationId === station.id)} onUpdateStatus={updateTicketStatusFromKds} />
                         </TabsContent>
                     ))}
                  </Tabs>
