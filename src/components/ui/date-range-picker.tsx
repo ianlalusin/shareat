@@ -24,7 +24,7 @@ export function DateRangePicker({
   onDateChange,
 }: DateRangePickerProps) {
   const [date, setDate] = React.useState<DateRange | undefined>({
-    from: addDays(new Date(), -60),
+    from: new Date(),
     to: new Date(),
   })
 
@@ -63,7 +63,7 @@ export function DateRangePicker({
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent className="w-auto p-0" align="end">
           <Calendar
             initialFocus
             mode="range"
