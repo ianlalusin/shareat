@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -28,7 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -240,8 +241,8 @@ export async function completePaymentFromUnits(
 
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
-        tx.get(receiptRef),
-        tx.get(settingsRef),
+        tx.get(receiptSnap),
+        tx.get(settingsSnap),
         tx.get(counterRef),
     ]);
 
@@ -418,20 +419,29 @@ export async function completePaymentFromUnits(
         for (const [methodName, amount] of Object.entries(mopMap)) {
             paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
         }
+
+        const receiptPayload = stripUndefined({
+            id: sessionId,
+            storeId,
+            sessionId,
+            createdByUid: actor.uid,
+            createdByUsername: actor.username,
+            sessionMode: sessionData.sessionMode,
+            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
+            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
+            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
+            total: amountDue,
+            totalPaid,
+            change: Math.max(0, totalPaid - amountDue),
+            status: "final",
+            receiptSeq: nextSeq,
+            receiptNumber,
+            receiptNoFormatUsed: receiptNoFormat,
+            createdAt: serverTimestamp(),
+            createdAtClientMs: Date.now(),
+            lines: billLines, // Snapshot the bill lines
+        } as Receipt);
         
-        tx.set(dailyRef, { 
-          dayId,
-          storeId,
-          updatedAt: serverTimestamp() 
-        }, { merge: true });
-
-        tx.update(dailyRef, {
-            ...paymentIncrements,
-            "payments.totalGross": increment(finalTotals.grandTotal),
-            "payments.txCount": increment(1)
-        });
-
-
         const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
           sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
@@ -453,32 +463,28 @@ export async function completePaymentFromUnits(
           guestCountSnapshot, // Add the new snapshot here
         };
 
-        const receiptPayload = stripUndefined({
-            id: sessionId,
-            storeId,
-            sessionId,
-            createdByUid: actor.uid,
-            createdByUsername: actor.username,
-            sessionMode: sessionData.sessionMode,
-            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
-            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
-            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-            total: amountDue,
-            totalPaid,
-            change: Math.max(0, totalPaid - amountDue),
-            status: "final",
-            receiptSeq: nextSeq,
-            receiptNumber,
-            receiptNoFormatUsed: receiptNoFormat,
-            analytics: analyticsV2,
-            lines: billLines, // Snapshot the bill lines
-        } as Receipt);
-
-        tx.set(receiptRef, {
-            ...receiptPayload,
-            createdAt: serverTimestamp(),
-            createdAtClientMs: Date.now(),
+        const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2 };
+        tx.set(receiptRef, finalReceiptPayload);
+        
+        // --- GUEST COUNT ANALYTICS INCREMENTS ---
+        const guestContribution = getGuestCoversContribution(finalReceiptPayload);
+        const guestIncrements: Record<string, any> = {};
+        if (guestContribution.isPackageSession) {
+          guestIncrements['guests.guestCountFinalTotal'] = increment(guestContribution.guestCountFinal);
+          guestIncrements['guests.packageSessionsCount'] = increment(1);
+          if (guestContribution.packageName) {
+            guestIncrements[`guests.packageCoversBilledByPackageName.${guestContribution.packageName}`] = increment(guestContribution.packageCoversBilled);
+          }
+        }
+        
+        tx.set(dailyRef, { dayId, storeId, updatedAt: serverTimestamp() }, { merge: true });
+        tx.update(dailyRef, {
+            ...paymentIncrements,
+            "payments.totalGross": increment(finalTotals.grandTotal),
+            "payments.txCount": increment(1),
+            ...guestIncrements,
         });
+
         receiptId = receiptRef.id;
     }
 
