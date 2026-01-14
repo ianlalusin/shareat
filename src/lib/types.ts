@@ -351,9 +351,12 @@ export type PendingSession = {
 };
 
 export type DailyMetric = {
-    dayId: string;
-    storeId: string;
-    updatedAt: Timestamp;
+    meta: {
+        dayId: string;
+        storeId: string;
+        dayStartMs: number;
+        updatedAt: Timestamp;
+    };
     payments?: {
         totalGross?: number;
         txCount?: number;

@@ -1,9 +1,10 @@
 
+
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemo } from "react";
-import type { DailyMetric } from "./types";
+import type { DailyMetric } from "@/lib/types";
 
 export type PaymentMethodTally = { [methodName: string]: number };
 
@@ -18,10 +19,9 @@ export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
         const tally: PaymentMethodTally = {};
         if (dailyMetrics) {
             dailyMetrics.forEach(metric => {
-                if (metric.payments?.byMethod) {
-                    for (const [method, amount] of Object.entries(metric.payments.byMethod)) {
-                        tally[method] = (tally[method] || 0) + amount;
-                    }
+                const methods = metric.payments?.byMethod ?? {};
+                for (const [method, amount] of Object.entries(methods)) {
+                    tally[method] = (tally[method] || 0) + amount;
                 }
             });
         }
@@ -56,5 +56,3 @@ export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
         </div>
     );
 }
-
-    

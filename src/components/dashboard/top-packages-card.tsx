@@ -32,25 +32,27 @@ export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProp
         let hasAnalyticsData = false;
 
         dailyMetrics.forEach(metric => {
-            if (metric.sales?.packageSalesAmountByName) {
+            const salesMapAmount = metric.sales?.packageSalesAmountByName ?? {};
+            const salesMapQty = metric.sales?.packageSalesQtyByName ?? {};
+
+            if (Object.keys(salesMapAmount).length > 0 || Object.keys(salesMapQty).length > 0) {
                 hasAnalyticsData = true;
-                for (const [name, amount] of Object.entries(metric.sales.packageSalesAmountByName)) {
-                    if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
-                    itemTally[name].amount += amount;
-                }
             }
-             if (metric.sales?.packageSalesQtyByName) {
-                hasAnalyticsData = true;
-                for (const [name, qty] of Object.entries(metric.sales.packageSalesQtyByName)) {
-                    if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
-                    itemTally[name].qty += qty;
-                }
+
+            for (const [name, amount] of Object.entries(salesMapAmount)) {
+                if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
+                itemTally[name].amount += amount;
+            }
+            
+            for (const [name, qty] of Object.entries(salesMapQty)) {
+                if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
+                itemTally[name].qty += qty;
             }
         });
         
         return { 
             itemSales: Object.entries(itemTally),
-            hasData: hasAnalyticsData && Object.keys(itemTally).length > 0,
+            hasData: hasAnalyticsData
         };
     }, [dailyMetrics]);
     

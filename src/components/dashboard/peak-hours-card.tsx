@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import type { DailyMetric } from "@/lib/types";
-import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 interface PeakHoursCardProps {
     dailyMetrics: DailyMetric[];
@@ -48,15 +47,14 @@ export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
         const countByHour = Array(24).fill(0);
 
         dailyMetrics.forEach(metric => {
-            if (metric.sales?.salesAmountByHour) {
-                for (const [hour, amount] of Object.entries(metric.sales.salesAmountByHour)) {
-                    salesByHour[Number(hour)] += amount;
-                }
+            const salesMap = metric.sales?.salesAmountByHour ?? {};
+            for (const [hour, amount] of Object.entries(salesMap)) {
+                salesByHour[Number(hour)] += amount;
             }
-            if (metric.sales?.sessionCountByHour) {
-                 for (const [hour, count] of Object.entries(metric.sales.sessionCountByHour)) {
-                    countByHour[Number(hour)] += count;
-                }
+            
+            const countMap = metric.sales?.sessionCountByHour ?? {};
+            for (const [hour, count] of Object.entries(countMap)) {
+                countByHour[Number(hour)] += count;
             }
         });
 

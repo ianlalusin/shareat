@@ -6,6 +6,46 @@ import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 /**
+ * Gets the start of the day (midnight) for a given timestamp in the 'Asia/Manila' timezone.
+ *
+ * @param ts The timestamp to convert.
+ * @returns The millisecond epoch time for midnight.
+ */
+export function getDayStartMs(ts: Timestamp | Date | number): number {
+    const date = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'Asia/Manila',
+        hour12: false, // Use 24-hour format to avoid AM/PM issues
+        hour: 'numeric', // Include hour to correctly get midnight
+        minute: 'numeric',
+        second: 'numeric',
+    });
+    
+    // Get parts of the date in the target timezone
+    const parts = formatter.formatToParts(date);
+    const year = parseInt(parts.find(p => p.type === 'year')?.value ?? '1970');
+    const month = parseInt(parts.find(p => p.type === 'month')?.value ?? '1');
+    const day = parseInt(parts.find(p => p.type === 'day')?.value ?? '1');
+
+    // Create a new Date object representing midnight in the UTC of the *local* machine,
+    // but with the date parts from the 'Asia/Manila' timezone.
+    const manilaMidnightDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    
+    // The key is that the parts are from Manila, but we create a UTC date.
+    // To get the actual epoch MS, we can get the time.
+    // This is a reliable way to get a consistent midnight timestamp regardless of server location.
+    // Let's refine this to be more robust.
+    const midnightInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    midnightInManila.setHours(0, 0, 0, 0);
+
+    return midnightInManila.getTime();
+}
+
+
+/**
  * Converts a Firestore Timestamp, JavaScript Date, or millisecond epoch time
  * into a `YYYYMMDD` string formatted for the 'Asia/Manila' timezone.
  *
@@ -23,8 +63,7 @@ export function getDayIdFromTimestamp(ts: Timestamp | Date | number): string {
     });
 
     // The 'en-CA' locale conveniently formats dates as YYYY-MM-DD
-    const [year, month, day] = formatter.format(date).split('-');
-    return `${year}${month}${day}`;
+    return formatter.format(date).replace(/-/g, '');
 }
 
 
@@ -43,6 +82,7 @@ export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: stri
 // --- Guest & Package Count Contribution ---
 type GuestCoversContribution = {
     dayId: string;
+    dayStartMs: number;
     guestCountFinal: number;
     billedPackageCovers: number;
     packageName: string | null;
@@ -55,7 +95,7 @@ type GuestCoversContribution = {
  * @returns An object with the receipt's contribution, or zeros if not applicable.
  */
 export function getGuestCoversContribution(receipt: Receipt): GuestCoversContribution {
-    const defaultReturn = { dayId: "", guestCountFinal: 0, billedPackageCovers: 0, packageName: null, isPackageSession: false };
+    const defaultReturn = { dayId: "", dayStartMs: 0, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, isPackageSession: false };
     
     if (receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
         return defaultReturn;
@@ -71,6 +111,7 @@ export function getGuestCoversContribution(receipt: Receipt): GuestCoversContrib
 
     return {
         dayId: getDayIdFromTimestamp(createdAtMs),
+        dayStartMs: getDayStartMs(createdAtMs),
         guestCountFinal: snapshot.finalGuestCount || 0,
         billedPackageCovers: snapshot.billedPackageCovers || 0,
         packageName: snapshot.packageName || null,
@@ -81,6 +122,7 @@ export function getGuestCoversContribution(receipt: Receipt): GuestCoversContrib
 // --- Sales Contribution ---
 type SalesContribution = {
     dayId: string;
+    dayStartMs: number;
     packageAmountByName: Record<string, number>;
     packageQtyByName: Record<string, number>;
     addonAmountByCategory: Record<string, number>;
@@ -90,6 +132,7 @@ export function getSalesContribution(receipt: Receipt): SalesContribution {
     const analytics = (receipt?.analytics ?? {}) as ReceiptAnalyticsV2;
     const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
     const dayId = createdAtMs ? getDayIdFromTimestamp(createdAtMs) : "";
+    const dayStartMs = createdAtMs ? getDayStartMs(createdAtMs) : 0;
 
     const packageAmountByName: Record<string, number> = {};
     const packageQtyByName: Record<string, number> = {};
@@ -116,6 +159,7 @@ export function getSalesContribution(receipt: Receipt): SalesContribution {
 
     return {
         dayId,
+        dayStartMs,
         packageAmountByName,
         packageQtyByName,
         addonAmountByCategory,
@@ -125,13 +169,14 @@ export function getSalesContribution(receipt: Receipt): SalesContribution {
 // --- Peak Hour Contribution ---
 type PeakHourContribution = {
     dayId: string;
+    dayStartMs: number;
     hourKey: string | null; // "0".."23"
     amount: number;
     count: number; // 1 if valid, 0 if not
 };
 
 export function getPeakHourContribution(receipt: Receipt): PeakHourContribution {
-    const defaultReturn = { dayId: "", hourKey: null, amount: 0, count: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
     
     // Use session start time first, fallback to receipt creation time
     const primaryTs = receipt.analytics?.sessionStartedAt;
@@ -143,10 +188,12 @@ export function getPeakHourContribution(receipt: Receipt): PeakHourContribution 
     if (!date) return defaultReturn;
     
     const dayId = getDayIdFromTimestamp(date);
+    const dayStartMs = getDayStartMs(date);
     const hour = date.getHours(); // Local hour based on server's timezone, or Asia/Manila if consistent
 
     return {
         dayId: dayId,
+        dayStartMs,
         hourKey: String(hour),
         amount: receipt.total ?? receipt.analytics?.grandTotal ?? 0,
         count: 1,
@@ -156,6 +203,7 @@ export function getPeakHourContribution(receipt: Receipt): PeakHourContribution 
 // --- Kitchen Ticket Contribution ---
 type KitchenTicketContribution = {
     dayId: string;
+    dayStartMs: number;
     typeKey: string; // e.g., "package", "addon", "refill"
     servedCount: number;
     cancelledCount: number;
@@ -170,11 +218,13 @@ type KitchenTicketContribution = {
  * @returns An object with the ticket's contribution to daily metrics.
  */
 export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTicketContribution {
-    const defaultReturn = { dayId: "", typeKey: "unknown", servedCount: 0, cancelledCount: 0, durationMsSum: 0, durationCount: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, typeKey: "unknown", servedCount: 0, cancelledCount: 0, durationMsSum: 0, durationCount: 0 };
     
-    if (!ticket.createdAt) return defaultReturn;
+    const timestamp = ticket.servedAt || ticket.cancelledAt || ticket.createdAt;
+    if (!timestamp) return defaultReturn;
     
-    const dayId = getDayIdFromTimestamp(toJsDate(ticket.createdAt)!);
+    const dayId = getDayIdFromTimestamp(toJsDate(timestamp)!);
+    const dayStartMs = getDayStartMs(toJsDate(timestamp)!);
     const typeKey = ticket.type || "unknown";
 
     if (ticket.status === 'served') {
@@ -189,6 +239,7 @@ export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTick
         
         return {
             dayId,
+            dayStartMs,
             typeKey,
             servedCount: 1,
             cancelledCount: 0,
@@ -200,6 +251,7 @@ export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTick
     if (ticket.status === 'cancelled') {
         return {
             dayId,
+            dayStartMs,
             typeKey,
             servedCount: 0,
             cancelledCount: 1,

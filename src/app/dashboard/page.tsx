@@ -21,7 +21,6 @@ import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { isSameDay, format as formatDateFns } from "date-fns";
 import type { DailyMetric } from "@/lib/types";
-import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
@@ -52,26 +51,22 @@ export default function DashboardPage() {
 
         // --- Daily Metrics for aggregated data ---
         const metricsRef = collection(db, "stores", activeStore.id, "analytics");
-        const dateRangeIds: string[] = [];
-        let currentDate = new Date(dateRange.start);
-        while (currentDate <= dateRange.end) {
-            dateRangeIds.push(getDayIdFromTimestamp(currentDate));
-            currentDate.setDate(currentDate.getDate() + 1);
-        }
-        
-        if (dateRangeIds.length > 0) {
-            const metricsQuery = query(metricsRef, where("dayId", "in", dateRangeIds));
-            unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
-                setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
-                setIsLoading(false);
-            }, (error) => {
-                console.error("Error fetching daily metrics:", error);
-                setIsLoading(false);
-            }));
-        } else {
-             setDailyMetrics([]);
-             setIsLoading(false);
-        }
+        const startMs = dateRange.start.getTime();
+        const endMs = dateRange.end.getTime();
+
+        const metricsQuery = query(
+            metricsRef,
+            where("meta.dayStartMs", ">=", startMs),
+            where("meta.dayStartMs", "<=", endMs),
+            orderBy("meta.dayStartMs", "asc")
+        );
+        unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
+            setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching daily metrics:", error);
+            setIsLoading(false);
+        }));
 
         // --- Active Sessions Count ---
         const sessionsRef = collection(db, "stores", activeStore.id, "sessions");

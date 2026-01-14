@@ -26,28 +26,32 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
 
     const aggregatedData = useMemo(() => {
         const tally: Record<string, PackageTally> = {};
-        let totalGuestsForPeriod = 0;
-
+        
         dailyMetrics.forEach(metric => {
-            totalGuestsForPeriod += metric.guests?.guestCountFinalTotal || 0;
+            const guestData = metric.guests ?? {};
 
-            if (!metric.guests?.packageCoversBilledByPackageName) return;
+            // Aggregate final guests
+            const finalGuestsTotal = guestData.guestCountFinalTotal || 0;
+            // Distribute total guests proportionally later
 
-            for (const [name, covers] of Object.entries(metric.guests.packageCoversBilledByPackageName)) {
-                if (!tally[name]) {
-                    tally[name] = { name, finalGuests: 0, billedCovers: 0 };
+            // Aggregate billed covers
+            const coversByPkg = guestData.packageCoversBilledByPackageName ?? {};
+            for(const [pkgName, covers] of Object.entries(coversByPkg)) {
+                if (!tally[pkgName]) {
+                    tally[pkgName] = { name: pkgName, finalGuests: 0, billedCovers: 0 };
                 }
-                tally[name].billedCovers += covers;
+                tally[pkgName].billedCovers += covers;
             }
         });
 
         // Distribute total guests across packages based on their proportion of billed covers
         const totalBilledCovers = Object.values(tally).reduce((sum, pkg) => sum + pkg.billedCovers, 0);
-        
+        const totalFinalGuests = dailyMetrics.reduce((sum, m) => sum + (m.guests?.guestCountFinalTotal || 0), 0);
+
         if (totalBilledCovers > 0) {
             for(const key in tally) {
                 const proportion = tally[key].billedCovers / totalBilledCovers;
-                tally[key].finalGuests = Math.round(totalGuestsForPeriod * proportion);
+                tally[key].finalGuests = Math.round(totalFinalGuests * proportion);
             }
         }
         

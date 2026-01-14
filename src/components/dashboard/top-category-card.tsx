@@ -30,9 +30,10 @@ export function TopCategoryCard({ dailyMetrics, isLoading }: TopCategoryCardProp
         let hasAnalyticsData = false;
 
         dailyMetrics.forEach(metric => {
-            if (metric.sales?.addonSalesAmountByCategory) {
+            const salesMap = metric.sales?.addonSalesAmountByCategory ?? {};
+            if (Object.keys(salesMap).length > 0) {
                 hasAnalyticsData = true;
-                for (const [categoryName, amount] of Object.entries(metric.sales.addonSalesAmountByCategory)) {
+                for (const [categoryName, amount] of Object.entries(salesMap)) {
                      if (!categoryTally[categoryName]) categoryTally[categoryName] = { amount: 0 };
                      categoryTally[categoryName].amount += amount;
                 }
