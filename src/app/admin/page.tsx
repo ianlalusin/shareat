@@ -4,10 +4,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
@@ -68,14 +69,7 @@ export default function AdminPage() {
                                 ))}
                             </CardContent>
                         </Card>
-                         <Card>
-                            <CardHeader>
-                                <CardTitle>Data Management</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <BackfillTool />
-                            </CardContent>
-                        </Card>
+                        
                         <Card>
                             <CardHeader>
                                 <CardTitle>Menu Hub</CardTitle>
@@ -104,6 +98,24 @@ export default function AdminPage() {
                             </CardContent>
                         </Card>
                     </>
+                )}
+                
+                {appUser?.role === 'admin' && (
+                     <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="data-tools" className="border-b-0">
+                             <Card>
+                                <AccordionTrigger className="p-6">
+                                     <CardHeader className="p-0 text-left">
+                                        <CardTitle className="flex items-center gap-2"><DatabaseZap /> Data Management Tools</CardTitle>
+                                        <CardDescription>Advanced tools for data maintenance. Use with caution.</CardDescription>
+                                    </CardHeader>
+                                </AccordionTrigger>
+                                <AccordionContent className="p-6 pt-0">
+                                    <BackfillTool />
+                                </AccordionContent>
+                             </Card>
+                        </AccordionItem>
+                    </Accordion>
                 )}
             </div>
         </RoleGuard>
