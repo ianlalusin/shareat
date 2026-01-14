@@ -355,43 +355,45 @@ export type DailyMetric = {
         dayId: string;
         storeId: string;
         dayStartMs: number;
-        updatedAt: Timestamp;
+        updatedAt: any;
+        backfilledAt?: any;
+        source?: string;
     };
     payments?: {
-        totalGross?: number;
-        txCount?: number;
-        byMethod?: {
+        totalGross: number;
+        txCount: number;
+        byMethod: {
             [methodName: string]: number;
         }
     };
     guests?: {
-        guestCountFinalTotal?: number;
-        packageSessionsCount?: number;
-        packageCoversBilledByPackageName?: {
+        guestCountFinalTotal: number;
+        packageSessionsCount: number;
+        packageCoversBilledByPackageName: {
             [packageName: string]: number;
         }
     };
     sales?: {
-        packageSalesAmountByName?: Record<string, number>;
-        packageSalesQtyByName?: Record<string, number>;
-        addonSalesAmountByCategory?: Record<string, number>;
-        salesAmountByHour?: Record<string, number>;
-        sessionCountByHour?: Record<string, number>;
+        packageSalesAmountByName: Record<string, number>;
+        packageSalesQtyByName: Record<string, number>;
+        addonSalesAmountByCategory: Record<string, number>;
+        salesAmountByHour: Record<string, number>;
+        sessionCountByHour: Record<string, number>;
     };
     kitchen?: {
-        servedCountByType?: Record<string, number>;
-        cancelledCountByType?: Record<string, number>;
-        durationMsSumByType?: Record<string, number>;
-        durationCountByType?: Record<string, number>;
+        servedCountByType: Record<string, number>;
+        cancelledCountByType: Record<string, number>;
+        durationMsSumByType: Record<string, number>;
+        durationCountByType: Record<string, number>;
     };
     sessions?: {
-        closedCount?: number;
-        totalPaid?: number;
+        closedCount: number;
+        totalPaid: number;
     };
     refills?: {
-        servedRefillsTotal?: number;
-        servedRefillsByName?: Record<string, number>;
-        packageSessionsCount?: number;
+        servedRefillsTotal: number;
+        servedRefillsByName: Record<string, number>;
+        packageSessionsCount: number;
     };
 }
 

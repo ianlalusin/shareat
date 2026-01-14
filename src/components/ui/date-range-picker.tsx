@@ -2,44 +2,39 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
+import { format, addDays } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
+import { DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import CompactCalendar from "@/components/ui/CompactCalendar"
+import { Calendar } from "@/components/ui/calendar"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-// Safely infer the type of the 'onChange' prop, accounting for it being optional.
-type CalendarOnChange = NonNullable<
-  React.ComponentProps<typeof CompactCalendar>["onChange"]
->;
-type CalendarRange = Parameters<CalendarOnChange>[0];
-
 interface DateRangePickerProps extends React.HTMLAttributes<HTMLDivElement> {
     onDateChange: (range: { start: Date, end: Date }) => void;
 }
-
 
 export function DateRangePicker({
   className,
   onDateChange,
 }: DateRangePickerProps) {
-  const [date, setDate] = React.useState<CalendarRange | undefined>({
-    start: new Date(),
-    end: new Date(),
+  const [date, setDate] = React.useState<DateRange | undefined>({
+    from: addDays(new Date(), -60),
+    to: new Date(),
   })
 
-  const handleApply = (range: CalendarRange, preset: string) => {
-    if (range.start && range.end) {
-      setDate(range);
-      onDateChange({start: range.start, end: range.end});
+  React.useEffect(() => {
+    if (date?.from && date?.to) {
+        onDateChange({start: date.from, end: date.to});
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date]);
+
 
   return (
     <div className={cn("grid gap-2", className)}>
@@ -54,14 +49,14 @@ export function DateRangePicker({
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {date?.start ? (
-              date.end ? (
+            {date?.from ? (
+              date.to ? (
                 <>
-                  {format(date.start, "LLL dd, y")} -{" "}
-                  {format(date.end, "LLL dd, y")}
+                  {format(date.from, "LLL dd, y")} -{" "}
+                  {format(date.to, "LLL dd, y")}
                 </>
               ) : (
-                format(date.start, "LLL dd, y")
+                format(date.from, "LLL dd, y")
               )
             ) : (
               <span>Pick a date</span>
@@ -69,8 +64,13 @@ export function DateRangePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-          <CompactCalendar
-            onChange={handleApply}
+          <Calendar
+            initialFocus
+            mode="range"
+            defaultMonth={date?.from}
+            selected={date}
+            onSelect={setDate}
+            numberOfMonths={2}
           />
         </PopoverContent>
       </Popover>

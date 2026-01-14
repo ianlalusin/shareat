@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
+import { BackfillTool } from "@/components/admin/BackfillTool";
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
@@ -65,6 +66,14 @@ export default function AdminPage() {
                                 {adminTools.map(tool => (
                                     <ToolCard key={tool.title} {...tool} />
                                 ))}
+                            </CardContent>
+                        </Card>
+                         <Card>
+                            <CardHeader>
+                                <CardTitle>Data Management</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <BackfillTool />
                             </CardContent>
                         </Card>
                         <Card>

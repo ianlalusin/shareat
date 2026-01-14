@@ -1,5 +1,4 @@
 
-
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
@@ -57,14 +56,40 @@ export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: stri
     return doc(db, "stores", storeId, "analytics", dayId);
 }
 
+// --- Payment Contribution ---
+type PaymentContribution = {
+  dayId: string;
+  dayStartMs: number;
+  totalGross: number;
+  txCount: number;
+  byMethod: Record<string, number>;
+};
+
+export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
+    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {} };
+    if (!receipt) return defaultReturn;
+    
+    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
+    if (!createdAtMs) return defaultReturn;
+
+    return {
+        dayId: getDayIdFromTimestamp(createdAtMs),
+        dayStartMs: getDayStartMs(createdAtMs),
+        totalGross: receipt.total,
+        txCount: 1,
+        byMethod: receipt.analytics?.mop ?? {}
+    };
+}
+
+
 // --- Guest & Package Count Contribution ---
 type GuestCoversContribution = {
     dayId: string;
     dayStartMs: number;
-    guestCountFinal: number;
+    guestCountFinalTotal: number;
     billedPackageCovers: number;
-    packageName: string | null;
-    isPackageSession: boolean;
+    packageCoversBilledByPackageName: Record<string, number>;
+    packageSessionsCount: number;
 };
 
 /**
@@ -73,7 +98,7 @@ type GuestCoversContribution = {
  * @returns An object with the receipt's contribution, or zeros if not applicable.
  */
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, isPackageSession: false };
+    const defaultReturn = { dayId: "", dayStartMs: 0, guestCountFinalTotal: 0, billedPackageCovers: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0 };
     
     if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
         return defaultReturn;
@@ -86,14 +111,16 @@ export function getGuestCoversContribution(receipt: Receipt | null): GuestCovers
     if (!createdAtMs) {
         return defaultReturn;
     }
+    
+    const packageName = snapshot.packageName || "Unknown Package";
 
     return {
         dayId: getDayIdFromTimestamp(createdAtMs),
         dayStartMs: getDayStartMs(createdAtMs),
-        guestCountFinal: snapshot.finalGuestCount || 0,
+        guestCountFinalTotal: snapshot.finalGuestCount || 0,
         billedPackageCovers: snapshot.billedPackageCovers || 0,
-        packageName: snapshot.packageName || null,
-        isPackageSession: true,
+        packageCoversBilledByPackageName: { [packageName]: snapshot.billedPackageCovers || 0 },
+        packageSessionsCount: 1,
     };
 }
 
@@ -101,13 +128,13 @@ export function getGuestCoversContribution(receipt: Receipt | null): GuestCovers
 type SalesContribution = {
     dayId: string;
     dayStartMs: number;
-    packageAmountByName: Record<string, number>;
-    packageQtyByName: Record<string, number>;
-    addonAmountByCategory: Record<string, number>;
+    packageSalesAmountByName: Record<string, number>;
+    packageSalesQtyByName: Record<string, number>;
+    addonSalesAmountByCategory: Record<string, number>;
 };
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageAmountByName: {}, packageQtyByName: {}, addonAmountByCategory: {} };
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {} };
     if (!receipt) return defaultReturn;
     
     const analytics = (receipt?.analytics ?? {}) as ReceiptAnalyticsV2;
@@ -115,9 +142,9 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     const dayId = createdAtMs ? getDayIdFromTimestamp(createdAtMs) : "";
     const dayStartMs = createdAtMs ? getDayStartMs(createdAtMs) : 0;
 
-    const packageAmountByName: Record<string, number> = {};
-    const packageQtyByName: Record<string, number> = {};
-    const addonAmountByCategory: Record<string, number> = {};
+    const packageSalesAmountByName: Record<string, number> = {};
+    const packageSalesQtyByName: Record<string, number> = {};
+    const addonSalesAmountByCategory: Record<string, number> = {};
 
     if (analytics.v === 2) {
         // Aggregate packages from salesByItem
@@ -125,15 +152,15 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
             for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
                 // The rule for identifying a package is that it has no category or is 'Uncategorized'
                 if (!values.categoryName || values.categoryName === "Uncategorized") {
-                    packageAmountByName[itemName] = (packageAmountByName[itemName] || 0) + values.amount;
-                    packageQtyByName[itemName] = (packageQtyByName[itemName] || 0) + values.qty;
+                    packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
+                    packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
                 }
             }
         }
         // Aggregate addons from salesByCategory
         if (analytics.salesByCategory) {
             for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
-                addonAmountByCategory[categoryName] = (addonAmountByCategory[categoryName] || 0) + values.amount;
+                addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + values.amount;
             }
         }
     }
@@ -141,9 +168,9 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     return {
         dayId,
         dayStartMs,
-        packageAmountByName,
-        packageQtyByName,
-        addonAmountByCategory,
+        packageSalesAmountByName,
+        packageSalesQtyByName,
+        addonSalesAmountByCategory,
     };
 }
 
