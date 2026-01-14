@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -6,22 +7,16 @@ import { collection, query, where, onSnapshot, orderBy, Timestamp } from "fireba
 import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { toJsDate } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import type { DailyMetric } from "@/lib/types";
 
 interface PeakHoursCardProps {
     storeId: string;
     dateRange: { start: Date; end: Date };
-}
-
-type Receipt = {
-    createdAt: any;
-    analytics?: { v?: number; grandTotal?: number, sessionStartedAt?: any, sessionStartedAtClientMs?: number };
-    total?: number;
 }
 
 const chartConfig = {
@@ -38,29 +33,28 @@ function formatCurrency(value: number) {
 }
 
 export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
-    const [receipts, setReceipts] = useState<Receipt[]>([]);
+    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showAllHours, setShowAllHours] = useState(false);
 
     useEffect(() => {
         if (!storeId) {
             setIsLoading(false);
-            setReceipts([]);
+            setDailyMetrics([]);
             return;
         }
         setIsLoading(true);
 
-        const receiptsRef = collection(db, "stores", storeId, "receipts");
+        const metricsRef = collection(db, "stores", storeId, "analytics");
         const q = query(
-            receiptsRef,
-            where("status", "==", "final"),
-            where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
-            where("createdAt", "<=", Timestamp.fromDate(dateRange.end))
+            metricsRef,
+            where("dayId", ">=", format(dateRange.start, "yyyyMMdd")),
+            where("dayId", "<=", format(dateRange.end, "yyyyMMdd"))
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedReceipts = snapshot.docs.map(doc => doc.data() as Receipt);
-            setReceipts(fetchedReceipts);
+            const fetchedMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
+            setDailyMetrics(fetchedMetrics);
             setIsLoading(false);
         }, (error) => {
             console.error("Error fetching peak hours data:", error);
@@ -81,19 +75,16 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
         const salesByHour = Array(24).fill(0);
         const countByHour = Array(24).fill(0);
 
-        receipts.forEach(receipt => {
-            // Prioritize session start time, fallback to receipt creation time
-            const primaryTs = receipt.analytics?.sessionStartedAt;
-            const primaryMs = receipt.analytics?.sessionStartedAtClientMs;
-            const fallbackTs = receipt.createdAt;
-            
-            const date = toJsDate(primaryTs) ?? (primaryMs ? new Date(primaryMs) : toJsDate(fallbackTs));
-
-            if (date) {
-                const hour = date.getHours();
-                const amount = receipt.analytics?.grandTotal ?? receipt.total ?? 0;
-                salesByHour[hour] += amount;
-                countByHour[hour] += 1;
+        dailyMetrics.forEach(metric => {
+            if (metric.sales?.salesAmountByHour) {
+                for (const [hour, amount] of Object.entries(metric.sales.salesAmountByHour)) {
+                    salesByHour[Number(hour)] += amount;
+                }
+            }
+            if (metric.sales?.sessionCountByHour) {
+                 for (const [hour, count] of Object.entries(metric.sales.sessionCountByHour)) {
+                    countByHour[Number(hour)] += count;
+                }
             }
         });
 
@@ -110,10 +101,10 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
         return {
             processedData: data,
             peakHour: data[peakHourIndex],
-            totalReceipts: receipts.length,
+            totalReceipts: countByHour.reduce((sum, count) => sum + count, 0),
             maxSale
         };
-    }, [receipts]);
+    }, [dailyMetrics]);
     
     const chartData = useMemo(() => {
         if (showAllHours) return hourlyData.processedData;
@@ -141,7 +132,7 @@ export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
                     <CardTitle>Peak Hours</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-center text-sm text-muted-foreground py-10">No receipts in this range.</p>
+                    <p className="text-center text-sm text-muted-foreground py-10">No sales data in this range.</p>
                 </CardContent>
             </Card>
         )

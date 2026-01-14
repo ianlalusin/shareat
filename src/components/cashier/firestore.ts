@@ -29,7 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -311,29 +311,26 @@ export async function completePaymentFromUnits(
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
         const change = Math.max(0, totalPaid - amountDue);
         
-        const nonCashTotal = payments
-          .filter(p => {
-              const method = paymentMethods.find(m => m.id === p.methodId);
-              return method?.type !== 'cash';
-          })
-          .reduce((sum, p) => sum + p.amount, 0);
+        const nonCashPayments = payments.filter(p => {
+          const method = paymentMethods.find(m => m.id === p.methodId);
+          return method?.type !== 'cash';
+        });
 
-        const cashTendered = payments.find(p => paymentMethods.find(m => m.id === p.methodId)?.type === 'cash')?.amount ?? 0;
-        const cashPaymentAmount = cashTendered > 0 ? (amountDue > nonCashTotal ? Math.min(cashTendered, amountDue - nonCashTotal) : 0) : 0;
+        const nonCashTotal = nonCashPayments.reduce((sum, p) => sum + p.amount, 0);
+        const cashPaymentAmount = amountDue - nonCashTotal;
 
         const mopMap: Record<string, number> = {};
-        payments.forEach(p => {
+        nonCashPayments.forEach(p => {
             const method = paymentMethods.find(m => m.id === p.methodId);
             const key = method?.name || p.methodId || "unknown";
-            
-            if (method?.type === 'cash') {
-                if (cashPaymentAmount > 0) { // Only log cash if it was used to cover part of the bill
-                    mopMap[key] = (mopMap[key] || 0) + cashPaymentAmount;
-                }
-            } else {
-                mopMap[key] = (mopMap[key] || 0) + p.amount;
-            }
+            mopMap[key] = (mopMap[key] || 0) + p.amount;
         });
+
+        if (cashPaymentAmount > 0) {
+            const cashMethod = paymentMethods.find(m => m.type === 'cash');
+            const cashKey = cashMethod?.name || 'Cash';
+            mopMap[cashKey] = (mopMap[cashKey] || 0) + cashPaymentAmount;
+        }
         
         const receiptPayload: Receipt = stripUndefined({
             id: sessionId,
@@ -459,6 +456,7 @@ export async function completePaymentFromUnits(
         const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2 };
         tx.set(receiptRef, finalReceiptPayload);
         
+        // --- DELTA UPDATES FOR ANALYTICS ---
         const paymentIncrements: { [key: string]: any } = {};
         for (const [methodName, amount] of Object.entries(mopMap)) {
             paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
@@ -492,6 +490,13 @@ export async function completePaymentFromUnits(
             }
         }
 
+        const peakHourContribution = getPeakHourContribution(finalReceiptPayload);
+        const peakHourIncrements: Record<string, any> = {};
+        if(peakHourContribution.hourKey !== null) {
+            peakHourIncrements[`sales.salesAmountByHour.${peakHourContribution.hourKey}`] = increment(peakHourContribution.amount);
+            peakHourIncrements[`sales.sessionCountByHour.${peakHourContribution.hourKey}`] = increment(peakHourContribution.count);
+        }
+
         tx.set(dailyRef, { dayId, storeId, updatedAt: serverTimestamp() }, { merge: true });
         tx.update(dailyRef, {
             ...paymentIncrements,
@@ -499,6 +504,7 @@ export async function completePaymentFromUnits(
             "payments.txCount": increment(1),
             ...guestIncrements,
             ...salesIncrements,
+            ...peakHourIncrements,
         });
 
         receiptId = receiptRef.id;

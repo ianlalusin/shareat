@@ -3,6 +3,7 @@
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
+import { toJsDate } from "@/lib/utils/date";
 
 /**
  * Converts a Firestore Timestamp, JavaScript Date, or millisecond epoch time
@@ -120,4 +121,34 @@ export function getSalesContribution(receipt: Receipt): SalesContribution {
         addonAmountByCategory,
     };
 }
+
+// --- Peak Hour Contribution ---
+type PeakHourContribution = {
+    dayId: string;
+    hourKey: string | null; // "0".."23"
+    amount: number;
+    count: number; // 1 if valid, 0 if not
+};
+
+export function getPeakHourContribution(receipt: Receipt): PeakHourContribution {
+    const defaultReturn = { dayId: "", hourKey: null, amount: 0, count: 0 };
     
+    // Use session start time first, fallback to receipt creation time
+    const primaryTs = receipt.analytics?.sessionStartedAt;
+    const primaryMs = receipt.analytics?.sessionStartedAtClientMs;
+    const fallbackTs = receipt.createdAt;
+    
+    const date = toJsDate(primaryTs) ?? (primaryMs ? new Date(primaryMs) : toJsDate(fallbackTs));
+
+    if (!date) return defaultReturn;
+    
+    const dayId = getDayIdFromTimestamp(date);
+    const hour = date.getHours(); // Local hour based on server's timezone, or Asia/Manila if consistent
+
+    return {
+        dayId: dayId,
+        hourKey: String(hour),
+        amount: receipt.total ?? receipt.analytics?.grandTotal ?? 0,
+        count: 1,
+    };
+}

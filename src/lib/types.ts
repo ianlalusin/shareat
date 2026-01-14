@@ -364,11 +364,13 @@ export type DailyMetric = {
         packageCoversBilledByPackageName?: {
             [packageName: string]: number;
         }
-    },
+    };
     sales?: {
         packageSalesAmountByName?: Record<string, number>;
         packageSalesQtyByName?: Record<string, number>;
         addonSalesAmountByCategory?: Record<string, number>;
+        salesAmountByHour?: Record<string, number>;
+        sessionCountByHour?: Record<string, number>;
     }
 }
 
