@@ -76,6 +76,7 @@ async function applyAnalyticsDelta(
     peak: getPeakHourContribution(oldReceipt),
     closed: getClosedSessionsContribution(oldReceipt),
     refill: getRefillContribution(oldReceipt),
+    payment: getPaymentContribution(oldReceipt)
   };
   const newC = {
     guest: getGuestCoversContribution(newReceipt),
@@ -83,6 +84,7 @@ async function applyAnalyticsDelta(
     peak: getPeakHourContribution(newReceipt),
     closed: getClosedSessionsContribution(newReceipt),
     refill: getRefillContribution(newReceipt),
+    payment: getPaymentContribution(newReceipt)
   };
 
   const updates: { ref: any, payload: any }[] = [];
@@ -110,6 +112,11 @@ async function applyAnalyticsDelta(
           oldPayload['refills.packageSessionsCount'] = increment(-oldContrib.packageSessionsCount);
           oldPayload['refills.servedRefillsTotal'] = increment(-oldContrib.servedRefillsTotal);
           for (const [k,v] of Object.entries(oldContrib.servedRefillsByName)) oldPayload[`refills.servedRefillsByName.${k}`] = increment(-(v as number));
+      }
+      if (oldContrib.txCount) {
+          oldPayload['payments.txCount'] = increment(-oldContrib.txCount);
+          oldPayload['payments.totalGross'] = increment(-oldContrib.totalGross);
+          for (const [k,v] of Object.entries(oldContrib.byMethod)) oldPayload[`payments.byMethod.${k}`] = increment(-(v as number));
       }
 
       updates.push({ ref: dailyAnalyticsDocRef(db, storeId, oldContrib.dayId), payload: oldPayload });
@@ -175,18 +182,35 @@ async function applyAnalyticsDelta(
         if(oldQty !== newQty) payload[`refills.servedRefillsByName.${name}`] = increment(newQty - oldQty);
     });
 
+    // Payments
+    const deltaTxCount = newContrib.txCount - oldContrib.txCount;
+    const deltaTotalGross = newContrib.totalGross - oldContrib.totalGross;
+    if(deltaTxCount) payload['payments.txCount'] = increment(deltaTxCount);
+    if(deltaTotalGross) payload['payments.totalGross'] = increment(deltaTotalGross);
+    
+    const allMethods = new Set([...Object.keys(oldContrib.byMethod || {}), ...Object.keys(newContrib.byMethod || {})]);
+    allMethods.forEach(method => {
+      const oldVal = oldContrib.byMethod?.[method] || 0;
+      const newVal = newContrib.byMethod?.[method] || 0;
+      if (oldVal !== newVal) payload[`payments.byMethod.${method}`] = increment(newVal - oldVal);
+    });
+
+
     if (Object.keys(payload).length > 0) {
         updates.push({ ref: dailyAnalyticsDocRef(db, storeId, newContrib.dayId), payload });
     }
   }
 
-  processDelta({ ...oldC.guest, ...oldC.sales, ...oldC.peak, ...oldC.closed, ...oldC.refill }, { ...newC.guest, ...newC.sales, ...newC.peak, ...newC.closed, ...newC.refill });
+  processDelta(
+    { ...oldC.guest, ...oldC.sales, ...oldC.peak, ...oldC.closed, ...oldC.refill, ...oldC.payment }, 
+    { ...newC.guest, ...newC.sales, ...newC.peak, ...newC.closed, ...newC.refill, ...newC.payment }
+  );
 
   if (updates.length === 0) return;
 
   const batch = writeBatch(db);
   for (const { ref, payload } of updates) {
-    batch.update(ref, payload);
+    batch.set(ref, payload, { merge: true });
   }
   await batch.commit();
 }
@@ -721,7 +745,7 @@ export default function ReceiptsPageContents() {
                                     <TableRow>
                                         <TableHead>Identifier</TableHead>
                                         <TableHead>Total</TableHead>
-                                        {appUser?.role === 'admin' && <TableHead className="text-right">Actions</TableHead>}
+                                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -736,14 +760,16 @@ export default function ReceiptsPageContents() {
                                                 <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            {appUser?.role === 'admin' && (
+                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
                                                 <TableCell className="text-right py-2">
                                                     <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2">
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
-                                                    <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
-                                                        {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
-                                                    </Button>
+                                                    {appUser?.role === 'admin' && (
+                                                        <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
+                                                            {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
+                                                        </Button>
+                                                    )}
                                                 </TableCell>
                                             )}
                                         </TableRow>
