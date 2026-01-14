@@ -28,7 +28,6 @@ const PesoSign = ({ className }: { className?: string }) => (
 export type DashboardStats = {
     grossSales: number;
     transactions: number;
-    avgTicket: number;
     avgBasket: number;
 };
 

@@ -51,7 +51,7 @@ export default function DashboardPage() {
         setIsLoading(true);
         const unsubs: (() => void)[] = [];
 
-        // --- Receipts for detailed analytics ---
+        // --- Receipts for detailed analytics (e.g., top items) ---
         const receiptsRef = collection(db, "stores", activeStore.id, "receipts");
         const receiptsQuery = query(
             receiptsRef,
@@ -64,7 +64,7 @@ export default function DashboardPage() {
             setReceipts(snapshot.docs.map(doc => doc.data() as Receipt));
         }, (error) => console.error("Error fetching receipts:", error)));
 
-        // --- Daily Metrics for aggregated data (like Payment Mix) ---
+        // --- Daily Metrics for aggregated data (Sales, Transactions, Payment Mix) ---
         const metricsRef = collection(db, "stores", activeStore.id, "dailyMetrics");
         const dateRangeIds = [];
         let currentDate = new Date(dateRange.start);
@@ -82,7 +82,6 @@ export default function DashboardPage() {
              setDailyMetrics([]);
         }
 
-
         // --- Active Sessions Count ---
         const sessionsRef = collection(db, "stores", activeStore.id, "sessions");
         const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
@@ -93,22 +92,22 @@ export default function DashboardPage() {
         const timer = setTimeout(() => setIsLoading(false), 1500); 
         unsubs.push(() => clearTimeout(timer));
 
-
         return () => unsubs.forEach(unsub => unsub());
     }, [activeStore?.id, dateRange]);
 
 
-    const { stats } = useMemo(() => {
-        const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
+    const stats = useMemo<DashboardStats>(() => {
+        if (!dailyMetrics || dailyMetrics.length === 0) {
+            return { grossSales: 0, transactions: 0, avgBasket: 0 };
+        }
         
-        const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
-        const transactions = v2Receipts.length;
+        const grossSales = dailyMetrics.reduce((sum, metric) => sum + (metric.sales || 0), 0);
+        const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.transactions || 0), 0);
         const avgBasket = transactions > 0 ? grossSales / transactions : 0;
         
-        const stats: DashboardStats = { grossSales, transactions, avgTicket: avgBasket, avgBasket };
+        return { grossSales, transactions, avgBasket };
+    }, [dailyMetrics]);
 
-        return { stats };
-    }, [receipts]);
 
     const dateRangeLabel = useMemo(() => {
         if (isSameDay(dateRange.start, dateRange.end)) {
