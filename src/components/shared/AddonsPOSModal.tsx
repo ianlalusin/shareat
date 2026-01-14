@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -10,10 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, getDoc, orderBy, limit, runTransaction } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
+import { useStoreContext } from "@/context/store-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { InventoryItem, PendingSession, BillableLine } from "@/lib/types";
@@ -21,7 +21,6 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
 import { upsertAddonToBill } from "../cashier/firestore";
-import { getDisplayName, getGroupKey } from "@/lib/products/variants";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -32,29 +31,27 @@ interface AddonsPOSModalProps {
 }
 
 type EnrichedStoreAddon = InventoryItem & {
-    displayName: string;
-    groupKey: string;
-    groupName?: string;
-    imageUrl?: string | null;
+  displayName: string;
+  groupKey: string;
+  groupName?: string;
+  imageUrl?: string | null;
 };
 
 type AddonGroup = {
-    title: string;
-    key: string;
-    items: EnrichedStoreAddon[];
-    isGroup: boolean; 
-}
+  title: string;
+  key: string;
+  items: EnrichedStoreAddon[];
+  isGroup: boolean;
+};
 
-function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon, onSelect: (addon: EnrichedStoreAddon) => void }) {
+function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon; onSelect: (addon: EnrichedStoreAddon) => void }) {
   return (
     <button
       onClick={() => onSelect(addon)}
       className="flex flex-col items-center justify-center p-2 border rounded-md hover:bg-muted/50 transition-colors text-center h-32 focus:outline-none focus:ring-2 focus:ring-ring"
     >
       <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden">
-        {addon.imageUrl && (
-          <Image src={addon.imageUrl} alt={addon.displayName} layout="fill" objectFit="cover" />
-        )}
+        {addon.imageUrl && <Image src={addon.imageUrl} alt={addon.displayName} fill style={{ objectFit: "cover" }} />}
       </div>
       <span className="text-xs font-medium leading-tight line-clamp-2">{addon.displayName}</span>
       <span className="text-xs text-muted-foreground mt-auto">₱{(addon.sellingPrice || 0).toFixed(2)}</span>
@@ -62,7 +59,7 @@ function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon, onSelect: (
   );
 }
 
-function GroupTile({ group, onSelect }: { group: AddonGroup, onSelect: (group: AddonGroup) => void }) {
+function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: AddonGroup) => void }) {
   return (
     <button
       onClick={() => onSelect(group)}
@@ -70,343 +67,348 @@ function GroupTile({ group, onSelect }: { group: AddonGroup, onSelect: (group: A
     >
       <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden flex items-center justify-center">
         {group.items[0].imageUrl ? (
-          <Image src={group.items[0].imageUrl} alt={group.title} layout="fill" objectFit="cover" />
-        ) : <Layers className="h-8 w-8 text-muted-foreground"/> }
+          <Image src={group.items[0].imageUrl} alt={group.title} fill style={{ objectFit: "cover" }} />
+        ) : (
+          <Layers className="h-8 w-8 text-muted-foreground" />
+        )}
       </div>
       <span className="text-xs font-medium leading-tight line-clamp-2">{group.title}</span>
       <span className="text-xs text-primary mt-auto">Choose variant</span>
     </button>
-  )
+  );
 }
 
-function VariantPicker({ 
-    group, 
-    open, 
-    onOpenChange,
-    onSelectVariant 
-}: { 
-    group: AddonGroup | null,
-    open: boolean, 
-    onOpenChange: (open: boolean) => void,
-    onSelectVariant: (addon: EnrichedStoreAddon) => void 
+function VariantPicker({
+  group,
+  open,
+  onOpenChange,
+  onSelectVariant,
+}: {
+  group: AddonGroup | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectVariant: (addon: EnrichedStoreAddon) => void;
 }) {
-    if (!group) return null;
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Select Variant: {group.title}</DialogTitle>
-                </DialogHeader>
-                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 py-4">
-                    {group.items.map(addon => (
-                        <AddonItem 
-                            key={addon.id} 
-                            addon={addon} 
-                            onSelect={() => {
-                                onSelectVariant(addon);
-                                onOpenChange(false);
-                            }} 
-                        />
-                    ))}
-                </div>
-            </DialogContent>
-        </Dialog>
-    )
+  if (!group) return null;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Select Variant: {group.title}</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 py-4">
+          {group.items.map((addon) => (
+            <AddonItem
+              key={addon.id}
+              addon={addon}
+              onSelect={() => {
+                onSelectVariant(addon);
+                onOpenChange(false);
+              }}
+            />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function POSContent({
-    storeId, 
-    session, 
-    sessionIsLocked, 
-    onClose
+  storeId,
+  session,
+  sessionIsLocked,
+  onClose,
 }: {
-    storeId: string;
-    session: PendingSession;
-    sessionIsLocked?: boolean;
-    onClose: () => void;
+  storeId: string;
+  session: PendingSession;
+  sessionIsLocked?: boolean;
+  onClose: () => void;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
-  const [addons, setAddons] = useState<EnrichedStoreAddon[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
+  // Addons now come from StoreContext cache (loaded once per activeStore).
+  const { storeAddons, storeAddonsLoading, refreshStoreAddons } = useStoreContext();
+  const addons = storeAddons as unknown as EnrichedStoreAddon[];
+  const isLoading = storeAddonsLoading;
+
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
-  
+
   const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
+  const [isVariantPickerOpen, setIsVariantPickerOpen] = useState(false);
 
-  useEffect(() => {
-    if (!storeId) {
-        setIsLoading(false);
-        return;
-    };
-    const addonsQuery = query(
-        collection(db, "stores", storeId, "inventory"),
-        where("isActive", "==", true),
-        where("isAddon", "==", true)
-    );
-
-    const unsub = onSnapshot(addonsQuery, async (snapshot) => {
-        const inventoryAddons = snapshot.docs.map(d => ({...d.data(), id: d.id}) as InventoryItem);
-
-        const addonsWithDetails = await Promise.all(inventoryAddons.map(async (item) => {
-            let productData: any = {};
-            try {
-                const productDoc = await getDoc(doc(db, "products", item.productId));
-                if (productDoc.exists()) {
-                    productData = productDoc.data();
-                }
-            } catch (e) {
-                console.error("Error fetching product details for addon:", item.id, e);
-            }
-            
-            const combined = { ...productData, ...item, barcode: item.barcode ?? productData.barcode ?? null, imageUrl: productData.imageUrl ?? null };
-            const sp = Number(combined.sellingPrice);
-            const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
-
-            return { 
-              ...combined,
-              sellingPrice: safeSellingPrice,
-              displayName: getDisplayName(combined),
-              groupKey: getGroupKey(combined),
-              groupName: productData?.groupName || item.name,
-              imageUrl: productData.imageUrl
-            } as EnrichedStoreAddon;
-        }));
-
-        setAddons(addonsWithDetails.sort((a,b) => a.displayName.localeCompare(b.displayName)));
-        setIsLoading(false);
-    }, (error) => {
-        console.error("[AddonsPOSModal] Query error:", error);
-        toast({ variant: 'destructive', title: "Load Failed", description: "Could not fetch add-on items."});
-        setIsLoading(false);
-    });
-
-    return () => unsub();
-  }, [storeId, toast]);
-  
   const categories = useMemo(() => {
-    return ["All", ...Array.from(new Set(addons.map(a => a.subCategory || "Uncategorized")))];
+    return ["All", ...Array.from(new Set(addons.map((a) => a.subCategory || "Uncategorized")))];
   }, [addons]);
-  
+
   const groupedAddons = useMemo(() => {
     let result = addons;
+
     if (activeCategory !== "All") {
-      result = result.filter(a => (a.subCategory || "Uncategorized") === activeCategory);
+      result = result.filter((a) => (a.subCategory || "Uncategorized") === activeCategory);
     }
     if (search) {
-      result = result.filter(a => a.displayName.toLowerCase().includes(search.toLowerCase()));
+      const s = search.toLowerCase();
+      result = result.filter((a) => (a.displayName || "").toLowerCase().includes(s));
     }
-    
-    const groups: Record<string, AddonGroup> = {};
 
-    result.forEach(addon => {
-        const key = addon.groupKey;
-        if (!groups[key]) {
-            groups[key] = {
-                key: key,
-                title: addon.groupName || addon.name,
-                items: [],
-                isGroup: false,
-            };
-        }
-        groups[key].items.push(addon);
+    const groups: Record<string, AddonGroup> = {};
+    result.forEach((addon) => {
+      const key = addon.groupKey || addon.id;
+      if (!groups[key]) {
+        groups[key] = {
+          key,
+          title: addon.groupName || addon.name,
+          items: [],
+          isGroup: false,
+        };
+      }
+      groups[key].items.push(addon);
     });
-    
-    return Object.values(groups).map(group => {
+
+    return Object.values(groups)
+      .map((group) => {
         const isGroup = group.items.length > 1;
         return { ...group, isGroup };
-    }).sort((a,b) => a.title.localeCompare(b.title));
-
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
   }, [addons, search, activeCategory]);
 
   const handleSelectAddon = (addon: EnrichedStoreAddon) => {
     setSelectedAddon(addon);
     setQuantity(1);
   };
-  
+
+  const handleSelectGroup = (group: AddonGroup) => {
+    setVariantPickerGroup(group);
+    setIsVariantPickerOpen(true);
+  };
+
   const handleAddToOrder = async () => {
     if (!appUser || !storeId || !session?.id || !selectedAddon) {
-        toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
-        return;
+      toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
+      return;
     }
-     if (sessionIsLocked) {
-        toast({ variant: "destructive", title: "Cannot Add Item", description: "This session is locked and cannot be modified." });
-        return;
+    if (sessionIsLocked) {
+      toast({ variant: "destructive", title: "Cannot Add Item", description: "This session is locked and cannot be modified." });
+      return;
     }
     if (!selectedAddon.kitchenLocationId) {
-        toast({ variant: "destructive", title: "Kitchen Not Assigned", description: `"${selectedAddon.displayName}" has no kitchen location assigned.`});
-        return;
+      toast({
+        variant: "destructive",
+        title: "Kitchen Not Assigned",
+        description: `"${selectedAddon.displayName}" has no kitchen location assigned.`,
+      });
+      return;
     }
 
     setIsSubmitting(true);
-    
+
     try {
-        const batch = writeBatch(db);
-        const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
-        
-        // Loop to create one ticket per quantity
-        for (let i = 0; i < quantity; i++) {
-            const ticketRef = doc(ticketsColRef);
+      const batch = writeBatch(db);
+      const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
 
-            const ticketPayload = stripUndefined({
-                id: ticketRef.id,
-                type: "addon",
-                itemId: selectedAddon.id,
-                itemName: selectedAddon.displayName,
-                qty: 1, // Always 1 per ticket
-                uom: selectedAddon.uom,
-                kitchenLocationId: selectedAddon.kitchenLocationId,
-                status: "preparing",
-                createdAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-                orderedByRole: appUser.role, 
-                sessionId: session.id, 
-                storeId,
-                tableNumber: session.tableNumber,
-                customerName: session.customer?.name || session.customerName,
-                sessionMode: session.sessionMode,
-                sessionLabel: computeSessionLabel(session),
-                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-            });
-            batch.set(ticketRef, ticketPayload);
-        }
+      // Loop to create one ticket per quantity
+      for (let i = 0; i < quantity; i++) {
+        const ticketRef = doc(ticketsColRef);
 
-        // Upsert the billable line item (this still correctly handles total quantity)
-        await upsertAddonToBill(storeId, session.id, selectedAddon, quantity, appUser);
+        const ticketPayload = stripUndefined({
+          id: ticketRef.id,
+          type: "addon",
+          itemId: selectedAddon.id,
+          itemName: selectedAddon.displayName,
+          qty: 1, // Always 1 per ticket
+          status: "preparing",
+          kitchenLocationId: selectedAddon.kitchenLocationId,
+          kitchenLocationName: selectedAddon.kitchenLocationName,
+          sessionId: session.id,
+          storeId,
+          tableId: session.tableId,
+          tableNumber: session.tableNumber,
+          createdByUid: appUser.uid,
+          createdAt: serverTimestamp(),
+          sessionMode: session.sessionMode,
+          customerName: session.customer?.name ?? session.customerName ?? null,
+          sessionLabel: computeSessionLabel({
+            sessionMode: session.sessionMode,
+            customerName: session.customer?.name ?? session.customerName ?? null,
+            tableNumber: session.sessionMode === "alacarte" ? null : session.tableNumber,
+          }),
+        });
 
-        await batch.commit();
+        batch.set(ticketRef, ticketPayload);
+      }
 
-        toast({ title: "Added to Order", description: `${quantity}x ${selectedAddon.displayName} sent to kitchen.`});
-        setSelectedAddon(null);
-    } catch(e: any) {
-        console.error("Order Failed:", e);
-        toast({ variant: 'destructive', title: "Order Failed", description: e.message || "An unexpected error occurred." });
+      // Upsert bill line (single line with qty)
+      await upsertAddonToBill({
+        storeId,
+        sessionId: session.id,
+        user: appUser,
+        addon: selectedAddon as any,
+        qtyToAdd: quantity,
+      });
+
+      await batch.commit();
+
+      toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
+      setSelectedAddon(null);
+      setQuantity(1);
+      onClose();
+    } catch (e) {
+      console.error("[AddonsPOSModal] add failed:", e);
+      toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order." });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
-
-  const allowDecimal = selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false;
-  const qtyStep = allowDecimal ? 0.1 : 1;
-  const qtyMin = allowDecimal ? 0.1 : 1;
 
   return (
     <>
-    <div className="flex flex-col h-[80vh] sm:h-[70vh]">
-        <div className="p-4 border-b">
-            <div className="flex gap-2">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search items..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9"/>
-                </div>
-            </div>
-            <ScrollArea className="w-full mt-2">
-                 <div className="flex space-x-2 pb-2">
-                    {categories.map(cat => (
-                        <Badge
-                            key={cat}
-                            variant={activeCategory === cat ? "default" : "secondary"}
-                            onClick={() => setActiveCategory(cat)}
-                            className="cursor-pointer whitespace-nowrap"
-                        >
-                            {cat}
-                        </Badge>
-                    ))}
-                </div>
-            </ScrollArea>
-        </div>
-        <ScrollArea className="flex-1 p-4">
-            {isLoading ? <Loader2 className="mx-auto my-16 animate-spin"/> : (
-                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {groupedAddons.map(group => {
-                        if (group.isGroup) {
-                            return <GroupTile key={group.key} group={group} onSelect={() => setVariantPickerGroup(group)} />
-                        } else {
-                            return <AddonItem key={group.key} addon={group.items[0]} onSelect={handleSelectAddon} />
-                        }
-                    })}
-                </div>
-            )}
-            {groupedAddons.length === 0 && !isLoading && (
-                 <p className="text-center text-muted-foreground py-10">No add-ons available.</p>
-            )}
-        </ScrollArea>
-        {selectedAddon && (
-             <div className="p-4 border-t bg-muted/50">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <p className="font-semibold">{selectedAddon.displayName}</p>
-                        <p className="text-sm text-muted-foreground">₱{(selectedAddon.sellingPrice || 0).toFixed(2)}</p>
-                    </div>
-                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => Math.max(qtyMin, q - qtyStep))}><Minus/></Button>
-                        <QuantityInput 
-                            value={quantity} 
-                            onChange={setQuantity}
-                            className="w-20 h-8 text-center" 
-                            allowDecimal={allowDecimal}
-                        />
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setQuantity(q => q + qtyStep)}><Plus/></Button>
-                     </div>
-                     <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedAddon(null)}>Cancel</Button>
-                        <Button size="sm" onClick={handleAddToOrder} disabled={isSubmitting || quantity <= 0 || !selectedAddon.kitchenLocationId || sessionIsLocked}>
-                           {isSubmitting ? <Loader2 className="animate-spin" /> : `Add (₱${((selectedAddon.sellingPrice || 0) * quantity).toFixed(2)})`}
-                        </Button>
-                     </div>
-                </div>
-            </div>
-        )}
-        <DialogFooter className="p-4 border-t">
-            <Button onClick={onClose} className="w-full">Done</Button>
-        </DialogFooter>
-    </div>
-    <VariantPicker
-        open={!!variantPickerGroup}
-        onOpenChange={(isOpen) => !isOpen && setVariantPickerGroup(null)}
+      <VariantPicker
         group={variantPickerGroup}
-        onSelectVariant={handleSelectAddon}
-    />
+        open={isVariantPickerOpen}
+        onOpenChange={setIsVariantPickerOpen}
+        onSelectVariant={(addon) => handleSelectAddon(addon)}
+      />
+
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <div className="relative w-full">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search add-ons..."
+              className="pl-8"
+            />
+          </div>
+          <Button variant="outline" onClick={refreshStoreAddons} disabled={isLoading}>
+            Refresh
+          </Button>
+        </div>
+
+        <ScrollArea className="h-[55vh] pr-2">
+          <div className="flex flex-wrap gap-2 pb-3">
+            {categories.map((cat) => (
+              <Badge
+                key={cat}
+                variant={activeCategory === cat ? "default" : "secondary"}
+                className="cursor-pointer"
+                onClick={() => setActiveCategory(cat)}
+              >
+                {cat}
+              </Badge>
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center h-40 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading add-ons...
+            </div>
+          ) : groupedAddons.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-muted-foreground">No add-ons found.</div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              {groupedAddons.map((group) =>
+                group.isGroup ? (
+                  <GroupTile key={group.key} group={group} onSelect={handleSelectGroup} />
+                ) : (
+                  <AddonItem key={group.items[0].id} addon={group.items[0]} onSelect={handleSelectAddon} />
+                )
+              )}
+            </div>
+          )}
+        </ScrollArea>
+
+        <div className="border-t pt-3 space-y-2">
+          <div className="text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Selected</span>
+              <span className="font-medium">{selectedAddon ? selectedAddon.displayName : "-"}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              disabled={!selectedAddon || isSubmitting}
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+
+            <QuantityInput
+              value={quantity}
+              onChange={setQuantity}
+              disabled={!selectedAddon || isSubmitting}
+              allowsDecimal={selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false}
+            />
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setQuantity((q) => q + 1)}
+              disabled={!selectedAddon || isSubmitting}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+
+            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading}>
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Add to Order
+            </Button>
+          </div>
+        </div>
+      </div>
     </>
-  )
+  );
 }
 
-
-export function AddonsPOSModal(props: AddonsPOSModalProps) {
+export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked }: AddonsPOSModalProps) {
   const isMobile = useIsMobile();
-  
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      props.onOpenChange(false);
-    }
-  };
+
+  const content = (
+    <POSContent
+      storeId={storeId}
+      session={session}
+      sessionIsLocked={sessionIsLocked}
+      onClose={() => onOpenChange(false)}
+    />
+  );
 
   if (isMobile) {
     return (
-      <Drawer open={props.open} onOpenChange={handleOpenChange}>
+      <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent>
           <DrawerHeader>
-            <DrawerTitle>Add Item</DrawerTitle>
-            <DrawerDescription>Select items to add to the order.</DrawerDescription>
+            <DrawerTitle>Add-ons</DrawerTitle>
+            <DrawerDescription>Select add-on items to add to the order.</DrawerDescription>
           </DrawerHeader>
-          <POSContent {...props} onClose={() => props.onOpenChange(false)} />
+          <div className="px-4 pb-4">{content}</div>
         </DrawerContent>
       </Drawer>
     );
   }
 
   return (
-    <Dialog open={props.open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl p-0 gap-0">
-          <DialogHeader className="p-4 pb-0">
-            <DialogTitle>Add Item</DialogTitle>
-            <DialogDescription>Select items to add to the order.</DialogDescription>
-          </DialogHeader>
-          <POSContent {...props} onClose={() => props.onOpenChange(false)} />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Add-ons</DialogTitle>
+          <DialogDescription>Select add-on items to add to the order.</DialogDescription>
+        </DialogHeader>
+        {content}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
