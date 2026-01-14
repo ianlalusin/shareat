@@ -6,10 +6,13 @@ import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { StoreContextProvider } from '@/context/store-context';
 import dynamic from 'next/dynamic';
 import { BrandLoader } from '@/components/ui/BrandLoader';
+import { FirebaseClientProvider } from '@/firebase/client-provider';
 
-// Dynamically import the FirebaseClientProvider with SSR disabled.
-// This is crucial for preventing errors related to server-side execution of client-side Firebase code.
-const FirebaseClientProvider = dynamic(
+// This was the issue. By dynamically importing the provider with SSR disabled,
+// we ensure that Firebase, which needs the browser `window` object,
+// only tries to initialize on the client. This resolves the chunk load error
+// during server rendering.
+const NoSsrFirebaseProvider = dynamic(
     () => import('@/firebase/client-provider').then(mod => mod.FirebaseClientProvider),
     { 
         ssr: false,
@@ -24,7 +27,7 @@ const FirebaseClientProvider = dynamic(
 
 export function Providers({ children }: { children: React.ReactNode }) {
     return (
-        <FirebaseClientProvider>
+        <NoSsrFirebaseProvider>
             <AuthContextProvider>
                 <StoreContextProvider>
                     <FirstLoginGuard>
@@ -32,6 +35,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
                     </FirstLoginGuard>
                 </StoreContextProvider>
             </AuthContextProvider>
-        </FirebaseClientProvider>
+        </NoSsrFirebaseProvider>
     );
 }
