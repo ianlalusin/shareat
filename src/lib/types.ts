@@ -383,6 +383,10 @@ export type DailyMetric = {
         cancelledCountByType?: Record<string, number>;
         durationMsSumByType?: Record<string, number>;
         durationCountByType?: Record<string, number>;
+    };
+    sessions?: {
+        closedCount?: number;
+        totalPaid?: number;
     }
 }
 

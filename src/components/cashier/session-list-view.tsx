@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -14,7 +15,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Receipt } from "lucide-react";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { ActiveSessionsGrid, type ActiveSession } from "@/components/cashier/active-sessions-grid";
-import { PastSessionsCard, type PastSession } from "@/components/cashier/past-sessions-card";
+import { PastSessionsCard } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
@@ -30,7 +31,6 @@ export function SessionListView() {
     const [flavors, setFlavors] = useState<StoreFlavor[]>([]);
     const [schedules, setSchedules] = useState<Map<string, MenuSchedule>>(new Map());
     const [isLoading, setIsLoading] = useState(true);
-    const [pastSessions, setPastSessions] = useState<PastSession[]>([]);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
 
     useEffect(() => {
@@ -88,22 +88,6 @@ export function SessionListView() {
                 } as ActiveSession
             }));
         }));
-
-        // Fetch past sessions for the day
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
-        todayEnd.setHours(23, 59, 59, 999);
-
-        const pastSessionsQuery = query(
-            collection(db, "stores", activeStore.id, "receipts"),
-            where("createdAt", ">=", Timestamp.fromDate(todayStart)),
-            where("createdAt", "<=", Timestamp.fromDate(todayEnd)),
-            orderBy("createdAt", "desc")
-        );
-        unsubs.push(onSnapshot(pastSessionsQuery, (snapshot) => {
-            setPastSessions(snapshot.docs.map(doc => doc.data() as PastSession));
-        }));
         
         // All subscriptions are set, so we can stop loading.
         setIsLoading(false);
@@ -152,7 +136,7 @@ export function SessionListView() {
                         </div>
                         <div className="lg:col-span-2 space-y-8">
                             <ActiveSessionsGrid sessions={sessions} />
-                            <PastSessionsCard sessions={pastSessions} />
+                            <PastSessionsCard />
                         </div>
                     </div>
                 </div>

@@ -13,31 +13,9 @@ import { toJsDate } from "@/lib/utils/date";
  */
 export function getDayStartMs(ts: Timestamp | Date | number): number {
     const date = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        timeZone: 'Asia/Manila',
-        hour12: false, // Use 24-hour format to avoid AM/PM issues
-        hour: 'numeric', // Include hour to correctly get midnight
-        minute: 'numeric',
-        second: 'numeric',
-    });
     
-    // Get parts of the date in the target timezone
-    const parts = formatter.formatToParts(date);
-    const year = parseInt(parts.find(p => p.type === 'year')?.value ?? '1970');
-    const month = parseInt(parts.find(p => p.type === 'month')?.value ?? '1');
-    const day = parseInt(parts.find(p => p.type === 'day')?.value ?? '1');
-
     // Create a new Date object representing midnight in the UTC of the *local* machine,
     // but with the date parts from the 'Asia/Manila' timezone.
-    const manilaMidnightDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-    
-    // The key is that the parts are from Manila, but we create a UTC date.
-    // To get the actual epoch MS, we can get the time.
-    // This is a reliable way to get a consistent midnight timestamp regardless of server location.
-    // Let's refine this to be more robust.
     const midnightInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     midnightInManila.setHours(0, 0, 0, 0);
 
@@ -261,4 +239,28 @@ export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTick
     }
     
     return defaultReturn;
+}
+
+
+// --- Closed Sessions Contribution ---
+type ClosedSessionsContribution = {
+  dayId: string;
+  dayStartMs: number;
+  closedCount: number;
+  totalPaid: number;
+};
+
+export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
+    const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
+    if (!receipt) return defaultReturn;
+
+    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
+    if (!createdAtMs) return defaultReturn;
+
+    return {
+        dayId: getDayIdFromTimestamp(createdAtMs),
+        dayStartMs: getDayStartMs(createdAtMs),
+        closedCount: 1,
+        totalPaid: receipt.total ?? 0,
+    };
 }
