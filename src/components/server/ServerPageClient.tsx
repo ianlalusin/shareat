@@ -29,7 +29,7 @@ function normalizeGuestCountChange(raw: any): GCC {
 }
 
 
-export default function ServerPage() {
+export function ServerPageClient() {
   const { appUser } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const { toast } = useToast();
