@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
@@ -25,6 +25,7 @@ import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { read, utils } from "xlsx";
 import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
 import { normalizeUom } from "@/lib/uom";
+import Image from "next/image";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -379,11 +380,12 @@ export default function ProductManagementPage() {
                     <React.Fragment key={subCategory}>
                         <TableHeader className="bg-muted/50">
                             <TableRow>
-                                <TableHead colSpan={5} className="text-lg font-semibold text-foreground">
+                                <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
                                     {subCategory}
                                 </TableHead>
                             </TableRow>
                             <TableRow>
+                                <TableHead>Image</TableHead>
                                 <TableHead>Product Name</TableHead>
                                 <TableHead>UOM</TableHead>
                                 <TableHead>Barcode</TableHead>
@@ -394,6 +396,15 @@ export default function ProductManagementPage() {
                          <TableBody>
                             {items.map((product) => (
                                 <TableRow key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
+                                    <TableCell>
+                                        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                            {product.imageUrl ? (
+                                                <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                            ) : (
+                                                <Package className="h-6 w-6 text-muted-foreground"/>
+                                            )}
+                                        </div>
+                                    </TableCell>
                                     <TableCell className="font-medium">{getDisplayName(product)}</TableCell>
                                     <TableCell>{product.uom}</TableCell>
                                     <TableCell>{product.barcode || '—'}</TableCell>
@@ -461,5 +472,7 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
+
+    
 
     
