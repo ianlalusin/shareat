@@ -29,7 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -224,21 +224,19 @@ export async function completePaymentFromUnits(
   customAdjustments: Adjustment[]
 ) {
   let receiptId: string = "";
+  let finalReceipt: Receipt | null = null;
 
   // Recalculate totals inside the transaction function to ensure consistency
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
-  const dayId = getDayIdFromTimestamp(now);
-
+  
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
     
-    const dailyRef = dailyAnalyticsDocRef(db, storeId, dayId);
-
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(receiptSnap),
@@ -332,7 +330,7 @@ export async function completePaymentFromUnits(
             mopMap[cashKey] = (mopMap[cashKey] || 0) + cashPaymentAmount;
         }
         
-        const receiptPayload: Receipt = stripUndefined({
+        const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
             id: sessionId,
             storeId,
             sessionId,
@@ -349,10 +347,9 @@ export async function completePaymentFromUnits(
             receiptSeq: nextSeq,
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
-            createdAt: serverTimestamp(),
             createdAtClientMs: Date.now(),
             lines: billLines, // Snapshot the bill lines
-        } as Receipt);
+        } as Omit<Receipt, 'createdAt'>);
         
         const salesAnalytics = billLines.reduce(
             (acc, line) => {
@@ -453,60 +450,9 @@ export async function completePaymentFromUnits(
           guestCountSnapshot,
         };
 
-        const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2 };
+        const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTimestamp() };
         tx.set(receiptRef, finalReceiptPayload);
-        
-        // --- DELTA UPDATES FOR ANALYTICS ---
-        const paymentIncrements: { [key: string]: any } = {};
-        for (const [methodName, amount] of Object.entries(mopMap)) {
-            paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
-        }
-
-        const guestContribution = getGuestCoversContribution(finalReceiptPayload);
-        const guestIncrements: Record<string, any> = {};
-        if (guestContribution.isPackageSession) {
-          guestIncrements['guests.guestCountFinalTotal'] = increment(guestContribution.guestCountFinal);
-          guestIncrements['guests.packageSessionsCount'] = increment(1);
-          if (guestContribution.packageName) {
-            guestIncrements[`guests.packageCoversBilledByPackageName.${guestContribution.packageName}`] = increment(guestContribution.billedPackageCovers);
-          }
-        }
-        
-        const salesContribution = getSalesContribution(finalReceiptPayload);
-        const salesIncrements: Record<string, any> = {};
-        if (salesContribution.packageAmountByName) {
-            for (const [name, amount] of Object.entries(salesContribution.packageAmountByName)) {
-                salesIncrements[`sales.packageSalesAmountByName.${name}`] = increment(amount);
-            }
-        }
-        if (salesContribution.packageQtyByName) {
-            for (const [name, qty] of Object.entries(salesContribution.packageQtyByName)) {
-                salesIncrements[`sales.packageSalesQtyByName.${name}`] = increment(qty);
-            }
-        }
-        if (salesContribution.addonAmountByCategory) {
-            for (const [name, amount] of Object.entries(salesContribution.addonAmountByCategory)) {
-                salesIncrements[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
-            }
-        }
-
-        const peakHourContribution = getPeakHourContribution(finalReceiptPayload);
-        const peakHourIncrements: Record<string, any> = {};
-        if(peakHourContribution.hourKey !== null) {
-            peakHourIncrements[`sales.salesAmountByHour.${peakHourContribution.hourKey}`] = increment(peakHourContribution.amount);
-            peakHourIncrements[`sales.sessionCountByHour.${peakHourContribution.hourKey}`] = increment(peakHourContribution.count);
-        }
-
-        tx.set(dailyRef, { dayId, storeId, updatedAt: serverTimestamp() }, { merge: true });
-        tx.update(dailyRef, {
-            ...paymentIncrements,
-            "payments.totalGross": increment(finalTotals.grandTotal),
-            "payments.txCount": increment(1),
-            ...guestIncrements,
-            ...salesIncrements,
-            ...peakHourIncrements,
-        });
-
+        finalReceipt = finalReceiptPayload as Receipt; // Capture for post-transaction use
         receiptId = receiptRef.id;
     }
 
@@ -521,6 +467,56 @@ export async function completePaymentFromUnits(
       }
     }
   });
+
+  // --- DELTA UPDATES FOR ANALYTICS (outside transaction) ---
+  if (finalReceipt) {
+    const contrib = {
+        payment: {
+            ...Object.entries(finalReceipt.analytics.mop).reduce((acc, [method, amount]) => {
+                acc[`payments.byMethod.${method}`] = increment(amount);
+                return acc;
+            }, {} as Record<string, any>),
+            "payments.totalGross": increment(finalReceipt.analytics.grandTotal),
+            "payments.txCount": increment(1),
+        },
+        guest: getGuestCoversContribution(finalReceipt),
+        sales: getSalesContribution(finalReceipt),
+        peakHour: getPeakHourContribution(finalReceipt),
+        closedSession: getClosedSessionsContribution(finalReceipt),
+    };
+
+    const analyticsRef = dailyAnalyticsDocRef(db, storeId, contrib.guest.dayId);
+    await setDoc(analyticsRef, { meta: { dayId: contrib.guest.dayId, storeId, dayStartMs: contrib.guest.dayStartMs, updatedAt: serverTimestamp() }}, { merge: true });
+
+    const analyticsPayload: Record<string, any> = {...contrib.payment};
+    if (contrib.guest.isPackageSession) {
+        analyticsPayload['guests.guestCountFinalTotal'] = increment(contrib.guest.guestCountFinal);
+        analyticsPayload['guests.packageSessionsCount'] = increment(1);
+        if (contrib.guest.packageName) {
+            analyticsPayload[`guests.packageCoversBilledByPackageName.${contrib.guest.packageName}`] = increment(contrib.guest.billedPackageCovers);
+        }
+    }
+    if (contrib.sales.packageAmountByName) {
+        for (const [name, amount] of Object.entries(contrib.sales.packageAmountByName)) analyticsPayload[`sales.packageSalesAmountByName.${name}`] = increment(amount);
+    }
+    if (contrib.sales.packageQtyByName) {
+        for (const [name, qty] of Object.entries(contrib.sales.packageQtyByName)) analyticsPayload[`sales.packageSalesQtyByName.${name}`] = increment(qty);
+    }
+    if (contrib.sales.addonAmountByCategory) {
+        for (const [name, amount] of Object.entries(contrib.sales.addonAmountByCategory)) analyticsPayload[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
+    }
+    if (contrib.peakHour.hourKey !== null) {
+        analyticsPayload[`sales.salesAmountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.amount);
+        analyticsPayload[`sales.sessionCountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.count);
+    }
+    if(contrib.closedSession.closedCount > 0) {
+        analyticsPayload["sessions.closedCount"] = increment(contrib.closedSession.closedCount);
+        analyticsPayload["sessions.totalPaid"] = increment(contrib.closedSession.totalPaid);
+    }
+
+    await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed during payment completion:", e));
+  }
+
 
   if (receiptId) {
      await writeActivityLog({

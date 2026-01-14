@@ -72,10 +72,10 @@ type GuestCoversContribution = {
  * @param receipt The receipt document data.
  * @returns An object with the receipt's contribution, or zeros if not applicable.
  */
-export function getGuestCoversContribution(receipt: Receipt): GuestCoversContribution {
+export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, isPackageSession: false };
     
-    if (receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
+    if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
         return defaultReturn;
     }
 
@@ -106,7 +106,10 @@ type SalesContribution = {
     addonAmountByCategory: Record<string, number>;
 };
 
-export function getSalesContribution(receipt: Receipt): SalesContribution {
+export function getSalesContribution(receipt: Receipt | null): SalesContribution {
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageAmountByName: {}, packageQtyByName: {}, addonAmountByCategory: {} };
+    if (!receipt) return defaultReturn;
+    
     const analytics = (receipt?.analytics ?? {}) as ReceiptAnalyticsV2;
     const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
     const dayId = createdAtMs ? getDayIdFromTimestamp(createdAtMs) : "";
@@ -153,8 +156,9 @@ type PeakHourContribution = {
     count: number; // 1 if valid, 0 if not
 };
 
-export function getPeakHourContribution(receipt: Receipt): PeakHourContribution {
+export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
+    if (!receipt) return defaultReturn;
     
     // Use session start time first, fallback to receipt creation time
     const primaryTs = receipt.analytics?.sessionStartedAt;
