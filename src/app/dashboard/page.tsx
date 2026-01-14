@@ -8,9 +8,9 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { StatCards, type DashboardStats } from "@/components/dashboard/StatCards";
-import { PaymentMix, type PaymentMethodTally } from "@/components/dashboard/PaymentMix";
+import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { Loader2 } from "lucide-react";
-import { collection, onSnapshot, query, where, Timestamp, orderBy, limit } from "firebase/firestore";
+import { collection, onSnapshot, query, where, Timestamp, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Receipt } from "@/lib/types";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
@@ -35,7 +35,6 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeSessionsCount, setActiveSessionsCount] = useState(0);
     
-    // Default to today
     const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
         start: startOfDay(new Date()),
         end: endOfDay(new Date()),
@@ -91,8 +90,6 @@ export default function DashboardPage() {
             setActiveSessionsCount(snapshot.size);
         }, (error) => console.error("Error fetching active sessions:", error)));
 
-        // This is a simple way to set loading state. For more complex scenarios,
-        // you might use Promise.all with getDocs for initial load.
         const timer = setTimeout(() => setIsLoading(false), 1500); 
         unsubs.push(() => clearTimeout(timer));
 
@@ -176,7 +173,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
-
-
-    

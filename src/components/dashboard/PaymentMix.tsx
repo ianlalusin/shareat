@@ -14,6 +14,20 @@ interface PaymentMixProps {
 
 export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
     
+    const aggregatedTally = useMemo(() => {
+        const tally: PaymentMethodTally = {};
+        if (dailyMetrics) {
+            dailyMetrics.forEach(metric => {
+                if (metric.paymentMix) {
+                    for (const [method, amount] of Object.entries(metric.paymentMix)) {
+                        tally[method] = (tally[method] || 0) + amount;
+                    }
+                }
+            });
+        }
+        return Object.entries(tally).sort(([, a], [, b]) => b - a);
+    }, [dailyMetrics]);
+    
     if (isLoading) {
         return (
             <div className="space-y-4">
@@ -26,18 +40,6 @@ export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
             </div>
         )
     }
-
-    const aggregatedTally = useMemo(() => {
-        const tally: PaymentMethodTally = {};
-        dailyMetrics.forEach(metric => {
-            if (metric.paymentMix) {
-                for (const [method, amount] of Object.entries(metric.paymentMix)) {
-                    tally[method] = (tally[method] || 0) + amount;
-                }
-            }
-        });
-        return Object.entries(tally).sort(([, a], [, b]) => b - a);
-    }, [dailyMetrics]);
     
     if (aggregatedTally.length === 0) {
         return <p className="text-center text-muted-foreground py-10">No payments recorded in this range.</p>

@@ -390,22 +390,30 @@ export async function completePaymentFromUnits(
         // --- END GUEST COUNT SNAPSHOT ---
         
         const change = Math.max(0, totalPaid - amountDue);
-        const mopMap = payments.reduce((acc, p) => {
+        
+        // Revised MOP calculation
+        const nonCashPayments = payments.filter(p => {
+          const method = paymentMethods.find(m => m.id === p.methodId);
+          return method?.type !== 'cash';
+        });
+        const nonCashTotal = nonCashPayments.reduce((sum, p) => sum + p.amount, 0);
+        const cashPaymentAmount = amountDue - nonCashTotal;
+
+        const mopMap: Record<string, number> = {};
+        nonCashPayments.forEach(p => {
             const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
-            const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
-            acc[key] = (acc[key] || 0) + amt;
-            return acc;
-        }, {} as Record<string, number>);
+            mopMap[key] = (mopMap[key] || 0) + p.amount;
+        });
+        if (cashPaymentAmount > 0) {
+            const cashMethod = paymentMethods.find(pm => pm.type === 'cash');
+            const cashKey = cashMethod?.name || 'Cash';
+            mopMap[cashKey] = (mopMap[cashKey] || 0) + cashPaymentAmount;
+        }
+
 
         // Update daily metrics
         const paymentMixIncrements: { [key: string]: any } = {};
-        let adjustedMopMap = {...mopMap};
-        
-        if (change > 0 && adjustedMopMap['Cash']) {
-            adjustedMopMap['Cash'] -= change;
-        }
-
-        for (const [methodName, amount] of Object.entries(adjustedMopMap)) {
+        for (const [methodName, amount] of Object.entries(mopMap)) {
             paymentMixIncrements[`paymentMix.${methodName}`] = increment(amount);
         }
         
