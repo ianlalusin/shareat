@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -27,7 +28,8 @@ import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } fro
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -40,6 +42,21 @@ function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); re
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
+function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
+    if (!active || !range) return "Custom";
+    return isSameDay(range.start, range.end)
+        ? `Custom: ${fmtDate(range.start)}`
+        : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
+type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
+const presets: { label: string, value: DatePreset }[] = [
+    { label: "Today", value: "today" },
+    { label: "Yesterday", value: "yesterday" },
+    { label: "This Week", value: "week" },
+    { label: "This Month", value: "month" },
+];
+
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -200,12 +217,45 @@ export default function ReceiptsPageContents() {
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
 
     // --- Date State ---
-    const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
-      start: startOfDay(new Date()),
-      end: endOfDay(new Date()),
-    });
+    const [datePreset, setDatePreset] = useState<DatePreset>("today");
+    const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
 
-    const { start, end } = dateRange;
+    const { start, end } = useMemo(() => {
+        const now = new Date();
+        let s = new Date();
+        let e = new Date();
+
+        switch (datePreset) {
+            case "today":
+                s.setHours(0, 0, 0, 0);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "yesterday":
+                s.setDate(now.getDate() - 1);
+                s.setHours(0, 0, 0, 0);
+                e.setDate(now.getDate() - 1);
+                e.setHours(23, 59, 59, 999);
+                break;
+            case "week":
+                s.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+                s.setHours(0, 0, 0, 0);
+                break;
+            case "month":
+                s = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case "custom":
+                if (customRange) {
+                    s = startOfDay(customRange.start);
+                    e = endOfDay(customRange.end);
+                } else {
+                    s.setHours(0, 0, 0, 0);
+                    e.setHours(23, 59, 59, 999);
+                }
+                break;
+        }
+        return { start: s, end: e };
+    }, [datePreset, customRange]);
 
     const dateRangeLabel = useMemo(() => {
         if (isSameDay(start, end)) {
@@ -573,6 +623,20 @@ export default function ReceiptsPageContents() {
         setIsExporting(false);
     };
 
+    const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
+        const presetMap: Record<string, DatePreset> = {
+          today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
+        };
+        if (preset && preset !== "custom" && presetMap[preset]) {
+          setDatePreset(presetMap[preset]);
+          setCustomRange(null);
+        } else {
+          setCustomRange({ start: range.start, end: range.end });
+          setDatePreset("custom");
+        }
+        setIsCalendarOpen(false);
+    };
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -605,11 +669,19 @@ export default function ReceiptsPageContents() {
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                 <div className="flex flex-col items-start sm:items-end gap-2">
-                    <DateRangePicker 
-                        onDateChange={(range) => setDateRange({start: startOfDay(range.start), end: endOfDay(range.end)})}
-                    />
-                    <p className="text-sm text-muted-foreground w-full md:w-auto text-right">{dateRangeLabel}</p>
+                <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                        {presets.map(p => (
+                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                        ))}
+                        <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                        </Popover>
+                    </div>
+                     <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
                 </div>
             </div>
 
