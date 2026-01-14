@@ -3,15 +3,16 @@
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemo } from "react";
+import type { DailyMetric } from "./types";
 
 export type PaymentMethodTally = { [methodName: string]: number };
 
 interface PaymentMixProps {
-    tally: PaymentMethodTally;
+    dailyMetrics: DailyMetric[];
     isLoading: boolean;
 }
 
-export function PaymentMix({ tally, isLoading }: PaymentMixProps) {
+export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
     
     if (isLoading) {
         return (
@@ -26,17 +27,25 @@ export function PaymentMix({ tally, isLoading }: PaymentMixProps) {
         )
     }
 
-    const sortedTally = useMemo(() => {
+    const aggregatedTally = useMemo(() => {
+        const tally: PaymentMethodTally = {};
+        dailyMetrics.forEach(metric => {
+            if (metric.paymentMix) {
+                for (const [method, amount] of Object.entries(metric.paymentMix)) {
+                    tally[method] = (tally[method] || 0) + amount;
+                }
+            }
+        });
         return Object.entries(tally).sort(([, a], [, b]) => b - a);
-    }, [tally]);
+    }, [dailyMetrics]);
     
-    if (sortedTally.length === 0) {
-        return <p className="text-center text-muted-foreground py-10">No payments recorded today.</p>
+    if (aggregatedTally.length === 0) {
+        return <p className="text-center text-muted-foreground py-10">No payments recorded in this range.</p>
     }
 
     return (
         <div className="space-y-2 text-sm">
-            {sortedTally.map(([method, amount]) => (
+            {aggregatedTally.map(([method, amount]) => (
                 <div key={method} className="flex justify-between items-center">
                     <span className="font-medium capitalize">{method}</span>
                     <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

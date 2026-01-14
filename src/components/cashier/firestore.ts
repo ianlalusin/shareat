@@ -29,6 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
+import { format } from 'date-fns';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -233,6 +234,9 @@ export async function completePaymentFromUnits(
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
+    
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const dailyMetricsRef = doc(db, `stores/${storeId}/dailyMetrics`, todayStr);
 
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
@@ -384,6 +388,33 @@ export async function completePaymentFromUnits(
             };
         }
         // --- END GUEST COUNT SNAPSHOT ---
+        
+        const change = Math.max(0, totalPaid - amountDue);
+        const mopMap = payments.reduce((acc, p) => {
+            const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
+            const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
+            acc[key] = (acc[key] || 0) + amt;
+            return acc;
+        }, {} as Record<string, number>);
+
+        // Update daily metrics
+        const paymentMixIncrements: { [key: string]: any } = {};
+        let adjustedMopMap = {...mopMap};
+        
+        if (change > 0 && adjustedMopMap['Cash']) {
+            adjustedMopMap['Cash'] -= change;
+        }
+
+        for (const [methodName, amount] of Object.entries(adjustedMopMap)) {
+            paymentMixIncrements[`paymentMix.${methodName}`] = increment(amount);
+        }
+        
+        tx.set(dailyMetricsRef, {
+            ...paymentMixIncrements,
+            sales: increment(finalTotals.grandTotal),
+            transactions: increment(1)
+        }, { merge: true });
+
 
         const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
@@ -396,13 +427,8 @@ export async function completePaymentFromUnits(
           taxAmount: finalTotals.taxTotal,
           grandTotal: finalTotals.grandTotal,
           totalPaid: totalPaid,
-          change: Math.max(0, totalPaid - amountDue),
-          mop: payments.reduce((acc, p) => {
-              const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
-              const amt = typeof p.amount === 'number' ? p.amount : Number(p.amount) || 0;
-              acc[key] = (acc[key] || 0) + amt;
-              return acc;
-          }, {} as Record<string, number>),
+          change: change,
+          mop: mopMap,
           salesByItem: salesAnalytics.salesByItem,
           salesByCategory: salesAnalytics.salesByCategory,
           servedRefillsByName: sessionData.servedRefillsByName || {},

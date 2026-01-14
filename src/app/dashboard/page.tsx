@@ -19,7 +19,8 @@ import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
-import { isSameDay } from "date-fns";
+import { isSameDay, format as formatDateFns } from "date-fns";
+import type { DailyMetric } from "@/components/dashboard/types";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
@@ -30,6 +31,7 @@ function fmtDate(d: Date) {
 export default function DashboardPage() {
     const { activeStore } = useStoreContext();
     const [receipts, setReceipts] = useState<Receipt[]>([]);
+    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeSessionsCount, setActiveSessionsCount] = useState(0);
     
@@ -43,80 +45,72 @@ export default function DashboardPage() {
         if (!activeStore?.id) {
             setIsLoading(false);
             setReceipts([]);
+            setDailyMetrics([]);
             return;
         }
 
         setIsLoading(true);
+        const unsubs: (() => void)[] = [];
 
+        // --- Receipts for detailed analytics ---
         const receiptsRef = collection(db, "stores", activeStore.id, "receipts");
-        const q = query(
+        const receiptsQuery = query(
             receiptsRef,
             where("status", "==", "final"),
             where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
             where("createdAt", "<=", Timestamp.fromDate(dateRange.end)),
             orderBy("createdAt", "desc")
         );
+        unsubs.push(onSnapshot(receiptsQuery, (snapshot) => {
+            setReceipts(snapshot.docs.map(doc => doc.data() as Receipt));
+        }, (error) => console.error("Error fetching receipts:", error)));
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedReceipts = snapshot.docs.map(doc => doc.data() as Receipt);
-            setReceipts(fetchedReceipts);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching dashboard data:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [activeStore?.id, dateRange]);
-
-    useEffect(() => {
-        if (!activeStore?.id) {
-            setActiveSessionsCount(0);
-            return;
+        // --- Daily Metrics for aggregated data (like Payment Mix) ---
+        const metricsRef = collection(db, "stores", activeStore.id, "dailyMetrics");
+        const dateRangeIds = [];
+        let currentDate = new Date(dateRange.start);
+        while (currentDate <= dateRange.end) {
+            dateRangeIds.push(formatDateFns(currentDate, "yyyy-MM-dd"));
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        
+        if (dateRangeIds.length > 0) {
+            const metricsQuery = query(metricsRef, where("__name__", "in", dateRangeIds));
+            unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
+                setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
+            }, (error) => console.error("Error fetching daily metrics:", error)));
+        } else {
+             setDailyMetrics([]);
         }
 
+
+        // --- Active Sessions Count ---
         const sessionsRef = collection(db, "stores", activeStore.id, "sessions");
-        const q = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
+        unsubs.push(onSnapshot(activeSessionsQuery, (snapshot) => {
             setActiveSessionsCount(snapshot.size);
-        }, (error) => {
-            console.error("Error fetching active sessions:", error);
-            setActiveSessionsCount(0);
-        });
+        }, (error) => console.error("Error fetching active sessions:", error)));
 
-        return () => unsubscribe();
-    }, [activeStore?.id]);
+        // This is a simple way to set loading state. For more complex scenarios,
+        // you might use Promise.all with getDocs for initial load.
+        const timer = setTimeout(() => setIsLoading(false), 1500); 
+        unsubs.push(() => clearTimeout(timer));
 
-    const { stats, paymentTally } = useMemo(() => {
+
+        return () => unsubs.forEach(unsub => unsub());
+    }, [activeStore?.id, dateRange]);
+
+
+    const { stats } = useMemo(() => {
         const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
         
         const grossSales = v2Receipts.reduce((sum, r) => sum + (r.analytics?.grandTotal ?? 0), 0);
         const transactions = v2Receipts.length;
         const avgBasket = transactions > 0 ? grossSales / transactions : 0;
-        const avgTicket = transactions > 0 ? grossSales / transactions : 0;
         
-        const tally: PaymentMethodTally = {};
-        v2Receipts.forEach(r => {
-            const mop = r.analytics?.mop;
-            if (mop) {
-                // Safely iterate over the MOP object
-                for (const [method, amount] of Object.entries(mop as Record<string, unknown>)) {
-                    // Safely convert amount to a number, defaulting to 0 if invalid
-                    const numAmount = typeof amount === "number" ? amount : Number(amount || 0);
-                    if (Number.isFinite(numAmount)) {
-                        tally[method] = (tally[method] || 0) + numAmount;
-                    }
-                }
-            }
-        });
-        
-        const stats: DashboardStats = { grossSales, transactions, avgBasket, avgTicket };
+        const stats: DashboardStats = { grossSales, transactions, avgTicket: avgBasket, avgBasket };
 
-        return {
-            stats,
-            paymentTally: tally,
-        };
+        return { stats };
     }, [receipts]);
 
     const dateRangeLabel = useMemo(() => {
@@ -158,7 +152,7 @@ export default function DashboardPage() {
                             <CardDescription>Breakdown of payments by method.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                           <PaymentMix tally={paymentTally} isLoading={isLoading} />
+                           <PaymentMix dailyMetrics={dailyMetrics} isLoading={isLoading} />
                         </CardContent>
                     </Card>
                     <div className="lg:col-span-2 space-y-6">
