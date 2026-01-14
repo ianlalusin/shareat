@@ -691,5 +691,3 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
-
-    

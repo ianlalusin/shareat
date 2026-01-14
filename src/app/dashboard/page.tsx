@@ -32,7 +32,6 @@ function fmtDate(d: Date) {
 
 export default function DashboardPage() {
     const { activeStore } = useStoreContext();
-    const [receipts, setReceipts] = useState<Receipt[]>([]);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeSessionsCount, setActiveSessionsCount] = useState(0);
@@ -45,7 +44,6 @@ export default function DashboardPage() {
     useEffect(() => {
         if (!activeStore?.id) {
             setIsLoading(false);
-            setReceipts([]);
             setDailyMetrics([]);
             return;
         }
@@ -53,20 +51,7 @@ export default function DashboardPage() {
         setIsLoading(true);
         const unsubs: (() => void)[] = [];
 
-        // --- Receipts for detailed analytics (e.g., top items) ---
-        const receiptsRef = collection(db, "stores", activeStore.id, "receipts");
-        const receiptsQuery = query(
-            receiptsRef,
-            where("status", "==", "final"),
-            where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
-            where("createdAt", "<=", Timestamp.fromDate(dateRange.end)),
-            orderBy("createdAt", "desc")
-        );
-        unsubs.push(onSnapshot(receiptsQuery, (snapshot) => {
-            setReceipts(snapshot.docs.map(doc => doc.data() as Receipt));
-        }, (error) => console.error("Error fetching receipts:", error)));
-
-        // --- Daily Metrics for aggregated data (Sales, Transactions, Payment Mix) ---
+        // --- Daily Metrics for aggregated data ---
         const metricsRef = collection(db, "stores", activeStore.id, "analytics");
         const dateRangeIds: string[] = [];
         let currentDate = new Date(dateRange.start);
@@ -166,7 +151,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                    <PeakHoursCard storeId={activeStore.id} dateRange={dateRange} />
+                    <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <AvgServingTimeCard storeId={activeStore.id} dateRange={dateRange} />
                     <AvgRefillsCard storeId={activeStore.id} dateRange={dateRange} />
                 </div>
@@ -174,5 +159,3 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
-
-    

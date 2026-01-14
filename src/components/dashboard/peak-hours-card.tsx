@@ -13,10 +13,11 @@ import { Label } from "@/components/ui/label";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import type { DailyMetric } from "@/lib/types";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 interface PeakHoursCardProps {
-    storeId: string;
-    dateRange: { start: Date; end: Date };
+    dailyMetrics: DailyMetric[];
+    isLoading: boolean;
 }
 
 const chartConfig = {
@@ -32,37 +33,8 @@ function formatCurrency(value: number) {
     return `₱${value}`;
 }
 
-export function PeakHoursCard({ storeId, dateRange }: PeakHoursCardProps) {
-    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
     const [showAllHours, setShowAllHours] = useState(false);
-
-    useEffect(() => {
-        if (!storeId) {
-            setIsLoading(false);
-            setDailyMetrics([]);
-            return;
-        }
-        setIsLoading(true);
-
-        const metricsRef = collection(db, "stores", storeId, "analytics");
-        const q = query(
-            metricsRef,
-            where("dayId", ">=", format(dateRange.start, "yyyyMMdd")),
-            where("dayId", "<=", format(dateRange.end, "yyyyMMdd"))
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
-            setDailyMetrics(fetchedMetrics);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching peak hours data:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [storeId, dateRange]);
 
     const formatHour = (hour: number) => {
         if (hour === 0) return "12 AM";
