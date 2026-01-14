@@ -1,4 +1,6 @@
 
+"use client";
+
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
@@ -72,12 +74,29 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
     const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
     if (!createdAtMs) return defaultReturn;
 
+    const byMethod: Record<string, number> = {};
+    const analytics = (receipt.analytics || {}) as ReceiptAnalyticsV2;
+    const paymentMethods = analytics.mop || {};
+    
+    let nonCashTotal = 0;
+    for (const [method, amount] of Object.entries(paymentMethods)) {
+        if (method.toLowerCase() !== 'cash') {
+            nonCashTotal += amount;
+            byMethod[method] = (byMethod[method] || 0) + amount;
+        }
+    }
+    
+    const cashAmount = Math.max(0, receipt.total - nonCashTotal);
+    if (cashAmount > 0) {
+        byMethod['Cash'] = (byMethod['Cash'] || 0) + cashAmount;
+    }
+
     return {
         dayId: getDayIdFromTimestamp(createdAtMs),
         dayStartMs: getDayStartMs(createdAtMs),
         totalGross: receipt.total,
         txCount: 1,
-        byMethod: receipt.analytics?.mop ?? {}
+        byMethod: byMethod,
     };
 }
 
@@ -86,9 +105,10 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
 type GuestCoversContribution = {
     dayId: string;
     dayStartMs: number;
-    guestCountFinalTotal: number;
+    isPackageSession: boolean;
+    guestCountFinal: number;
     billedPackageCovers: number;
-    packageCoversBilledByPackageName: Record<string, number>;
+    packageName: string | null;
     packageSessionsCount: number;
 };
 
@@ -98,7 +118,7 @@ type GuestCoversContribution = {
  * @returns An object with the receipt's contribution, or zeros if not applicable.
  */
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, guestCountFinalTotal: 0, billedPackageCovers: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0 };
     
     if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
         return defaultReturn;
@@ -117,9 +137,10 @@ export function getGuestCoversContribution(receipt: Receipt | null): GuestCovers
     return {
         dayId: getDayIdFromTimestamp(createdAtMs),
         dayStartMs: getDayStartMs(createdAtMs),
-        guestCountFinalTotal: snapshot.finalGuestCount || 0,
+        isPackageSession: true,
+        guestCountFinal: snapshot.finalGuestCount || 0,
         billedPackageCovers: snapshot.billedPackageCovers || 0,
-        packageCoversBilledByPackageName: { [packageName]: snapshot.billedPackageCovers || 0 },
+        packageName: packageName,
         packageSessionsCount: 1,
     };
 }

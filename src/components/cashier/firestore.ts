@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -29,7 +28,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution, getPaymentContribution } from "@/lib/analytics/daily";
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -309,26 +308,13 @@ export async function completePaymentFromUnits(
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
         const change = Math.max(0, totalPaid - amountDue);
         
-        const nonCashPayments = payments.filter(p => {
-          const method = paymentMethods.find(m => m.id === p.methodId);
-          return method?.type !== 'cash';
-        });
-
-        const nonCashTotal = nonCashPayments.reduce((sum, p) => sum + p.amount, 0);
-        const cashPaymentAmount = amountDue - nonCashTotal;
-
+        // This is where the payment methods map (mop) for analytics is created.
         const mopMap: Record<string, number> = {};
-        nonCashPayments.forEach(p => {
+        payments.forEach(p => {
             const method = paymentMethods.find(m => m.id === p.methodId);
             const key = method?.name || p.methodId || "unknown";
             mopMap[key] = (mopMap[key] || 0) + p.amount;
         });
-
-        if (cashPaymentAmount > 0) {
-            const cashMethod = paymentMethods.find(m => m.type === 'cash');
-            const cashKey = cashMethod?.name || 'Cash';
-            mopMap[cashKey] = (mopMap[cashKey] || 0) + cashPaymentAmount;
-        }
         
         const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
             id: sessionId,
@@ -471,14 +457,7 @@ export async function completePaymentFromUnits(
   // --- DELTA UPDATES FOR ANALYTICS (outside transaction) ---
   if (finalReceipt) {
     const contrib = {
-        payment: {
-            ...Object.entries(finalReceipt.analytics.mop).reduce((acc, [method, amount]) => {
-                acc[`payments.byMethod.${method}`] = increment(amount);
-                return acc;
-            }, {} as Record<string, any>),
-            "payments.totalGross": increment(finalReceipt.analytics.grandTotal),
-            "payments.txCount": increment(1),
-        },
+        payment: getPaymentContribution(finalReceipt),
         guest: getGuestCoversContribution(finalReceipt),
         sales: getSalesContribution(finalReceipt),
         peakHour: getPeakHourContribution(finalReceipt),
@@ -489,7 +468,18 @@ export async function completePaymentFromUnits(
     const analyticsRef = dailyAnalyticsDocRef(db, storeId, contrib.guest.dayId);
     await setDoc(analyticsRef, { meta: { dayId: contrib.guest.dayId, storeId, dayStartMs: contrib.guest.dayStartMs, updatedAt: serverTimestamp() }}, { merge: true });
 
-    const analyticsPayload: Record<string, any> = {...contrib.payment};
+    const analyticsPayload: Record<string, any> = {};
+    
+    // Payments
+    if (contrib.payment.txCount > 0) {
+        analyticsPayload["payments.txCount"] = increment(contrib.payment.txCount);
+        analyticsPayload["payments.totalGross"] = increment(contrib.payment.totalGross);
+        for(const [method, amount] of Object.entries(contrib.payment.byMethod)) {
+            analyticsPayload[`payments.byMethod.${method}`] = increment(amount);
+        }
+    }
+
+    // Guests
     if (contrib.guest.isPackageSession) {
         analyticsPayload['guests.guestCountFinalTotal'] = increment(contrib.guest.guestCountFinal);
         analyticsPayload['guests.packageSessionsCount'] = increment(1);
@@ -497,6 +487,8 @@ export async function completePaymentFromUnits(
             analyticsPayload[`guests.packageCoversBilledByPackageName.${contrib.guest.packageName}`] = increment(contrib.guest.billedPackageCovers);
         }
     }
+
+    // Sales
     if (contrib.sales.packageAmountByName) {
         for (const [name, amount] of Object.entries(contrib.sales.packageAmountByName)) analyticsPayload[`sales.packageSalesAmountByName.${name}`] = increment(amount);
     }
@@ -506,14 +498,20 @@ export async function completePaymentFromUnits(
     if (contrib.sales.addonAmountByCategory) {
         for (const [name, amount] of Object.entries(contrib.sales.addonAmountByCategory)) analyticsPayload[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
     }
+
+    // Peak Hour
     if (contrib.peakHour.hourKey !== null) {
         analyticsPayload[`sales.salesAmountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.amount);
         analyticsPayload[`sales.sessionCountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.count);
     }
+
+    // Closed Sessions
     if(contrib.closedSession.closedCount > 0) {
         analyticsPayload["sessions.closedCount"] = increment(contrib.closedSession.closedCount);
         analyticsPayload["sessions.totalPaid"] = increment(contrib.closedSession.totalPaid);
     }
+    
+    // Refills
     if(contrib.refill.packageSessionsCount > 0) {
         analyticsPayload["refills.packageSessionsCount"] = increment(contrib.refill.packageSessionsCount);
         analyticsPayload["refills.servedRefillsTotal"] = increment(contrib.refill.servedRefillsTotal);
@@ -522,7 +520,9 @@ export async function completePaymentFromUnits(
         }
     }
 
-    await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed during payment completion:", e));
+    if (Object.keys(analyticsPayload).length > 0) {
+        await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed during payment completion:", e));
+    }
   }
 
 
