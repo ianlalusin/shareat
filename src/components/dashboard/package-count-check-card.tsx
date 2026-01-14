@@ -9,11 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { DailyMetric } from "./types";
+import type { DailyMetric } from "@/lib/types";
 
 interface PackageCountCheckCardProps {
-    storeId: string;
-    dateRange: { start: Date; end: Date };
+    dailyMetrics: DailyMetric[];
+    isLoading: boolean;
 }
 
 type PackageTally = {
@@ -22,46 +22,15 @@ type PackageTally = {
     billedCovers: number;
 };
 
-export function PackageCountCheckCard({ storeId, dateRange }: PackageCountCheckCardProps) {
-    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-        if (!storeId) {
-            setIsLoading(false);
-            setDailyMetrics([]);
-            return;
-        }
-        setIsLoading(true);
-
-        const analyticsRef = collection(db, "stores", storeId, "analytics");
-        const q = query(
-            analyticsRef,
-            where("dayId", ">=", formatDayId(dateRange.start)),
-            where("dayId", "<=", formatDayId(dateRange.end)),
-            orderBy("dayId", "desc")
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching guest/cover analytics:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [storeId, dateRange]);
-    
-    function formatDayId(date: Date) {
-        return date.toISOString().slice(0, 10).replace(/-/g, "");
-    }
-
+export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountCheckCardProps) {
 
     const aggregatedData = useMemo(() => {
         const tally: Record<string, PackageTally> = {};
+        let totalGuestsForPeriod = 0;
 
         dailyMetrics.forEach(metric => {
+            totalGuestsForPeriod += metric.guests?.guestCountFinalTotal || 0;
+
             if (!metric.guests?.packageCoversBilledByPackageName) return;
 
             for (const [name, covers] of Object.entries(metric.guests.packageCoversBilledByPackageName)) {
@@ -70,20 +39,18 @@ export function PackageCountCheckCard({ storeId, dateRange }: PackageCountCheckC
                 }
                 tally[name].billedCovers += covers;
             }
-            
-            // Note: guestCountFinalTotal is a total sum, not per package. We need to handle this.
-            // For simplicity, let's assume we can aggregate it like this for now. A more complex
-            // model might need a different data structure if per-package final guest counts are needed.
-            // This example will sum up all final guests and show it against each package, which might be
-            // what the user expects from a high-level view.
-            const totalGuestsForDay = metric.guests.guestCountFinalTotal || 0;
-            for (const key in tally) {
-                // This is a simplification. We're adding the total day's guests to each package.
-                // A better model would be needed for per-package accuracy if required.
-                tally[key].finalGuests += totalGuestsForDay; 
-            }
         });
 
+        // Distribute total guests across packages based on their proportion of billed covers
+        const totalBilledCovers = Object.values(tally).reduce((sum, pkg) => sum + pkg.billedCovers, 0);
+        
+        if (totalBilledCovers > 0) {
+            for(const key in tally) {
+                const proportion = tally[key].billedCovers / totalBilledCovers;
+                tally[key].finalGuests = Math.round(totalGuestsForPeriod * proportion);
+            }
+        }
+        
         return Object.values(tally)
             .map(pkg => ({
                 ...pkg,
@@ -146,4 +113,3 @@ export function PackageCountCheckCard({ storeId, dateRange }: PackageCountCheckC
         </Card>
     );
 }
-

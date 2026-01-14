@@ -21,7 +21,7 @@ import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { isSameDay, format as formatDateFns } from "date-fns";
-import type { DailyMetric } from "@/components/dashboard/types";
+import type { DailyMetric } from "@/lib/types";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -154,15 +154,15 @@ export default function DashboardPage() {
                         </CardContent>
                     </Card>
                     <div className="lg:col-span-2 space-y-6">
-                      <PackageCountCheckCard storeId={activeStore.id} dateRange={dateRange} />
+                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                 </div>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                      <Card className="lg:col-span-1">
-                        <TopPackagesCard receipts={receipts} isLoading={isLoading}/>
+                        <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/>
                     </Card>
                      <div className="lg:col-span-2">
-                       <TopCategoryCard receipts={receipts} isLoading={isLoading} />
+                       <TopCategoryCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                 </div>
                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">

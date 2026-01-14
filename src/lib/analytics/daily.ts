@@ -121,4 +121,3 @@ export function getSalesContribution(receipt: Receipt): SalesContribution {
     };
 }
     
-
