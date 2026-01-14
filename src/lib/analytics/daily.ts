@@ -2,7 +2,7 @@
 
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
-import type { Receipt } from "@/lib/types";
+import type { Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
 
 /**
  * Converts a Firestore Timestamp, JavaScript Date, or millisecond epoch time
@@ -43,7 +43,7 @@ export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: stri
 type GuestCoversContribution = {
     dayId: string;
     guestCountFinal: number;
-    packageCoversBilled: number;
+    billedPackageCovers: number;
     packageName: string | null;
     isPackageSession: boolean;
 };
@@ -54,7 +54,7 @@ type GuestCoversContribution = {
  * @returns An object with the receipt's contribution, or zeros if not applicable.
  */
 export function getGuestCoversContribution(receipt: Receipt): GuestCoversContribution {
-    const defaultReturn = { dayId: "", guestCountFinal: 0, packageCoversBilled: 0, packageName: null, isPackageSession: false };
+    const defaultReturn = { dayId: "", guestCountFinal: 0, billedPackageCovers: 0, packageName: null, isPackageSession: false };
     
     if (receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
         return defaultReturn;
@@ -71,9 +71,54 @@ export function getGuestCoversContribution(receipt: Receipt): GuestCoversContrib
     return {
         dayId: getDayIdFromTimestamp(createdAtMs),
         guestCountFinal: snapshot.finalGuestCount || 0,
-        packageCoversBilled: snapshot.billedPackageCovers || 0,
+        billedPackageCovers: snapshot.billedPackageCovers || 0,
         packageName: snapshot.packageName || null,
         isPackageSession: true,
     };
 }
+
+// --- Sales Contribution ---
+type SalesContribution = {
+    dayId: string;
+    packageAmountByName: Record<string, number>;
+    packageQtyByName: Record<string, number>;
+    addonAmountByCategory: Record<string, number>;
+};
+
+export function getSalesContribution(receipt: Receipt): SalesContribution {
+    const analytics = (receipt?.analytics ?? {}) as ReceiptAnalyticsV2;
+    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
+    const dayId = createdAtMs ? getDayIdFromTimestamp(createdAtMs) : "";
+
+    const packageAmountByName: Record<string, number> = {};
+    const packageQtyByName: Record<string, number> = {};
+    const addonAmountByCategory: Record<string, number> = {};
+
+    if (analytics.v === 2) {
+        // Aggregate packages from salesByItem
+        if (analytics.salesByItem) {
+            for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
+                // The rule for identifying a package is that it has no category or is 'Uncategorized'
+                if (!values.categoryName || values.categoryName === "Uncategorized") {
+                    packageAmountByName[itemName] = (packageAmountByName[itemName] || 0) + values.amount;
+                    packageQtyByName[itemName] = (packageQtyByName[itemName] || 0) + values.qty;
+                }
+            }
+        }
+        // Aggregate addons from salesByCategory
+        if (analytics.salesByCategory) {
+            for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
+                addonAmountByCategory[categoryName] = (addonAmountByCategory[categoryName] || 0) + values.amount;
+            }
+        }
+    }
+
+    return {
+        dayId,
+        packageAmountByName,
+        packageQtyByName,
+        addonAmountByCategory,
+    };
+}
     
+

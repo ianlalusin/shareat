@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo } from "react";
@@ -9,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
+import type { DailyMetric } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface TopPackagesCardProps {
-    receipts: Receipt[];
+    dailyMetrics: DailyMetric[];
     isLoading: boolean;
 }
 
@@ -22,27 +23,27 @@ type ItemTally = {
     amount: number;
 };
 
-export function TopPackagesCard({ receipts, isLoading }: TopPackagesCardProps) {
+export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProps) {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [metric, setMetric] = useState<"qty" | "amount">("amount");
     
-    const v2Receipts = useMemo(() => receipts.filter(r => r.analytics?.v === 2), [receipts]);
-
     const { itemSales, hasData } = useMemo(() => {
         const itemTally: Record<string, ItemTally> = {};
         let hasAnalyticsData = false;
 
-        v2Receipts.forEach(receipt => {
-            const analytics = receipt.analytics as ReceiptAnalyticsV2;
-            if (analytics.salesByItem) {
+        dailyMetrics.forEach(metric => {
+            if (metric.sales?.packageSalesAmountByName) {
                 hasAnalyticsData = true;
-                for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-                    // Include ONLY items without a category or marked as 'Uncategorized'
-                    if (!values.categoryName || values.categoryName === "Uncategorized") {
-                        if (!itemTally[itemName]) itemTally[itemName] = { qty: 0, amount: 0 };
-                        itemTally[itemName].qty += values.qty ?? 0;
-                        itemTally[itemName].amount += values.amount ?? 0;
-                    }
+                for (const [name, amount] of Object.entries(metric.sales.packageSalesAmountByName)) {
+                    if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
+                    itemTally[name].amount += amount;
+                }
+            }
+             if (metric.sales?.packageSalesQtyByName) {
+                hasAnalyticsData = true;
+                for (const [name, qty] of Object.entries(metric.sales.packageSalesQtyByName)) {
+                    if (!itemTally[name]) itemTally[name] = { qty: 0, amount: 0 };
+                    itemTally[name].qty += qty;
                 }
             }
         });
@@ -51,7 +52,7 @@ export function TopPackagesCard({ receipts, isLoading }: TopPackagesCardProps) {
             itemSales: Object.entries(itemTally),
             hasData: hasAnalyticsData && Object.keys(itemTally).length > 0,
         };
-    }, [v2Receipts]);
+    }, [dailyMetrics]);
     
     const sortedItems = useMemo(() => {
         return itemSales.sort(([, a], [, b]) => {
@@ -156,5 +157,3 @@ export function TopPackagesCard({ receipts, isLoading }: TopPackagesCardProps) {
         </Sheet>
     );
 }
-
-    

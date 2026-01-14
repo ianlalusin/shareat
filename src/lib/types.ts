@@ -349,6 +349,29 @@ export type PendingSession = {
   customer?: { name?: string | null, tin?: string | null, address?: string | null };
 };
 
+export type DailyMetric = {
+    dayId: string;
+    payments?: {
+        totalGross?: number;
+        txCount?: number;
+        byMethod?: {
+            [methodName: string]: number;
+        }
+    };
+    guests?: {
+        guestCountFinalTotal?: number;
+        packageSessionsCount?: number;
+        packageCoversBilledByPackageName?: {
+            [packageName: string]: number;
+        }
+    },
+    sales?: {
+        packageSalesAmountByName?: Record<string, number>;
+        packageSalesQtyByName?: Record<string, number>;
+        addonSalesAmountByCategory?: Record<string, number>;
+    }
+}
+
 export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;

@@ -29,7 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -242,7 +242,7 @@ export async function completePaymentFromUnits(
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(receiptSnap),
-        tx.get(settingsSnap),
+        tx.get(settingsRef),
         tx.get(counterRef),
     ]);
 
@@ -309,7 +309,54 @@ export async function completePaymentFromUnits(
         tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
+        const change = Math.max(0, totalPaid - amountDue);
+        
+        const nonCashTotal = payments
+          .filter(p => {
+              const method = paymentMethods.find(m => m.id === p.methodId);
+              return method?.type !== 'cash';
+          })
+          .reduce((sum, p) => sum + p.amount, 0);
 
+        const cashTendered = payments.find(p => paymentMethods.find(m => m.id === p.methodId)?.type === 'cash')?.amount ?? 0;
+        const cashPaymentAmount = cashTendered > 0 ? (amountDue > nonCashTotal ? Math.min(cashTendered, amountDue - nonCashTotal) : 0) : 0;
+
+        const mopMap: Record<string, number> = {};
+        payments.forEach(p => {
+            const method = paymentMethods.find(m => m.id === p.methodId);
+            const key = method?.name || p.methodId || "unknown";
+            
+            if (method?.type === 'cash') {
+                if (cashPaymentAmount > 0) { // Only log cash if it was used to cover part of the bill
+                    mopMap[key] = (mopMap[key] || 0) + cashPaymentAmount;
+                }
+            } else {
+                mopMap[key] = (mopMap[key] || 0) + p.amount;
+            }
+        });
+        
+        const receiptPayload: Receipt = stripUndefined({
+            id: sessionId,
+            storeId,
+            sessionId,
+            createdByUid: actor.uid,
+            createdByUsername: actor.username,
+            sessionMode: sessionData.sessionMode,
+            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
+            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
+            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
+            total: amountDue,
+            totalPaid,
+            change: Math.max(0, totalPaid - amountDue),
+            status: "final",
+            receiptSeq: nextSeq,
+            receiptNumber,
+            receiptNoFormatUsed: receiptNoFormat,
+            createdAt: serverTimestamp(),
+            createdAtClientMs: Date.now(),
+            lines: billLines, // Snapshot the bill lines
+        } as Receipt);
+        
         const salesAnalytics = billLines.reduce(
             (acc, line) => {
                 if (line.type !== 'package' && line.type !== 'addon') return acc;
@@ -364,7 +411,6 @@ export async function completePaymentFromUnits(
         const startedDate = new Date(sessionData.startedAtClientMs);
         const sessionStartedAtHour = startedDate.getHours();
         
-        // --- GUEST COUNT SNAPSHOT LOGIC ---
         let guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] | undefined = undefined;
         if (sessionData.sessionMode === 'package_dinein') {
             const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
@@ -388,59 +434,6 @@ export async function completePaymentFromUnits(
                 rule: "MAX",
             };
         }
-        // --- END GUEST COUNT SNAPSHOT ---
-        
-        const change = Math.max(0, totalPaid - amountDue);
-        
-        const nonCashTotal = payments
-          .filter(p => {
-              const method = paymentMethods.find(m => m.id === p.methodId);
-              return method?.type !== 'cash';
-          })
-          .reduce((sum, p) => sum + p.amount, 0);
-
-        const cashPaymentAmount = amountDue - nonCashTotal;
-
-        const mopMap: Record<string, number> = {};
-        payments.forEach(p => {
-            const method = paymentMethods.find(m => m.id === p.methodId);
-            const key = method?.name || p.methodId || "unknown";
-            
-            if (method?.type === 'cash') {
-                if (cashPaymentAmount > 0) { // Only log cash if it was used to cover part of the bill
-                    mopMap[key] = (mopMap[key] || 0) + cashPaymentAmount;
-                }
-            } else {
-                mopMap[key] = (mopMap[key] || 0) + p.amount;
-            }
-        });
-        
-        const paymentIncrements: { [key: string]: any } = {};
-        for (const [methodName, amount] of Object.entries(mopMap)) {
-            paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
-        }
-
-        const receiptPayload = stripUndefined({
-            id: sessionId,
-            storeId,
-            sessionId,
-            createdByUid: actor.uid,
-            createdByUsername: actor.username,
-            sessionMode: sessionData.sessionMode,
-            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
-            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
-            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-            total: amountDue,
-            totalPaid,
-            change: Math.max(0, totalPaid - amountDue),
-            status: "final",
-            receiptSeq: nextSeq,
-            receiptNumber,
-            receiptNoFormatUsed: receiptNoFormat,
-            createdAt: serverTimestamp(),
-            createdAtClientMs: Date.now(),
-            lines: billLines, // Snapshot the bill lines
-        } as Receipt);
         
         const analyticsV2: ReceiptAnalyticsV2 = {
           v: 2,
@@ -460,29 +453,52 @@ export async function completePaymentFromUnits(
           servedRefillsByName: sessionData.servedRefillsByName || {},
           serveCountByType: sessionData.serveCountByType || {},
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
-          guestCountSnapshot, // Add the new snapshot here
+          guestCountSnapshot,
         };
 
         const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2 };
         tx.set(receiptRef, finalReceiptPayload);
         
-        // --- GUEST COUNT ANALYTICS INCREMENTS ---
+        const paymentIncrements: { [key: string]: any } = {};
+        for (const [methodName, amount] of Object.entries(mopMap)) {
+            paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
+        }
+
         const guestContribution = getGuestCoversContribution(finalReceiptPayload);
         const guestIncrements: Record<string, any> = {};
         if (guestContribution.isPackageSession) {
           guestIncrements['guests.guestCountFinalTotal'] = increment(guestContribution.guestCountFinal);
           guestIncrements['guests.packageSessionsCount'] = increment(1);
           if (guestContribution.packageName) {
-            guestIncrements[`guests.packageCoversBilledByPackageName.${guestContribution.packageName}`] = increment(guestContribution.packageCoversBilled);
+            guestIncrements[`guests.packageCoversBilledByPackageName.${guestContribution.packageName}`] = increment(guestContribution.billedPackageCovers);
           }
         }
         
+        const salesContribution = getSalesContribution(finalReceiptPayload);
+        const salesIncrements: Record<string, any> = {};
+        if (salesContribution.packageAmountByName) {
+            for (const [name, amount] of Object.entries(salesContribution.packageAmountByName)) {
+                salesIncrements[`sales.packageSalesAmountByName.${name}`] = increment(amount);
+            }
+        }
+        if (salesContribution.packageQtyByName) {
+            for (const [name, qty] of Object.entries(salesContribution.packageQtyByName)) {
+                salesIncrements[`sales.packageSalesQtyByName.${name}`] = increment(qty);
+            }
+        }
+        if (salesContribution.addonAmountByCategory) {
+            for (const [name, amount] of Object.entries(salesContribution.addonAmountByCategory)) {
+                salesIncrements[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
+            }
+        }
+
         tx.set(dailyRef, { dayId, storeId, updatedAt: serverTimestamp() }, { merge: true });
         tx.update(dailyRef, {
             ...paymentIncrements,
             "payments.totalGross": increment(finalTotals.grandTotal),
             "payments.txCount": increment(1),
             ...guestIncrements,
+            ...salesIncrements,
         });
 
         receiptId = receiptRef.id;
