@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -232,15 +233,15 @@ export async function completePaymentFromUnits(
   
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
-    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
+    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     
-    const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
-        tx.get(sessionRef),
-        tx.get(receiptSnap),
-        tx.get(settingsRef),
-        tx.get(counterRef),
+    const [sessionSnap, settingsSnap, counterSnap, receiptSnap] = await Promise.all([
+      tx.get(sessionRef),
+      tx.get(settingsRef),
+      tx.get(counterRef),
+      tx.get(receiptRef),
     ]);
 
     if (!sessionSnap.exists()) throw new Error(`Session ${sessionId} does not exist.`);
@@ -489,14 +490,14 @@ export async function completePaymentFromUnits(
     }
 
     // Sales
-    if (contrib.sales.packageAmountByName) {
-        for (const [name, amount] of Object.entries(contrib.sales.packageAmountByName)) analyticsPayload[`sales.packageSalesAmountByName.${name}`] = increment(amount);
+    if (contrib.sales.packageSalesAmountByName) {
+        for (const [name, amount] of Object.entries(contrib.sales.packageSalesAmountByName)) analyticsPayload[`sales.packageSalesAmountByName.${name}`] = increment(amount);
     }
-    if (contrib.sales.packageQtyByName) {
-        for (const [name, qty] of Object.entries(contrib.sales.packageQtyByName)) analyticsPayload[`sales.packageSalesQtyByName.${name}`] = increment(qty);
+    if (contrib.sales.packageSalesQtyByName) {
+        for (const [name, qty] of Object.entries(contrib.sales.packageSalesQtyByName)) analyticsPayload[`sales.packageSalesQtyByName.${name}`] = increment(qty);
     }
-    if (contrib.sales.addonAmountByCategory) {
-        for (const [name, amount] of Object.entries(contrib.sales.addonAmountByCategory)) analyticsPayload[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
+    if (contrib.sales.addonSalesAmountByCategory) {
+        for (const [name, amount] of Object.entries(contrib.sales.addonSalesAmountByCategory)) analyticsPayload[`sales.addonSalesAmountByCategory.${name}`] = increment(amount);
     }
 
     // Peak Hour
