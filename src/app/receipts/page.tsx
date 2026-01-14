@@ -19,7 +19,7 @@ import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon,
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -216,6 +216,12 @@ export default function ReceiptsPageContents() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
 
+    // --- Pagination State ---
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const PAGE_SIZE = 20;
+
     // --- Date State ---
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -292,43 +298,61 @@ export default function ReceiptsPageContents() {
         const rid = searchParams.get("rid");
         if (rid) setSelectedReceiptId(rid);
       }, [searchParams]);
-      
 
-    useEffect(() => {
-        if (!activeStore) {
-            setIsLoadingReceipts(false);
-            setReceipts([]);
-            return;
-        }
+    const fetchReceipts = useCallback(async (loadMore = false) => {
+        if (!activeStore) return;
 
-        setIsLoadingReceipts(true);
-        const q = query(
+        if (loadMore) setIsLoadingMore(true);
+        else setIsLoadingReceipts(true);
+
+        let q = query(
             collection(db, "stores", activeStore.id, "receipts"), 
             where("createdAt", ">=", start),
             where("createdAt", "<=", end),
-            orderBy("createdAt", "desc")
+            orderBy("createdAt", "desc"),
+            limit(PAGE_SIZE)
         );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType)));
-            setIsLoadingReceipts(false);
-        }, (error) => {
+
+        if (loadMore && lastDoc) {
+            q = query(q, startAfter(lastDoc));
+        }
+
+        try {
+            const snapshot = await getDocs(q);
+            const newReceipts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType));
+            
+            setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+            setHasMore(snapshot.docs.length === PAGE_SIZE);
+            
+            setReceipts(prev => loadMore ? [...prev, ...newReceipts] : newReceipts);
+
+        } catch (error) {
             console.error("Error fetching receipts:", error);
             toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch receipts.' });
+        } finally {
             setIsLoadingReceipts(false);
-        });
+            setIsLoadingMore(false);
+        }
+    }, [activeStore, start, end, lastDoc, toast]);
+      
+    // Effect for initial load and date/store changes
+    useEffect(() => {
+        setReceipts([]);
+        setLastDoc(null);
+        setHasMore(true);
+        fetchReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStore, start, end]);
 
+    useEffect(() => {
+        if (!activeStore?.id) return;
         const unsubPm = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeModesOfPayment"), where("isArchived", "==", false), orderBy("sortOrder")),
             snap => setPaymentMethods(snap.docs.map(d => ({id: d.id, ...d.data()}) as ModeOfPayment))
         );
-
-        return () => {
-            unsubscribe();
-            unsubPm();
-        };
-    }, [activeStore, start, end, toast]);
+        return () => unsubPm();
+    }, [activeStore?.id]);
     
-    // This is missing from the original `receipts/page.tsx` file, but is required by the `EditReceiptDialog`.
     const [discounts, setDiscounts] = React.useState<Discount[]>([]);
     const [charges, setCharges] = React.useState<Charge[]>([]);
      useEffect(() => {
@@ -669,7 +693,7 @@ export default function ReceiptsPageContents() {
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-start sm:items-end gap-2">
                     <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
                         {presets.map(p => (
                             <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
@@ -728,6 +752,14 @@ export default function ReceiptsPageContents() {
                             </Table>
                         )}
                          {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
+                         {hasMore && !isLoadingReceipts && (
+                            <div className="text-center py-4">
+                                <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
+                                    {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
+                                    Load More
+                                </Button>
+                            </div>
+                         )}
                     </CardContent>
                 </Card>
 
