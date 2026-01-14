@@ -34,6 +34,10 @@ export function BackfillTool() {
   }
 
   const handleBackfill = async () => {
+    if (appUser?.role !== 'admin') {
+        toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
+        return;
+    }
     if (confirmationText !== "REBUILD" || !activeStore) return;
 
     setIsBackfilling(true);

@@ -1,5 +1,4 @@
 
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -169,6 +168,12 @@ service cloud.firestore {
       
         // Allow admin to delete (for reset tool)
         allow delete: if isAdmin();
+      }
+
+      // -- Analytics --
+      match /analytics/{dayId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isAdmin(); // Only admins can backfill/overwrite
       }
 
 
