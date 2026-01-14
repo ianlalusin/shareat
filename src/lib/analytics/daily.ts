@@ -2,7 +2,7 @@
 
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
-import type { Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
+import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 /**
@@ -151,4 +151,62 @@ export function getPeakHourContribution(receipt: Receipt): PeakHourContribution 
         amount: receipt.total ?? receipt.analytics?.grandTotal ?? 0,
         count: 1,
     };
+}
+
+// --- Kitchen Ticket Contribution ---
+type KitchenTicketContribution = {
+    dayId: string;
+    typeKey: string; // e.g., "package", "addon", "refill"
+    servedCount: number;
+    cancelledCount: number;
+    durationMsSum: number;
+    durationCount: number; // Count of tickets with a valid duration
+};
+
+/**
+ * Extracts the contribution of a single kitchen ticket to daily kitchen analytics.
+ * This should be called when a ticket reaches a final state (served or cancelled).
+ * @param ticket The KitchenTicket object.
+ * @returns An object with the ticket's contribution to daily metrics.
+ */
+export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTicketContribution {
+    const defaultReturn = { dayId: "", typeKey: "unknown", servedCount: 0, cancelledCount: 0, durationMsSum: 0, durationCount: 0 };
+    
+    if (!ticket.createdAt) return defaultReturn;
+    
+    const dayId = getDayIdFromTimestamp(toJsDate(ticket.createdAt)!);
+    const typeKey = ticket.type || "unknown";
+
+    if (ticket.status === 'served') {
+        let durationMs = ticket.durationMs ?? 0;
+        if (durationMs <= 0 && ticket.servedAt) {
+            const servedAtMs = toJsDate(ticket.servedAt)?.getTime();
+            const createdAtMs = toJsDate(ticket.createdAt)?.getTime();
+            if (servedAtMs && createdAtMs) {
+                durationMs = servedAtMs - createdAtMs;
+            }
+        }
+        
+        return {
+            dayId,
+            typeKey,
+            servedCount: 1,
+            cancelledCount: 0,
+            durationMsSum: durationMs > 0 ? durationMs : 0,
+            durationCount: durationMs > 0 ? 1 : 0,
+        };
+    }
+    
+    if (ticket.status === 'cancelled') {
+        return {
+            dayId,
+            typeKey,
+            servedCount: 0,
+            cancelledCount: 1,
+            durationMsSum: 0,
+            durationCount: 0,
+        };
+    }
+    
+    return defaultReturn;
 }

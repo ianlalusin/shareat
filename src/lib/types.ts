@@ -172,6 +172,7 @@ export type KitchenTicket = {
     preparedAt?: any | null;
     servedByUid?: string | null;
     servedAt?: any | null;
+    servedAtClientMs?: number;
     servedCounted?: boolean;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
@@ -371,6 +372,12 @@ export type DailyMetric = {
         addonSalesAmountByCategory?: Record<string, number>;
         salesAmountByHour?: Record<string, number>;
         sessionCountByHour?: Record<string, number>;
+    };
+    kitchen?: {
+      servedCountByType?: Record<string, number>;
+      cancelledCountByType?: Record<string, number>;
+      durationMsSumByType?: Record<string, number>;
+      durationCountByType?: Record<string, number>;
     }
 }
 

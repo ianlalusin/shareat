@@ -13,7 +13,6 @@ import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { Loader2 } from "lucide-react";
 import { collection, onSnapshot, query, where, Timestamp, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Receipt } from "@/lib/types";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
@@ -64,9 +63,14 @@ export default function DashboardPage() {
             const metricsQuery = query(metricsRef, where("dayId", "in", dateRangeIds));
             unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
                 setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
-            }, (error) => console.error("Error fetching daily metrics:", error)));
+                setIsLoading(false);
+            }, (error) => {
+                console.error("Error fetching daily metrics:", error);
+                setIsLoading(false);
+            }));
         } else {
              setDailyMetrics([]);
+             setIsLoading(false);
         }
 
         // --- Active Sessions Count ---
@@ -75,9 +79,6 @@ export default function DashboardPage() {
         unsubs.push(onSnapshot(activeSessionsQuery, (snapshot) => {
             setActiveSessionsCount(snapshot.size);
         }, (error) => console.error("Error fetching active sessions:", error)));
-
-        const timer = setTimeout(() => setIsLoading(false), 1500); 
-        unsubs.push(() => clearTimeout(timer));
 
         return () => unsubs.forEach(unsub => unsub());
     }, [activeStore?.id, dateRange]);
@@ -152,7 +153,7 @@ export default function DashboardPage() {
                 </div>
                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <AvgServingTimeCard storeId={activeStore.id} dateRange={dateRange} />
+                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <AvgRefillsCard storeId={activeStore.id} dateRange={dateRange} />
                 </div>
             </div>

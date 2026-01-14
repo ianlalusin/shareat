@@ -1,26 +1,17 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, orderBy, Timestamp, collectionGroup, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Timer } from "lucide-react";
-import type { KitchenTicket } from "@/lib/types";
-import { toJsDate } from "@/lib/utils/date";
+import { Loader2 } from "lucide-react";
+import type { DailyMetric } from "@/lib/types";
 
 interface AvgServingTimeCardProps {
-    storeId: string;
-    dateRange: { start: Date; end: Date };
+    dailyMetrics: DailyMetric[];
+    isLoading: boolean;
 }
-
-type ServeTimeTally = {
-    [key: string]: {
-        totalMs: number;
-        count: number;
-    };
-};
 
 function formatDuration(ms: number): string {
     if (isNaN(ms) || ms < 0) return "00:00:00";
@@ -36,80 +27,45 @@ function formatDuration(ms: number): string {
     return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
-
-export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardProps) {
-    const [tickets, setTickets] = useState<KitchenTicket[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-        if (!storeId) {
-            setIsLoading(false);
-            setTickets([]);
-            return;
-        }
-        setIsLoading(true);
-
-        const primaryQuery = query(
-            collectionGroup(db, 'kitchentickets'),
-            where('storeId', '==', storeId),
-            where('servedAt', '>=', Timestamp.fromDate(dateRange.start)),
-            where('servedAt', '<=', Timestamp.fromDate(dateRange.end)),
-            orderBy('servedAt', 'desc'),
-            limit(500)
-        );
-
-        const unsubscribe = onSnapshot(primaryQuery, (snapshot) => {
-            const fetchedTickets = snapshot.docs.map(doc => doc.data() as KitchenTicket);
-            setTickets(fetchedTickets);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching serving time analytics:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [storeId, dateRange]);
-
+export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCardProps) {
+    
     const analytics = useMemo(() => {
-        const tally: ServeTimeTally = {};
-        
-        tickets.forEach(ticket => {
-            let durationMs: number | undefined = (ticket as any).durationMs;
+        const tally: Record<string, { totalMs: number; count: number }> = {};
+        let totalMsOverall = 0;
+        let totalCountOverall = 0;
 
-            // Fallback for older tickets before durationMs was added
-            if (durationMs === undefined || durationMs <= 0) {
-                 const preparedTs = toJsDate(ticket.preparedAt);
-                 const servedTs = toJsDate(ticket.servedAt);
-                 if (preparedTs && servedTs) {
-                     durationMs = servedTs.getTime() - preparedTs.getTime();
-                 }
-            }
+        dailyMetrics.forEach(metric => {
+            const byType = metric.kitchen?.durationMsSumByType;
+            const countsByType = metric.kitchen?.durationCountByType;
+            if (!byType || !countsByType) return;
 
-            if (durationMs && durationMs > 0) {
-                const type = ticket.type ?? "unknown";
-                if (!tally[type]) {
-                    tally[type] = { totalMs: 0, count: 0 };
-                }
-                tally[type].totalMs += durationMs;
-                tally[type].count += 1;
+            for (const [type, sum] of Object.entries(byType)) {
+                if (!tally[type]) tally[type] = { totalMs: 0, count: 0 };
+                tally[type].totalMs += sum;
+                
+                const countForType = countsByType[type] || 0;
+                tally[type].count += countForType;
+
+                totalMsOverall += sum;
+                totalCountOverall += countForType;
             }
         });
-
+        
         const sortedTypes = Object.entries(tally)
-            .sort(([, a], [, b]) => b.count - a.count)
             .map(([type, data]) => ({
                 type,
                 avgMs: data.count > 0 ? data.totalMs / data.count : 0,
                 count: data.count,
-            }));
-            
-        const totalMs = Object.values(tally).reduce((sum, { totalMs }) => sum + totalMs, 0);
-        const totalCount = Object.values(tally).reduce((sum, { count }) => sum + count, 0);
-        const overallAvg = totalCount > 0 ? totalMs / totalCount : 0;
+            }))
+            .sort((a,b) => b.count - a.count);
 
-        return { data: sortedTypes, overallAvg, hasData: totalCount > 0 };
-    }, [tickets]);
-    
+        return {
+            data: sortedTypes,
+            overallAvg: totalCountOverall > 0 ? totalMsOverall / totalCountOverall : 0,
+            hasData: totalCountOverall > 0,
+        }
+    }, [dailyMetrics]);
+
     if (isLoading) {
         return (
             <Card>
@@ -131,7 +87,7 @@ export function AvgServingTimeCard({ storeId, dateRange }: AvgServingTimeCardPro
                     <CardTitle>Avg. Serving Time</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-center text-sm text-muted-foreground py-10">No served tickets in this range yet.</p>
+                    <p className="text-center text-sm text-muted-foreground py-10">No served tickets in this range.</p>
                 </CardContent>
             </Card>
         )
