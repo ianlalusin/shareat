@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -33,7 +32,7 @@ import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
-function getActorStamp(user: AppUser): ActorStamp {
+export function getActorStamp(user: AppUser): ActorStamp {
   const username =
     (user.displayName && user.displayName.trim()) ||
     ((user as any).name && String((user as any).name).trim()) ||
@@ -607,66 +606,6 @@ export async function voidSession({
   await batch.commit();
 }
 
-/**
- * Creates or updates a sessionBillLine document for an add-on.
- * Uses a transaction to safely increment quantity if the line already exists.
- */
-export async function upsertAddonToBill(
-  storeId: string,
-  sessionId: string,
-  addon: InventoryItem,
-  qtyToAdd: number,
-  user: AppUser
-) {
-  if (!addon || !addon.id) throw new Error("Valid addon is required.");
-  if (qtyToAdd <= 0) return;
-
-  const unitPriceNum = Number((addon as any).sellingPrice);
-  const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
-
-  if (safeUnitPrice <= 0) {
-      throw new Error(`Invalid selling price for "${addon.name}". Check store inventory selling price.`);
-  }
-
-  // Use a deterministic ID for the line item.
-  const lineId = `addon_${addon.id}`;
-  const lineRef = doc(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`, lineId);
-  const actor = getActorStamp(user);
-
-  await runTransaction(db, async (tx) => {
-    const lineSnap = await tx.get(lineRef);
-
-    if (lineSnap.exists()) {
-      // Line exists, increment quantity
-      tx.update(lineRef, {
-        qtyOrdered: increment(qtyToAdd),
-        updatedAt: serverTimestamp(),
-        updatedByUid: actor.uid,
-        updatedByName: actor.username,
-      });
-    } else {
-      // Line doesn't exist, create it
-      const newLine: Omit<SessionBillLine, "id" | "createdAt"> = {
-        type: "addon",
-        itemId: addon.id,
-        itemName: addon.name,
-        category: addon.subCategory ?? null,
-        barcode: addon.barcode ?? null,
-        unitPrice: safeUnitPrice,
-        qtyOrdered: qtyToAdd,
-        discountType: null,
-        discountValue: 0,
-        discountQty: 0,
-        freeQty: 0,
-        voidedQty: 0,
-        updatedAt: serverTimestamp(),
-        updatedByUid: actor.uid,
-        updatedByName: actor.username,
-      };
-      tx.set(lineRef, { ...newLine, id: lineRef.id, createdAt: serverTimestamp() });
-    }
-  });
-}
 
 /**
  * Updates a sessionBillLine document with new values.

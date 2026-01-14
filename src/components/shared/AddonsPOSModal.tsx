@@ -9,18 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { InventoryItem, PendingSession, BillableLine } from "@/lib/types";
+import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { upsertAddonToBill } from "../cashier/firestore";
+import { getActorStamp } from "../cashier/firestore";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -207,61 +207,83 @@ function POSContent({
       return;
     }
 
+    const unitPriceNum = Number((selectedAddon as any).sellingPrice);
+    const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
+    if (safeUnitPrice <= 0) {
+      toast({ variant: "destructive", title: "Invalid Price", description: `Cannot add "${selectedAddon.displayName}" with a price of zero.`});
+      return;
+    }
+
+
     setIsSubmitting(true);
 
     try {
-      const batch = writeBatch(db);
+      const lineId = `addon_${selectedAddon.id}`;
+      const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
       const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
+      const actor = getActorStamp(appUser);
+      
+      await runTransaction(db, async (tx) => {
+        // 1. Upsert the billable line item
+        const lineSnap = await tx.get(lineRef);
+        if (lineSnap.exists()) {
+          tx.update(lineRef, {
+            qtyOrdered: increment(quantity),
+            updatedAt: serverTimestamp(),
+            updatedByUid: actor.uid,
+            updatedByName: actor.username,
+          });
+        } else {
+          const newLine: Omit<SessionBillLine, "id" | "createdAt"> = {
+            type: "addon",
+            itemId: selectedAddon.id,
+            itemName: selectedAddon.displayName,
+            category: selectedAddon.subCategory ?? null,
+            barcode: selectedAddon.barcode ?? null,
+            unitPrice: safeUnitPrice,
+            qtyOrdered: quantity,
+            discountType: null,
+            discountValue: 0,
+            discountQty: 0,
+            freeQty: 0,
+            voidedQty: 0,
+            updatedAt: serverTimestamp(),
+            updatedByUid: actor.uid,
+            updatedByName: actor.username,
+          };
+          tx.set(lineRef, { ...newLine, id: lineRef.id, createdAt: serverTimestamp() });
+        }
 
-      // Loop to create one ticket per quantity
-      for (let i = 0; i < quantity; i++) {
-        const ticketRef = doc(ticketsColRef);
-
-        const ticketPayload = stripUndefined({
-          id: ticketRef.id,
-          type: "addon",
-          itemId: selectedAddon.id,
-          itemName: selectedAddon.displayName,
-          qty: 1, // Always 1 per ticket
-          status: "preparing",
-          kitchenLocationId: selectedAddon.kitchenLocationId,
-          kitchenLocationName: selectedAddon.kitchenLocationName,
-          sessionId: session.id,
-          storeId,
-          tableId: session.tableId,
-          tableNumber: session.tableNumber,
-          createdByUid: appUser.uid,
-          createdAt: serverTimestamp(),
-          sessionMode: session.sessionMode,
-          customerName: session.customer?.name ?? session.customerName ?? null,
-          sessionLabel: computeSessionLabel({
-            sessionMode: session.sessionMode,
-            customerName: session.customer?.name ?? session.customerName ?? null,
-            tableNumber: session.sessionMode === "alacarte" ? null : session.tableNumber,
-          }),
-        });
-
-        batch.set(ticketRef, ticketPayload);
-      }
-
-      // Upsert bill line (single line with qty)
-      await upsertAddonToBill({
-        storeId,
-        sessionId: session.id,
-        user: appUser,
-        addon: selectedAddon as any,
-        qtyToAdd: quantity,
+        // 2. Create kitchen tickets
+        for (let i = 0; i < quantity; i++) {
+          const ticketRef = doc(ticketsColRef);
+          const ticketPayload = stripUndefined({
+            id: ticketRef.id,
+            type: "addon",
+            itemId: selectedAddon.id,
+            itemName: selectedAddon.displayName,
+            qty: 1,
+            status: "preparing",
+            kitchenLocationId: selectedAddon.kitchenLocationId,
+            kitchenLocationName: selectedAddon.kitchenLocationName,
+            sessionId: session.id,
+            storeId,
+            createdByUid: appUser.uid,
+            createdAt: serverTimestamp(),
+            sessionLabel: computeSessionLabel(session),
+          });
+          tx.set(ticketRef, ticketPayload);
+        }
       });
-
-      await batch.commit();
-
+      
       toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
       setSelectedAddon(null);
       setQuantity(1);
       onClose();
-    } catch (e) {
+
+    } catch (e: any) {
       console.error("[AddonsPOSModal] add failed:", e);
-      toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order." });
+      toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order. " + e.message });
     } finally {
       setIsSubmitting(false);
     }
