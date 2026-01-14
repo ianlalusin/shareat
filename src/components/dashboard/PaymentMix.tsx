@@ -18,8 +18,8 @@ export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
         const tally: PaymentMethodTally = {};
         if (dailyMetrics) {
             dailyMetrics.forEach(metric => {
-                if (metric.paymentMix) {
-                    for (const [method, amount] of Object.entries(metric.paymentMix)) {
+                if (metric.payments?.byMethod) {
+                    for (const [method, amount] of Object.entries(metric.payments.byMethod)) {
                         tally[method] = (tally[method] || 0) + amount;
                     }
                 }
@@ -56,3 +56,5 @@ export function PaymentMix({ dailyMetrics, isLoading }: PaymentMixProps) {
         </div>
     );
 }
+
+    

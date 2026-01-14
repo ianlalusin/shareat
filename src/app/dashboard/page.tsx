@@ -21,6 +21,7 @@ import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { isSameDay, format as formatDateFns } from "date-fns";
 import type { DailyMetric } from "@/components/dashboard/types";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
@@ -65,16 +66,16 @@ export default function DashboardPage() {
         }, (error) => console.error("Error fetching receipts:", error)));
 
         // --- Daily Metrics for aggregated data (Sales, Transactions, Payment Mix) ---
-        const metricsRef = collection(db, "stores", activeStore.id, "dailyMetrics");
-        const dateRangeIds = [];
+        const metricsRef = collection(db, "stores", activeStore.id, "analytics", "daily");
+        const dateRangeIds: string[] = [];
         let currentDate = new Date(dateRange.start);
         while (currentDate <= dateRange.end) {
-            dateRangeIds.push(formatDateFns(currentDate, "yyyy-MM-dd"));
+            dateRangeIds.push(getDayIdFromTimestamp(currentDate));
             currentDate.setDate(currentDate.getDate() + 1);
         }
         
         if (dateRangeIds.length > 0) {
-            const metricsQuery = query(metricsRef, where("__name__", "in", dateRangeIds));
+            const metricsQuery = query(metricsRef, where("dayId", "in", dateRangeIds));
             unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
                 setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
             }, (error) => console.error("Error fetching daily metrics:", error)));
@@ -101,8 +102,8 @@ export default function DashboardPage() {
             return { grossSales: 0, transactions: 0, avgBasket: 0 };
         }
         
-        const grossSales = dailyMetrics.reduce((sum, metric) => sum + (metric.sales || 0), 0);
-        const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.transactions || 0), 0);
+        const grossSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
+        const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
         const avgBasket = transactions > 0 ? grossSales / transactions : 0;
         
         return { grossSales, transactions, avgBasket };
@@ -172,3 +173,5 @@ export default function DashboardPage() {
         </RoleGuard>
     );
 }
+
+    

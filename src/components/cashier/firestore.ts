@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -29,7 +28,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { format } from 'date-fns';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -228,6 +227,8 @@ export async function completePaymentFromUnits(
   // Recalculate totals inside the transaction function to ensure consistency
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
+  const now = Date.now();
+  const dayId = getDayIdFromTimestamp(now);
 
   await runTransaction(db, async (tx) => {
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
@@ -235,8 +236,7 @@ export async function completePaymentFromUnits(
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
     
-    const todayStr = format(new Date(), "yyyy-MM-dd");
-    const dailyMetricsRef = doc(db, `stores/${storeId}/dailyMetrics`, todayStr);
+    const dailyRef = dailyAnalyticsDocRef(db, storeId, dayId);
 
     const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
         tx.get(sessionRef),
@@ -296,7 +296,7 @@ export async function completePaymentFromUnits(
         closedByUid: actor.uid,
         closedByUsername: actor.username,
         closedAt: serverTimestamp(),
-        closedAtClientMs: Date.now(),
+        closedAtClientMs: now,
         updatedAt: serverTimestamp(),
     });
 
@@ -328,7 +328,7 @@ export async function completePaymentFromUnits(
                     if (line.discountType === 'percent') {
                         discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
                     } else { // fixed
-                        discountAmount = Math.min(discountBaseUnit, (line.discountValue || 0)) * discountQty;
+                        discountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountQty;
                     }
                 }
                 const netAmount = grossAmount - discountAmount;
@@ -391,37 +391,45 @@ export async function completePaymentFromUnits(
         
         const change = Math.max(0, totalPaid - amountDue);
         
-        // Revised MOP calculation
-        const nonCashPayments = payments.filter(p => {
-          const method = paymentMethods.find(m => m.id === p.methodId);
-          return method?.type !== 'cash';
-        });
-        const nonCashTotal = nonCashPayments.reduce((sum, p) => sum + p.amount, 0);
+        const nonCashTotal = payments
+          .filter(p => {
+              const method = paymentMethods.find(m => m.id === p.methodId);
+              return method?.type !== 'cash';
+          })
+          .reduce((sum, p) => sum + p.amount, 0);
+
         const cashPaymentAmount = amountDue - nonCashTotal;
 
         const mopMap: Record<string, number> = {};
-        nonCashPayments.forEach(p => {
-            const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
-            mopMap[key] = (mopMap[key] || 0) + p.amount;
+        payments.forEach(p => {
+            const method = paymentMethods.find(m => m.id === p.methodId);
+            const key = method?.name || p.methodId || "unknown";
+            
+            if (method?.type === 'cash') {
+                if (cashPaymentAmount > 0) { // Only log cash if it was used to cover part of the bill
+                    mopMap[key] = (mopMap[key] || 0) + cashPaymentAmount;
+                }
+            } else {
+                mopMap[key] = (mopMap[key] || 0) + p.amount;
+            }
         });
-        if (cashPaymentAmount > 0) {
-            const cashMethod = paymentMethods.find(pm => pm.type === 'cash');
-            const cashKey = cashMethod?.name || 'Cash';
-            mopMap[cashKey] = (mopMap[cashKey] || 0) + cashPaymentAmount;
-        }
-
-
-        // Update daily metrics
-        const paymentMixIncrements: { [key: string]: any } = {};
+        
+        const paymentIncrements: { [key: string]: any } = {};
         for (const [methodName, amount] of Object.entries(mopMap)) {
-            paymentMixIncrements[`paymentMix.${methodName}`] = increment(amount);
+            paymentIncrements[`payments.byMethod.${methodName}`] = increment(amount);
         }
         
-        tx.set(dailyMetricsRef, {
-            ...paymentMixIncrements,
-            sales: increment(finalTotals.grandTotal),
-            transactions: increment(1)
+        tx.set(dailyRef, { 
+          dayId,
+          storeId,
+          updatedAt: serverTimestamp() 
         }, { merge: true });
+
+        tx.update(dailyRef, {
+            ...paymentIncrements,
+            "payments.totalGross": increment(finalTotals.grandTotal),
+            "payments.txCount": increment(1)
+        });
 
 
         const analyticsV2: ReceiptAnalyticsV2 = {
@@ -655,3 +663,5 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
+
+    
