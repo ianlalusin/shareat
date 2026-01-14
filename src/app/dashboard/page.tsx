@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -66,7 +67,7 @@ export default function DashboardPage() {
         }, (error) => console.error("Error fetching receipts:", error)));
 
         // --- Daily Metrics for aggregated data (Sales, Transactions, Payment Mix) ---
-        const metricsRef = collection(db, "stores", activeStore.id, "analytics", "daily");
+        const metricsRef = collection(db, "stores", activeStore.id, "analytics");
         const dateRangeIds: string[] = [];
         let currentDate = new Date(dateRange.start);
         while (currentDate <= dateRange.end) {

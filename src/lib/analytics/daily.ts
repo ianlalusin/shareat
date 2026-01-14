@@ -1,4 +1,5 @@
 
+
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 
@@ -34,7 +35,8 @@ export function getDayIdFromTimestamp(ts: Timestamp | Date | number): string {
  * @returns A DocumentReference to the specified daily analytics document.
  */
 export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: string) {
-    return doc(db, "stores", storeId, "analytics", "daily", dayId);
+    // Corrected path: points to a document within the 'analytics' collection.
+    return doc(db, "stores", storeId, "analytics", dayId);
 }
 
     
