@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTr
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Receipt } from "@/lib/types";
+import type { DailyMetric } from "@/lib/types";
 
 interface AvgRefillsCardProps {
     storeId: string;
@@ -29,29 +29,31 @@ type AnalyticsTally = {
 };
 
 export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
-    const [receipts, setReceipts] = useState<Receipt[]>([]);
+    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         if (!storeId) {
             setIsLoading(false);
-            setReceipts([]);
+            setDailyMetrics([]);
             return;
         }
         setIsLoading(true);
 
-        const receiptsRef = collection(db, "stores", storeId, "receipts");
+        const startMs = dateRange.start.getTime();
+        const endMs = dateRange.end.getTime();
+
+        const metricsRef = collection(db, "stores", storeId, "analytics");
         const q = query(
-            receiptsRef,
-            where("status", "==", "final"),
-            where("sessionMode", "==", "package_dinein"),
-            where("createdAt", ">=", Timestamp.fromDate(dateRange.start)),
-            where("createdAt", "<=", Timestamp.fromDate(dateRange.end))
+            metricsRef,
+            where("meta.dayStartMs", ">=", startMs),
+            where("meta.dayStartMs", "<=", endMs),
+            orderBy("meta.dayStartMs", "asc")
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedReceipts = snapshot.docs.map(doc => doc.data() as Receipt);
-            setReceipts(fetchedReceipts);
+            const fetchedMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
+            setDailyMetrics(fetchedMetrics);
             setIsLoading(false);
         }, (error) => {
             console.error("Error fetching refill analytics:", error);
@@ -62,23 +64,24 @@ export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
     }, [storeId, dateRange]);
 
     const analytics = useMemo<AnalyticsTally>(() => {
-        const v2Receipts = receipts.filter(r => r.analytics?.v === 2);
         const tally: AnalyticsTally = {
-            sessionCount: v2Receipts.length,
+            sessionCount: 0,
             overallTotal: 0,
             totalsByName: {},
         };
 
-        v2Receipts.forEach(receipt => {
-            const served = (receipt.analytics?.servedRefillsByName ?? {}) as Record<string, number>;
-            for (const [name, count] of Object.entries(served)) {
+        dailyMetrics.forEach(metric => {
+            tally.sessionCount += metric.refills?.packageSessionsCount ?? 0;
+            tally.overallTotal += metric.refills?.servedRefillsTotal ?? 0;
+
+            const byName = metric.refills?.servedRefillsByName ?? {};
+            for (const [name, count] of Object.entries(byName)) {
                 tally.totalsByName[name] = (tally.totalsByName[name] || 0) + count;
-                tally.overallTotal += count;
             }
         });
 
         return tally;
-    }, [receipts]);
+    }, [dailyMetrics]);
 
     const overallAvg = analytics.sessionCount > 0 ? analytics.overallTotal / analytics.sessionCount : 0;
     
@@ -114,7 +117,7 @@ export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
                     <CardTitle>Avg. Refill Count</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-center text-sm text-muted-foreground py-10">No package receipts with v2 analytics in this range.</p>
+                    <p className="text-center text-sm text-muted-foreground py-10">No package sessions in this range.</p>
                 </CardContent>
             </Card>
         )

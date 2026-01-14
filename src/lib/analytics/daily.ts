@@ -268,3 +268,35 @@ export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSe
         totalPaid: receipt.total ?? 0,
     };
 }
+
+
+// --- Refill Contribution ---
+type RefillContribution = {
+    dayId: string;
+    dayStartMs: number;
+    servedRefillsTotal: number;
+    servedRefillsByName: Record<string, number>;
+    packageSessionsCount: number;
+};
+
+export function getRefillContribution(receipt: Receipt | null): RefillContribution {
+    const defaultReturn = { dayId: "", dayStartMs: 0, servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 };
+    if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.v) {
+        return defaultReturn;
+    }
+    
+    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
+    if (!createdAtMs) return defaultReturn;
+    
+    const analytics = receipt.analytics as ReceiptAnalyticsV2;
+    const servedRefillsByName = analytics.servedRefillsByName ?? {};
+    const servedRefillsTotal = Object.values(servedRefillsByName).reduce((sum, count) => sum + count, 0);
+
+    return {
+        dayId: getDayIdFromTimestamp(createdAtMs),
+        dayStartMs: getDayStartMs(createdAtMs),
+        servedRefillsTotal,
+        servedRefillsByName,
+        packageSessionsCount: 1,
+    };
+}

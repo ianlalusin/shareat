@@ -29,7 +29,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -483,6 +483,7 @@ export async function completePaymentFromUnits(
         sales: getSalesContribution(finalReceipt),
         peakHour: getPeakHourContribution(finalReceipt),
         closedSession: getClosedSessionsContribution(finalReceipt),
+        refill: getRefillContribution(finalReceipt),
     };
 
     const analyticsRef = dailyAnalyticsDocRef(db, storeId, contrib.guest.dayId);
@@ -512,6 +513,13 @@ export async function completePaymentFromUnits(
     if(contrib.closedSession.closedCount > 0) {
         analyticsPayload["sessions.closedCount"] = increment(contrib.closedSession.closedCount);
         analyticsPayload["sessions.totalPaid"] = increment(contrib.closedSession.totalPaid);
+    }
+    if(contrib.refill.packageSessionsCount > 0) {
+        analyticsPayload["refills.packageSessionsCount"] = increment(contrib.refill.packageSessionsCount);
+        analyticsPayload["refills.servedRefillsTotal"] = increment(contrib.refill.servedRefillsTotal);
+        for(const [name, count] of Object.entries(contrib.refill.servedRefillsByName)) {
+             analyticsPayload[`refills.servedRefillsByName.${name}`] = increment(count);
+        }
     }
 
     await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed during payment completion:", e));

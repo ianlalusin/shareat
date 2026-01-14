@@ -387,7 +387,12 @@ export type DailyMetric = {
     sessions?: {
         closedCount?: number;
         totalPaid?: number;
-    }
+    };
+    refills?: {
+        servedRefillsTotal?: number;
+        servedRefillsByName?: Record<string, number>;
+        packageSessionsCount?: number;
+    };
 }
 
 export type ReceiptAnalyticsV2 = {

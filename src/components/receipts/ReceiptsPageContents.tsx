@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -33,6 +34,8 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { diff } from 'deep-object-diff';
+import { getPaymentContribution, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, dailyAnalyticsDocRef, getClosedSessionsContribution, getRefillContribution } from "@/lib/analytics/daily";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 // --- Date Helpers ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -61,6 +64,133 @@ function getUsername(appUser: any) {
     || (appUser?.email ? String(appUser.email).split("@")[0] : "")
     || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
 }
+
+async function applyAnalyticsDelta(
+  storeId: string,
+  oldReceipt: ReceiptType | null,
+  newReceipt: ReceiptType | null
+) {
+  const oldC = {
+    guest: getGuestCoversContribution(oldReceipt),
+    sales: getSalesContribution(oldReceipt),
+    peak: getPeakHourContribution(oldReceipt),
+    closed: getClosedSessionsContribution(oldReceipt),
+    refill: getRefillContribution(oldReceipt),
+  };
+  const newC = {
+    guest: getGuestCoversContribution(newReceipt),
+    sales: getSalesContribution(newReceipt),
+    peak: getPeakHourContribution(newReceipt),
+    closed: getClosedSessionsContribution(newReceipt),
+    refill: getRefillContribution(newReceipt),
+  };
+
+  const updates: { ref: any, payload: any }[] = [];
+
+  const processDelta = (oldContrib: any, newContrib: any) => {
+    if (oldContrib.dayId && oldContrib.dayId !== newContrib.dayId) {
+      // Day changed, so subtract from old day
+      const oldPayload: Record<string, any> = {};
+      if (oldContrib.guestCountFinal) oldPayload['guests.guestCountFinalTotal'] = increment(-oldContrib.guestCountFinal);
+      if (oldContrib.packageSessionsCount) oldPayload['guests.packageSessionsCount'] = increment(-oldContrib.packageSessionsCount);
+      if (oldContrib.packageName) oldPayload[`guests.packageCoversBilledByPackageName.${oldContrib.packageName}`] = increment(-oldContrib.billedPackageCovers);
+      
+      if (oldContrib.packageAmountByName) for (const [k,v] of Object.entries(oldContrib.packageAmountByName)) oldPayload[`sales.packageSalesAmountByName.${k}`] = increment(-(v as number));
+      if (oldContrib.packageQtyByName) for (const [k,v] of Object.entries(oldContrib.packageQtyByName)) oldPayload[`sales.packageSalesQtyByName.${k}`] = increment(-(v as number));
+      if (oldContrib.addonAmountByCategory) for (const [k,v] of Object.entries(oldContrib.addonAmountByCategory)) oldPayload[`sales.addonSalesAmountByCategory.${k}`] = increment(-(v as number));
+      if (oldContrib.hourKey) {
+        oldPayload[`sales.salesAmountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.amount);
+        oldPayload[`sales.sessionCountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.count);
+      }
+      if (oldContrib.closedCount) {
+          oldPayload['sessions.closedCount'] = increment(-oldContrib.closedCount);
+          oldPayload['sessions.totalPaid'] = increment(-oldContrib.totalPaid);
+      }
+      if (oldContrib.packageSessionsCount) {
+          oldPayload['refills.packageSessionsCount'] = increment(-oldContrib.packageSessionsCount);
+          oldPayload['refills.servedRefillsTotal'] = increment(-oldContrib.servedRefillsTotal);
+          for (const [k,v] of Object.entries(oldContrib.servedRefillsByName)) oldPayload[`refills.servedRefillsByName.${k}`] = increment(-(v as number));
+      }
+
+      updates.push({ ref: dailyAnalyticsDocRef(db, storeId, oldContrib.dayId), payload: oldPayload });
+    }
+
+    const payload: Record<string, any> = {};
+    const deltaGuestCount = newContrib.guestCountFinal - oldContrib.guestCountFinal;
+    const deltaPackageSessions = newContrib.packageSessionsCount - oldContrib.packageSessionsCount;
+
+    if (deltaGuestCount) payload['guests.guestCountFinalTotal'] = increment(deltaGuestCount);
+    if (deltaPackageSessions) payload['guests.packageSessionsCount'] = increment(deltaPackageSessions);
+    
+    // Package Covers by Name
+    const allPkgNames = new Set([...Object.keys(oldContrib.packageAmountByName || {}), ...Object.keys(newContrib.packageAmountByName || {})]);
+    allPkgNames.forEach(name => {
+        const oldVal = oldContrib.packageAmountByName?.[name] || 0;
+        const newVal = newContrib.packageAmountByName?.[name] || 0;
+        if(oldVal !== newVal) payload[`sales.packageSalesAmountByName.${name}`] = increment(newVal - oldVal);
+
+        const oldQty = oldContrib.packageQtyByName?.[name] || 0;
+        const newQty = newContrib.packageQtyByName?.[name] || 0;
+        if(oldQty !== newQty) payload[`sales.packageSalesQtyByName.${name}`] = increment(newQty - oldQty);
+    });
+
+    // Addon Sales by Category
+    const allCategories = new Set([...Object.keys(oldContrib.addonAmountByCategory || {}), ...Object.keys(newContrib.addonAmountByCategory || {})]);
+    allCategories.forEach(cat => {
+        const oldVal = oldContrib.addonAmountByCategory?.[cat] || 0;
+        const newVal = newContrib.addonAmountByCategory?.[cat] || 0;
+        if(oldVal !== newVal) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(newVal - oldVal);
+    });
+
+    // Peak Hour
+    if (oldContrib.hourKey !== newContrib.hourKey) {
+        if(oldContrib.hourKey) {
+          payload[`sales.salesAmountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.amount);
+          payload[`sales.sessionCountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.count);
+        }
+        if(newContrib.hourKey) {
+          payload[`sales.salesAmountByHour.${newContrib.hourKey}`] = increment(newContrib.amount);
+          payload[`sales.sessionCountByHour.${newContrib.hourKey}`] = increment(newContrib.count);
+        }
+    } else if (newContrib.hourKey && (oldContrib.amount !== newContrib.amount)) {
+        payload[`sales.salesAmountByHour.${newContrib.hourKey}`] = increment(newContrib.amount - oldContrib.amount);
+    }
+    
+    // Closed Sessions
+    const deltaClosedCount = newContrib.closedCount - oldContrib.closedCount;
+    if(deltaClosedCount) payload['sessions.closedCount'] = increment(deltaClosedCount);
+    const deltaTotalPaid = newContrib.totalPaid - oldContrib.totalPaid;
+    if(deltaTotalPaid) payload['sessions.totalPaid'] = increment(deltaTotalPaid);
+    
+    // Refills
+    const deltaRefillSessions = newContrib.packageSessionsCount - oldContrib.packageSessionsCount;
+    const deltaRefillTotal = newContrib.servedRefillsTotal - oldContrib.servedRefillsTotal;
+    if (deltaRefillSessions) payload['refills.packageSessionsCount'] = increment(deltaRefillSessions);
+    if (deltaRefillTotal) payload['refills.servedRefillsTotal'] = increment(deltaRefillTotal);
+
+    const allRefillNames = new Set([...Object.keys(oldContrib.servedRefillsByName || {}), ...Object.keys(newContrib.servedRefillsByName || {})]);
+    allRefillNames.forEach(name => {
+        const oldQty = oldContrib.servedRefillsByName?.[name] || 0;
+        const newQty = newContrib.servedRefillsByName?.[name] || 0;
+        if(oldQty !== newQty) payload[`refills.servedRefillsByName.${name}`] = increment(newQty - oldQty);
+    });
+
+    if (Object.keys(payload).length > 0) {
+        updates.push({ ref: dailyAnalyticsDocRef(db, storeId, newContrib.dayId), payload });
+    }
+  }
+
+  processDelta({ ...oldC.guest, ...oldC.sales, ...oldC.peak, ...oldC.closed, ...oldC.refill }, { ...newC.guest, ...newC.sales, ...newC.peak, ...newC.closed, ...newC.refill });
+
+  if (updates.length === 0) return;
+
+  const batch = writeBatch(db);
+  for (const { ref, payload } of updates) {
+    batch.update(ref, payload);
+  }
+  await batch.commit();
+}
+
 
 export default function ReceiptsPageContents() {
     const router = useRouter();
@@ -277,6 +407,7 @@ export default function ReceiptsPageContents() {
             });
 
             await batch.commit();
+            await applyAnalyticsDelta(activeStore.id, editingReceipt, updatedReceipt as ReceiptType);
 
             // 3. Log activity
             await writeActivityLog({
@@ -403,6 +534,8 @@ export default function ReceiptsPageContents() {
         setIsDeleting(receipt.id);
         try {
             await deleteDoc(doc(db, "stores", activeStore.id, "receipts", receipt.id));
+            await applyAnalyticsDelta(activeStore.id, receipt, null);
+
             await writeActivityLog({
                 action: "RECEIPT_DELETED",
                 storeId: activeStore.id,
