@@ -35,11 +35,11 @@ export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCa
         let totalCountOverall = 0;
 
         dailyMetrics.forEach(metric => {
-            const byType = metric.kitchen?.durationMsSumByType;
+            const byTypeSum = metric.kitchen?.durationMsSumByType;
             const countsByType = metric.kitchen?.durationCountByType;
-            if (!byType || !countsByType) return;
+            if (!byTypeSum || !countsByType) return;
 
-            for (const [type, sum] of Object.entries(byType)) {
+            for (const [type, sum] of Object.entries(byTypeSum)) {
                 if (!tally[type]) tally[type] = { totalMs: 0, count: 0 };
                 tally[type].totalMs += sum;
                 

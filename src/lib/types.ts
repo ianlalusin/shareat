@@ -352,6 +352,8 @@ export type PendingSession = {
 
 export type DailyMetric = {
     dayId: string;
+    storeId: string;
+    updatedAt: Timestamp;
     payments?: {
         totalGross?: number;
         txCount?: number;
@@ -374,10 +376,10 @@ export type DailyMetric = {
         sessionCountByHour?: Record<string, number>;
     };
     kitchen?: {
-      servedCountByType?: Record<string, number>;
-      cancelledCountByType?: Record<string, number>;
-      durationMsSumByType?: Record<string, number>;
-      durationCountByType?: Record<string, number>;
+        servedCountByType?: Record<string, number>;
+        cancelledCountByType?: Record<string, number>;
+        durationMsSumByType?: Record<string, number>;
+        durationCountByType?: Record<string, number>;
     }
 }
 

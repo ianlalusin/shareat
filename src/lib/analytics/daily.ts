@@ -179,8 +179,8 @@ export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTick
 
     if (ticket.status === 'served') {
         let durationMs = ticket.durationMs ?? 0;
-        if (durationMs <= 0 && ticket.servedAt) {
-            const servedAtMs = toJsDate(ticket.servedAt)?.getTime();
+        if (durationMs <= 0) {
+            const servedAtMs = ticket.servedAtClientMs || toJsDate(ticket.servedAt)?.getTime();
             const createdAtMs = toJsDate(ticket.createdAt)?.getTime();
             if (servedAtMs && createdAtMs) {
                 durationMs = servedAtMs - createdAtMs;

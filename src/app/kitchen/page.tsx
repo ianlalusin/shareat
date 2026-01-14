@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -21,6 +22,7 @@ import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
+import { getKitchenTicketContribution, dailyAnalyticsDocRef } from "@/lib/analytics/daily";
 
 export type KitchenStation = {
     id: string;
@@ -159,6 +161,9 @@ export default function KitchenPage() {
         return;
     }
 
+    let oldTicketState: KitchenTicket | null = null;
+    let newTicketState: KitchenTicket | null = null;
+
     try {
         await runTransaction(db, async (transaction) => {
             const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
@@ -169,6 +174,7 @@ export default function KitchenPage() {
             }
 
             const ticket = ticketSnap.data() as KitchenTicket;
+            oldTicketState = ticket; // Capture old state
             
             // Idempotency check
             if (ticket.status === 'served' || ticket.status === 'cancelled') {
@@ -219,7 +225,30 @@ export default function KitchenPage() {
                 }
             }
             transaction.update(ticketRef, updatePayload);
+            newTicketState = { ...ticket, ...updatePayload }; // Capture new state
         });
+        
+        // --- Analytics Update (outside transaction) ---
+        if (oldTicketState && newTicketState) {
+            const oldContrib = getKitchenTicketContribution(oldTicketState);
+            const newContrib = getKitchenTicketContribution(newTicketState);
+
+            const deltaServed = newContrib.servedCount - oldContrib.servedCount;
+            const deltaCancelled = newContrib.cancelledCount - oldContrib.cancelledCount;
+            const deltaDurationSum = newContrib.durationMsSum - oldContrib.durationMsSum;
+            const deltaDurationCount = newContrib.durationCount - oldContrib.durationCount;
+
+            if (newContrib.dayId && (deltaServed !== 0 || deltaCancelled !== 0 || deltaDurationSum !== 0)) {
+                const analyticsRef = dailyAnalyticsDocRef(db, activeStore.id, newContrib.dayId);
+                const analyticsPayload: Record<string, any> = {};
+                if (deltaServed !== 0) analyticsPayload[`kitchen.servedCountByType.${newContrib.typeKey}`] = increment(deltaServed);
+                if (deltaCancelled !== 0) analyticsPayload[`kitchen.cancelledCountByType.${newContrib.typeKey}`] = increment(deltaCancelled);
+                if (deltaDurationSum !== 0) analyticsPayload[`kitchen.durationMsSumByType.${newContrib.typeKey}`] = increment(deltaDurationSum);
+                if (deltaDurationCount !== 0) analyticsPayload[`kitchen.durationCountByType.${newContrib.typeKey}`] = increment(deltaDurationCount);
+
+                await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed:", e));
+            }
+        }
 
         const ticket = tickets.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
