@@ -78,4 +78,3 @@ export function MonthlySalesTrendChart({ data, isLoading }: MonthlySalesTrendCha
         </Card>
     );
 }
-
