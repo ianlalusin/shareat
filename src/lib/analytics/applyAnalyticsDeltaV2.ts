@@ -248,10 +248,36 @@ export async function applyAnalyticsDeltaV2(
     if(dayNew.refill.packageSessionsCount !== dayOld.refill.packageSessionsCount) payload['refills.packageSessionsCount'] = increment(dayNew.refill.packageSessionsCount - dayOld.refill.packageSessionsCount);
     if(dayNew.refill.servedRefillsTotal !== dayOld.refill.servedRefillsTotal) payload['refills.servedRefillsTotal'] = increment(dayNew.refill.servedRefillsTotal - dayOld.refill.servedRefillsTotal);
 
-    const allRefillNames = new Set([...Object.keys(dayOld.refill.servedRefillsByName), ...Object.keys(dayNew.refill.servedRefillsByName)]);
-    allRefillNames.forEach(name => {
-        const delta = (dayNew.refill.servedRefillsByName[name] || 0) - (dayOld.refill.servedRefillsByName[name] || 0);
-        if(delta !== 0) payload[`refills.servedRefillsByName.${name}`] = increment(delta);
+    const allRefillNames = new Set([
+      ...Object.keys(dayOld.refills?.servedRefillsByName || {}),
+      ...Object.keys(dayNew.refills?.servedRefillsByName || {}),
+    ]);
+    
+    allRefillNames.forEach((refillName) => {
+      const oldQty = (dayOld.refills?.servedRefillsByName?.[refillName] ?? 0) as number;
+      const newQty = (dayNew.refills?.servedRefillsByName?.[refillName] ?? 0) as number;
+    
+      const qtyDelta = newQty - oldQty;
+      if (qtyDelta === 0) return;
+    
+      const refillId = toSafeDocId(refillName);
+    
+      const write = (parent: any) => {
+        const rRef = doc(parent, "refillItems", refillId);
+        batch.set(
+          rRef,
+          {
+            refillName,
+            qty: increment(qtyDelta),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      };
+    
+      write(dayRef);
+      write(monthRef);
+      write(yearRef);
     });
     
     batch.set(dayRef, payload, { merge: true });
