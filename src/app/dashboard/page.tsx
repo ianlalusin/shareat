@@ -57,6 +57,7 @@ export default function DashboardPage() {
         activeSessions,
         paymentMix,
         dailyMetrics,
+        topCategories,
         ytdData,
         trendRows,
         warnings
@@ -167,7 +168,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <Card className="lg:col-span-1"><TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/></Card>
-                            <div className="lg:col-span-2"><TopCategoryCard dailyMetrics={dailyMetrics} isLoading={isLoading} /></div>
+                            <div className="lg:col-span-2"><TopCategoryCard categorySales={topCategories} isLoading={isLoading} /></div>
                         </div>
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />

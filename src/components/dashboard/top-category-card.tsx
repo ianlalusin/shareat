@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -8,45 +7,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Receipt, ReceiptAnalyticsV2, DailyMetric } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
-interface TopCategoryCardProps {
-    dailyMetrics: DailyMetric[];
-    isLoading: boolean;
-}
-
-type CategoryTally = {
+type CategoryData = {
+    categoryName: string;
+    qty: number;
     amount: number;
 };
 
-export function TopCategoryCard({ dailyMetrics, isLoading }: TopCategoryCardProps) {
+interface TopCategoryCardProps {
+    categorySales: CategoryData[];
+    isLoading: boolean;
+}
+
+export function TopCategoryCard({ categorySales, isLoading }: TopCategoryCardProps) {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     
-    const { categorySales, hasData } = useMemo(() => {
-        const categoryTally: Record<string, CategoryTally> = {};
-        let hasAnalyticsData = false;
-
-        dailyMetrics.forEach(metric => {
-            const salesMap = metric.sales?.addonSalesAmountByCategory ?? {};
-            if (Object.keys(salesMap).length > 0) {
-                hasAnalyticsData = true;
-                for (const [categoryName, amount] of Object.entries(salesMap)) {
-                     if (!categoryTally[categoryName]) categoryTally[categoryName] = { amount: 0 };
-                     categoryTally[categoryName].amount += amount;
-                }
-            }
-        });
-        
-        return { 
-            categorySales: Object.entries(categoryTally).sort(([, a], [, b]) => b.amount - a.amount), 
-            hasData: hasAnalyticsData 
-        };
-    }, [dailyMetrics]);
-
-    const topCategories = categorySales.slice(0, 8);
+    const hasData = categorySales && categorySales.length > 0;
+    const topCategories = hasData ? categorySales.slice(0, 8) : [];
 
     if (isLoading) {
         return (
@@ -57,7 +35,7 @@ export function TopCategoryCard({ dailyMetrics, isLoading }: TopCategoryCardProp
         );
     }
     
-    if (!hasData || topCategories.length === 0) {
+    if (!hasData) {
         return (
              <Card>
                 <CardHeader><CardTitle>Top Add-on Categories</CardTitle></CardHeader>
@@ -89,9 +67,9 @@ export function TopCategoryCard({ dailyMetrics, isLoading }: TopCategoryCardProp
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {topCategories.map(([name, { amount }]) => (
-                                <TableRow key={name}>
-                                    <TableCell className="font-medium">{name}</TableCell>
+                            {topCategories.map(({ categoryName, amount }) => (
+                                <TableRow key={categoryName}>
+                                    <TableCell className="font-medium">{categoryName}</TableCell>
                                     <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                 </TableRow>
                             ))}
@@ -112,9 +90,9 @@ export function TopCategoryCard({ dailyMetrics, isLoading }: TopCategoryCardProp
                             <TableRow><TableHead>Category</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
                         </TableHeader>
                         <TableBody>
-                            {categorySales.map(([name, { amount }]) => (
-                                <TableRow key={name}>
-                                    <TableCell className="font-medium">{name}</TableCell>
+                            {categorySales.map(({ categoryName, amount }) => (
+                                <TableRow key={categoryName}>
+                                    <TableCell className="font-medium">{categoryName}</TableCell>
                                     <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                 </TableRow>
                             ))}

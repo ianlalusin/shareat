@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, doc, getDoc, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDoc, query, where, getDocs, onSnapshot, limit, orderBy, type DocumentReference } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { DailyMetric } from "@/lib/types";
 import { mergeWith } from "lodash";
@@ -11,6 +11,7 @@ export type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
+type AddonAgg = { itemName: string; categoryName: string; qty: number; amount: number };
 
 const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
 const EMPTY_TREND_ROWS = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, curGross: 0, prevGross: 0, curTx: 0, prevTx: 0 }));
@@ -55,6 +56,48 @@ export async function fetchYearDoc(db: any, storeId: string, year: number) {
   const snap = await getDoc(ref);
   return snap.exists() ? snap.data() : null;
 }
+
+// --- Top-N Addon Helpers ---
+function mergeAddonAgg(target: Map<string, AddonAgg>, row: any) {
+  const key = row.itemName;
+  const cur = target.get(key) ?? { itemName: row.itemName, categoryName: row.categoryName ?? "Uncategorized", qty: 0, amount: 0 };
+  cur.qty += row.qty ?? 0;
+  cur.amount += row.amount ?? 0;
+  if (!cur.categoryName && row.categoryName) cur.categoryName = row.categoryName;
+  target.set(key, cur);
+}
+
+async function fetchTopAddonsForRollupDocs(
+  rollupDocRefs: DocumentReference[],
+  topN = 10
+): Promise<AddonAgg[]> {
+  const merged = new Map<string, AddonAgg>();
+
+  await Promise.all(
+    rollupDocRefs.map(async (ref) => {
+      const itemsRef = collection(ref, "addonItems");
+      const q = query(itemsRef, orderBy("amount", "desc"), limit(topN));
+      const snap = await getDocs(q);
+      snap.forEach((d) => mergeAddonAgg(merged, d.data()));
+    })
+  );
+
+  return Array.from(merged.values())
+    .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+    .slice(0, topN);
+}
+
+function groupByCategory(items: AddonAgg[]) {
+  const byCat: Record<string, { categoryName: string; qty: number; amount: number }> = {};
+  for (const it of items) {
+    const k = it.categoryName || "Uncategorized";
+    byCat[k] = byCat[k] || { categoryName: k, qty: 0, amount: 0 };
+    byCat[k].qty += it.qty;
+    byCat[k].amount += it.amount;
+  }
+  return Object.values(byCat).sort((a, b) => b.amount - a.amount);
+}
+
 
 // --- Aggregation Helpers ---
 
@@ -124,6 +167,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     // --- STATE VARIABLES ---
     const [isLoading, setIsLoading] = useState(true);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
+    const [topCategories, setTopCategories] = useState<ReturnType<typeof groupByCategory>>([]);
     const [activeSessions, setActiveSessions] = useState(0);
     const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
     const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: {start: Date, end: Date} }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
@@ -180,7 +224,6 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const curMonthDailies = await fetchPartialDays(db, storeId, curMonthStart, tomorrowStart);
                 if (cancelled) return;
                 
-                // Leap day safe
                 const cutoffPrev = new Date(prevYear, today.getMonth(), Math.min(today.getDate(), 28));
                 const prevMonthStart = new Date(prevYear, currentMonthIndex, 1);
                 const dayAfterCutoffPrev = new Date(cutoffPrev);
@@ -201,6 +244,12 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 
                 setYtdData({ cur: finalCurYtd, prev: finalPrevYtd, range: {start: new Date(currentYear, 0, 1), end: today} });
                 
+                const monthIds = Array.from({ length: 12 }, (_, i) => `${currentYear}${String(i + 1).padStart(2, "0")}`);
+                const monthRefs = monthIds.map(id => doc(db, 'stores', storeId, 'analyticsMonths', id));
+                const topAddons = await fetchTopAddonsForRollupDocs(monthRefs, 20);
+                if(cancelled) return;
+                setTopCategories(groupByCategory(topAddons));
+
             } else {
                 setTrendRows([]); // Clear YTD data
                 setYtdData({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
@@ -211,6 +260,15 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const metrics = await fetchPartialDays(db, storeId, dateRange.start, tomorrowStart);
                 if (cancelled) return;
                 setDailyMetrics(metrics);
+                
+                if (metrics.length > 0) {
+                    const dayRefs = metrics.map(m => doc(db, 'stores', storeId, 'analytics', m.meta.dayId));
+                    const topAddons = await fetchTopAddonsForRollupDocs(dayRefs, 20);
+                    if(cancelled) return;
+                    setTopCategories(groupByCategory(topAddons));
+                } else {
+                    setTopCategories([]);
+                }
             }
         }
         
@@ -278,6 +336,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         activeSessions,
         paymentMix,
         dailyMetrics,
+        topCategories,
         ytdData,
         trendRows,
         warnings
