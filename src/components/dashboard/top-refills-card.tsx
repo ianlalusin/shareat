@@ -68,23 +68,38 @@ export function TopRefillsCard({ storeId, dateRange, topN = 5 }: TopRefillsCardP
         const q = query(
             metricsRef,
             where("meta.dayStartMs", ">=", startMs),
-            where("meta.dayStartMs", "<=", endMs)
+            where("meta.dayStartMs", "<=", endMs),
+            orderBy("meta.dayStartMs", "asc")
         );
 
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-            if (snapshot.empty) {
+        const unsubscribe = onSnapshot(
+            q,
+            async (snapshot) => {
+              try {
+                const fetchedMetrics = snapshot.docs.map((d) => d.data() as DailyMetric);
+        
+                // Build doc refs for each day analytics doc
+                const dayRefs = fetchedMetrics
+                  .map((m) => m?.meta?.dayId)
+                  .filter(Boolean)
+                  .map((dayId) => doc(db, "stores", storeId, "analytics", dayId as string));
+        
+                const topN = 50; // Fetch more for "View All"
+                const items = await fetchTopRefillsForRollupDocs(dayRefs, topN);
+        
+                setTopRefills(items);
+              } catch (err) {
+                console.error("Error fetching top refills:", err);
                 setTopRefills([]);
+              } finally {
                 setIsLoading(false);
-                return;
+              }
+            },
+            (error) => {
+              console.error("Error fetching refill analytics:", error);
+              setIsLoading(false);
             }
-            const dayRefs = snapshot.docs.map(d => d.ref);
-            const refills = await fetchTopRefillsForRollupDocs(dayRefs, 50); // Fetch more for "View All"
-            setTopRefills(refills);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching refill analytics:", error);
-            setIsLoading(false);
-        });
+          );
 
         return () => unsubscribe();
     }, [storeId, dateRange]);
