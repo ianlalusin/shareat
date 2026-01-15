@@ -332,6 +332,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     return {
         isLoading,
         dateRangeLabel,
+        dateRange,
         stats,
         activeSessions,
         paymentMix,

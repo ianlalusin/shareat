@@ -23,6 +23,7 @@ import { MonthlySalesTrendChart } from "@/components/dashboard/MonthlySalesTrend
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -53,6 +54,7 @@ export default function DashboardPage() {
     const {
         isLoading,
         dateRangeLabel,
+        dateRange,
         stats,
         activeSessions,
         paymentMix,
@@ -170,10 +172,10 @@ export default function DashboardPage() {
                             <Card className="lg:col-span-1"><TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/></Card>
                             <div className="lg:col-span-2"><TopCategoryCard categorySales={topCategories} isLoading={isLoading} /></div>
                         </div>
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
+                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <AvgRefillsCard storeId={activeStore.id} dateRange={dateRange} />
+                            <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} />
                         </div>
                     </>
                 )}
