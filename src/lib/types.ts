@@ -449,7 +449,7 @@ export type Receipt = {
     total: number;
     totalPaid: number;
     change: number;
-    status: 'final' | 'void';
+    status: 'final' | 'voided';
     receiptSeq: number;
     receiptNumber: string;
     receiptNoFormatUsed: string;
@@ -462,6 +462,11 @@ export type Receipt = {
     editedByEmail?: string | null;
     editReason?: string;
     lastDiffSummary?: string;
+    // Fields for voiding
+    voidedAt?: any;
+    voidedByUid?: string;
+    voidedByEmail?: string | null;
+    voidReason?: string;
 }
 
 export type ActivityLog = {
@@ -469,7 +474,7 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED";
+  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED" | "RECEIPT_VOIDED";
 
   actorUid: string;
   actorRole?: string | null;
@@ -509,6 +514,7 @@ export type ActivityLog = {
     amount?: number;
     editVersion?: number;
     diffSummary?: string;
+    reason?: string;
   };
 
   createdAt: any; // serverTimestamp()

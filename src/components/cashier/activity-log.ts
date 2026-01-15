@@ -39,7 +39,7 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
     const logDocRef = doc(collection(db, `stores/${storeId}/sessions/${sessionId}/activityLogs`));
     
     // Combine explicit meta with the qty if it exists
-    const meta = { ...rest.meta, ...(qty !== undefined && { qty }) };
+    const meta = { ...rest.meta, ...(qty !== undefined && { qty }), ...(rest.reason && { reason: rest.reason }) };
 
     const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
       storeId,

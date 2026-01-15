@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
@@ -83,7 +83,7 @@ export default function ReceiptsPageContents() {
     const [editingReceipt, setEditingReceipt] = useState<ReceiptType | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
-    const [isDeleting, setIsDeleting] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -265,69 +265,69 @@ export default function ReceiptsPageContents() {
     }
 
     const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
-        if (!appUser || !activeStore || !editingReceipt) return;
-      
-        try {
-          const batch = writeBatch(db);
-          const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
-      
-          const nextVersion = (editingReceipt.editVersion || 0) + 1;
-          const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
-          const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-      
-          // 1) Write revision snapshot (old receipt)
-          batch.set(revisionRef, {
-            version: nextVersion,
-            editedAt: serverTimestamp(),
-            editedByUid: appUser.uid,
-            editedByEmail: appUser.email,
-            reason,
-            snapshot: editingReceipt,
-          });
-      
-          // 2) Overwrite original receipt (new receipt)
-          batch.update(originalReceiptRef, {
-            ...updatedReceipt,
-            isEdited: true,
+      if (!appUser || !activeStore || !editingReceipt) return;
+    
+      try {
+        const batch = writeBatch(db);
+        const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
+    
+        const nextVersion = (editingReceipt.editVersion || 0) + 1;
+        const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
+        const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
+    
+        // 1) Write revision snapshot (old receipt)
+        batch.set(revisionRef, {
+          version: nextVersion,
+          editedAt: serverTimestamp(),
+          editedByUid: appUser.uid,
+          editedByEmail: appUser.email,
+          reason,
+          snapshot: editingReceipt,
+        });
+    
+        // 2) Overwrite original receipt (new receipt)
+        batch.update(originalReceiptRef, {
+          ...updatedReceipt,
+          isEdited: true,
+          editVersion: nextVersion,
+          editedAt: serverTimestamp(),
+          editedByUid: appUser.uid,
+          editedByEmail: appUser.email,
+          editReason: reason,
+        });
+    
+        // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
+        await applyAnalyticsDeltaV2(
+          db,
+          activeStore.id,
+          editingReceipt,
+          updatedReceipt as ReceiptType,
+          { batch }
+        );
+    
+        // 4) Commit once
+        await batch.commit();
+    
+        // 5) Log activity (can stay outside batch)
+        await writeActivityLog({
+          action: "RECEIPT_EDITED",
+          storeId: activeStore.id,
+          sessionId: editingReceipt.sessionId,
+          user: appUser,
+          meta: {
+            receiptId: editingReceipt.id,
+            receiptNumber: editingReceipt.receiptNumber,
             editVersion: nextVersion,
-            editedAt: serverTimestamp(),
-            editedByUid: appUser.uid,
-            editedByEmail: appUser.email,
-            editReason: reason,
-          });
-      
-          // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
-          await applyAnalyticsDeltaV2(
-            db,
-            activeStore.id,
-            editingReceipt,
-            updatedReceipt as ReceiptType,
-            { batch }
-          );
-      
-          // 4) Commit once
-          await batch.commit();
-      
-          // 5) Log activity (can stay outside batch)
-          await writeActivityLog({
-            action: "RECEIPT_EDITED",
-            storeId: activeStore.id,
-            sessionId: editingReceipt.sessionId,
-            user: appUser,
-            meta: {
-              receiptId: editingReceipt.id,
-              receiptNumber: editingReceipt.receiptNumber,
-              editVersion: nextVersion,
-            },
-          });
-      
-          toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
-          setEditingReceipt(null);
-        } catch (error: any) {
-          toast({ variant: "destructive", title: "Correction Failed", description: error.message });
-          throw error;
-        }
-      };
+          },
+        });
+    
+        toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
+        setEditingReceipt(null);
+      } catch (error: any) {
+        toast({ variant: "destructive", title: "Correction Failed", description: error.message });
+        throw error;
+      }
+    };
 
 
     useEffect(() => {
@@ -414,50 +414,38 @@ export default function ReceiptsPageContents() {
         }
     }
 
-    const handleDeleteReceipt = async (receipt: ReceiptType) => {
-        if (!appUser || !activeStore || appUser.role !== 'admin') {
-            toast({ variant: 'destructive', title: "Permission Denied" });
-            return;
-        }
-
-        const confirmed = await confirm({
-            title: `Delete Receipt ${receipt.receiptNumber}?`,
-            description: "This action is irreversible and will permanently delete the receipt. This cannot be undone.",
-            confirmText: "Yes, Delete Permanently",
-            destructive: true,
+    const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
+      if (!appUser || !activeStore) return;
+    
+      try {
+        const batch = writeBatch(db);
+        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
+    
+        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+    
+        batch.update(receiptRef, {
+          status: "voided",
+          voidedAt: serverTimestamp(),
+          voidedByUid: appUser.uid,
+          voidedByEmail: appUser.email,
+          voidReason: reason,
         });
-
-        if (!confirmed) return;
-
-        setIsDeleting(receipt.id);
-        try {
-            const batch = writeBatch(db);
-
-            // Apply analytics delta for deletion (oldReceipt -> null) within the batch
-            await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
-
-            // Add the delete operation to the batch
-            batch.delete(doc(db, "stores", activeStore.id, "receipts", receipt.id));
-
-            // Commit the atomic operation
-            await batch.commit();
-
-            await writeActivityLog({
-                action: "RECEIPT_DELETED",
-                storeId: activeStore.id,
-                sessionId: receipt.sessionId,
-                user: appUser,
-                meta: { receiptNumber: receipt.receiptNumber, amount: receipt.total }
-            });
-            toast({ title: "Receipt Deleted", description: `Receipt ${receipt.receiptNumber} has been removed.` });
-            if (selectedReceiptId === receipt.id) {
-                setSelectedReceiptId(null);
-            }
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
-        } finally {
-            setIsDeleting(null);
-        }
+    
+        await batch.commit();
+    
+        await writeActivityLog({
+          action: "RECEIPT_VOIDED",
+          storeId: activeStore.id,
+          sessionId: receipt.sessionId,
+          user: appUser,
+          meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
+        });
+    
+        toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
+      } catch (error: any) {
+        toast({ variant: "destructive", title: "Void Failed", description: error.message });
+        throw error;
+      }
     };
 
     const handleExport = async () => {
@@ -563,6 +551,15 @@ export default function ReceiptsPageContents() {
         setIsCalendarOpen(false);
     };
 
+    const handleVoidClick = async (receipt: ReceiptType) => {
+      const reason = prompt("Please provide a reason for voiding this receipt:");
+      if (reason) {
+        setIsProcessing(receipt.id);
+        await handleVoidReceipt(receipt, reason);
+        setIsProcessing(null);
+      }
+    }
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -631,21 +628,21 @@ export default function ReceiptsPageContents() {
                                         <TableRow 
                                             key={r.id} 
                                             onClick={() => handleSelectReceipt(r.id)}
-                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted")}
+                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
                                         >
                                             <TableCell className="font-medium py-2">
-                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName}</div>
-                                                <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
+                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
+                                                <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
                                                 <TableCell className="text-right py-2">
-                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2">
+                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2" disabled={r.status === 'voided'}>
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
                                                     {appUser?.role === 'admin' && (
-                                                        <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
-                                                            {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
+                                                         <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleVoidClick(r); }} disabled={isProcessing === r.id || r.status === 'voided'}>
+                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
                                                         </Button>
                                                     )}
                                                 </TableCell>
