@@ -371,12 +371,16 @@ export type DailyMetric = {
         packageSessionsCount: number;
         packageCoversBilledByPackageName: {
             [packageName: string]: number;
+        };
+        guestCountFinalByPackageName: {
+            [packageName: string]: number;
         }
     };
     sales?: {
         packageSalesAmountByName: Record<string, number>;
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
+        addonSalesByItem: Record<string, { qty: number, amount: number }>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
     };
@@ -412,6 +416,7 @@ export type ReceiptAnalyticsV2 = {
   mop: Record<string, number>;
   salesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
   salesByCategory?: Record<string, { qty: number; amount: number; }>;
+  addonSalesByItem?: Record<string, { qty: number; amount: number; }>; // New field
   servedRefillsByName?: Record<string, number>;
   serveCountByType?: Record<string, number>;
   serveTimeMsTotalByType?: Record<string, number>;

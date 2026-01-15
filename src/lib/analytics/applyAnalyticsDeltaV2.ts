@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -6,6 +7,7 @@ import {
   type Firestore,
   increment,
   serverTimestamp,
+  setDoc,
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import type { Receipt } from '@/lib/types';
@@ -61,68 +63,105 @@ export async function applyAnalyticsDeltaV2(
   const affectedDayIds = new Set<string>();
   if (oldContrib.payment.dayId) affectedDayIds.add(oldContrib.payment.dayId);
   if (newContrib.payment.dayId) affectedDayIds.add(newContrib.payment.dayId);
-  if (affectedDayIds.size === 0) return; // Nothing to do
+  if (affectedDayIds.size === 0) {
+    console.warn("[applyAnalyticsDeltaV2] No valid dayId found for delta operation. Skipping.");
+    return;
+  }
 
   const batch = writeBatch(db);
 
-  // --- Payment Deltas ---
-  const paymentDelta = {
-    totalGross: newContrib.payment.totalGross - oldContrib.payment.totalGross,
-    txCount: newContrib.payment.txCount - oldContrib.payment.txCount,
-  };
-  const allPaymentMethods = new Set([
-    ...Object.keys(oldContrib.payment.byMethod),
-    ...Object.keys(newContrib.payment.byMethod),
-  ]);
-
-  // --- Guest Deltas ---
-  const guestDelta = {
-    guestCountFinalTotal: newContrib.guest.guestCountFinal - oldContrib.guest.guestCountFinal,
-    packageSessionsCount: newContrib.guest.packageSessionsCount - oldContrib.guest.packageSessionsCount,
-  };
-  const allPackageNames = new Set([
-    oldContrib.guest.packageName,
-    newContrib.guest.packageName,
-  ].filter(Boolean) as string[]);
-
-
-  // --- Process Each Day ---
   for (const dayId of affectedDayIds) {
-    const isOldDay = dayId === oldContrib.payment.dayId;
-    const isNewDay = dayId === newContrib.payment.dayId;
-
-    const docRef = dailyAnalyticsDocRef(db, storeId, dayId);
     let payload: Record<string, any> = {
       meta: { dayId, storeId, updatedAt: serverTimestamp() },
     };
+    
+    // Determine the contribution sets to use for this day
+    const dayOld = (oldReceipt && oldContrib.payment.dayId === dayId) ? oldContrib : getContributions(null);
+    const dayNew = (newReceipt && newContrib.payment.dayId === dayId) ? newContrib : getContributions(null);
 
-    // Payments
-    if (paymentDelta.totalGross !== 0) payload['payments.totalGross'] = increment(isNewDay ? paymentDelta.totalGross : -oldContrib.payment.totalGross);
-    if (paymentDelta.txCount !== 0) payload['payments.txCount'] = increment(isNewDay ? paymentDelta.txCount : -oldContrib.payment.txCount);
+    // --- Payments Delta ---
+    const paymentDelta = {
+      totalGross: dayNew.payment.totalGross - dayOld.payment.totalGross,
+      txCount: dayNew.payment.txCount - dayOld.payment.txCount,
+    };
+    if (paymentDelta.totalGross !== 0) payload['payments.totalGross'] = increment(paymentDelta.totalGross);
+    if (paymentDelta.txCount !== 0) payload['payments.txCount'] = increment(paymentDelta.txCount);
+    
+    const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(dayNew.payment.byMethod)]);
     allPaymentMethods.forEach(method => {
-      const oldAmount = oldContrib.payment.byMethod[method] || 0;
-      const newAmount = newContrib.payment.byMethod[method] || 0;
-      const delta = newAmount - oldAmount;
-      if (delta !== 0) payload[`payments.byMethod.${method}`] = increment(isNewDay ? delta : -oldAmount);
+      const delta = (dayNew.payment.byMethod[method] || 0) - (dayOld.payment.byMethod[method] || 0);
+      if (delta !== 0) payload[`payments.byMethod.${method}`] = increment(delta);
     });
 
-    // Guests
-    if (guestDelta.guestCountFinalTotal !== 0) payload['guests.guestCountFinalTotal'] = increment(isNewDay ? guestDelta.guestCountFinalTotal : -oldContrib.guest.guestCountFinalTotal);
-    if (guestDelta.packageSessionsCount !== 0) payload['guests.packageSessionsCount'] = increment(isNewDay ? guestDelta.packageSessionsCount : -oldContrib.guest.packageSessionsCount);
-    allPackageNames.forEach(name => {
-      const oldVal = (oldContrib.guest.packageName === name) ? oldContrib.guest.billedPackageCovers : 0;
-      const newVal = (newContrib.guest.packageName === name) ? newContrib.guest.billedPackageCovers : 0;
-      const delta = newVal - oldVal;
-      if (delta !== 0) payload[`guests.packageCoversBilledByPackageName.${name}`] = increment(isNewDay ? delta : -oldVal);
-      
-      const oldFinalGuests = (oldContrib.guest.packageName === name) ? oldContrib.guest.guestCountFinal : 0;
-      const newFinalGuests = (newContrib.guest.packageName === name) ? newContrib.guest.guestCountFinal : 0;
-      const finalGuestsDelta = newFinalGuests - oldFinalGuests;
-      if (finalGuestsDelta !== 0) payload[`guests.guestCountFinalByPackageName.${name}`] = increment(isNewDay ? finalGuestsDelta : -oldFinalGuests);
+    // --- Guests Delta ---
+    const guestDelta = {
+      guestCountFinalTotal: dayNew.guest.guestCountFinal - dayOld.guest.guestCountFinal,
+      packageSessionsCount: dayNew.guest.packageSessionsCount - dayOld.guest.packageSessionsCount,
+    };
+    if (guestDelta.guestCountFinalTotal !== 0) payload['guests.guestCountFinalTotal'] = increment(guestDelta.guestCountFinalTotal);
+    if (guestDelta.packageSessionsCount !== 0) payload['guests.packageSessionsCount'] = increment(guestDelta.packageSessionsCount);
+    
+    const allGuestPkgNames = new Set([...Object.keys(dayOld.guest.guestCountFinalByPackageName), ...Object.keys(dayNew.guest.guestCountFinalByPackageName)]);
+    allGuestPkgNames.forEach(name => {
+        const delta = (dayNew.guest.guestCountFinalByPackageName[name] || 0) - (dayOld.guest.guestCountFinalByPackageName[name] || 0);
+        if (delta !== 0) payload[`guests.guestCountFinalByPackageName.${name}`] = increment(delta);
     });
 
-    // ... other contributions (sales, peak, etc.) would follow a similar pattern ...
 
+    // --- Sales Delta ---
+    const allSalesPkgNames = new Set([...Object.keys(dayOld.sales.packageSalesAmountByName), ...Object.keys(newContrib.sales.packageSalesAmountByName)]);
+    allSalesPkgNames.forEach(name => {
+        const amountDelta = (dayNew.sales.packageSalesAmountByName[name] || 0) - (dayOld.sales.packageSalesAmountByName[name] || 0);
+        const qtyDelta = (dayNew.sales.packageSalesQtyByName[name] || 0) - (dayOld.sales.packageSalesQtyByName[name] || 0);
+        if(amountDelta !== 0) payload[`sales.packageSalesAmountByName.${name}`] = increment(amountDelta);
+        if(qtyDelta !== 0) payload[`sales.packageSalesQtyByName.${name}`] = increment(qtyDelta);
+    });
+    
+    const allAddonCategories = new Set([...Object.keys(dayOld.sales.addonSalesAmountByCategory), ...Object.keys(dayNew.sales.addonSalesAmountByCategory)]);
+    allAddonCategories.forEach(cat => {
+        const delta = (dayNew.sales.addonSalesAmountByCategory[cat] || 0) - (dayOld.sales.addonSalesAmountByCategory[cat] || 0);
+        if (delta !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(delta);
+    });
+
+     const allAddonItems = new Set([...Object.keys(dayOld.sales.addonSalesByItem), ...Object.keys(dayNew.sales.addonSalesByItem)]);
+     allAddonItems.forEach(item => {
+        const qtyDelta = (dayNew.sales.addonSalesByItem[item]?.qty || 0) - (dayOld.sales.addonSalesByItem[item]?.qty || 0);
+        const amountDelta = (dayNew.sales.addonSalesByItem[item]?.amount || 0) - (dayOld.sales.addonSalesByItem[item]?.amount || 0);
+        if(qtyDelta !== 0) payload[`sales.addonSalesByItem.${item}.qty`] = increment(qtyDelta);
+        if(amountDelta !== 0) payload[`sales.addonSalesByItem.${item}.amount`] = increment(amountDelta);
+    });
+
+
+    // --- Peak Hour Delta ---
+    if (dayOld.peak.hourKey !== dayNew.peak.hourKey) {
+        if(dayOld.peak.hourKey) {
+          payload[`sales.salesAmountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.amount);
+          payload[`sales.sessionCountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.count);
+        }
+        if(dayNew.peak.hourKey) {
+          payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.amount);
+          payload[`sales.sessionCountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.count);
+        }
+    } else if (dayNew.peak.hourKey && (dayNew.peak.amount !== dayOld.peak.amount)) {
+        const amountDelta = dayNew.peak.amount - dayOld.peak.amount;
+        if(amountDelta !== 0) payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(amountDelta);
+    }
+    
+    // --- Closed Sessions Delta ---
+    if (dayNew.closed.closedCount !== dayOld.closed.closedCount) payload['sessions.closedCount'] = increment(dayNew.closed.closedCount - dayOld.closed.closedCount);
+    if (dayNew.closed.totalPaid !== dayOld.closed.totalPaid) payload['sessions.totalPaid'] = increment(dayNew.closed.totalPaid - dayOld.closed.totalPaid);
+
+    // --- Refills Delta ---
+    if(dayNew.refill.packageSessionsCount !== dayOld.refill.packageSessionsCount) payload['refills.packageSessionsCount'] = increment(dayNew.refill.packageSessionsCount - dayOld.refill.packageSessionsCount);
+    if(dayNew.refill.servedRefillsTotal !== dayOld.refill.servedRefillsTotal) payload['refills.servedRefillsTotal'] = increment(dayNew.refill.servedRefillsTotal - dayOld.refill.servedRefillsTotal);
+
+    const allRefillNames = new Set([...Object.keys(dayOld.refill.servedRefillsByName), ...Object.keys(dayNew.refill.servedRefillsByName)]);
+    allRefillNames.forEach(name => {
+        const delta = (dayNew.refill.servedRefillsByName[name] || 0) - (dayOld.refill.servedRefillsByName[name] || 0);
+        if(delta !== 0) payload[`refills.servedRefillsByName.${name}`] = increment(delta);
+    });
+    
+    const docRef = dailyAnalyticsDocRef(db, storeId, dayId);
     batch.set(docRef, payload, { merge: true });
   }
 

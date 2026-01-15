@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { doc, type Firestore } from "firebase/firestore";
@@ -13,7 +14,13 @@ import { toJsDate } from "@/lib/utils/date";
  * @returns The millisecond epoch time for midnight.
  */
 export function getDayStartMs(ts: Timestamp | Date | number): number {
-    const date = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+    const date = toJsDate(ts);
+    if (!date) {
+        // Fallback to current time if timestamp is invalid to avoid crashing.
+        const now = new Date();
+        now.setHours(0,0,0,0);
+        return now.getTime();
+    };
     
     // Create a new Date object representing midnight in the UTC of the *local* machine,
     // but with the date parts from the 'Asia/Manila' timezone.
@@ -29,10 +36,22 @@ export function getDayStartMs(ts: Timestamp | Date | number): number {
  * into a `YYYYMMDD` string formatted for the 'Asia/Manila' timezone.
  *
  * @param ts The timestamp to convert.
- * @returns A string in `YYYYMMDD` format.
+ * @returns A string in `YYYYMMDD` format, or today's date string as a fallback.
  */
-export function getDayIdFromTimestamp(ts: Timestamp | Date | number): string {
-    const date = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+export function getDayIdFromTimestamp(ts: Timestamp | Date | number | null | undefined): string {
+    const date = toJsDate(ts);
+
+    // If date is invalid or null, fallback to today's date in Asia/Manila.
+    if (!date || isNaN(date.getTime())) {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            timeZone: 'Asia/Manila',
+        });
+        return formatter.format(now).replace(/-/g, '');
+    }
     
     const formatter = new Intl.DateTimeFormat('en-CA', {
         year: 'numeric',
@@ -41,13 +60,21 @@ export function getDayIdFromTimestamp(ts: Timestamp | Date | number): string {
         timeZone: 'Asia/Manila',
     });
 
-    // The 'en-CA' locale conveniently formats dates as YYYY-MM-DD
-    return formatter.format(date).replace(/-/g, '');
+    const dayId = formatter.format(date).replace(/-/g, '');
+
+    // Final safety check to prevent the "1970" bug from invalid timestamps.
+    if (dayId.startsWith('1970') || dayId.startsWith('1969')) {
+        const now = new Date();
+        return formatter.format(now).replace(/-/g, '');
+    }
+
+    return dayId;
 }
 
 
 /**
  * Returns a DocumentReference to a daily analytics document for a specific store.
+ * The canonical path is stores/{storeId}/analytics/{YYYYMMDD}.
  *
  * @param db The Firestore instance.
  * @param storeId The ID of the store.
@@ -71,8 +98,9 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
     const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {} };
     if (!receipt) return defaultReturn;
     
-    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
-    if (!createdAtMs) return defaultReturn;
+    // Prioritize client-side timestamp for dayId generation
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
 
     const byMethod: Record<string, number> = {};
     const analytics = (receipt.analytics || {}) as ReceiptAnalyticsV2;
@@ -92,8 +120,8 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
     }
 
     return {
-        dayId: getDayIdFromTimestamp(createdAtMs),
-        dayStartMs: getDayStartMs(createdAtMs),
+        dayId: getDayIdFromTimestamp(eventMs),
+        dayStartMs: getDayStartMs(eventMs),
         totalGross: receipt.total,
         txCount: 1,
         byMethod: byMethod,
@@ -110,38 +138,37 @@ type GuestCoversContribution = {
     billedPackageCovers: number;
     packageName: string | null;
     packageSessionsCount: number;
+    guestCountFinalByPackageName: Record<string, number>;
 };
 
-/**
- * Extracts the contribution of a single receipt to the daily guest/cover metrics.
- * @param receipt The receipt document data.
- * @returns An object with the receipt's contribution, or zeros if not applicable.
- */
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0, guestCountFinalByPackageName: {} };
     
-    if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.guestCountSnapshot) {
+    if (!receipt || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
     }
 
     const snapshot = receipt.analytics.guestCountSnapshot;
+    if (!snapshot) return defaultReturn;
     
-    // Ensure createdAt is valid before generating dayId
-    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
-    if (!createdAtMs) {
-        return defaultReturn;
-    }
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
     
     const packageName = snapshot.packageName || "Unknown Package";
+    const guestCountFinalByPackageName: Record<string, number> = {};
+    if (packageName) {
+        guestCountFinalByPackageName[packageName] = snapshot.finalGuestCount || 0;
+    }
 
     return {
-        dayId: getDayIdFromTimestamp(createdAtMs),
-        dayStartMs: getDayStartMs(createdAtMs),
+        dayId: getDayIdFromTimestamp(eventMs),
+        dayStartMs: getDayStartMs(eventMs),
         isPackageSession: true,
         guestCountFinal: snapshot.finalGuestCount || 0,
         billedPackageCovers: snapshot.billedPackageCovers || 0,
         packageName: packageName,
         packageSessionsCount: 1,
+        guestCountFinalByPackageName: guestCountFinalByPackageName,
     };
 }
 
@@ -152,39 +179,45 @@ type SalesContribution = {
     packageSalesAmountByName: Record<string, number>;
     packageSalesQtyByName: Record<string, number>;
     addonSalesAmountByCategory: Record<string, number>;
+    addonSalesByItem: Record<string, { qty: number; amount: number; }>;
 };
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {} };
-    if (!receipt) return defaultReturn;
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesByItem: {} };
+    if (!receipt || receipt.analytics?.v !== 2) return defaultReturn;
     
-    const analytics = (receipt?.analytics ?? {}) as ReceiptAnalyticsV2;
-    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
-    const dayId = createdAtMs ? getDayIdFromTimestamp(createdAtMs) : "";
-    const dayStartMs = createdAtMs ? getDayStartMs(createdAtMs) : 0;
+    const analytics = receipt.analytics as ReceiptAnalyticsV2;
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    const dayId = eventMs ? getDayIdFromTimestamp(eventMs) : "";
+    const dayStartMs = eventMs ? getDayStartMs(eventMs) : 0;
 
     const packageSalesAmountByName: Record<string, number> = {};
     const packageSalesQtyByName: Record<string, number> = {};
     const addonSalesAmountByCategory: Record<string, number> = {};
+    const addonSalesByItem: Record<string, { qty: number; amount: number; }> = {};
 
-    if (analytics.v === 2) {
-        // Aggregate packages from salesByItem
-        if (analytics.salesByItem) {
-            for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-                // The rule for identifying a package is that it has no category or is 'Uncategorized'
-                if (!values.categoryName || values.categoryName === "Uncategorized") {
-                    packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
-                    packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
+
+    if (analytics.salesByItem) {
+        for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
+            if (!values.categoryName || values.categoryName === "Uncategorized") {
+                packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
+                packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
+            } else {
+                 if (!addonSalesByItem[itemName]) {
+                    addonSalesByItem[itemName] = { qty: 0, amount: 0 };
                 }
-            }
-        }
-        // Aggregate addons from salesByCategory
-        if (analytics.salesByCategory) {
-            for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
-                addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + values.amount;
+                addonSalesByItem[itemName].qty += values.qty;
+                addonSalesByItem[itemName].amount += values.amount;
             }
         }
     }
+
+    if (analytics.salesByCategory) {
+        for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
+            addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + values.amount;
+        }
+    }
+
 
     return {
         dayId,
@@ -192,6 +225,7 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
         packageSalesAmountByName,
         packageSalesQtyByName,
         addonSalesAmountByCategory,
+        addonSalesByItem
     };
 }
 
@@ -206,20 +240,16 @@ type PeakHourContribution = {
 
 export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
-    if (!receipt) return defaultReturn;
+    if (!receipt || receipt.analytics?.v !== 2) return defaultReturn;
     
-    // Use session start time first, fallback to receipt creation time
-    const primaryTs = receipt.analytics?.sessionStartedAt;
-    const primaryMs = receipt.analytics?.sessionStartedAtClientMs;
-    const fallbackTs = receipt.createdAt;
+    // Use session start time first, which is more accurate for peak hour calculation
+    const eventMs = receipt.analytics.sessionStartedAtClientMs || toJsDate(receipt.analytics.sessionStartedAt)?.getTime();
+    if (!eventMs) return defaultReturn;
     
-    const date = toJsDate(primaryTs) ?? (primaryMs ? new Date(primaryMs) : toJsDate(fallbackTs));
-
-    if (!date) return defaultReturn;
-    
+    const date = new Date(eventMs);
     const dayId = getDayIdFromTimestamp(date);
     const dayStartMs = getDayStartMs(date);
-    const hour = date.getHours(); // Local hour based on server's timezone, or Asia/Manila if consistent
+    const hour = date.getHours();
 
     return {
         dayId: dayId,
@@ -241,29 +271,23 @@ type KitchenTicketContribution = {
     durationCount: number; // Count of tickets with a valid duration
 };
 
-/**
- * Extracts the contribution of a single kitchen ticket to daily kitchen analytics.
- * This should be called when a ticket reaches a final state (served or cancelled).
- * @param ticket The KitchenTicket object.
- * @returns An object with the ticket's contribution to daily metrics.
- */
 export function getKitchenTicketContribution(ticket: KitchenTicket): KitchenTicketContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, typeKey: "unknown", servedCount: 0, cancelledCount: 0, durationMsSum: 0, durationCount: 0 };
     
-    const timestamp = ticket.servedAt || ticket.cancelledAt || ticket.createdAt;
-    if (!timestamp) return defaultReturn;
+    // Use client-side timestamp if available for dayId generation
+    const eventMs = ticket.servedAtClientMs || toJsDate(ticket.servedAt || ticket.cancelledAt || ticket.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
     
-    const dayId = getDayIdFromTimestamp(toJsDate(timestamp)!);
-    const dayStartMs = getDayStartMs(toJsDate(timestamp)!);
+    const dayId = getDayIdFromTimestamp(eventMs);
+    const dayStartMs = getDayStartMs(eventMs);
     const typeKey = ticket.type || "unknown";
 
     if (ticket.status === 'served') {
         let durationMs = ticket.durationMs ?? 0;
-        if (durationMs <= 0) {
-            const servedAtMs = ticket.servedAtClientMs || toJsDate(ticket.servedAt)?.getTime();
+        if (durationMs <= 0 && ticket.servedAtClientMs) {
             const createdAtMs = toJsDate(ticket.createdAt)?.getTime();
-            if (servedAtMs && createdAtMs) {
-                durationMs = servedAtMs - createdAtMs;
+            if (createdAtMs) {
+                durationMs = ticket.servedAtClientMs - createdAtMs;
             }
         }
         
@@ -306,12 +330,12 @@ export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSe
     const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
     if (!receipt) return defaultReturn;
 
-    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
-    if (!createdAtMs) return defaultReturn;
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
 
     return {
-        dayId: getDayIdFromTimestamp(createdAtMs),
-        dayStartMs: getDayStartMs(createdAtMs),
+        dayId: getDayIdFromTimestamp(eventMs),
+        dayStartMs: getDayStartMs(eventMs),
         closedCount: 1,
         totalPaid: receipt.total ?? 0,
     };
@@ -329,20 +353,20 @@ type RefillContribution = {
 
 export function getRefillContribution(receipt: Receipt | null): RefillContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 };
-    if (!receipt || receipt.sessionMode !== 'package_dinein' || !receipt.analytics?.v) {
+    if (!receipt || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
     }
     
-    const createdAtMs = receipt.createdAtClientMs || receipt.createdAt?.toMillis();
-    if (!createdAtMs) return defaultReturn;
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
     
     const analytics = receipt.analytics as ReceiptAnalyticsV2;
     const servedRefillsByName = analytics.servedRefillsByName ?? {};
     const servedRefillsTotal = Object.values(servedRefillsByName).reduce((sum, count) => sum + count, 0);
 
     return {
-        dayId: getDayIdFromTimestamp(createdAtMs),
-        dayStartMs: getDayStartMs(createdAtMs),
+        dayId: getDayIdFromTimestamp(eventMs),
+        dayStartMs: getDayStartMs(eventMs),
         servedRefillsTotal,
         servedRefillsByName,
         packageSessionsCount: 1,
