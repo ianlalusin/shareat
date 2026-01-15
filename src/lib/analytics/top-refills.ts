@@ -17,15 +17,26 @@ export async function fetchTopRefillsForRollupDocs(
 ): Promise<RefillAgg[]> {
   const merged = new Map<string, RefillAgg>();
 
-  // For each rollup doc, read its refillItems subcollection TopN
-  await Promise.all(
+  // Use Promise.allSettled to handle potential errors in individual queries gracefully.
+  const results = await Promise.allSettled(
     rollupDocRefs.map(async (ref) => {
       const itemsRef = collection(ref, "refillItems");
       const q = query(itemsRef, orderBy("qty", "desc"), limit(topN));
-      const snap = await getDocs(q);
-      snap.forEach((d) => mergeRefillAgg(merged, d.data()));
+      return getDocs(q);
     })
   );
+
+  // Process only the fulfilled promises.
+  results.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      const snap = result.value;
+      snap.forEach((d) => mergeRefillAgg(merged, d.data()));
+    } else {
+      // Optionally log the error for debugging without stopping the process.
+      console.warn("A subcollection query failed in fetchTopRefillsForRollupDocs:", result.reason);
+    }
+  });
+
 
   // Final TopN across the whole range
   return Array.from(merged.values())
