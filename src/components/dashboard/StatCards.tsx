@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,7 +26,7 @@ const PesoSign = ({ className }: { className?: string }) => (
 
 
 export type DashboardStats = {
-    grossSales: number;
+    netSales: number;
     transactions: number;
     avgBasket: number;
 };
@@ -66,10 +65,12 @@ function StatCard({ title, value, icon, isLoading, format = "number" }: { title:
 export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) {
     return (
         <>
-            <StatCard title="Gross Sales" value={stats.grossSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
+            <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
             {activeSessions !== undefined && <StatCard title="Active Sessions" value={activeSessions} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
             <StatCard title="Average Basket" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
         </>
     );
 }
+
+    

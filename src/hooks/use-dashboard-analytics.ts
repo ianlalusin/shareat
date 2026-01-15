@@ -8,11 +8,11 @@ import type { DailyMetric } from "@/lib/types";
 import { mergeWith } from "lodash";
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
-export type DashboardStats = { grossSales: number; transactions: number; avgBasket: number; };
+export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
 
-const NULL_YTD_TALLY: YtdTally = { grossSales: 0, transactions: 0, avgBasket: 0, mop: {} };
+const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
 const EMPTY_TREND_ROWS = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, curGross: 0, prevGross: 0, curTx: 0, prevTx: 0 }));
 
 // --- Date Helpers ---
@@ -72,7 +72,7 @@ function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
     const byMethod = d?.payments?.byMethod ?? {};
     for (const [k, v] of Object.entries(byMethod)) mop[k] = (mop[k] || 0) + (v as number);
   }
-  return { grossSales: gross, transactions: tx, avgBasket: tx > 0 ? gross / tx : 0, mop };
+  return { netSales: gross, transactions: tx, avgBasket: tx > 0 ? gross / tx : 0, mop };
 }
 
 function buildMonthlyTrendRows(curMonths: any[], prevMonths: any[]): TrendRow[] {
@@ -90,9 +90,9 @@ function buildMonthlyTrendRows(curMonths: any[], prevMonths: any[]): TrendRow[] 
 }
 
 function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
-    const grossSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
+    const netSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
     const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
-    const avgBasket = transactions > 0 ? grossSales / transactions : 0;
+    const avgBasket = transactions > 0 ? netSales / transactions : 0;
     const mop: Record<string, number> = {};
     dailyMetrics.forEach(metric => {
         const methods = metric.payments?.byMethod ?? {};
@@ -100,7 +100,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
             mop[method] = (mop[method] || 0) + amount;
         }
     });
-    return { grossSales, transactions, avgBasket, mop };
+    return { netSales, transactions, avgBasket, mop };
 }
 
 function customMerger(objValue: any, srcValue: any) {
@@ -191,12 +191,12 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const curFullMonthsTotal = sumMonthsUpTo(curYearMonths, currentMonthIndex);
                 const curPartialMonthTotal = aggregateDailies(curMonthDailies);
                 const finalCurYtd = mergeWith({}, curFullMonthsTotal, curPartialMonthTotal, customMerger);
-                finalCurYtd.avgBasket = finalCurYtd.transactions > 0 ? finalCurYtd.grossSales / finalCurYtd.transactions : 0;
+                finalCurYtd.avgBasket = finalCurYtd.transactions > 0 ? finalCurYtd.netSales / finalCurYtd.transactions : 0;
                 
                 const prevFullMonthsTotal = sumMonthsUpTo(prevYearMonths, currentMonthIndex);
                 const prevPartialMonthTotal = aggregateDailies(prevMonthDailies);
                 const finalPrevYtd = mergeWith({}, prevFullMonthsTotal, prevPartialMonthTotal, customMerger);
-                finalPrevYtd.avgBasket = finalPrevYtd.transactions > 0 ? finalPrevYtd.grossSales / finalPrevYtd.transactions : 0;
+                finalPrevYtd.avgBasket = finalPrevYtd.transactions > 0 ? finalPrevYtd.netSales / finalPrevYtd.transactions : 0;
                 
                 setYtdData({ cur: finalCurYtd, prev: finalPrevYtd, range: {start: new Date(currentYear, 0, 1), end: today} });
                 
@@ -231,7 +231,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
 
     const stats = useMemo<DashboardStats>(() => {
         if (ytdMode) return ytdData.cur;
-        if (!dailyMetrics || dailyMetrics.length === 0) return { grossSales: 0, transactions: 0, avgBasket: 0 };
+        if (!dailyMetrics || dailyMetrics.length === 0) return { netSales: 0, transactions: 0, avgBasket: 0 };
         return aggregateDailies(dailyMetrics);
     }, [dailyMetrics, ytdMode, ytdData.cur]);
 

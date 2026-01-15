@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { doc, type Firestore } from "firebase/firestore";
@@ -119,6 +118,7 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
         byMethod['Cash'] = (byMethod['Cash'] || 0) + cashAmount;
     }
 
+    // NOTE: payments.totalGross stores receipt.total (grandTotal) => Net Sales after discounts/charges.
     return {
         dayId: getDayIdFromTimestamp(eventMs),
         dayStartMs: getDayStartMs(eventMs),
@@ -372,3 +372,5 @@ export function getRefillContribution(receipt: Receipt | null): RefillContributi
         packageSessionsCount: 1,
     };
 }
+
+    

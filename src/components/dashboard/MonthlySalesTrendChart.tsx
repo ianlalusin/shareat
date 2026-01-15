@@ -27,8 +27,8 @@ export function MonthlySalesTrendChart({ data, isLoading }: MonthlySalesTrendCha
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Monthly Sales Trend</CardTitle>
-                <CardDescription>Comparing this year's sales to last year's, month by month.</CardDescription>
+                <CardTitle>Monthly Net Sales Trend</CardTitle>
+                <CardDescription>Comparing this year's net sales to last year's, month by month.</CardDescription>
             </CardHeader>
             <CardContent>
                 <ChartContainer config={{}} className="h-[300px] w-full">
@@ -78,3 +78,5 @@ export function MonthlySalesTrendChart({ data, isLoading }: MonthlySalesTrendCha
         </Card>
     );
 }
+
+    
