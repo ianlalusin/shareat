@@ -8,6 +8,7 @@ import {
   increment,
   serverTimestamp,
   setDoc,
+  doc,
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import type { Receipt } from '@/lib/types';
@@ -166,7 +167,7 @@ export async function applyAnalyticsDeltaV2(
           payload[`sales.salesAmountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.amount);
           payload[`sales.sessionCountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.count);
         }
-        if(dayNew.peak.hourKey && dayNew.peak.count > 0) {
+        if(newNew.peak.hourKey && dayNew.peak.count > 0) {
           payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.amount);
           payload[`sales.sessionCountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.count);
         }
@@ -189,8 +190,41 @@ export async function applyAnalyticsDeltaV2(
         if(delta !== 0) payload[`refills.servedRefillsByName.${name}`] = increment(delta);
     });
     
-    const docRef = dailyAnalyticsDocRef(db, storeId, dayId);
-    batch.set(docRef, payload, { merge: true });
+    const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
+    batch.set(dayRef, payload, { merge: true });
+
+    // ---- NEW: Month + Year rollups ----
+    const monthId = dayId.slice(0, 6); // YYYYMM
+    const yearId = dayId.slice(0, 4);  // YYYY
+
+    // Clone payload and remove day-specific meta keys so it won't pollute month/year docs
+    const basePayload: Record<string, any> = { ...payload };
+    delete basePayload["meta.dayId"];
+    delete basePayload["meta.dayStartMs"];
+
+    // Month doc
+    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
+    batch.set(
+      monthRef,
+      {
+        ...basePayload,
+        "meta.monthId": monthId,
+        "meta.updatedAt": serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Year doc
+    const yearRef = doc(db, "stores", storeId, "analyticsYears", yearId);
+    batch.set(
+      yearRef,
+      {
+        ...basePayload,
+        "meta.yearId": yearId,
+        "meta.updatedAt": serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
 
   // If caller gave us a batch, THEY will commit.
