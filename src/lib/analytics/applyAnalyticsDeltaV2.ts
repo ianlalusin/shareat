@@ -1,10 +1,10 @@
 
-
 'use client';
 
 import {
   writeBatch,
   type Firestore,
+  type WriteBatch,
   increment,
   serverTimestamp,
   setDoc,
@@ -42,21 +42,35 @@ function getContributions(receipt: Receipt | null): ContributionSet {
   };
 }
 
+function pickDayContribution(contrib: ContributionSet, dayId: string): ContributionSet {
+    const nullContrib = getContributions(null);
+    if (contrib.payment.dayId !== dayId) {
+        return nullContrib;
+    }
+    return contrib;
+}
+
+
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
- * to the daily analytics documents. This is used for receipt edits and deletions.
+ * to the daily analytics documents. This can be part of a larger batch.
  *
  * @param db The Firestore instance.
  * @param storeId The ID of the store.
  * @param oldReceipt The receipt data *before* the change (or the receipt being deleted).
  * @param newReceipt The receipt data *after* the change (or null if deleting).
+ * @param opts Optional object containing a WriteBatch to join.
  */
 export async function applyAnalyticsDeltaV2(
   db: Firestore,
   storeId: string,
   oldReceipt: Receipt | null,
-  newReceipt: Receipt | null
+  newReceipt: Receipt | null,
+  opts?: { batch?: WriteBatch }
 ) {
+  const externalBatch = opts?.batch;
+  const batch = externalBatch ?? writeBatch(db);
+
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
 
@@ -64,20 +78,26 @@ export async function applyAnalyticsDeltaV2(
   if (oldContrib.payment.dayId) affectedDayIds.add(oldContrib.payment.dayId);
   if (newContrib.payment.dayId) affectedDayIds.add(newContrib.payment.dayId);
   if (affectedDayIds.size === 0) {
-    console.warn("[applyAnalyticsDeltaV2] No valid dayId found for delta operation. Skipping.");
+    console.warn("[applyAnalyticsDeltaV2] No valid dayId found. Skipping.");
     return;
   }
 
-  const batch = writeBatch(db);
-
   for (const dayId of affectedDayIds) {
-    let payload: Record<string, any> = {
-      meta: { dayId, storeId, updatedAt: serverTimestamp() },
+    const dayOld = pickDayContribution(oldContrib, dayId);
+    const dayNew = pickDayContribution(newContrib, dayId);
+
+    const payload: Record<string, any> = {
+      "meta.dayId": dayId,
+      "meta.storeId": storeId,
+      "meta.updatedAt": serverTimestamp(),
     };
     
-    // Determine the contribution sets to use for this day
-    const dayOld = (oldReceipt && oldContrib.payment.dayId === dayId) ? oldContrib : getContributions(null);
-    const dayNew = (newReceipt && newContrib.payment.dayId === dayId) ? newContrib : getContributions(null);
+    // Add dayStartMs only if it's from a valid contribution, ensuring the meta doc is created.
+    if (dayNew.payment.dayStartMs > 0) {
+        payload["meta.dayStartMs"] = dayNew.payment.dayStartMs;
+    } else if (dayOld.payment.dayStartMs > 0) {
+        payload["meta.dayStartMs"] = dayOld.payment.dayStartMs;
+    }
 
     // --- Payments Delta ---
     const paymentDelta = {
@@ -107,9 +127,18 @@ export async function applyAnalyticsDeltaV2(
         if (delta !== 0) payload[`guests.guestCountFinalByPackageName.${name}`] = increment(delta);
     });
 
+    // Billed covers
+    const allBilledPkgNames = new Set([...Object.keys(dayOld.guest.packageCoversBilledByPackageName), ...Object.keys(dayNew.guest.packageCoversBilledByPackageName)]);
+    allBilledPkgNames.forEach(name => {
+        const delta = (dayNew.guest.packageCoversBilledByPackageName[name] || 0) - (dayOld.guest.packageCoversBilledByPackageName[name] || 0);
+        if (delta !== 0) payload[`guests.packageCoversBilledByPackageName.${name}`] = increment(delta);
+    });
 
     // --- Sales Delta ---
-    const allSalesPkgNames = new Set([...Object.keys(dayOld.sales.packageSalesAmountByName), ...Object.keys(newContrib.sales.packageSalesAmountByName)]);
+    const allSalesPkgNames = new Set([
+      ...Object.keys(dayOld.sales.packageSalesAmountByName || {}),
+      ...Object.keys(dayNew.sales.packageSalesAmountByName || {}),
+    ]);
     allSalesPkgNames.forEach(name => {
         const amountDelta = (dayNew.sales.packageSalesAmountByName[name] || 0) - (dayOld.sales.packageSalesAmountByName[name] || 0);
         const qtyDelta = (dayNew.sales.packageSalesQtyByName[name] || 0) - (dayOld.sales.packageSalesQtyByName[name] || 0);
@@ -131,14 +160,13 @@ export async function applyAnalyticsDeltaV2(
         if(amountDelta !== 0) payload[`sales.addonSalesByItem.${item}.amount`] = increment(amountDelta);
     });
 
-
     // --- Peak Hour Delta ---
     if (dayOld.peak.hourKey !== dayNew.peak.hourKey) {
-        if(dayOld.peak.hourKey) {
+        if(dayOld.peak.hourKey && dayOld.peak.count > 0) {
           payload[`sales.salesAmountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.amount);
           payload[`sales.sessionCountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.count);
         }
-        if(dayNew.peak.hourKey) {
+        if(dayNew.peak.hourKey && dayNew.peak.count > 0) {
           payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.amount);
           payload[`sales.sessionCountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.count);
         }
@@ -165,12 +193,15 @@ export async function applyAnalyticsDeltaV2(
     batch.set(docRef, payload, { merge: true });
   }
 
+  // If caller gave us a batch, THEY will commit.
+  if (externalBatch) return;
+
   try {
     await batch.commit();
   } catch (error) {
     console.error("Failed to apply analytics delta:", error);
     toast({
-      variant: 'destructive',
+      variant: "destructive",
       title: 'Analytics Update Failed',
       description: 'Attempting to rebuild daily analytics. The dashboard may be out of sync temporarily.',
     });
