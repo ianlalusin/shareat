@@ -97,6 +97,19 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedKeys);
     }
 
+    function isAllowedAnalyticsWrite() {
+      // Only allow touching known top-level namespaces (prevents random field injection)
+      return request.resource.data.keys().hasOnly([
+        "meta", "payments", "sales", "guests", "kitchen", "refills", "sessions"
+      ]);
+    }
+
+    function isSafeSubcol(subcol) {
+      // Only allow the new item rollup subcollections you intentionally created
+      return subcol in ["addonItems", "refillItems"];
+    }
+
+
     // =====================================================================
     // Collection Rules
     // =====================================================================
@@ -167,31 +180,33 @@ service cloud.firestore {
       // --- Analytics (Daily) ---
       match /analytics/{dayId} {
         allow read: if isStoreMember(storeId);
-        // If analytics is written from client-side POS flows, this must allow cashier/manager.
-        allow write: if isStoreMember(storeId) && isCashier();
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
         match /{subcol}/{docId} {
           allow read: if isStoreMember(storeId);
-          allow write: if isStoreMember(storeId) && isCashier();
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
         }
       }
 
       // --- Analytics (Monthly) ---
       match /analyticsMonths/{monthId} {
         allow read: if isStoreMember(storeId);
-        allow write: if isStoreMember(storeId) && isCashier();
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
         match /{subcol}/{docId} {
           allow read: if isStoreMember(storeId);
-          allow write: if isStoreMember(storeId) && isCashier();
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
         }
       }
 
       // --- Analytics (Yearly) ---
       match /analyticsYears/{yearId} {
         allow read: if isStoreMember(storeId);
-        allow write: if isStoreMember(storeId) && isCashier();
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
         match /{subcol}/{docId} {
           allow read: if isStoreMember(storeId);
-          allow write: if isStoreMember(storeId) && isCashier();
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
         }
       }
 
