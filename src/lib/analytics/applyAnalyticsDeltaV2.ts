@@ -56,6 +56,13 @@ function toSafeDocId(raw: string) {
   return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
 }
 
+function safeKey(s: string) {
+  return (s || "Uncategorized")
+    .trim()
+    .replace(/\./g, "·")     // dot is not allowed in field path
+    .replace(/\//g, "∕");    // avoid slash confusion
+}
+
 
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
@@ -168,7 +175,7 @@ export async function applyAnalyticsDeltaV2(
       const amtDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
       if (qtyDelta === 0 && amtDelta === 0) return;
 
-      const cat = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
+      const cat = safeKey(newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized");
       catQtyDelta[cat] = (catQtyDelta[cat] ?? 0) + qtyDelta;
       catAmtDelta[cat] = (catAmtDelta[cat] ?? 0) + amtDelta;
     });
