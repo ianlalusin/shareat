@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
+import { TopAddonItemsCard } from "@/components/dashboard/top-addon-items-card";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -176,6 +177,11 @@ export default function DashboardPage() {
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopRefillsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
+                            <div className="lg:col-span-2">
+                                <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={10} />
+                            </div>
                         </div>
                     </>
                 )}
