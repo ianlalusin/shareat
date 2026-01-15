@@ -23,7 +23,8 @@ export function getDayStartMs(ts: Timestamp | Date | number): number {
     
     // Create a new Date object representing midnight in the UTC of the *local* machine,
     // but with the date parts from the 'Asia/Manila' timezone.
-    const midnightInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    const dateInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    const midnightInManila = new Date(dateInManila);
     midnightInManila.setHours(0, 0, 0, 0);
 
     return midnightInManila.getTime();
