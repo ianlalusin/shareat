@@ -22,7 +22,7 @@ import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
-import { applyKitchenTicketAnalyticsDelta } from "@/lib/analytics/applyKitchenTicketAnalyticsDelta";
+import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
 
 export type KitchenStation = {
     id: string;
@@ -227,7 +227,7 @@ export default function KitchenPage() {
             transaction.update(ticketRef, updatePayload);
             
             // Atomically update analytics
-            await applyKitchenTicketAnalyticsDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
+            await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
