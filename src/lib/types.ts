@@ -65,6 +65,7 @@ export type InventoryItem = {
   isActive: boolean;
   isAddon?: boolean;
   kitchenLocationId?: string | null;
+  kitchenLocationName?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };

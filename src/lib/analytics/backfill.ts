@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import {
@@ -97,8 +98,8 @@ export async function rebuildDailyAnalyticsFromReceipts(
           updatedAt: serverTimestamp(),
         },
         payments: { byMethod: {}, totalGross: 0, txCount: 0 },
-        guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0 },
-        sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, salesAmountByHour: {}, sessionCountByHour: {} },
+        guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} },
+        sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesByItem: {}, salesAmountByHour: {}, sessionCountByHour: {} },
         kitchen: { servedCountByType: {}, cancelledCountByType: {}, durationMsSumByType: {}, durationCountByType: {} },
         sessions: { closedCount: 0, totalPaid: 0 },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
