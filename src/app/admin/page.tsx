@@ -26,8 +26,8 @@ const managerTools = [
     { title: "Store Settings", description: "Manage add-ons, packages, and prices.", href: "/manager/store-settings", icon: SlidersHorizontal },
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
-    { title: "Receipt Settings", description: "Customize printed customer receipts.", href: "/manager/receipt-settings", icon: Receipt },
-    { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/manager/reports", icon: LineChart },
+    { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
+    { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
 ]
 
 const dataTools = [

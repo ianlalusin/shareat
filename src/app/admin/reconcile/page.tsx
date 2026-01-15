@@ -5,14 +5,17 @@ import { useMemo, useState } from "react";
 import { db } from "@/lib/firebase/client";
 import { reconcileRange, type ReconcileRow } from "@/lib/analytics/reconcile";
 import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
+import { reconcileMonthsFromDays, reconcileYearFromMonths, type RollupReconcileRow } from "@/lib/analytics/reconcile-rollups";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-
-// If you already have a store selector/context, replace this with your active store hook
 import { useStoreContext } from "@/context/store-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 function fmtCurrency(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -27,6 +30,10 @@ export default function AdminReconcilePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [rows, setRows] = useState<ReconcileRow[]>([]);
+  
+  const [yearToReconcile, setYearToReconcile] = useState(new Date().getFullYear());
+  const [monthRows, setMonthRows] = useState<RollupReconcileRow[]>([]);
+  const [yearRow, setYearRow] = useState<RollupReconcileRow | null>(null);
 
   const badRows = useMemo(() => rows.filter((r) => !r.ok), [rows]);
 
@@ -36,12 +43,12 @@ export default function AdminReconcilePage() {
       return;
     }
     setIsRunning(true);
-    setProgress("Reconciling…");
+    setProgress("Reconciling receipts vs daily rollups…");
     try {
       const result = await reconcileRange(activeStore.id, start, end);
       setRows(result);
       toast({
-        title: "Reconcile complete",
+        title: "Receipt Reconcile Complete",
         description: `${result.length} day(s) checked, ${result.filter(r => !r.ok).length} mismatch(es).`,
       });
     } catch (e: any) {
@@ -52,20 +59,40 @@ export default function AdminReconcilePage() {
       setProgress("");
     }
   };
+  
+  const runRollupReconcile = async () => {
+      if (!activeStore?.id) return;
+      setIsRunning(true);
+      setProgress("Reconciling daily vs monthly vs yearly rollups...");
+      try {
+          const [months, year] = await Promise.all([
+              reconcileMonthsFromDays(activeStore.id, yearToReconcile),
+              reconcileYearFromMonths(activeStore.id, yearToReconcile),
+          ]);
+          setMonthRows(months);
+          setYearRow(year);
+          toast({ title: "Rollup Reconcile Complete" });
+      } catch (e: any) {
+          console.error(e);
+          toast({ variant: "destructive", title: "Rollup Reconcile failed", description: e?.message ?? "Error" });
+      } finally {
+          setIsRunning(false);
+          setProgress("");
+      }
+  }
 
   const rebuildDay = async (dayId: string) => {
     if (!activeStore?.id) return;
 
-    // Convert YYYYMMDD to Date range [dayStart, dayEnd]
     const y = Number(dayId.slice(0, 4));
     const m = Number(dayId.slice(4, 6)) - 1;
     const d = Number(dayId.slice(6, 8));
     
     const dayStart = new Date(y, m, d);
-    dayStart.setHours(0, 0, 0, 0); // Start of day
+    dayStart.setHours(0, 0, 0, 0);
     
     const dayEnd = new Date(y, m, d);
-    dayEnd.setHours(23, 59, 59, 999); // End of day
+    dayEnd.setHours(23, 59, 59, 999);
 
     setIsRunning(true);
     setProgress(`Rebuilding ${dayId}…`);
@@ -119,98 +146,140 @@ export default function AdminReconcilePage() {
       setProgress("");
     }
   };
+  
+   const rebuildMonth = async (monthId: string) => {
+    if (!activeStore?.id) return;
+    const year = parseInt(monthId.slice(0, 4));
+    const month = parseInt(monthId.slice(4, 6)) - 1;
+    const startDate = new Date(year, month, 1);
+    const endDate = new Date(year, month + 1, 0); // Last day of the month
+    
+    setIsRunning(true);
+    setProgress(`Rebuilding ${monthId}...`);
+    try {
+      await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, startDate, endDate, (msg) => setProgress(`${monthId}: ${msg}`));
+      toast({ title: `Month ${monthId} rebuilt`, description: "Re-run rollup reconcile to confirm." });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Rebuild failed", description: e.message });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const currentYear = new Date().getFullYear();
+  const availableYears = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Analytics Reconcile</CardTitle>
+          <CardDescription>Tools to verify and correct analytics data integrity.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Start date</div>
-              <Input
-                type="date"
-                value={start.toISOString().slice(0, 10)}
-                onChange={(e) => setStart(new Date(e.target.value))}
-              />
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">End date</div>
-              <Input
-                type="date"
-                value={end.toISOString().slice(0, 10)}
-                onChange={(e) => setEnd(new Date(e.target.value))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Button className="w-full" onClick={run} disabled={isRunning}>
-                {isRunning ? "Working…" : "Run Reconcile"}
-              </Button>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={rebuildAllMismatched}
-            disabled={isRunning || badRows.length === 0}
-          >
-            Rebuild all mismatched
-          </Button>
-
-          {progress ? <div className="text-xs text-muted-foreground">{progress}</div> : null}
-
-          {rows.length > 0 ? (
-            <div className="text-sm">
-              Checked: <span className="font-medium">{rows.length}</span> day(s) • Mismatches:{" "}
-              <span className="font-medium">{badRows.length}</span>
-            </div>
-          ) : null}
+        <CardContent>
+            <Tabs defaultValue="receipts">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="receipts">Receipts vs Daily</TabsTrigger>
+                    <TabsTrigger value="rollups">Rollup Tiers</TabsTrigger>
+                </TabsList>
+                <TabsContent value="receipts" className="space-y-3 pt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+                        <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">Start date</div>
+                        <Input type="date" value={start.toISOString().slice(0, 10)} onChange={(e) => setStart(new Date(e.target.value))}/>
+                        </div>
+                        <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">End date</div>
+                        <Input type="date" value={end.toISOString().slice(0, 10)} onChange={(e) => setEnd(new Date(e.target.value))}/>
+                        </div>
+                        <Button className="w-full" onClick={run} disabled={isRunning}>{isRunning ? "Working…" : "Run Reconcile"}</Button>
+                    </div>
+                     <Button variant="secondary" className="w-full" onClick={rebuildAllMismatched} disabled={isRunning || badRows.length === 0}>Rebuild all mismatched</Button>
+                </TabsContent>
+                 <TabsContent value="rollups" className="space-y-3 pt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+                        <div className="space-y-1">
+                            <div className="text-xs text-muted-foreground">Year</div>
+                            <Select value={String(yearToReconcile)} onValueChange={(val) => setYearToReconcile(Number(val))}>
+                                <SelectTrigger><SelectValue/></SelectTrigger>
+                                <SelectContent>
+                                    {availableYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="sm:col-span-2">
+                            <Button className="w-full" onClick={runRollupReconcile} disabled={isRunning}>{isRunning ? "Working..." : "Run Rollup Reconcile"}</Button>
+                        </div>
+                    </div>
+                </TabsContent>
+            </Tabs>
+            {progress && <div className="text-xs text-muted-foreground pt-2">{progress}</div>}
         </CardContent>
       </Card>
-
-      {rows.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Results</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {rows.map((r) => {
-              const isMissingRollup = !r.ok && r.rollupTx === 0 && r.receiptTx > 0;
-              return (
-              <div
-                key={r.dayId}
-                className={`rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${
-                  r.ok ? "opacity-70" : ""
-                }`}
-              >
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">
-                    {r.dayId}{" "}
-                    {!r.ok ? <span className="text-red-600 font-normal">• mismatch</span> : <span className="text-muted-foreground font-normal">• ok</span>}
-                    {isMissingRollup && <span className="text-red-600 font-normal ml-2">• Missing Rollup</span>}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Receipts: {fmtCurrency(r.receiptNet)} ({r.receiptTx} tx) • Rollup: {fmtCurrency(r.rollupNet)} ({r.rollupTx} tx)
-                  </div>
-                  {!r.ok ? (
-                    <div className="text-xs text-muted-foreground">
-                      Net diff: {fmtCurrency(r.netDiff)} • Tx diff: {r.txDiff}
+      
+        {rows.length > 0 && (
+            <Card>
+            <CardHeader><CardTitle>Receipts vs Daily Results</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+                {rows.map((r) => {
+                const isMissingRollup = !r.ok && r.rollupTx === 0 && r.receiptTx > 0;
+                return (
+                <div key={r.dayId} className={cn("rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2", r.ok && "opacity-70")}>
+                    <div className="space-y-1">
+                    <div className="text-sm font-medium">
+                        {r.dayId}{" "}
+                        {!r.ok ? <span className="text-red-600 font-normal">• mismatch</span> : <span className="text-muted-foreground font-normal">• ok</span>}
+                        {isMissingRollup && <span className="text-red-600 font-normal ml-2">• Missing Rollup</span>}
                     </div>
-                  ) : null}
+                    <div className="text-xs text-muted-foreground">Receipts: {fmtCurrency(r.receiptNet)} ({r.receiptTx} tx) • Rollup: {fmtCurrency(r.rollupNet)} ({r.rollupTx} tx)</div>
+                    {!r.ok && (<div className="text-xs text-muted-foreground">Net diff: {fmtCurrency(r.netDiff)} • Tx diff: {r.txDiff}</div>)}
+                    </div>
+                    <div className="flex gap-2"><Button variant="secondary" onClick={() => rebuildDay(r.dayId)} disabled={isRunning || r.ok}>Rebuild day</Button></div>
                 </div>
+                )})}
+            </CardContent>
+            </Card>
+        )}
 
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => rebuildDay(r.dayId)} disabled={isRunning || r.ok}>
-                    Rebuild day
-                  </Button>
-                </div>
-              </div>
-            )})}
-          </CardContent>
-        </Card>
-      ) : null}
+        {yearRow && (
+            <Card>
+                <CardHeader><CardTitle>Yearly Rollup vs Monthly Sums ({yearRow.id})</CardTitle></CardHeader>
+                <CardContent>
+                     <div className={cn("rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2", yearRow.ok && "opacity-70")}>
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium">
+                                {yearRow.id} {!yearRow.ok ? <span className="text-red-600 font-normal">• mismatch</span> : <span className="text-muted-foreground font-normal">• ok</span>}
+                            </div>
+                            <div className="text-xs text-muted-foreground">Sum of Months: {fmtCurrency(yearRow.sumNet)} ({yearRow.sumTx} tx) • Rollup: {fmtCurrency(yearRow.rollupNet)} ({yearRow.rollupTx} tx)</div>
+                            {!yearRow.ok && (<div className="text-xs text-muted-foreground">Net diff: {fmtCurrency(yearRow.netDiff)} • Tx diff: {yearRow.txDiff}</div>)}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        )}
+
+        {monthRows.length > 0 && (
+             <Card>
+                <CardHeader><CardTitle>Monthly Rollups vs Daily Sums</CardTitle></CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader><TableRow><TableHead>Month</TableHead><TableHead>Net Diff</TableHead><TableHead>Tx Diff</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                            {monthRows.map(row => (
+                                <TableRow key={row.id} className={cn(row.ok && "text-muted-foreground")}>
+                                    <TableCell className="font-medium">{row.id}</TableCell>
+                                    <TableCell className={cn(Math.abs(row.netDiff) > 2 && "text-destructive font-bold")}>{fmtCurrency(row.netDiff)}</TableCell>
+                                    <TableCell className={cn(row.txDiff !== 0 && "text-destructive font-bold")}>{row.txDiff}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="secondary" size="sm" onClick={() => rebuildMonth(row.id)} disabled={isRunning || row.ok}>Rebuild Month</Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+             </Card>
+        )}
     </div>
   );
 }
