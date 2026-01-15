@@ -296,10 +296,13 @@ export default function ReceiptsPageContents() {
                 editReason: reason,
             });
 
+            // 3. Apply analytics delta within the same batch
+            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceipt as ReceiptType, { batch });
+            
+            // 4. Commit all changes
             await batch.commit();
-            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceipt as ReceiptType);
 
-            // 3. Log activity
+            // 5. Log activity post-commit
             await writeActivityLog({
                 action: "RECEIPT_EDITED",
                 storeId: activeStore.id,
@@ -422,9 +425,16 @@ export default function ReceiptsPageContents() {
 
         setIsDeleting(receipt.id);
         try {
-            // Apply analytics delta BEFORE deleting the document
-            await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null);
-            await deleteDoc(doc(db, "stores", activeStore.id, "receipts", receipt.id));
+            const batch = writeBatch(db);
+
+            // Apply analytics delta for deletion (oldReceipt -> null) within the batch
+            await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+
+            // Add the delete operation to the batch
+            batch.delete(doc(db, "stores", activeStore.id, "receipts", receipt.id));
+
+            // Commit the atomic operation
+            await batch.commit();
 
             await writeActivityLog({
                 action: "RECEIPT_DELETED",
