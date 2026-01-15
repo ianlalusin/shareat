@@ -40,10 +40,16 @@ interface StatCardsProps {
 function StatCard({ title, value, icon, isLoading, format = "number" }: { title: string, value: string | number, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) {
     
     const formattedValue = () => {
-        if (typeof value === 'string') return value;
-        if (format === 'currency') return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        return value.toLocaleString('en-US');
-    }
+        if (isLoading) return "—";
+        if (typeof value === "string") return value;
+
+        const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+        if (format === "currency") {
+            return `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        return n.toLocaleString("en-US");
+    };
 
     return (
         <Card>
@@ -72,5 +78,3 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
         </>
     );
 }
-
-    
