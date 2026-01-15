@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { collection, doc, getDoc, query, where, orderBy, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { DailyMetric } from "@/lib/types";
+import { mergeWith } from "lodash";
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 export type DashboardStats = { grossSales: number; transactions: number; avgBasket: number; };
@@ -19,15 +20,42 @@ function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999);
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 
-async function fetchYearMonths(db: any, storeId: string, year: number) {
-  const monthIds = Array.from({ length: 12 }, (_, i) => {
-    const mm = String(i + 1).padStart(2, "0");
-    return `${year}${mm}`;
-  });
+// --- Data Fetching Helpers ---
+
+export async function fetchPartialDays(
+  db: any,
+  storeId: string,
+  startInclusive: Date,
+  endExclusive: Date
+): Promise<DailyMetric[]> {
+  if (startInclusive >= endExclusive) return [];
+
+  const ref = collection(db, "stores", storeId, "analytics"); // daily
+  const q = query(
+    ref,
+    where("meta.dayStartMs", ">=", startInclusive.getTime()),
+    where("meta.dayStartMs", "<", endExclusive.getTime())
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as DailyMetric);
+}
+
+export async function fetchYearMonths(db: any, storeId: string, year: number) {
+  const monthIds = Array.from({ length: 12 }, (_, i) => `${year}${String(i + 1).padStart(2, "0")}`);
   const refs = monthIds.map((id) => doc(db, "stores", storeId, "analyticsMonths", id));
   const snaps = await Promise.all(refs.map((r) => getDoc(r)));
-  return snaps.map((s, idx) => ({ monthId: monthIds[idx], exists: s.exists(), data: (s.data() as any) ?? null }));
+
+  return snaps.map((s, idx) => ({ monthId: monthIds[idx], data: s.exists() ? s.data() : null }));
 }
+
+export async function fetchYearDoc(db: any, storeId: string, year: number) {
+  const ref = doc(db, "stores", storeId, "analyticsYears", String(year));
+  const snap = await getDoc(ref);
+  return snap.exists() ? snap.data() : null;
+}
+
+// --- Aggregation Helpers ---
 
 function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
   let gross = 0, tx = 0;
@@ -41,7 +69,7 @@ function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
     tx += d?.payments?.txCount ?? 0;
 
     const byMethod = d?.payments?.byMethod ?? {};
-    for (const [k, v] of Object.entries(byMethod)) mop[k] = (mop[k] ?? 0) + (v as number);
+    for (const [k, v] of Object.entries(byMethod)) mop[k] = (mop[k] || 0) + (v as number);
   }
   return { grossSales: gross, transactions: tx, avgBasket: tx > 0 ? gross / tx : 0, mop };
 }
@@ -74,16 +102,13 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     return { grossSales, transactions, avgBasket, mop };
 }
 
-async function fetchPartialMonth(storeId: string, start: Date, end: Date): Promise<DailyMetric[]> {
-    if (start > end) return [];
-    const metricsRef = collection(db, "stores", storeId, "analytics");
-    const q = query(
-        metricsRef,
-        where("meta.dayStartMs", ">=", start.getTime()),
-        where("meta.dayStartMs", "<=", end.getTime())
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => doc.data() as DailyMetric);
+function customMerger(objValue: any, srcValue: any) {
+  if (typeof objValue === 'number' && typeof srcValue === 'number') {
+    return objValue + srcValue;
+  }
+  if (typeof objValue === 'object' && typeof srcValue === 'object' && !Array.isArray(objValue)) {
+      return mergeWith({}, objValue, srcValue, customMerger);
+  }
 }
 
 
@@ -99,7 +124,6 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [activeSessions, setActiveSessions] = useState(0);
 
-    // YTD state
     const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
     const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: DateRange }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()}});
     
@@ -108,8 +132,8 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         let s = new Date(), e = new Date();
         switch (preset) {
             case "today": s.setHours(0, 0, 0, 0); e.setHours(23, 59, 59, 999); break;
-            case "yesterday": s.setDate(now.getDate() - 1); s.setHours(0, 0, 0, 0); e.setDate(now.getDate() - 1); e.setHours(23, 59, 59, 999); break;
-            case "week": s.setDate(now.getDate() - now.getDay()); s.setHours(0, 0, 0, 0); break;
+            case "yesterday": s = startOfDay(new Date(now.setDate(now.getDate() - 1))); e = endOfDay(s); break;
+            case "week": s = startOfDay(new Date(now.setDate(now.getDate() - now.getDay()))); break;
             case "month": s = new Date(now.getFullYear(), now.getMonth(), 1); break;
             case "custom": if (customRange) { s = startOfDay(customRange.start); e = endOfDay(customRange.end); } break;
         }
@@ -128,12 +152,10 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
 
         async function fetchData() {
             if (ytdMode) {
-                // --- YTD MODE ---
                 const today = new Date();
                 const currentYear = today.getFullYear();
                 const prevYear = currentYear - 1;
-                const currentMonthIndex = today.getMonth(); // 0-11
-                const currentDayOfMonth = today.getDate();
+                const currentMonthIndex = today.getMonth();
 
                 const [curYearMonths, prevYearMonths] = await Promise.all([
                     fetchYearMonths(db, storeId, currentYear),
@@ -143,19 +165,22 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
 
                 setTrendRows(buildMonthlyTrendRows(curYearMonths, prevYearMonths));
 
-                // Partial month dailies for this year
                 const curMonthStart = new Date(currentYear, currentMonthIndex, 1);
-                const curMonthDailies = await fetchPartialMonth(storeId, curMonthStart, today);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(today.getDate() + 1);
+                const tomorrowStart = startOfDay(tomorrow);
+                const curMonthDailies = await fetchPartialDays(db, storeId, curMonthStart, tomorrowStart);
                 if (cancelled) return;
                 
-                // Partial month dailies for last year
-                const prevYearCutoff = new Date(today);
-                prevYearCutoff.setFullYear(prevYear);
+                const cutoffPrev = new Date(today); 
+                cutoffPrev.setFullYear(prevYear);
                 const prevMonthStart = new Date(prevYear, currentMonthIndex, 1);
-                const prevMonthDailies = await fetchPartialMonth(storeId, prevMonthStart, prevYearCutoff);
+                const dayAfterCutoffPrev = new Date(cutoffPrev);
+                dayAfterCutoffPrev.setDate(cutoffPrev.getDate() + 1);
+                const dayAfterCutoffPrevStart = startOfDay(dayAfterCutoffPrev);
+                const prevMonthDailies = await fetchPartialDays(db, storeId, prevMonthStart, dayAfterCutoffPrevStart);
                 if (cancelled) return;
 
-                // Combine full months + partial month
                 const curFullMonthsTotal = sumMonthsUpTo(curYearMonths, currentMonthIndex);
                 const curPartialMonthTotal = aggregateDailies(curMonthDailies);
                 const finalCurYtd = mergeWith({}, curFullMonthsTotal, curPartialMonthTotal, customMerger);
@@ -169,8 +194,10 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 setYtdData({ cur: finalCurYtd, prev: finalPrevYtd, range: {start: new Date(currentYear, 0, 1), end: today} });
                 
             } else {
-                // --- STANDARD DATE RANGE MODE ---
-                const metrics = await fetchPartialMonth(storeId, dateRange.start, dateRange.end);
+                const tomorrow = new Date(dateRange.end);
+                tomorrow.setDate(dateRange.end.getDate() + 1);
+                const tomorrowStart = startOfDay(tomorrow);
+                const metrics = await fetchPartialDays(db, storeId, dateRange.start, tomorrowStart);
                 if (cancelled) return;
                 setDailyMetrics(metrics);
             }
@@ -180,7 +207,6 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
             if (!cancelled) setIsLoading(false);
         });
 
-        // Live Active Sessions (always running)
         const sessionsRef = collection(db, "stores", storeId, "sessions");
         const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
         const unsubSessions = onSnapshot(activeSessionsQuery, (snapshot) => {
@@ -194,12 +220,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     }, [storeId, dateRange.start, dateRange.end, ytdMode]);
 
     const stats = useMemo<DashboardStats>(() => {
+        if (ytdMode) return ytdData.cur;
         if (!dailyMetrics || dailyMetrics.length === 0) return { grossSales: 0, transactions: 0, avgBasket: 0 };
-        const { grossSales, transactions, avgBasket } = aggregateDailies(dailyMetrics);
-        return { grossSales, transactions, avgBasket };
-    }, [dailyMetrics]);
+        return aggregateDailies(dailyMetrics);
+    }, [dailyMetrics, ytdMode, ytdData.cur]);
 
     const paymentMix = useMemo<Record<string, number>>(() => {
+        if (ytdMode) return ytdData.cur.mop;
         const mix: Record<string, number> = {};
         if (dailyMetrics) {
             dailyMetrics.forEach(metric => {
@@ -210,7 +237,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
             });
         }
         return mix;
-    }, [dailyMetrics]);
+    }, [dailyMetrics, ytdMode, ytdData.cur.mop]);
 
     const dateRangeLabel = useMemo(() => {
         if (ytdMode) return `Year-to-Date (as of ${fmtDate(new Date())})`;
