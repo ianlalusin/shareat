@@ -1,154 +1,166 @@
 
 "use client";
 
-import { useState } from "react";
-import { addDays, format } from "date-fns";
-import { PageHeader } from "@/components/page-header";
-import { RoleGuard } from "@/components/guards/RoleGuard";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
-import { useStoreContext } from "@/context/store-context";
-import { useToast } from "@/hooks/use-toast";
+import { useMemo, useState } from "react";
+import { db } from "@/lib/firebase/client";
 import { reconcileRange, type ReconcileRow } from "@/lib/analytics/reconcile";
 import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
-import { db } from "@/lib/firebase/client";
-import { cn } from "@/lib/utils";
 
-function parseDayId(dayId: string) {
-    const year = parseInt(dayId.substring(0, 4), 10);
-    const month = parseInt(dayId.substring(4, 6), 10) - 1; // month is 0-indexed
-    const day = parseInt(dayId.substring(6, 8), 10);
-    return new Date(year, month, day);
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/hooks/use-toast";
+
+// If you already have a store selector/context, replace this with your active store hook
+import { useStoreContext } from "@/context/store-context";
+
+function fmtCurrency(n: number) {
+  const v = Number.isFinite(n) ? n : 0;
+  return `₱${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export default function ReconcilePage() {
-    const { activeStore } = useStoreContext();
-    const { toast } = useToast();
-    const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
-        start: addDays(new Date(), -7),
-        end: new Date(),
-    });
-    const [results, setResults] = useState<ReconcileRow[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [rebuildingDay, setRebuildingDay] = useState<string | null>(null);
+export default function AdminReconcilePage() {
+  const { activeStore } = useStoreContext();
 
-    const handleRunReconciliation = async () => {
-        if (!activeStore) return;
-        setIsLoading(true);
-        setResults([]);
-        try {
-            const data = await reconcileRange(activeStore.id, dateRange.start, dateRange.end);
-            setResults(data);
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Error Running Reconciliation', description: error.message });
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const [start, setStart] = useState(() => new Date());
+  const [end, setEnd] = useState(() => new Date());
+  const [isRunning, setIsRunning] = useState(false);
+  const [progress, setProgress] = useState<string>("");
+  const [rows, setRows] = useState<ReconcileRow[]>([]);
 
-    const handleRebuildDay = async (dayId: string) => {
-        if (!activeStore) return;
-        setRebuildingDay(dayId);
-        toast({ title: 'Rebuilding Day...', description: `Processing ${dayId}.`});
-        try {
-            const date = parseDayId(dayId);
-            await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, date, date, () => {});
-            toast({ title: 'Rebuild Complete', description: `Analytics for ${dayId} have been rebuilt.`});
-            // Re-run the reconciliation to show the updated status
-            handleRunReconciliation();
-        } catch (error: any) {
-             toast({ variant: 'destructive', title: 'Rebuild Failed', description: error.message });
-        } finally {
-            setRebuildingDay(null);
-        }
+  const badRows = useMemo(() => rows.filter((r) => !r.ok), [rows]);
+
+  const run = async () => {
+    if (!activeStore?.id) {
+      toast({ variant: "destructive", title: "No store selected", description: "Select a store first." });
+      return;
     }
+    setIsRunning(true);
+    setProgress("Reconciling…");
+    try {
+      const result = await reconcileRange(activeStore.id, start, end);
+      setRows(result);
+      toast({
+        title: "Reconcile complete",
+        description: `${result.length} day(s) checked, ${result.filter(r => !r.ok).length} mismatch(es).`,
+      });
+    } catch (e: any) {
+      console.error(e);
+      toast({ variant: "destructive", title: "Reconcile failed", description: e?.message ?? "Error" });
+    } finally {
+      setIsRunning(false);
+      setProgress("");
+    }
+  };
+
+  const rebuildDay = async (dayId: string) => {
+    if (!activeStore?.id) return;
+
+    // Convert YYYYMMDD to Date range [dayStart, dayEnd]
+    const y = Number(dayId.slice(0, 4));
+    const m = Number(dayId.slice(4, 6)) - 1;
+    const d = Number(dayId.slice(6, 8));
     
-    if (!activeStore) {
-        return (
-            <Card>
-                <CardHeader>
-                    <CardTitle>Reconciliation Tool</CardTitle>
-                    <CardDescription>Please select a store to use this tool.</CardDescription>
-                </CardHeader>
-            </Card>
-        );
-    }
+    const dayStart = new Date(y, m, d);
+    dayStart.setHours(0, 0, 0, 0); // Start of day
+    
+    const dayEnd = new Date(y, m, d);
+    dayEnd.setHours(23, 59, 59, 999); // End of day
 
-    return (
-        <RoleGuard allow={["admin"]}>
-            <PageHeader title="Analytics Reconciliation" description="Verify that aggregated daily analytics match the source-of-truth receipts." />
-            <Card>
-                <CardHeader>
-                    <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-                        <div className="space-y-1">
-                            <CardTitle>Run Check</CardTitle>
-                            <CardDescription>Select a date range and run the check.</CardDescription>
-                        </div>
-                        <div className="flex gap-4 items-center">
-                            <DateRangePicker onDateChange={setDateRange} />
-                            <Button onClick={handleRunReconciliation} disabled={isLoading}>
-                                {isLoading ? <Loader2 className="animate-spin mr-2" /> : <ShieldAlert className="mr-2"/>}
-                                Run Check
-                            </Button>
-                        </div>
+    setIsRunning(true);
+    setProgress(`Rebuilding ${dayId}…`);
+    try {
+      await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, dayStart, dayEnd, (msg) => setProgress(msg));
+      toast({ title: "Rebuild complete", description: `Rebuilt analytics for ${dayId}. Re-run reconcile to confirm.` });
+    } catch (e: any) {
+      console.error(e);
+      toast({ variant: "destructive", title: "Rebuild failed", description: e?.message ?? "Error" });
+    } finally {
+      setIsRunning(false);
+      setProgress("");
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto p-4 space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Analytics Reconcile</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Start date</div>
+              <Input
+                type="date"
+                value={start.toISOString().slice(0, 10)}
+                onChange={(e) => setStart(new Date(e.target.value))}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">End date</div>
+              <Input
+                type="date"
+                value={end.toISOString().slice(0, 10)}
+                onChange={(e) => setEnd(new Date(e.target.value))}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button className="w-full" onClick={run} disabled={isRunning}>
+                {isRunning ? "Working…" : "Run Reconcile"}
+              </Button>
+            </div>
+          </div>
+
+          {progress ? <div className="text-xs text-muted-foreground">{progress}</div> : null}
+
+          {rows.length > 0 ? (
+            <div className="text-sm">
+              Checked: <span className="font-medium">{rows.length}</span> day(s) • Mismatches:{" "}
+              <span className="font-medium">{badRows.length}</span>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {rows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Results</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {rows.map((r) => (
+              <div
+                key={r.dayId}
+                className={`rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${
+                  r.ok ? "opacity-70" : ""
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">
+                    {r.dayId}{" "}
+                    {!r.ok ? <span className="text-red-600 font-normal">• mismatch</span> : <span className="text-muted-foreground font-normal">• ok</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Receipts: {fmtCurrency(r.receiptNet)} ({r.receiptTx} tx) • Rollup: {fmtCurrency(r.rollupNet)} ({r.rollupTx} tx)
+                  </div>
+                  {!r.ok ? (
+                    <div className="text-xs text-muted-foreground">
+                      Net diff: {fmtCurrency(r.netDiff)} • Tx diff: {r.txDiff}
                     </div>
-                </CardHeader>
-                <CardContent>
-                    {isLoading ? (
-                        <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
-                    ) : results.length === 0 ? (
-                        <div className="text-center text-muted-foreground py-10">Select a date range and click "Run Check" to see results.</div>
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Day</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Net Sales Diff</TableHead>
-                                    <TableHead>Tx Count Diff</TableHead>
-                                    <TableHead>MOP Diff</TableHead>
-                                    <TableHead className="text-right">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {results.map(row => (
-                                    <TableRow key={row.dayId} className={!row.ok ? "bg-destructive/10" : ""}>
-                                        <TableCell>{format(parseDayId(row.dayId), "MMM dd, yyyy")}</TableCell>
-                                        <TableCell>
-                                            {row.ok ? <CheckCircle2 className="text-green-500" /> : <AlertTriangle className="text-destructive" />}
-                                        </TableCell>
-                                        <TableCell className={cn(row.netDiff !== 0 && "font-bold text-destructive")}>
-                                            ₱{row.netDiff.toFixed(2)}
-                                        </TableCell>
-                                        <TableCell className={cn(row.txDiff !== 0 && "font-bold text-destructive")}>
-                                            {row.txDiff}
-                                        </TableCell>
-                                         <TableCell>
-                                            {Object.values(row.mopDiff).some(d => Math.abs(d) > 0.01) ? "Yes" : "No"}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            {!row.ok && (
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => handleRebuildDay(row.dayId)}
-                                                    disabled={rebuildingDay === row.dayId}
-                                                >
-                                                    {rebuildingDay === row.dayId ? <Loader2 className="animate-spin mr-2"/> : null}
-                                                    Rebuild Day
-                                                </Button>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
-                </CardContent>
-            </Card>
-        </RoleGuard>
-    )
+                  ) : null}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => rebuildDay(r.dayId)} disabled={isRunning || r.ok}>
+                    Rebuild day
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
 }
