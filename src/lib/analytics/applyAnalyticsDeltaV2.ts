@@ -5,9 +5,9 @@ import {
   writeBatch,
   type Firestore,
   type WriteBatch,
+  type Transaction,
   increment,
   serverTimestamp,
-  setDoc,
   doc,
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
@@ -63,6 +63,14 @@ function safeKey(s: string) {
     .replace(/\//g, "∕");    // avoid slash confusion
 }
 
+type Writer =
+  | { kind: "tx"; tx: Transaction }
+  | { kind: "batch"; batch: WriteBatch };
+
+function writerSet(w: Writer, ref: any, data: any, opts: any) {
+  if (w.kind === "tx") return w.tx.set(ref, data, opts);
+  return w.batch.set(ref, data, opts);
+}
 
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
@@ -72,17 +80,21 @@ function safeKey(s: string) {
  * @param storeId The ID of the store to backfill.
  * @param oldReceipt The receipt data *before* the change (or the receipt being deleted).
  * @param newReceipt The receipt data *after* the change (or null if deleting).
- * @param opts Optional object containing a WriteBatch to join.
+ * @param opts Optional object containing a Transaction or WriteBatch to join.
  */
 export async function applyAnalyticsDeltaV2(
   db: Firestore,
   storeId: string,
   oldReceipt: Receipt | null,
   newReceipt: Receipt | null,
-  opts?: { batch?: WriteBatch }
+  opts?: { tx?: Transaction; batch?: WriteBatch }
 ) {
-  const externalBatch = opts?.batch;
-  const batch = externalBatch ?? writeBatch(db);
+  const w: Writer | null =
+    opts?.tx ? { kind: "tx", tx: opts.tx } :
+    opts?.batch ? { kind: "batch", batch: opts.batch } :
+    null;
+
+  if (!w) throw new Error("applyAnalyticsDeltaV2 requires tx or batch.");
 
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
@@ -204,24 +216,20 @@ export async function applyAnalyticsDeltaV2(
       const categoryName = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
       const itemId = toSafeDocId(itemName);
 
-      const write = (parent: any) => {
+      const writeToSubcollection = (parent: any) => {
         const itemRef = doc(parent, "addonItems", itemId);
-        batch.set(
-          itemRef,
-          {
-            itemName,
-            categoryName,
-            qty: increment(qtyDelta),
-            amount: increment(amountDelta),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        writerSet(w, itemRef, {
+          itemName,
+          categoryName,
+          qty: increment(qtyDelta),
+          amount: increment(amountDelta),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
       };
 
-      write(dayRef);
-      write(monthRef);
-      write(yearRef);
+      writeToSubcollection(dayRef);
+      writeToSubcollection(monthRef);
+      writeToSubcollection(yearRef);
     });
 
     // --- Peak Hour Delta ---
@@ -262,25 +270,21 @@ export async function applyAnalyticsDeltaV2(
     
       const refillId = toSafeDocId(refillName);
     
-      const write = (parent: any) => {
+      const writeToSubcollection = (parent: any) => {
         const rRef = doc(parent, "refillItems", refillId);
-        batch.set(
-          rRef,
-          {
-            refillName,
-            qty: increment(qtyDelta),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        writerSet(w, rRef, {
+          refillName,
+          qty: increment(qtyDelta),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
       };
     
-      write(dayRef);
-      write(monthRef);
-      write(yearRef);
+      writeToSubcollection(dayRef);
+      writeToSubcollection(monthRef);
+      writeToSubcollection(yearRef);
     });
     
-    batch.set(dayRef, payload, { merge: true });
+    writerSet(w, dayRef, payload, { merge: true });
 
     // ---- NEW: Month + Year rollups ----
     const basePayload: Record<string, any> = { ...payload };
@@ -288,49 +292,41 @@ export async function applyAnalyticsDeltaV2(
     delete basePayload["meta.dayStartMs"];
 
     // Month doc
-    batch.set(
-      monthRef,
-      {
+    writerSet(w, monthRef, {
         ...basePayload,
         "meta.monthId": monthId,
         "meta.updatedAt": serverTimestamp(),
-      },
-      { merge: true }
-    );
+      }, { merge: true });
 
     // Year doc
-    batch.set(
-      yearRef,
-      {
+    writerSet(w, yearRef, {
         ...basePayload,
         "meta.yearId": yearId,
         "meta.updatedAt": serverTimestamp(),
-      },
-      { merge: true }
-    );
+      }, { merge: true });
   }
 
-  // If caller gave us a batch, THEY will commit.
-  if (externalBatch) return;
-
-  try {
-    await batch.commit();
-  } catch (error) {
-    console.error("Failed to apply analytics delta:", error);
-    toast({
-      variant: "destructive",
-      title: 'Analytics Update Failed',
-      description: 'Attempting to rebuild daily analytics. The dashboard may be out of sync temporarily.',
-    });
-    // Fallback: Rebuild analytics for the affected days
-    const dates = Array.from(affectedDayIds).map(id => new Date(`${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`));
-    if (dates.length > 0) {
-        const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-        const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-        rebuildDailyAnalyticsFromReceipts(db, storeId, minDate, maxDate, (msg) => console.log(`[Analytics Fallback]: ${msg}`)).catch(e => {
-             console.error("Analytics fallback rebuild also failed:", e);
-             toast({ variant: 'destructive', title: 'Critical Analytics Failure', description: 'Please contact support.' });
-        });
-    }
-  }
+  // If the caller is not providing a transaction or batch, we create our own and commit it.
+  if (!opts?.tx && !opts?.batch) {
+      try {
+          await (w.kind === 'batch' ? w.batch.commit() : Promise.resolve());
+      } catch (error) {
+            console.error("Failed to apply analytics delta:", error);
+            toast({
+                variant: "destructive",
+                title: 'Analytics Update Failed',
+                description: 'Attempting to rebuild daily analytics. The dashboard may be out of sync temporarily.',
+            });
+            // Fallback: Rebuild analytics for the affected days
+            const dates = Array.from(affectedDayIds).map(id => new Date(`${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`));
+            if (dates.length > 0) {
+                const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+                const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+                rebuildDailyAnalyticsFromReceipts(db, storeId, minDate, maxDate, (msg) => console.log(`[Analytics Fallback]: ${msg}`)).catch(e => {
+                    console.error("Analytics fallback rebuild also failed:", e);
+                    toast({ variant: 'destructive', title: 'Critical Analytics Failure', description: 'Please contact support.' });
+                });
+            }
+       }
+   }
 }

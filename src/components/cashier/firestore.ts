@@ -28,7 +28,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution } from "@/lib/analytics/daily";
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getRefillContribution, getClosedSessionsContribution } from "@/lib/analytics/daily";
 import { v4 as uuidv4 } from "uuid";
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 
@@ -238,10 +238,8 @@ export async function completePaymentFromUnits(
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     
-    const [sessionSnap, settingsSnap, counterSnap, receiptSnap] = await Promise.all([
+    const [sessionSnap, receiptSnap] = await Promise.all([
       tx.get(sessionRef),
-      tx.get(settingsRef),
-      tx.get(counterRef),
       tx.get(receiptRef),
     ]);
 
@@ -257,7 +255,7 @@ export async function completePaymentFromUnits(
     const sessionData = sessionSnap.data();
     if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
-      receiptId = receiptRef.id;
+      receiptId = receiptSnap.exists() ? receiptSnap.id : "";
       return;
     }
     
@@ -308,6 +306,9 @@ export async function completePaymentFromUnits(
     });
 
     if (shouldCreateReceipt) {
+        const settingsSnap = await tx.get(settingsRef);
+        const counterSnap = await tx.get(counterRef);
+
         const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
         const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
         const nextSeq = currentSeq + 1;
@@ -317,7 +318,6 @@ export async function completePaymentFromUnits(
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
         const change = Math.max(0, totalPaid - amountDue);
         
-        // This is where the payment methods map (mop) for analytics is created.
         const mopMap: Record<string, number> = {};
         payments.forEach(p => {
             const method = paymentMethods.find(m => m.id === p.methodId);
@@ -343,7 +343,7 @@ export async function completePaymentFromUnits(
             receiptNumber,
             receiptNoFormatUsed: receiptNoFormat,
             createdAtClientMs: Date.now(),
-            lines: billLines, // Snapshot the bill lines
+            lines: billLines,
         } as Omit<Receipt, 'createdAt'>);
         
         const salesAnalytics = billLines.reduce(
@@ -375,14 +375,12 @@ export async function completePaymentFromUnits(
                 acc.salesByItem ??= {};
                 acc.salesByCategory ??= {};
                 
-                // By Item
                 if (!acc.salesByItem[line.itemName]) {
                     acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
                 }
                 acc.salesByItem[line.itemName].qty += netQty;
                 acc.salesByItem[line.itemName].amount += netAmount;
                 
-                // By Category
                 if (!acc.salesByCategory[categoryName]) {
                     acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
                 }
@@ -455,10 +453,9 @@ export async function completePaymentFromUnits(
             analyticsApplyId: applyId,
         };
         tx.set(receiptRef, finalReceiptPayload);
-        finalReceipt = finalReceiptPayload as Receipt; // Capture for post-transaction use
+        finalReceipt = finalReceiptPayload as Receipt;
         
-        // This is where we apply the delta for the first time.
-        applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: tx as any });
+        await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
         
         receiptId = receiptRef.id;
     }
@@ -485,7 +482,7 @@ export async function completePaymentFromUnits(
         note: "Payment completed",
         meta: {
             receiptId,
-            receiptNumber: receiptId, // Placeholder until we can get it back from tx
+            receiptNumber: finalReceipt?.receiptNumber,
             paymentTotal: amountDue,
         }
     });
