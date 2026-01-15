@@ -176,7 +176,9 @@ export default function AdminReconcilePage() {
             <CardTitle>Results</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const isMissingRollup = !r.ok && r.rollupTx === 0 && r.receiptTx > 0;
+              return (
               <div
                 key={r.dayId}
                 className={`rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${
@@ -187,6 +189,7 @@ export default function AdminReconcilePage() {
                   <div className="text-sm font-medium">
                     {r.dayId}{" "}
                     {!r.ok ? <span className="text-red-600 font-normal">• mismatch</span> : <span className="text-muted-foreground font-normal">• ok</span>}
+                    {isMissingRollup && <span className="text-red-600 font-normal ml-2">• Missing Rollup</span>}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     Receipts: {fmtCurrency(r.receiptNet)} ({r.receiptTx} tx) • Rollup: {fmtCurrency(r.rollupNet)} ({r.rollupTx} tx)
@@ -204,7 +207,7 @@ export default function AdminReconcilePage() {
                   </Button>
                 </div>
               </div>
-            ))}
+            )})}
           </CardContent>
         </Card>
       ) : null}
