@@ -266,62 +266,68 @@ export default function ReceiptsPageContents() {
 
     const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
         if (!appUser || !activeStore || !editingReceipt) return;
-
+      
         try {
-            const batch = writeBatch(db);
-            const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
-            
-            const nextVersion = (editingReceipt.editVersion || 0) + 1;
-            const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
-            const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-            
-            // 1. Write revision snapshot
-            batch.set(revisionRef, {
-                version: nextVersion,
-                editedAt: serverTimestamp(),
-                editedByUid: appUser.uid,
-                editedByEmail: appUser.email,
-                reason,
-                snapshot: editingReceipt, // The full old receipt data
-            });
-
-            // 2. Overwrite original receipt
-            batch.update(originalReceiptRef, {
-                ...updatedReceipt,
-                isEdited: true,
-                editVersion: nextVersion,
-                editedAt: serverTimestamp(),
-                editedByUid: appUser.uid,
-                editedByEmail: appUser.email,
-                editReason: reason,
-            });
-
-            // 3. Apply analytics delta within the same batch
-            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceipt as ReceiptType, { batch });
-            
-            // 4. Commit all changes
-            await batch.commit();
-
-            // 5. Log activity post-commit
-            await writeActivityLog({
-                action: "RECEIPT_EDITED",
-                storeId: activeStore.id,
-                sessionId: editingReceipt.sessionId,
-                user: appUser,
-                meta: { 
-                    receiptId: editingReceipt.id, 
-                    receiptNumber: editingReceipt.receiptNumber,
-                    editVersion: nextVersion,
-                }
-            });
-
-            toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
-            setEditingReceipt(null);
+          const batch = writeBatch(db);
+          const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
+      
+          const nextVersion = (editingReceipt.editVersion || 0) + 1;
+          const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
+          const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
+      
+          // 1) Write revision snapshot (old receipt)
+          batch.set(revisionRef, {
+            version: nextVersion,
+            editedAt: serverTimestamp(),
+            editedByUid: appUser.uid,
+            editedByEmail: appUser.email,
+            reason,
+            snapshot: editingReceipt,
+          });
+      
+          // 2) Overwrite original receipt (new receipt)
+          batch.update(originalReceiptRef, {
+            ...updatedReceipt,
+            isEdited: true,
+            editVersion: nextVersion,
+            editedAt: serverTimestamp(),
+            editedByUid: appUser.uid,
+            editedByEmail: appUser.email,
+            editReason: reason,
+          });
+      
+          // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
+          await applyAnalyticsDeltaV2(
+            db,
+            activeStore.id,
+            editingReceipt,
+            updatedReceipt as ReceiptType,
+            { batch }
+          );
+      
+          // 4) Commit once
+          await batch.commit();
+      
+          // 5) Log activity (can stay outside batch)
+          await writeActivityLog({
+            action: "RECEIPT_EDITED",
+            storeId: activeStore.id,
+            sessionId: editingReceipt.sessionId,
+            user: appUser,
+            meta: {
+              receiptId: editingReceipt.id,
+              receiptNumber: editingReceipt.receiptNumber,
+              editVersion: nextVersion,
+            },
+          });
+      
+          toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
+          setEditingReceipt(null);
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Correction Failed', description: error.message });
-            throw error;
+          toast({ variant: "destructive", title: "Correction Failed", description: error.message });
+          throw error;
         }
-    }
+      };
 
 
     useEffect(() => {
