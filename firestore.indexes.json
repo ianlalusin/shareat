@@ -67,6 +67,27 @@
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "analytics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "meta.dayStartMs", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "refillItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "qty", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "addonItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "amount", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -6,6 +6,7 @@ import { collection, doc, getDoc, query, where, getDocs, onSnapshot, limit, orde
 import { db } from "@/lib/firebase/client";
 import type { DailyMetric } from "@/lib/types";
 import { mergeWith } from "lodash";
+import { differenceInDays } from 'date-fns';
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
@@ -163,6 +164,8 @@ interface UseDashboardAnalyticsProps {
     ytdMode: boolean;
 }
 
+const MAX_DAYS_RANGE = 62; // ~2 months
+
 export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }: UseDashboardAnalyticsProps) {
     // --- STATE VARIABLES ---
     const [isLoading, setIsLoading] = useState(true);
@@ -254,6 +257,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 setTrendRows([]); // Clear YTD data
                 setYtdData({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
                 
+                 // Date range guard
+                if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
+                    setDailyMetrics([]);
+                    setTopCategories([]);
+                    return; // Stop further execution
+                }
+                
                 const tomorrow = new Date(dateRange.end);
                 tomorrow.setDate(dateRange.end.getDate() + 1);
                 const tomorrowStart = startOfDay(tomorrow);
@@ -313,18 +323,18 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         return isSameDay(dateRange.start, dateRange.end) ? fmtDate(dateRange.start) : `${fmtDate(dateRange.start)} - ${fmtDate(dateRange.end)}`;
     }, [dateRange.start, dateRange.end, ytdMode]);
 
-    // Data Sanity Checks
+    // Data Sanity Checks and Warnings
     const warnings: string[] = [];
     const net = stats.netSales ?? 0;
     const tx = stats.transactions ?? 0;
 
-    // 1) txCount but zero sales
+    if (!ytdMode && differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
+        warnings.push(`Date range is too large (${differenceInDays(dateRange.end, dateRange.start)} days). Please select a range of ${MAX_DAYS_RANGE} days or less, or use the YTD view.`);
+    }
+
     if (tx > 0 && net === 0) warnings.push("Transactions > 0 but Net Sales is 0 (possible rollup issue).");
-
-    // 2) Avg basket sanity
     if (tx > 0 && stats.avgBasket === 0) warnings.push("Avg Basket is 0 while Transactions > 0.");
-
-    // 3) Payment mix sanity (allow rounding)
+    
     const mopSum = Object.values(paymentMix || {}).reduce((a, b) => a + (Number(b) || 0), 0);
     const diff = Math.abs(mopSum - net);
     if (tx > 0 && diff > 2) warnings.push(`Payment mix mismatch vs Net Sales (diff ₱${diff.toFixed(2)}).`);

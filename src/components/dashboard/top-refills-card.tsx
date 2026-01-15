@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { doc, onSnapshot, orderBy, query, where, getDocs, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase/client"; 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,73 +13,30 @@ import type { DailyMetric } from "@/lib/types";
 type TopRefillRow = { refillName: string; qty: number };
 
 interface TopRefillsCardProps {
-  storeId: string;
-  dateRange: { start: Date; end: Date };
+  dailyMetrics: DailyMetric[];
+  isLoading: boolean;
   topN?: number;
 }
 
-export function TopRefillsCard({ storeId, dateRange, topN = 5 }: TopRefillsCardProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [topRefills, setTopRefills] = useState<TopRefillRow[]>([]);
-  const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
-
-  useEffect(() => {
-    if (!storeId) {
-      setIsLoading(false);
-      setDailyMetrics([]);
-      setTopRefills([]);
-      return;
-    }
-
-    setIsLoading(true);
-
-    const startMs = dateRange.start.getTime();
-    const endMs = dateRange.end.getTime();
-
-    const metricsRef = collection(db, "stores", storeId, "analytics");
-    const q = query(
-      metricsRef,
-      where("meta.dayStartMs", ">=", startMs),
-      where("meta.dayStartMs", "<=", endMs),
-      orderBy("meta.dayStartMs", "asc")
-    );
-
-    let cancelled = false;
-
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        try {
-          const fetched = snapshot.docs.map((d) => d.data() as DailyMetric);
-          if (cancelled) return;
-          setDailyMetrics(fetched);
-
-          const dayRefs = fetched
-            .map((m) => m?.meta?.dayId)
-            .filter(Boolean)
-            .map((dayId) => doc(db, "stores", storeId, "analytics", dayId as string));
-
-          const items = await fetchTopRefillsForRollupDocs(db, dayRefs, 10);
-          if (cancelled) return;
-          setTopRefills(items as TopRefillRow[]);
-        } catch (err) {
-          console.error("Error fetching top refills:", err);
-          if (!cancelled) setTopRefills([]);
-        } finally {
-          if (!cancelled) setIsLoading(false);
-        }
-      },
-      (error) => {
-        console.error("Error fetching refill analytics:", error);
-        if (!cancelled) setIsLoading(false);
+export function TopRefillsCard({ dailyMetrics, isLoading, topN = 5 }: TopRefillsCardProps) {
+  
+  const topRefills = useMemo(() => {
+    const merged: Record<string, number> = {};
+    
+    dailyMetrics.forEach(metric => {
+      const byName = metric.refills?.servedRefillsByName ?? {};
+      for (const [name, count] of Object.entries(byName)) {
+        merged[name] = (merged[name] || 0) + count;
       }
-    );
+    });
 
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [storeId, dateRange, topN]);
+    return Object.entries(merged)
+      .map(([refillName, qty]) => ({ refillName, qty }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, topN);
+
+  }, [dailyMetrics, topN]);
+
 
   const totalRefillsInRange = useMemo(() => {
     return dailyMetrics.reduce((sum, m) => sum + (m?.refills?.servedRefillsTotal ?? 0), 0);

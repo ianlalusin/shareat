@@ -1,10 +1,7 @@
 
-
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, orderBy, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
@@ -14,8 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DailyMetric } from "@/lib/types";
 
 interface AvgRefillsCardProps {
-    storeId: string;
-    dateRange: { start: Date; end: Date };
+    dailyMetrics: DailyMetric[];
+    isLoading: boolean;
 }
 
 type RefillTally = {
@@ -28,40 +25,7 @@ type AnalyticsTally = {
     totalsByName: RefillTally;
 };
 
-export function AvgRefillsCard({ storeId, dateRange }: AvgRefillsCardProps) {
-    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-        if (!storeId) {
-            setIsLoading(false);
-            setDailyMetrics([]);
-            return;
-        }
-        setIsLoading(true);
-
-        const startMs = dateRange.start.getTime();
-        const endMs = dateRange.end.getTime();
-
-        const metricsRef = collection(db, "stores", storeId, "analytics");
-        const q = query(
-            metricsRef,
-            where("meta.dayStartMs", ">=", startMs),
-            where("meta.dayStartMs", "<=", endMs),
-            orderBy("meta.dayStartMs", "asc")
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
-            setDailyMetrics(fetchedMetrics);
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching refill analytics:", error);
-            setIsLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [storeId, dateRange]);
+export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps) {
 
     const analytics = useMemo<AnalyticsTally>(() => {
         const tally: AnalyticsTally = {
