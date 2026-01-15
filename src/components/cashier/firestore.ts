@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -233,16 +234,19 @@ export async function completePaymentFromUnits(
   const now = Date.now();
   
   await runTransaction(db, async (tx) => {
+    // --- 1. READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
     const counterRef = doc(db, `stores/${storeId}/counters`, "receipts");
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    
-    const [sessionSnap, receiptSnap] = await Promise.all([
+
+    const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
+      tx.get(settingsRef),
+      tx.get(counterRef)
     ]);
-
+    
     if (!sessionSnap.exists()) throw new Error(`Session ${sessionId} does not exist.`);
     
     // Idempotency Guard: Check if analytics have already been applied for this session.
@@ -276,13 +280,17 @@ export async function completePaymentFromUnits(
         tableSnap = await tx.get(tableRef);
     }
     
+    // --- All reads are done. Start validation and write phase. ---
+
     const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
 
     if (totalPaid < amountDue) throw new Error("Cannot complete payment: balance is not zero.");
 
     const actor = getActorStamp(user);
     const shouldCreateReceipt = !receiptSnap.exists();
-
+    
+    // --- 2. WRITE PHASE ---
+    
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
     payments.forEach((payment) => {
       const paymentRef = doc(paymentsCol);
@@ -306,9 +314,6 @@ export async function completePaymentFromUnits(
     });
 
     if (shouldCreateReceipt) {
-        const settingsSnap = await tx.get(settingsRef);
-        const counterSnap = await tx.get(counterRef);
-
         const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
         const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
         const nextSeq = currentSeq + 1;
@@ -456,6 +461,7 @@ export async function completePaymentFromUnits(
         tx.set(receiptRef, finalReceiptPayload);
         finalReceipt = finalReceiptPayload as Receipt;
         
+        // This must be inside the write phase
         await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
         
         receiptId = receiptRef.id;
