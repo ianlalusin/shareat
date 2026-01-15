@@ -168,6 +168,26 @@ export default function AdminReconcilePage() {
     }
   };
 
+  const rebuildYear = async (year: number) => {
+    if (!activeStore?.id) return;
+
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31);
+
+    setIsRunning(true);
+    try {
+        setProgress(`Rebuilding ${year}…`);
+        await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, yearStart, yearEnd, (msg) => setProgress(`${year}: ${msg}`));
+        toast({ title: "Year rebuild complete", description: `Rebuilt days for ${year}. Re-run rollup reconcile.` });
+    } catch (e: any) {
+        console.error(e);
+        toast({ variant: "destructive", title: "Year rebuild failed", description: e?.message ?? "Error" });
+    } finally {
+        setIsRunning(false);
+        setProgress("");
+    }
+    };
+
   const currentYear = new Date().getFullYear();
   const availableYears = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
@@ -219,7 +239,7 @@ export default function AdminReconcilePage() {
         </CardContent>
       </Card>
       
-        {rows.length > 0 && (
+        {rows.length > 0 && mode === 'receipts' && (
             <Card>
             <CardHeader><CardTitle>Receipts vs Daily Results</CardTitle></CardHeader>
             <CardContent className="space-y-2">
@@ -243,7 +263,7 @@ export default function AdminReconcilePage() {
             </Card>
         )}
 
-        {yearRow && (
+        {mode === 'rollups' && yearRow && (
             <Card>
                 <CardHeader><CardTitle>Yearly Rollup vs Monthly Sums ({yearRow.id})</CardTitle></CardHeader>
                 <CardContent>
@@ -255,12 +275,15 @@ export default function AdminReconcilePage() {
                             <div className="text-xs text-muted-foreground">Sum of Months: {fmtCurrency(yearRow.sumNet)} ({yearRow.sumTx} tx) • Rollup: {fmtCurrency(yearRow.rollupNet)} ({yearRow.rollupTx} tx)</div>
                             {!yearRow.ok && (<div className="text-xs text-muted-foreground">Net diff: {fmtCurrency(yearRow.netDiff)} • Tx diff: {yearRow.txDiff}</div>)}
                         </div>
+                         <Button variant="secondary" onClick={() => rebuildYear(Number(yearRow.id))} disabled={isRunning || yearRow.ok} className="mt-2">
+                            Rebuild Entire Year
+                        </Button>
                     </div>
                 </CardContent>
             </Card>
         )}
 
-        {monthRows.length > 0 && (
+        {mode === 'rollups' && monthRows.length > 0 && (
              <Card>
                 <CardHeader><CardTitle>Monthly Rollups vs Daily Sums</CardTitle></CardHeader>
                 <CardContent>
