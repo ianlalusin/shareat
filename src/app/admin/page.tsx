@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
@@ -28,6 +28,10 @@ const managerTools = [
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
     { title: "Receipt Settings", description: "Customize printed customer receipts.", href: "/manager/receipt-settings", icon: Receipt },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/manager/reports", icon: LineChart },
+]
+
+const dataTools = [
+    { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck },
 ]
 
 function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
@@ -110,7 +114,12 @@ export default function AdminPage() {
                                         <CardDescription>Advanced tools for data maintenance. Use with caution.</CardDescription>
                                     </CardHeader>
                                 </AccordionTrigger>
-                                <AccordionContent className="p-6 pt-0">
+                                <AccordionContent className="p-6 pt-0 space-y-4">
+                                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                        {dataTools.map(tool => (
+                                            <ToolCard key={tool.title} {...tool} />
+                                        ))}
+                                    </div>
                                     <BackfillTool />
                                 </AccordionContent>
                              </Card>
