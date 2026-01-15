@@ -13,7 +13,7 @@ import type { DailyMetric } from "@/lib/types";
 type TopRefillRow = { refillName: string; qty: number };
 
 interface TopRefillsCardProps {
-  dailyMetrics: DailyMetric[];
+  dailyMetrics?: DailyMetric[];
   isLoading: boolean;
   topN?: number;
 }
@@ -21,6 +21,8 @@ interface TopRefillsCardProps {
 export function TopRefillsCard({ dailyMetrics, isLoading, topN = 5 }: TopRefillsCardProps) {
   
   const topRefills = useMemo(() => {
+    if (!dailyMetrics) return [];
+
     const merged: Record<string, number> = {};
     
     dailyMetrics.forEach(metric => {
@@ -39,6 +41,7 @@ export function TopRefillsCard({ dailyMetrics, isLoading, topN = 5 }: TopRefills
 
 
   const totalRefillsInRange = useMemo(() => {
+    if (!dailyMetrics) return 0;
     return dailyMetrics.reduce((sum, m) => sum + (m?.refills?.servedRefillsTotal ?? 0), 0);
   }, [dailyMetrics]);
 
