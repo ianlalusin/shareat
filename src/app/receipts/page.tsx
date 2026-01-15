@@ -417,35 +417,35 @@ export default function ReceiptsPageContents() {
     const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
       if (!appUser || !activeStore) return;
     
-      try {
-        const batch = writeBatch(db);
-        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-    
-        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
-    
-        batch.update(receiptRef, {
-          status: "voided",
-          voidedAt: serverTimestamp(),
-          voidedByUid: appUser.uid,
-          voidedByEmail: appUser.email,
-          voidReason: reason,
-        });
-    
-        await batch.commit();
-    
-        await writeActivityLog({
-          action: "RECEIPT_VOIDED",
-          storeId: activeStore.id,
-          sessionId: receipt.sessionId,
-          user: appUser,
-          meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
-        });
-    
-        toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
-      } catch (error: any) {
-        toast({ variant: "destructive", title: "Void Failed", description: error.message });
-        throw error;
+      if (receipt.status === "voided") {
+        toast({ title: "Already voided", description: "This receipt was already voided." });
+        return;
       }
+    
+      const batch = writeBatch(db);
+      const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
+    
+      await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+    
+      batch.update(receiptRef, {
+        status: "voided",
+        voidedAt: serverTimestamp(),
+        voidedByUid: appUser.uid,
+        voidedByEmail: appUser.email,
+        voidReason: reason,
+      });
+    
+      await batch.commit();
+    
+      await writeActivityLog({
+        action: "RECEIPT_VOIDED",
+        storeId: activeStore.id,
+        sessionId: receipt.sessionId,
+        user: appUser,
+        meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
+      });
+    
+      toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
     };
 
     const handleExport = async () => {
