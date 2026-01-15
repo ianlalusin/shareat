@@ -2,7 +2,6 @@
 'use client';
 
 import {
-  writeBatch,
   type Firestore,
   type WriteBatch,
   type Transaction,
@@ -308,9 +307,17 @@ export async function applyAnalyticsDeltaV2(
 
   // If the caller is not providing a transaction or batch, we create our own and commit it.
   if (!opts?.tx && !opts?.batch) {
-      try {
-          await (w.kind === 'batch' ? w.batch.commit() : Promise.resolve());
-      } catch (error) {
+       try {
+          // This path is not currently used by the app, but could be for a standalone script.
+          const batch = db ? (await import("firebase/firestore")).writeBatch(db) : null;
+          if (batch) {
+             // Re-run with the created batch
+             await applyAnalyticsDeltaV2(db, storeId, oldReceipt, newReceipt, { batch });
+             await batch.commit();
+          } else {
+             throw new Error("Firestore instance not available for standalone batch.");
+          }
+       } catch (error) {
             console.error("Failed to apply analytics delta:", error);
             toast({
                 variant: "destructive",

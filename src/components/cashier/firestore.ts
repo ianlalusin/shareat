@@ -438,6 +438,7 @@ export async function completePaymentFromUnits(
           mop: mopMap,
           salesByItem: salesAnalytics.salesByItem,
           salesByCategory: salesAnalytics.salesByCategory,
+          addonSalesByItem: {}, // Placeholder, to be populated if needed
           servedRefillsByName: sessionData.servedRefillsByName || {},
           serveCountByType: sessionData.serveCountByType || {},
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
