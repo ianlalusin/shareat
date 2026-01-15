@@ -81,6 +81,45 @@ export default function AdminReconcilePage() {
     }
   };
 
+  const rebuildAllMismatched = async () => {
+    if (!activeStore?.id) return;
+    const targets = rows.filter((r) => !r.ok).map((r) => r.dayId);
+    if (targets.length === 0) {
+      toast({ title: "Nothing to rebuild", description: "No mismatched days found." });
+      return;
+    }
+
+    setIsRunning(true);
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const dayId = targets[i];
+        setProgress(`Rebuilding ${dayId} (${i + 1}/${targets.length})…`);
+
+        const y = Number(dayId.slice(0, 4));
+        const m = Number(dayId.slice(4, 6)) - 1;
+        const d = Number(dayId.slice(6, 8));
+        
+        const dayStart = new Date(y, m, d);
+        dayStart.setHours(0, 0, 0, 0);
+
+        const dayEnd = new Date(y, m, d);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, dayStart, dayEnd, (msg) =>
+          setProgress(`${dayId}: ${msg}`)
+        );
+      }
+
+      toast({ title: "Bulk rebuild complete", description: `Rebuilt ${targets.length} day(s). Re-run reconcile to confirm.` });
+    } catch (e: any) {
+      console.error(e);
+      toast({ variant: "destructive", title: "Bulk rebuild failed", description: e?.message ?? "Error" });
+    } finally {
+      setIsRunning(false);
+      setProgress("");
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       <Card>
@@ -88,7 +127,7 @@ export default function AdminReconcilePage() {
           <CardTitle>Analytics Reconcile</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Start date</div>
               <Input
@@ -105,12 +144,20 @@ export default function AdminReconcilePage() {
                 onChange={(e) => setEnd(new Date(e.target.value))}
               />
             </div>
-            <div className="flex items-end">
+            <div className="space-y-2">
               <Button className="w-full" onClick={run} disabled={isRunning}>
                 {isRunning ? "Working…" : "Run Reconcile"}
               </Button>
             </div>
           </div>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={rebuildAllMismatched}
+            disabled={isRunning || badRows.length === 0}
+          >
+            Rebuild all mismatched
+          </Button>
 
           {progress ? <div className="text-xs text-muted-foreground">{progress}</div> : null}
 
