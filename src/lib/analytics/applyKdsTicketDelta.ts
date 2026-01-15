@@ -39,10 +39,11 @@ function getDayIdManilaFromMs(ms: number) {
 type KdsTicket = {
   status: "preparing" | "served" | "cancelled";
   type: "package" | "refill" | "addon";
-  itemName?: string | null; // Added for refill name
+  itemName?: string | null;
   createdAtClientMs?: number | null;
   servedAtClientMs?: number | null;
   durationMs?: number | null;
+  refillName?: string | null; // Legacy, but keep for fallback
   qty?: number | null;        // optional, default 1
 };
 
@@ -101,7 +102,7 @@ export async function applyKdsTicketDelta(
   if (typeKey === "refill") {
     payload["refills.servedRefillsTotal"] = increment(sign * qty);
 
-    const refillName = (ticket.itemName ?? "Unknown").trim();
+    const refillName = (ticket.refillName ?? ticket.itemName ?? "Unknown").trim();
     if (refillName) {
         const refillId = toSafeDocId(refillName);
 

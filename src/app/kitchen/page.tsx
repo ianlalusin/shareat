@@ -199,10 +199,8 @@ export default function KitchenPage() {
                 };
 
                 if (oldTicketState.type === 'refill') {
-                    const refillName = oldTicketState.itemName || "Refill";
                     const qty = oldTicketState.qty || 1;
                     sessionUpdate.servedRefillsTotal = increment(qty);
-                    sessionUpdate[`servedRefillsByName.${refillName}`] = increment(qty);
                 }
                 transaction.update(sessionRef, sessionUpdate);
                 
