@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { DailyMetric } from "@/lib/types";
 
 type CategoryData = {
     categoryName: string;
@@ -63,13 +64,15 @@ export function TopCategoryCard({ categorySales, isLoading }: TopCategoryCardPro
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Category</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
                                 <TableHead className="text-right">Amount</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {topCategories.map(({ categoryName, amount }) => (
+                            {topCategories.map(({ categoryName, qty, amount }) => (
                                 <TableRow key={categoryName}>
                                     <TableCell className="font-medium">{categoryName}</TableCell>
+                                    <TableCell className="text-right">{qty.toLocaleString()}</TableCell>
                                     <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                 </TableRow>
                             ))}
@@ -87,12 +90,17 @@ export function TopCategoryCard({ categorySales, isLoading }: TopCategoryCardPro
                 <ScrollArea className="flex-1">
                     <Table>
                         <TableHeader>
-                            <TableRow><TableHead>Category</TableHead><TableHead className="text-right">Amount</TableHead></TableRow>
+                            <TableRow>
+                                <TableHead>Category</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {categorySales.map(({ categoryName, amount }) => (
+                            {categorySales.map(({ categoryName, qty, amount }) => (
                                 <TableRow key={categoryName}>
                                     <TableCell className="font-medium">{categoryName}</TableCell>
+                                    <TableCell className="text-right">{qty.toLocaleString()}</TableCell>
                                     <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                 </TableRow>
                             ))}

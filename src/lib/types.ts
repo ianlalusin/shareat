@@ -54,7 +54,7 @@ export type InventoryItem = {
   id: string;
   productId: string;
   name: string;
-  variant?: string;
+  variantLabel?: string | null;
   category?: string;
   subCategory?: string;
   uom: string;
@@ -381,6 +381,7 @@ export type DailyMetric = {
         packageSalesAmountByName: Record<string, number>;
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
+        addonSalesQtyByCategory?: Record<string, number>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
     };

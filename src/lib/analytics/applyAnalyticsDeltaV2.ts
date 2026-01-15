@@ -113,7 +113,7 @@ export async function applyAnalyticsDeltaV2(
     if (paymentDelta.totalGross !== 0) payload['payments.totalGross'] = increment(paymentDelta.totalGross);
     if (paymentDelta.txCount !== 0) payload['payments.txCount'] = increment(paymentDelta.txCount);
     
-    const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(dayNew.payment.byMethod)]);
+    const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(newContrib.payment.byMethod)]);
     allPaymentMethods.forEach(method => {
       const delta = (dayNew.payment.byMethod[method] || 0) - (dayOld.payment.byMethod[method] || 0);
       if (delta !== 0) payload[`payments.byMethod.${method}`] = increment(delta);
@@ -151,17 +151,34 @@ export async function applyAnalyticsDeltaV2(
         if(amountDelta !== 0) payload[`sales.packageSalesAmountByName.${name}`] = increment(amountDelta);
         if(qtyDelta !== 0) payload[`sales.packageSalesQtyByName.${name}`] = increment(qtyDelta);
     });
-    
-    const allAddonCategories = new Set([...Object.keys(dayOld.sales.addonSalesAmountByCategory), ...Object.keys(dayNew.sales.addonSalesAmountByCategory)]);
-    allAddonCategories.forEach(cat => {
-        const delta = (dayNew.sales.addonSalesAmountByCategory[cat] || 0) - (dayOld.sales.addonSalesAmountByCategory[cat] || 0);
-        if (delta !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(delta);
-    });
+
+    const catQtyDelta: Record<string, number> = {};
+    const catAmtDelta: Record<string, number> = {};
 
     const allAddonItems = new Set([
       ...Object.keys(dayOld.sales.addonSalesByItem || {}),
       ...Object.keys(dayNew.sales.addonSalesByItem || {}),
     ]);
+
+    allAddonItems.forEach((itemName) => {
+      const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
+      const newItem = dayNew.sales.addonSalesByItem?.[itemName];
+
+      const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
+      const amtDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
+      if (qtyDelta === 0 && amtDelta === 0) return;
+
+      const cat = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
+      catQtyDelta[cat] = (catQtyDelta[cat] ?? 0) + qtyDelta;
+      catAmtDelta[cat] = (catAmtDelta[cat] ?? 0) + amtDelta;
+    });
+
+    for (const [cat, qd] of Object.entries(catQtyDelta)) {
+      if (qd !== 0) payload[`sales.addonSalesQtyByCategory.${cat}`] = increment(qd);
+    }
+    for (const [cat, ad] of Object.entries(catAmtDelta)) {
+      if (ad !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(ad);
+    }
 
     const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
     const monthId = dayId.slice(0, 6);
@@ -219,7 +236,7 @@ export async function applyAnalyticsDeltaV2(
     // --- Closed Sessions Delta ---
     if (dayNew.closed.closedCount !== dayOld.closed.closedCount) payload['sessions.closedCount'] = increment(dayNew.closed.closedCount - dayOld.closed.closedCount);
     if (dayNew.closed.totalPaid !== dayOld.closed.totalPaid) payload['sessions.totalPaid'] = increment(dayNew.closed.totalPaid - dayOld.closed.totalPaid);
-
+    
     // --- Refills Delta ---
     if(dayNew.refill.packageSessionsCount !== dayOld.refill.packageSessionsCount) payload['refills.packageSessionsCount'] = increment(dayNew.refill.packageSessionsCount - dayOld.refill.packageSessionsCount);
     if(dayNew.refill.servedRefillsTotal !== dayOld.refill.servedRefillsTotal) payload['refills.servedRefillsTotal'] = increment(dayNew.refill.servedRefillsTotal - dayOld.refill.servedRefillsTotal);
