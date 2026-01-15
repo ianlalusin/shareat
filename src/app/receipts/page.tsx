@@ -274,9 +274,6 @@ export default function ReceiptsPageContents() {
             const nextVersion = (editingReceipt.editVersion || 0) + 1;
             const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
             const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-
-            const structuredDiff = {}; // diff(editingReceipt, updatedReceipt);
-            const diffSummary = "Receipt manually corrected"; // Object.keys(structuredDiff).join(', ');
             
             // 1. Write revision snapshot
             batch.set(revisionRef, {
@@ -285,8 +282,6 @@ export default function ReceiptsPageContents() {
                 editedByUid: appUser.uid,
                 editedByEmail: appUser.email,
                 reason,
-                diffSummary,
-                diff: structuredDiff,
                 snapshot: editingReceipt, // The full old receipt data
             });
 
@@ -299,7 +294,6 @@ export default function ReceiptsPageContents() {
                 editedByUid: appUser.uid,
                 editedByEmail: appUser.email,
                 editReason: reason,
-                lastDiffSummary: diffSummary,
             });
 
             await batch.commit();
@@ -315,7 +309,6 @@ export default function ReceiptsPageContents() {
                     receiptId: editingReceipt.id, 
                     receiptNumber: editingReceipt.receiptNumber,
                     editVersion: nextVersion,
-                    diffSummary,
                 }
             });
 
@@ -573,7 +566,7 @@ export default function ReceiptsPageContents() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
                 <div className="flex items-center gap-2">
-                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || receipts.length === 0} variant="outline">
+                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
                         {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
                         Export
                     </Button>
