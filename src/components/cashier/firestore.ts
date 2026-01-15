@@ -282,9 +282,12 @@ export async function completePaymentFromUnits(
     
     // --- All reads are done. Start validation and write phase. ---
 
-    const totalPaid = payments.reduce((s, p) => s + (typeof p.amount === "number" ? p.amount : Number(p.amount) || 0), 0);
+    const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
+    const amountDueCents = Math.round(amountDue * 100);
 
-    if (totalPaid < amountDue) throw new Error("Cannot complete payment: balance is not zero.");
+    if (totalPaidCents < amountDueCents) {
+      throw new Error(`Cannot complete payment: balance is not zero. Paid: ${totalPaidCents}, Due: ${amountDueCents}`);
+    }
 
     const actor = getActorStamp(user);
     const shouldCreateReceipt = !receiptSnap.exists();
@@ -321,6 +324,7 @@ export async function completePaymentFromUnits(
         tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
         
         const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
+        const totalPaid = totalPaidCents / 100;
         const change = Math.max(0, totalPaid - amountDue);
         
         const mopMap: Record<string, number> = {};

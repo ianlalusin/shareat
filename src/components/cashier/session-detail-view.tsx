@@ -40,7 +40,12 @@ function validatePayments(payments: Payment[], grandTotalCents: number, paymentM
         }
     }
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
-    if (totalPaidCents < grandTotalCents) return "Payment is not enough to cover the total.";
+    
+    // Use a small tolerance for floating point comparisons
+    if (totalPaidCents < grandTotalCents - 1) { // Allow for a 1 cent rounding diff
+        return `Payment is not enough to cover the total. Balance: ₱${((grandTotalCents - totalPaidCents) / 100).toFixed(2)}`;
+    }
+    
     return null;
 }
 
@@ -173,7 +178,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const remainingBalance = remainingCents / 100;
   const change = Math.max(0, -remainingCents) / 100;
   
-  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 0;
+  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 1; // Allow for 1 cent rounding diff
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId) return;
