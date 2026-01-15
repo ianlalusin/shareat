@@ -22,7 +22,7 @@ import type { KitchenTicket } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
-import { getKitchenTicketContribution, dailyAnalyticsDocRef } from "@/lib/analytics/daily";
+import { applyKitchenTicketAnalyticsDelta } from "@/lib/analytics/applyKitchenTicketAnalyticsDelta";
 
 export type KitchenStation = {
     id: string;
@@ -161,9 +161,6 @@ export default function KitchenPage() {
         return;
     }
 
-    let oldTicketState: KitchenTicket | null = null;
-    let newTicketState: KitchenTicket | null = null;
-
     try {
         await runTransaction(db, async (transaction) => {
             const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
@@ -173,82 +170,65 @@ export default function KitchenPage() {
                 throw new Error("Ticket not found.");
             }
 
-            const ticket = ticketSnap.data() as KitchenTicket;
-            oldTicketState = ticket; // Capture old state
+            const oldTicketState = ticketSnap.data() as KitchenTicket;
             
-            // Idempotency check
-            if (ticket.status === 'served' || ticket.status === 'cancelled') {
+            if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
                 console.log(`Ticket ${ticketId} is already finalized. Skipping update.`);
                 return;
             }
 
             const updatePayload: any = { status: newStatus };
+            let newTicketState: KitchenTicket;
             
             if (newStatus === 'served') {
                 const nowMs = Date.now();
-                const createdAtMs = toJsDate(ticket.createdAt)?.getTime() ?? nowMs;
+                const createdAtMs = toJsDate(oldTicketState.createdAt)?.getTime() ?? nowMs;
                 const durationMs = Math.max(0, nowMs - createdAtMs);
                 
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
-                updatePayload.preparedAt = serverTimestamp(); // Mark as prepared at the same time
+                updatePayload.preparedAt = serverTimestamp();
                 updatePayload.preparedByUid = appUser.uid;
                 updatePayload.durationMs = durationMs;
                 
                 const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                 const sessionUpdate: Record<string, any> = {
-                    [`serveCountByType.${ticket.type}`]: increment(1),
-                    [`serveTimeMsTotalByType.${ticket.type}`]: increment(durationMs),
+                    [`serveCountByType.${oldTicketState.type}`]: increment(1),
+                    [`serveTimeMsTotalByType.${oldTicketState.type}`]: increment(durationMs),
                 };
 
-                if (ticket.type === 'refill') {
-                    const refillName = ticket.itemName || "Refill";
-                    const qty = ticket.qty || 1;
+                if (oldTicketState.type === 'refill') {
+                    const refillName = oldTicketState.itemName || "Refill";
+                    const qty = oldTicketState.qty || 1;
                     sessionUpdate.servedRefillsTotal = increment(qty);
                     sessionUpdate[`servedRefillsByName.${refillName}`] = increment(qty);
                 }
                 transaction.update(sessionRef, sessionUpdate);
+                
+                newTicketState = { ...oldTicketState, ...updatePayload };
 
             } else { // cancelled
                 updatePayload.cancelledAt = serverTimestamp();
                 updatePayload.cancelledByUid = appUser.uid;
                 updatePayload.cancelReason = reason;
 
-                // Also update the corresponding billable item if it's an add-on
-                if (ticket.type === 'addon' && ticket.itemId) {
-                    const billLineId = `addon_${ticket.itemId}`;
+                newTicketState = { ...oldTicketState, ...updatePayload };
+
+                if (oldTicketState.type === 'addon' && oldTicketState.itemId) {
+                    const billLineId = `addon_${oldTicketState.itemId}`;
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", billLineId);
                     transaction.update(billLineRef, {
                         voidedQty: increment(1)
                     });
                 }
             }
+            
             transaction.update(ticketRef, updatePayload);
-            newTicketState = { ...ticket, ...updatePayload }; // Capture new state
+            
+            // Atomically update analytics
+            await applyKitchenTicketAnalyticsDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
         });
-        
-        // --- Analytics Update (outside transaction) ---
-        if (oldTicketState && newTicketState) {
-            const oldContrib = getKitchenTicketContribution(oldTicketState);
-            const newContrib = getKitchenTicketContribution(newTicketState);
-
-            const deltaServed = newContrib.servedCount - oldContrib.servedCount;
-            const deltaCancelled = newContrib.cancelledCount - oldContrib.cancelledCount;
-            const deltaDurationSum = newContrib.durationMsSum - oldContrib.durationMsSum;
-            const deltaDurationCount = newContrib.durationCount - oldContrib.durationCount;
-
-            if (newContrib.dayId && (deltaServed !== 0 || deltaCancelled !== 0 || deltaDurationSum !== 0)) {
-                const analyticsRef = dailyAnalyticsDocRef(db, activeStore.id, newContrib.dayId);
-                const analyticsPayload: Record<string, any> = {};
-                if (deltaServed !== 0) analyticsPayload[`kitchen.servedCountByType.${newContrib.typeKey}`] = increment(deltaServed);
-                if (deltaCancelled !== 0) analyticsPayload[`kitchen.cancelledCountByType.${newContrib.typeKey}`] = increment(deltaCancelled);
-                if (deltaDurationSum !== 0) analyticsPayload[`kitchen.durationMsSumByType.${newContrib.typeKey}`] = increment(deltaDurationSum);
-                if (deltaDurationCount !== 0) analyticsPayload[`kitchen.durationCountByType.${newContrib.typeKey}`] = increment(deltaDurationCount);
-
-                await updateDoc(analyticsRef, analyticsPayload).catch(e => console.error("Analytics update failed:", e));
-            }
-        }
 
         const ticket = tickets.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
