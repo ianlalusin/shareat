@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DailyMetric } from "@/lib/types";
+import { fetchPartialDays } from "@/hooks/use-dashboard-analytics";
+import { db } from "@/lib/firebase/client";
 
 interface AvgRefillsCardProps {
-    dailyMetrics: DailyMetric[];
+    dailyMetrics?: DailyMetric[];
     isLoading: boolean;
 }
 
@@ -26,13 +28,14 @@ type AnalyticsTally = {
 };
 
 export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps) {
-
     const analytics = useMemo<AnalyticsTally>(() => {
         const tally: AnalyticsTally = {
             sessionCount: 0,
             overallTotal: 0,
             totalsByName: {},
         };
+
+        if (!dailyMetrics) return tally;
 
         dailyMetrics.forEach(metric => {
             tally.sessionCount += metric.refills?.packageSessionsCount ?? 0;
