@@ -120,13 +120,14 @@ interface UseDashboardAnalyticsProps {
 }
 
 export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }: UseDashboardAnalyticsProps) {
+    // --- STATE VARIABLES ---
     const [isLoading, setIsLoading] = useState(true);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [activeSessions, setActiveSessions] = useState(0);
-
     const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
-    const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: DateRange }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()}});
+    const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: {start: Date, end: Date} }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()}});
     
+    // --- DERIVED STATE (Date Range) ---
     const dateRange = useMemo(() => {
         const now = new Date();
         let s = new Date(), e = new Date();
@@ -140,6 +141,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         return { start: s, end: e };
     }, [preset, customRange]);
 
+    // --- MAIN DATA FETCHING EFFECT ---
     useEffect(() => {
         if (!storeId) {
             setIsLoading(false);
@@ -152,6 +154,8 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
 
         async function fetchData() {
             if (ytdMode) {
+                // This is where the Year-over-Year logic will go.
+                // It will call fetchYearMonths and fetchPartialDays.
                 const today = new Date();
                 const currentYear = today.getFullYear();
                 const prevYear = currentYear - 1;
@@ -163,6 +167,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 ]);
                 if (cancelled) return;
 
+                // --- WHERE MONTHLY TREND DATA IS SET ---
                 setTrendRows(buildMonthlyTrendRows(curYearMonths, prevYearMonths));
 
                 const curMonthStart = new Date(currentYear, currentMonthIndex, 1);
@@ -191,14 +196,17 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const finalPrevYtd = mergeWith({}, prevFullMonthsTotal, prevPartialMonthTotal, customMerger);
                 finalPrevYtd.avgBasket = finalPrevYtd.transactions > 0 ? finalPrevYtd.grossSales / finalPrevYtd.transactions : 0;
                 
+                 // --- WHERE YTD DATA IS SET ---
                 setYtdData({ cur: finalCurYtd, prev: finalPrevYtd, range: {start: new Date(currentYear, 0, 1), end: today} });
                 
             } else {
+                // This is the existing logic for daily/weekly/monthly views.
                 const tomorrow = new Date(dateRange.end);
                 tomorrow.setDate(dateRange.end.getDate() + 1);
                 const tomorrowStart = startOfDay(tomorrow);
                 const metrics = await fetchPartialDays(db, storeId, dateRange.start, tomorrowStart);
                 if (cancelled) return;
+                // --- WHERE DAILY METRICS ARE SET ---
                 setDailyMetrics(metrics);
             }
         }
@@ -207,6 +215,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
             if (!cancelled) setIsLoading(false);
         });
 
+        // Real-time listener for active sessions (always on)
         const sessionsRef = collection(db, "stores", storeId, "sessions");
         const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
         const unsubSessions = onSnapshot(activeSessionsQuery, (snapshot) => {
@@ -219,12 +228,16 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         };
     }, [storeId, dateRange.start, dateRange.end, ytdMode]);
 
+    // --- COMPUTED VALUES ---
+    
+    // --- WHERE `stats` IS COMPUTED ---
     const stats = useMemo<DashboardStats>(() => {
         if (ytdMode) return ytdData.cur;
         if (!dailyMetrics || dailyMetrics.length === 0) return { grossSales: 0, transactions: 0, avgBasket: 0 };
         return aggregateDailies(dailyMetrics);
     }, [dailyMetrics, ytdMode, ytdData.cur]);
 
+    // --- WHERE `paymentMix` IS COMPUTED ---
     const paymentMix = useMemo<Record<string, number>>(() => {
         if (ytdMode) return ytdData.cur.mop;
         const mix: Record<string, number> = {};
@@ -239,11 +252,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         return mix;
     }, [dailyMetrics, ytdMode, ytdData.cur.mop]);
 
+    // --- WHERE `dateRangeLabel` IS COMPUTED ---
     const dateRangeLabel = useMemo(() => {
         if (ytdMode) return `Year-to-Date (as of ${fmtDate(new Date())})`;
         return isSameDay(dateRange.start, dateRange.end) ? fmtDate(dateRange.start) : `${fmtDate(dateRange.start)} - ${fmtDate(dateRange.end)}`;
     }, [dateRange.start, dateRange.end, ytdMode]);
 
+    // --- RETURN SHAPE ---
     return {
         isLoading,
         dateRangeLabel,
