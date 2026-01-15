@@ -15,11 +15,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -33,9 +33,9 @@ import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { diff } from 'deep-object-diff';
-import { getPaymentContribution, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, dailyAnalyticsDocRef, getClosedSessionsContribution, getRefillContribution } from "@/lib/analytics/daily";
-import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { v4 as uuidv4 } from "uuid";
+
 
 // --- Date Helpers ---
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -65,133 +65,6 @@ function getUsername(appUser: any) {
     || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
 }
 
-async function applyAnalyticsDelta(
-  storeId: string,
-  oldReceipt: ReceiptType | null,
-  newReceipt: ReceiptType | null
-) {
-  const oldC = {
-    guest: getGuestCoversContribution(oldReceipt),
-    sales: getSalesContribution(oldReceipt),
-    peak: getPeakHourContribution(oldReceipt),
-    closed: getClosedSessionsContribution(oldReceipt),
-    refill: getRefillContribution(oldReceipt),
-  };
-  const newC = {
-    guest: getGuestCoversContribution(newReceipt),
-    sales: getSalesContribution(newReceipt),
-    peak: getPeakHourContribution(newReceipt),
-    closed: getClosedSessionsContribution(newReceipt),
-    refill: getRefillContribution(newReceipt),
-  };
-
-  const updates: { ref: any, payload: any }[] = [];
-
-  const processDelta = (oldContrib: any, newContrib: any) => {
-    if (oldContrib.dayId && oldContrib.dayId !== newContrib.dayId) {
-      // Day changed, so subtract from old day
-      const oldPayload: Record<string, any> = {};
-      if (oldContrib.guestCountFinal) oldPayload['guests.guestCountFinalTotal'] = increment(-oldContrib.guestCountFinal);
-      if (oldContrib.packageSessionsCount) oldPayload['guests.packageSessionsCount'] = increment(-oldContrib.packageSessionsCount);
-      if (oldContrib.packageName) oldPayload[`guests.packageCoversBilledByPackageName.${oldContrib.packageName}`] = increment(-oldContrib.billedPackageCovers);
-      
-      if (oldContrib.packageAmountByName) for (const [k,v] of Object.entries(oldContrib.packageAmountByName)) oldPayload[`sales.packageSalesAmountByName.${k}`] = increment(-(v as number));
-      if (oldContrib.packageQtyByName) for (const [k,v] of Object.entries(oldContrib.packageQtyByName)) oldPayload[`sales.packageSalesQtyByName.${k}`] = increment(-(v as number));
-      if (oldContrib.addonAmountByCategory) for (const [k,v] of Object.entries(oldContrib.addonAmountByCategory)) oldPayload[`sales.addonSalesAmountByCategory.${k}`] = increment(-(v as number));
-      if (oldContrib.hourKey) {
-        oldPayload[`sales.salesAmountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.amount);
-        oldPayload[`sales.sessionCountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.count);
-      }
-      if (oldContrib.closedCount) {
-          oldPayload['sessions.closedCount'] = increment(-oldContrib.closedCount);
-          oldPayload['sessions.totalPaid'] = increment(-oldContrib.totalPaid);
-      }
-      if (oldContrib.packageSessionsCount) {
-          oldPayload['refills.packageSessionsCount'] = increment(-oldContrib.packageSessionsCount);
-          oldPayload['refills.servedRefillsTotal'] = increment(-oldContrib.servedRefillsTotal);
-          for (const [k,v] of Object.entries(oldContrib.servedRefillsByName)) oldPayload[`refills.servedRefillsByName.${k}`] = increment(-(v as number));
-      }
-
-      updates.push({ ref: dailyAnalyticsDocRef(db, storeId, oldContrib.dayId), payload: oldPayload });
-    }
-
-    const payload: Record<string, any> = {};
-    const deltaGuestCount = newContrib.guestCountFinal - oldContrib.guestCountFinal;
-    const deltaPackageSessions = newContrib.packageSessionsCount - oldContrib.packageSessionsCount;
-
-    if (deltaGuestCount) payload['guests.guestCountFinalTotal'] = increment(deltaGuestCount);
-    if (deltaPackageSessions) payload['guests.packageSessionsCount'] = increment(deltaPackageSessions);
-    
-    // Package Covers by Name
-    const allPkgNames = new Set([...Object.keys(oldContrib.packageAmountByName || {}), ...Object.keys(newContrib.packageAmountByName || {})]);
-    allPkgNames.forEach(name => {
-        const oldVal = oldContrib.packageAmountByName?.[name] || 0;
-        const newVal = newContrib.packageAmountByName?.[name] || 0;
-        if(oldVal !== newVal) payload[`sales.packageSalesAmountByName.${name}`] = increment(newVal - oldVal);
-
-        const oldQty = oldContrib.packageQtyByName?.[name] || 0;
-        const newQty = newContrib.packageQtyByName?.[name] || 0;
-        if(oldQty !== newQty) payload[`sales.packageSalesQtyByName.${name}`] = increment(newQty - oldQty);
-    });
-
-    // Addon Sales by Category
-    const allCategories = new Set([...Object.keys(oldContrib.addonAmountByCategory || {}), ...Object.keys(newContrib.addonAmountByCategory || {})]);
-    allCategories.forEach(cat => {
-        const oldVal = oldContrib.addonAmountByCategory?.[cat] || 0;
-        const newVal = newContrib.addonAmountByCategory?.[cat] || 0;
-        if(oldVal !== newVal) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(newVal - oldVal);
-    });
-
-    // Peak Hour
-    if (oldContrib.hourKey !== newContrib.hourKey) {
-        if(oldContrib.hourKey) {
-          payload[`sales.salesAmountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.amount);
-          payload[`sales.sessionCountByHour.${oldContrib.hourKey}`] = increment(-oldContrib.count);
-        }
-        if(newContrib.hourKey) {
-          payload[`sales.salesAmountByHour.${newContrib.hourKey}`] = increment(newContrib.amount);
-          payload[`sales.sessionCountByHour.${newContrib.hourKey}`] = increment(newContrib.count);
-        }
-    } else if (newContrib.hourKey && (oldContrib.amount !== newContrib.amount)) {
-        payload[`sales.salesAmountByHour.${newContrib.hourKey}`] = increment(newContrib.amount - oldContrib.amount);
-    }
-    
-    // Closed Sessions
-    const deltaClosedCount = newContrib.closedCount - oldContrib.closedCount;
-    if(deltaClosedCount) payload['sessions.closedCount'] = increment(deltaClosedCount);
-    const deltaTotalPaid = newContrib.totalPaid - oldContrib.totalPaid;
-    if(deltaTotalPaid) payload['sessions.totalPaid'] = increment(deltaTotalPaid);
-    
-    // Refills
-    const deltaRefillSessions = newContrib.packageSessionsCount - oldContrib.packageSessionsCount;
-    const deltaRefillTotal = newContrib.servedRefillsTotal - oldContrib.servedRefillsTotal;
-    if (deltaRefillSessions) payload['refills.packageSessionsCount'] = increment(deltaRefillSessions);
-    if (deltaRefillTotal) payload['refills.servedRefillsTotal'] = increment(deltaRefillTotal);
-
-    const allRefillNames = new Set([...Object.keys(oldContrib.servedRefillsByName || {}), ...Object.keys(newContrib.servedRefillsByName || {})]);
-    allRefillNames.forEach(name => {
-        const oldQty = oldContrib.servedRefillsByName?.[name] || 0;
-        const newQty = newContrib.servedRefillsByName?.[name] || 0;
-        if(oldQty !== newQty) payload[`refills.servedRefillsByName.${name}`] = increment(newQty - oldQty);
-    });
-
-    if (Object.keys(payload).length > 0) {
-        updates.push({ ref: dailyAnalyticsDocRef(db, storeId, newContrib.dayId), payload });
-    }
-  }
-
-  processDelta({ ...oldC.guest, ...oldC.sales, ...oldC.peak, ...oldC.closed, ...oldC.refill }, { ...newC.guest, ...newC.sales, ...newC.peak, ...newC.closed, ...newC.refill });
-
-  if (updates.length === 0) return;
-
-  const batch = writeBatch(db);
-  for (const { ref, payload } of updates) {
-    batch.update(ref, payload);
-  }
-  await batch.commit();
-}
-
-
 export default function ReceiptsPageContents() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -211,10 +84,16 @@ export default function ReceiptsPageContents() {
     const [editingReceipt, setEditingReceipt] = useState<ReceiptType | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
-    const [isDeleting, setIsDeleting] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
+    // --- Pagination State ---
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const PAGE_SIZE = 20;
 
     // --- Date State ---
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
@@ -292,43 +171,61 @@ export default function ReceiptsPageContents() {
         const rid = searchParams.get("rid");
         if (rid) setSelectedReceiptId(rid);
       }, [searchParams]);
-      
 
-    useEffect(() => {
-        if (!activeStore) {
-            setIsLoadingReceipts(false);
-            setReceipts([]);
-            return;
-        }
+    const fetchReceipts = useCallback(async (loadMore = false) => {
+        if (!activeStore) return;
 
-        setIsLoadingReceipts(true);
-        const q = query(
+        if (loadMore) setIsLoadingMore(true);
+        else setIsLoadingReceipts(true);
+
+        let q = query(
             collection(db, "stores", activeStore.id, "receipts"), 
             where("createdAt", ">=", start),
             where("createdAt", "<=", end),
-            orderBy("createdAt", "desc")
+            orderBy("createdAt", "desc"),
+            limit(PAGE_SIZE)
         );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setReceipts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType)));
-            setIsLoadingReceipts(false);
-        }, (error) => {
+
+        if (loadMore && lastDoc) {
+            q = query(q, startAfter(lastDoc));
+        }
+
+        try {
+            const snapshot = await getDocs(q);
+            const newReceipts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType));
+            
+            setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+            setHasMore(snapshot.docs.length === PAGE_SIZE);
+            
+            setReceipts(prev => loadMore ? [...prev, ...newReceipts] : newReceipts);
+
+        } catch (error) {
             console.error("Error fetching receipts:", error);
             toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch receipts.' });
+        } finally {
             setIsLoadingReceipts(false);
-        });
+            setIsLoadingMore(false);
+        }
+    }, [activeStore, start, end, lastDoc, toast]);
+      
+    // Effect for initial load and date/store changes
+    useEffect(() => {
+        setReceipts([]);
+        setLastDoc(null);
+        setHasMore(true);
+        fetchReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStore, start, end]);
 
+    useEffect(() => {
+        if (!activeStore?.id) return;
         const unsubPm = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeModesOfPayment"), where("isArchived", "==", false), orderBy("sortOrder")),
             snap => setPaymentMethods(snap.docs.map(d => ({id: d.id, ...d.data()}) as ModeOfPayment))
         );
-
-        return () => {
-            unsubscribe();
-            unsubPm();
-        };
-    }, [activeStore, start, end, toast]);
+        return () => unsubPm();
+    }, [activeStore?.id]);
     
-    // This is missing from the original `receipts/page.tsx` file, but is required by the `EditReceiptDialog`.
     const [discounts, setDiscounts] = React.useState<Discount[]>([]);
     const [charges, setCharges] = React.useState<Charge[]>([]);
      useEffect(() => {
@@ -369,67 +266,74 @@ export default function ReceiptsPageContents() {
     }
 
     const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
-        if (!appUser || !activeStore || !editingReceipt) return;
-
-        try {
-            const batch = writeBatch(db);
-            const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
-            
-            const nextVersion = (editingReceipt.editVersion || 0) + 1;
-            const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
-            const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-
-            const structuredDiff = diff(editingReceipt, updatedReceipt);
-            const diffSummary = Object.keys(structuredDiff).join(', ');
-            
-            // 1. Write revision snapshot
-            batch.set(revisionRef, {
-                version: nextVersion,
-                editedAt: serverTimestamp(),
-                editedByUid: appUser.uid,
-                editedByEmail: appUser.email,
-                reason,
-                diffSummary,
-                diff: structuredDiff,
-                snapshot: editingReceipt, // The full old receipt data
-            });
-
-            // 2. Overwrite original receipt
-            batch.update(originalReceiptRef, {
-                ...updatedReceipt,
-                isEdited: true,
-                editVersion: nextVersion,
-                editedAt: serverTimestamp(),
-                editedByUid: appUser.uid,
-                editedByEmail: appUser.email,
-                editReason: reason,
-                lastDiffSummary: diffSummary,
-            });
-
-            await batch.commit();
-            await applyAnalyticsDelta(activeStore.id, editingReceipt, updatedReceipt as ReceiptType);
-
-            // 3. Log activity
-            await writeActivityLog({
-                action: "RECEIPT_EDITED",
-                storeId: activeStore.id,
-                sessionId: editingReceipt.sessionId,
-                user: appUser,
-                meta: { 
-                    receiptId: editingReceipt.id, 
-                    receiptNumber: editingReceipt.receiptNumber,
-                    editVersion: nextVersion,
-                    diffSummary,
-                }
-            });
-
-            toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
-            setEditingReceipt(null);
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Correction Failed', description: error.message });
-            throw error;
-        }
-    }
+      if (!appUser || !activeStore || !editingReceipt) return;
+    
+      try {
+        const batch = writeBatch(db);
+        const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
+    
+        const nextVersion = (editingReceipt.editVersion || 0) + 1;
+        const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
+        const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
+    
+        // 1) Write revision snapshot (old receipt)
+        batch.set(revisionRef, {
+          version: nextVersion,
+          editedAt: serverTimestamp(),
+          editedByUid: appUser.uid,
+          editedByEmail: appUser.email,
+          reason,
+          snapshot: editingReceipt,
+        });
+        
+        const applyId = uuidv4();
+    
+        // 2) Overwrite original receipt (new receipt)
+        batch.update(originalReceiptRef, {
+          ...updatedReceipt,
+          isEdited: true,
+          editVersion: nextVersion,
+          editedAt: serverTimestamp(),
+          editedByUid: appUser.uid,
+          editedByEmail: appUser.email,
+          editReason: reason,
+          analyticsApplied: true,
+          analyticsAppliedAt: serverTimestamp(),
+          analyticsApplyId: applyId,
+        });
+    
+        // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
+        await applyAnalyticsDeltaV2(
+          db,
+          activeStore.id,
+          editingReceipt,
+          updatedReceipt as ReceiptType,
+          { batch }
+        );
+    
+        // 4) Commit once
+        await batch.commit();
+    
+        // 5) Log activity (can stay outside batch)
+        await writeActivityLog({
+          action: "RECEIPT_EDITED",
+          storeId: activeStore.id,
+          sessionId: editingReceipt.sessionId,
+          user: appUser,
+          meta: {
+            receiptId: editingReceipt.id,
+            receiptNumber: editingReceipt.receiptNumber,
+            editVersion: nextVersion,
+          },
+        });
+    
+        toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
+        setEditingReceipt(null);
+      } catch (error: any) {
+        toast({ variant: "destructive", title: "Correction Failed", description: error.message });
+        throw error;
+      }
+    };
 
 
     useEffect(() => {
@@ -516,111 +420,132 @@ export default function ReceiptsPageContents() {
         }
     }
 
-    const handleDeleteReceipt = async (receipt: ReceiptType) => {
-        if (!appUser || !activeStore || appUser.role !== 'admin') {
-            toast({ variant: 'destructive', title: "Permission Denied" });
-            return;
-        }
-
-        const confirmed = await confirm({
-            title: `Delete Receipt ${receipt.receiptNumber}?`,
-            description: "This action is irreversible and will permanently delete the receipt. This cannot be undone.",
-            confirmText: "Yes, Delete Permanently",
-            destructive: true,
-        });
-
-        if (!confirmed) return;
-
-        setIsDeleting(receipt.id);
-        try {
-            await deleteDoc(doc(db, "stores", activeStore.id, "receipts", receipt.id));
-            await applyAnalyticsDelta(activeStore.id, receipt, null);
-
-            await writeActivityLog({
-                action: "RECEIPT_DELETED",
-                storeId: activeStore.id,
-                sessionId: receipt.sessionId,
-                user: appUser,
-                meta: { receiptNumber: receipt.receiptNumber, amount: receipt.total }
-            });
-            toast({ title: "Receipt Deleted", description: `Receipt ${receipt.receiptNumber} has been removed.` });
-            if (selectedReceiptId === receipt.id) {
-                setSelectedReceiptId(null);
-            }
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
-        } finally {
-            setIsDeleting(null);
-        }
+    const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
+      if (!appUser || !activeStore) return;
+    
+      if (receipt.status === "voided") {
+        toast({ title: "Already voided", description: "This receipt was already voided." });
+        return;
+      }
+    
+      const batch = writeBatch(db);
+      const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
+    
+      await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+      
+      const applyId = uuidv4();
+    
+      batch.update(receiptRef, {
+        status: "voided",
+        voidedAt: serverTimestamp(),
+        voidedByUid: appUser.uid,
+        voidedByEmail: appUser.email,
+        voidReason: reason,
+        analyticsApplied: true,
+        analyticsAppliedAt: serverTimestamp(),
+        analyticsApplyId: applyId,
+      });
+    
+      await batch.commit();
+    
+      await writeActivityLog({
+        action: "RECEIPT_VOIDED",
+        storeId: activeStore.id,
+        sessionId: receipt.sessionId,
+        user: appUser,
+        meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
+      });
+    
+      toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
     };
 
     const handleExport = async () => {
         if (!activeStore) return;
         setIsExporting(true);
-    
-        // Sheet 1: Summary Data
-        const summaryData = filteredReceipts.map(r => {
-            const date = toJsDate(r.createdAt);
-            return {
-                "Receipt #": r.receiptNumber || 'N/A',
-                "Date": date ? format(date, 'yyyyMMdd') : 'N/A',
-                "Time": date ? format(date, 'HH:mm:ss') : 'N/A',
-                "Customer Name": r.customerName || 'N/A',
-                "Address": r.customerAddress || 'N/A',
-                "TIN": r.customerTin || 'N/A',
-                "Table No.": r.tableNumber || 'N/A',
-                "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
-                "Subtotal": r.analytics?.subtotal ?? 0,
-                "Discount": r.analytics?.discountsTotal ?? 0,
-                "Charges": r.analytics?.chargesTotal ?? 0,
-                "VAT": r.analytics?.taxAmount ?? 0,
-                "Total": r.total,
-                "Paid": r.totalPaid,
-                "Mode of Payment": Object.keys(r.analytics?.mop || {}).join(', '),
-            };
-        });
-    
-        // Sheet 2: Itemized Data
-        const itemizedData: any[] = [];
-        filteredReceipts.forEach(r => {
-            const date = toJsDate(r.createdAt);
-            (r.lines as SessionBillLine[])?.forEach(line => {
-                const billableQty = line.qtyOrdered - (line.voidedQty || 0);
-                if (billableQty <= 0) return; // Skip voided/zero-qty lines
 
-                const lineSubtotal = billableQty * line.unitPrice;
-                let lineDiscount = 0;
-                if ((line.discountValue ?? 0) > 0 && line.discountQty > 0) {
-                     const discountedQty = Math.min(line.discountQty, billableQty);
-                     if (line.discountType === 'percent') {
-                         lineDiscount = discountedQty * line.unitPrice * (line.discountValue! / 100);
-                     } else {
-                         lineDiscount = discountedQty * line.discountValue!;
-                     }
-                }
-                
-                itemizedData.push({
+        try {
+            const allReceiptsQuery = query(
+                collection(db, "stores", activeStore.id, "receipts"),
+                where("createdAt", ">=", start),
+                where("createdAt", "<=", end),
+                orderBy("createdAt", "desc")
+            );
+            
+            const snapshot = await getDocs(allReceiptsQuery);
+            const allReceipts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReceiptType));
+            
+            if (allReceipts.length === 0) {
+                 toast({ description: "No data to export for the selected range." });
+                 setIsExporting(false);
+                 return;
+            }
+
+            // Sheet 1: Summary Data
+            const summaryData = allReceipts.map(r => {
+                const date = toJsDate(r.createdAt);
+                return {
                     "Receipt #": r.receiptNumber || 'N/A',
                     "Date": date ? format(date, 'yyyyMMdd') : 'N/A',
                     "Time": date ? format(date, 'HH:mm:ss') : 'N/A',
-                    "QTY": billableQty,
-                    "Package/Add-on": line.itemName,
-                    "Price": line.unitPrice,
-                    "Discount": lineDiscount,
-                    "Subtotal": lineSubtotal - lineDiscount,
+                    "Customer Name": r.customerName || 'N/A',
+                    "Address": r.customerAddress || 'N/A',
+                    "TIN": r.customerTin || 'N/A',
+                    "Table No.": r.tableNumber || 'N/A',
+                    "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
+                    "Subtotal": r.analytics?.subtotal ?? 0,
+                    "Discount": r.analytics?.discountsTotal ?? 0,
+                    "Charges": r.analytics?.chargesTotal ?? 0,
+                    "VAT": r.analytics?.taxAmount ?? 0,
+                    "Total": r.total,
+                    "Paid": r.totalPaid,
+                    "Mode of Payment": Object.keys(r.analytics?.mop || {}).join(', '),
+                };
+            });
+        
+            // Sheet 2: Itemized Data
+            const itemizedData: any[] = [];
+            allReceipts.forEach(r => {
+                const date = toJsDate(r.createdAt);
+                (r.lines as SessionBillLine[])?.forEach(line => {
+                    const billableQty = line.qtyOrdered - (line.voidedQty || 0);
+                    if (billableQty <= 0) return; // Skip voided/zero-qty lines
+
+                    const lineSubtotal = billableQty * line.unitPrice;
+                    let lineDiscount = 0;
+                    if ((line.discountValue ?? 0) > 0 && line.discountQty > 0) {
+                         const discountedQty = Math.min(line.discountQty, billableQty);
+                         if (line.discountType === 'percent') {
+                             lineDiscount = discountedQty * line.unitPrice * (line.discountValue! / 100);
+                         } else {
+                             lineDiscount = discountedQty * line.discountValue!;
+                         }
+                    }
+                    
+                    itemizedData.push({
+                        "Receipt #": r.receiptNumber || 'N/A',
+                        "Date": date ? format(date, 'yyyyMMdd') : 'N/A',
+                        "Time": date ? format(date, 'HH:mm:ss') : 'N/A',
+                        "QTY": billableQty,
+                        "Package/Add-on": line.itemName,
+                        "Price": line.unitPrice,
+                        "Discount": lineDiscount,
+                        "Subtotal": lineSubtotal - lineDiscount,
+                    });
                 });
             });
-        });
-    
-        await exportToXlsx({
-            sheets: [
-                { data: summaryData, name: "Summary" },
-                { data: itemizedData, name: "Items" }
-            ],
-            filename: `Receipts_${activeStore.code}_${format(start, 'yyyyMMdd')}_${format(end, 'yyyyMMdd')}.xlsx`,
-        });
-    
-        setIsExporting(false);
+        
+            await exportToXlsx({
+                sheets: [
+                    { data: summaryData, name: "Summary" },
+                    { data: itemizedData, name: "Items" }
+                ],
+                filename: `Receipts_${activeStore.code}_${format(start, 'yyyyMMdd')}_${format(end, 'yyyyMMdd')}.xlsx`,
+            });
+        } catch (error: any) {
+             toast({ variant: 'destructive', title: 'Export Failed', description: error.message });
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
@@ -636,6 +561,15 @@ export default function ReceiptsPageContents() {
         }
         setIsCalendarOpen(false);
     };
+
+    const handleVoidClick = async (receipt: ReceiptType) => {
+      const reason = prompt("Please provide a reason for voiding this receipt:");
+      if (reason) {
+        setIsProcessing(receipt.id);
+        await handleVoidReceipt(receipt, reason);
+        setIsProcessing(null);
+      }
+    }
 
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
@@ -697,7 +631,7 @@ export default function ReceiptsPageContents() {
                                     <TableRow>
                                         <TableHead>Identifier</TableHead>
                                         <TableHead>Total</TableHead>
-                                        {appUser?.role === 'admin' && <TableHead className="text-right">Actions</TableHead>}
+                                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -705,21 +639,23 @@ export default function ReceiptsPageContents() {
                                         <TableRow 
                                             key={r.id} 
                                             onClick={() => handleSelectReceipt(r.id)}
-                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted")}
+                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
                                         >
                                             <TableCell className="font-medium py-2">
-                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName}</div>
-                                                <div className="text-xs text-muted-foreground">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
+                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
+                                                <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                             </TableCell>
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            {appUser?.role === 'admin' && (
+                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
                                                 <TableCell className="text-right py-2">
-                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2">
+                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2" disabled={r.status === 'voided'}>
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
-                                                    <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteReceipt(r); }} disabled={isDeleting === r.id}>
-                                                        {isDeleting === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4"/>}
-                                                    </Button>
+                                                    {appUser?.role === 'admin' && (
+                                                         <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleVoidClick(r); }} disabled={isProcessing === r.id || r.status === 'voided'}>
+                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                        </Button>
+                                                    )}
                                                 </TableCell>
                                             )}
                                         </TableRow>
@@ -728,6 +664,14 @@ export default function ReceiptsPageContents() {
                             </Table>
                         )}
                          {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
+                         {hasMore && !isLoadingReceipts && (
+                            <div className="text-center py-4">
+                                <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
+                                    {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
+                                    Load More
+                                </Button>
+                            </div>
+                         )}
                     </CardContent>
                 </Card>
 

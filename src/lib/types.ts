@@ -455,6 +455,9 @@ export type Receipt = {
     receiptNumber: string;
     receiptNoFormatUsed: string;
     analytics?: any | ReceiptAnalyticsV2;
+    analyticsApplied?: boolean;
+    analyticsAppliedAt?: any;
+    analyticsApplyId?: string;
     // Fields for editing audit trail
     isEdited?: boolean;
     editVersion?: number;

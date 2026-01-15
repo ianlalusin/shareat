@@ -28,7 +28,8 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from './activity-log';
 import type { TaxAndTotals } from '@/lib/tax';
 import { calculateBillTotals } from '@/lib/tax';
-import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution, getPaymentContribution } from "@/lib/analytics/daily";
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef, getGuestCoversContribution, getSalesContribution, getPeakHourContribution, getClosedSessionsContribution, getRefillContribution } from "@/lib/analytics/daily";
+import { v4 as uuidv4 } from "uuid";
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -435,8 +436,15 @@ export async function completePaymentFromUnits(
           serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
           guestCountSnapshot,
         };
-
-        const finalReceiptPayload = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTimestamp() };
+        const applyId = uuidv4();
+        const finalReceiptPayload = { 
+            ...receiptPayload, 
+            analytics: analyticsV2, 
+            createdAt: serverTimestamp(),
+            analyticsApplied: true,
+            analyticsAppliedAt: serverTimestamp(),
+            analyticsApplyId: applyId,
+        };
         tx.set(receiptRef, finalReceiptPayload);
         finalReceipt = finalReceiptPayload as Receipt; // Capture for post-transaction use
         receiptId = receiptRef.id;
@@ -460,7 +468,7 @@ export async function completePaymentFromUnits(
         payment: getPaymentContribution(finalReceipt),
         guest: getGuestCoversContribution(finalReceipt),
         sales: getSalesContribution(finalReceipt),
-        peakHour: getPeakHourContribution(finalReceipt),
+        peak: getPeakHourContribution(finalReceipt),
         closedSession: getClosedSessionsContribution(finalReceipt),
         refill: getRefillContribution(finalReceipt),
     };
@@ -500,9 +508,9 @@ export async function completePaymentFromUnits(
     }
 
     // Peak Hour
-    if (contrib.peakHour.hourKey !== null) {
-        analyticsPayload[`sales.salesAmountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.amount);
-        analyticsPayload[`sales.sessionCountByHour.${contrib.peakHour.hourKey}`] = increment(contrib.peakHour.count);
+    if (contrib.peak.hourKey !== null) {
+        analyticsPayload[`sales.salesAmountByHour.${contrib.peak.hourKey}`] = increment(contrib.peak.amount);
+        analyticsPayload[`sales.sessionCountByHour.${contrib.peak.hourKey}`] = increment(contrib.peak.count);
     }
 
     // Closed Sessions
