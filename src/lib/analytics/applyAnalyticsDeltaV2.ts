@@ -249,13 +249,13 @@ export async function applyAnalyticsDeltaV2(
     if(dayNew.refill.servedRefillsTotal !== dayOld.refill.servedRefillsTotal) payload['refills.servedRefillsTotal'] = increment(dayNew.refill.servedRefillsTotal - dayOld.refill.servedRefillsTotal);
 
     const allRefillNames = new Set([
-      ...Object.keys(dayOld.refills?.servedRefillsByName || {}),
-      ...Object.keys(dayNew.refills?.servedRefillsByName || {}),
+      ...Object.keys(dayOld.refill?.servedRefillsByName || {}),
+      ...Object.keys(dayNew.refill?.servedRefillsByName || {}),
     ]);
     
     allRefillNames.forEach((refillName) => {
-      const oldQty = (dayOld.refills?.servedRefillsByName?.[refillName] ?? 0) as number;
-      const newQty = (dayNew.refills?.servedRefillsByName?.[refillName] ?? 0) as number;
+      const oldQty = (dayOld.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
+      const newQty = (dayNew.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
     
       const qtyDelta = newQty - oldQty;
       if (qtyDelta === 0) return;
