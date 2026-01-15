@@ -31,6 +31,7 @@ export default function AdminReconcilePage() {
   const [progress, setProgress] = useState<string>("");
   const [rows, setRows] = useState<ReconcileRow[]>([]);
   
+  const [mode, setMode] = useState<"receipts" | "rollups">("receipts");
   const [yearToReconcile, setYearToReconcile] = useState(new Date().getFullYear());
   const [monthRows, setMonthRows] = useState<RollupReconcileRow[]>([]);
   const [yearRow, setYearRow] = useState<RollupReconcileRow | null>(null);
@@ -39,48 +40,49 @@ export default function AdminReconcilePage() {
 
   const run = async () => {
     if (!activeStore?.id) {
-      toast({ variant: "destructive", title: "No store selected", description: "Select a store first." });
-      return;
+        toast({ variant: "destructive", title: "No store selected", description: "Select a store first." });
+        return;
     }
+
     setIsRunning(true);
-    setProgress("Reconciling receipts vs daily rollups…");
+    setProgress(mode === "receipts" ? "Reconciling receipts vs daily…" : "Reconciling rollups…");
+
     try {
-      const result = await reconcileRange(activeStore.id, start, end);
-      setRows(result);
-      toast({
-        title: "Receipt Reconcile Complete",
-        description: `${result.length} day(s) checked, ${result.filter(r => !r.ok).length} mismatch(es).`,
-      });
+        if (mode === "receipts") {
+            const result = await reconcileRange(activeStore.id, start, end);
+            setRows(result);
+            setMonthRows([]);
+            setYearRow(null);
+
+            toast({
+                title: "Reconcile complete",
+                description: `${result.length} day(s) checked, ${result.filter(r => !r.ok).length} mismatch(es).`,
+            });
+            return;
+        }
+
+        // rollups mode: use selected year from state
+        const months = await reconcileMonthsFromDays(activeStore.id, yearToReconcile);
+        const yr = await reconcileYearFromMonths(activeStore.id, yearToReconcile);
+
+        setMonthRows(months);
+        setYearRow(yr);
+        setRows([]);
+
+        const badMonths = months.filter(m => !m.ok).length;
+        toast({
+            title: "Rollup reconcile complete",
+            description: `${badMonths} mismatched month(s). Year: ${yr.ok ? "ok" : "mismatch"}.`,
+        });
     } catch (e: any) {
-      console.error(e);
-      toast({ variant: "destructive", title: "Reconcile failed", description: e?.message ?? "Error" });
+        console.error(e);
+        toast({ variant: "destructive", title: "Reconcile failed", description: e?.message ?? "Error" });
     } finally {
-      setIsRunning(false);
-      setProgress("");
+        setIsRunning(false);
+        setProgress("");
     }
   };
   
-  const runRollupReconcile = async () => {
-      if (!activeStore?.id) return;
-      setIsRunning(true);
-      setProgress("Reconciling daily vs monthly vs yearly rollups...");
-      try {
-          const [months, year] = await Promise.all([
-              reconcileMonthsFromDays(activeStore.id, yearToReconcile),
-              reconcileYearFromMonths(activeStore.id, yearToReconcile),
-          ]);
-          setMonthRows(months);
-          setYearRow(year);
-          toast({ title: "Rollup Reconcile Complete" });
-      } catch (e: any) {
-          console.error(e);
-          toast({ variant: "destructive", title: "Rollup Reconcile failed", description: e?.message ?? "Error" });
-      } finally {
-          setIsRunning(false);
-          setProgress("");
-      }
-  }
-
   const rebuildDay = async (dayId: string) => {
     if (!activeStore?.id) return;
 
@@ -177,7 +179,7 @@ export default function AdminReconcilePage() {
           <CardDescription>Tools to verify and correct analytics data integrity.</CardDescription>
         </CardHeader>
         <CardContent>
-            <Tabs defaultValue="receipts">
+            <Tabs value={mode} onValueChange={(v) => setMode(v as any)}>
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="receipts">Receipts vs Daily</TabsTrigger>
                     <TabsTrigger value="rollups">Rollup Tiers</TabsTrigger>
@@ -208,7 +210,7 @@ export default function AdminReconcilePage() {
                             </Select>
                         </div>
                         <div className="sm:col-span-2">
-                            <Button className="w-full" onClick={runRollupReconcile} disabled={isRunning}>{isRunning ? "Working..." : "Run Rollup Reconcile"}</Button>
+                            <Button className="w-full" onClick={run} disabled={isRunning}>{isRunning ? "Working..." : "Run Rollup Reconcile"}</Button>
                         </div>
                     </div>
                 </TabsContent>
