@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { StatCards, type DashboardStats } from "@/components/dashboard/StatCards";
 import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { Loader2 } from "lucide-react";
-import { collection, onSnapshot, query, where, Timestamp, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, Timestamp, orderBy, getDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
@@ -23,6 +23,22 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 
+async function fetchYearMonths(db: any, storeId: string, year: number) {
+  const monthIds = Array.from({ length: 12 }, (_, i) => {
+    const mm = String(i + 1).padStart(2, "0");
+    return `${year}${mm}`; // YYYYMM
+  });
+
+  const refs = monthIds.map((id) => doc(db, "stores", storeId, "analyticsMonths", id));
+  const snaps = await Promise.all(refs.map((r) => getDoc(r)));
+
+  return snaps.map((s, idx) => ({
+    monthId: monthIds[idx],
+    exists: s.exists(),
+    data: (s.data() as any) ?? null,
+  }));
+}
+
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 function fmtDate(d: Date) {
@@ -30,12 +46,14 @@ function fmtDate(d: Date) {
 }
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
-type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
+type DatePreset = "today" | "yesterday" | "week" | "month" | "year" | "last_year" | "custom";
 const presets: { label: string, value: DatePreset }[] = [
     { label: "Today", value: "today" },
     { label: "Yesterday", value: "yesterday" },
     { label: "This Week", value: "week" },
     { label: "This Month", value: "month" },
+    { label: "This Year", value: "year" },
+    { label: "Last Year", value: "last_year" },
 ];
 
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
@@ -48,7 +66,7 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
 
 export default function DashboardPage() {
     const { activeStore } = useStoreContext();
-    const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
+    const [metrics, setMetrics] = useState<DailyMetric[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeSessionsCount, setActiveSessionsCount] = useState(0);
     
@@ -60,6 +78,7 @@ export default function DashboardPage() {
         const now = new Date();
         let s = new Date();
         let e = new Date();
+        const y = now.getFullYear();
 
         switch (datePreset) {
             case "today":
@@ -77,7 +96,15 @@ export default function DashboardPage() {
                 s.setHours(0, 0, 0, 0);
                 break;
             case "month":
-                s = new Date(now.getFullYear(), now.getMonth(), 1);
+                s = new Date(y, now.getMonth(), 1);
+                break;
+            case "year":
+                s = new Date(y, 0, 1);
+                e = new Date(y, 11, 31, 23, 59, 59, 999);
+                break;
+            case "last_year":
+                s = new Date(y - 1, 0, 1);
+                e = new Date(y - 1, 11, 31, 23, 59, 59, 999);
                 break;
             case "custom":
                 if (customRange) {
@@ -116,54 +143,76 @@ export default function DashboardPage() {
     useEffect(() => {
         if (!activeStore?.id) {
             setIsLoading(false);
-            setDailyMetrics([]);
+            setMetrics([]);
             return;
         }
 
         setIsLoading(true);
         const unsubs: (() => void)[] = [];
+        let cancelled = false;
 
-        // --- Daily Metrics for aggregated data ---
-        const metricsRef = collection(db, "stores", activeStore.id, "analytics");
-        const startMs = start.getTime();
-        const endMs = end.getTime();
+        const isYearlyPreset = datePreset === 'year' || datePreset === 'last_year';
 
-        const metricsQuery = query(
-            metricsRef,
-            where("meta.dayStartMs", ">=", startMs),
-            where("meta.dayStartMs", "<=", endMs),
-            orderBy("meta.dayStartMs", "asc")
-        );
-        unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
-            setDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Error fetching daily metrics:", error);
-            setIsLoading(false);
-        }));
+        if (isYearlyPreset) {
+            const year = datePreset === 'year' ? new Date().getFullYear() : new Date().getFullYear() - 1;
+            fetchYearMonths(db, activeStore.id, year).then(monthlyDocs => {
+                if(cancelled) return;
+                const validMetrics = monthlyDocs
+                    .filter(doc => doc.exists && doc.data)
+                    .map(doc => doc.data as DailyMetric);
+                setMetrics(validMetrics);
+                setIsLoading(false);
+            }).catch(error => {
+                console.error("Error fetching yearly metrics:", error);
+                if(cancelled) return;
+                setIsLoading(false);
+            });
+        } else {
+            // --- Daily Metrics for other ranges ---
+            const metricsRef = collection(db, "stores", activeStore.id, "analytics");
+            const startMs = start.getTime();
+            const endMs = end.getTime();
 
-        // --- Active Sessions Count ---
+            const metricsQuery = query(
+                metricsRef,
+                where("meta.dayStartMs", ">=", startMs),
+                where("meta.dayStartMs", "<=", endMs),
+                orderBy("meta.dayStartMs", "asc")
+            );
+            unsubs.push(onSnapshot(metricsQuery, (snapshot) => {
+                setMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
+                setIsLoading(false);
+            }, (error) => {
+                console.error("Error fetching daily metrics:", error);
+                setIsLoading(false);
+            }));
+        }
+
+        // --- Active Sessions Count (always real-time) ---
         const sessionsRef = collection(db, "stores", activeStore.id, "sessions");
         const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
         unsubs.push(onSnapshot(activeSessionsQuery, (snapshot) => {
             setActiveSessionsCount(snapshot.size);
         }, (error) => console.error("Error fetching active sessions:", error)));
 
-        return () => unsubs.forEach(unsub => unsub());
-    }, [activeStore?.id, start, end]);
+        return () => {
+            cancelled = true;
+            unsubs.forEach(unsub => unsub());
+        };
+    }, [activeStore?.id, start, end, datePreset]);
 
 
     const stats = useMemo<DashboardStats>(() => {
-        if (!dailyMetrics || dailyMetrics.length === 0) {
+        if (!metrics || metrics.length === 0) {
             return { grossSales: 0, transactions: 0, avgBasket: 0 };
         }
         
-        const grossSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
-        const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
+        const grossSales = metrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
+        const transactions = metrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
         const avgBasket = transactions > 0 ? grossSales / transactions : 0;
         
         return { grossSales, transactions, avgBasket };
-    }, [dailyMetrics]);
+    }, [metrics]);
 
     if (!activeStore) {
         return (
@@ -205,24 +254,24 @@ export default function DashboardPage() {
                             <CardDescription>Breakdown of payments by method.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                           <PaymentMix dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                           <PaymentMix dailyMetrics={metrics} isLoading={isLoading} />
                         </CardContent>
                     </Card>
                     <div className="lg:col-span-2 space-y-6">
-                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                      <PackageCountCheckCard dailyMetrics={metrics} isLoading={isLoading} />
                     </div>
                 </div>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                      <Card className="lg:col-span-1">
-                        <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/>
+                        <TopPackagesCard dailyMetrics={metrics} isLoading={isLoading}/>
                     </Card>
                      <div className="lg:col-span-2">
-                       <TopCategoryCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                       <TopCategoryCard dailyMetrics={metrics} isLoading={isLoading} />
                     </div>
                 </div>
                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                    <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <PeakHoursCard dailyMetrics={metrics} isLoading={isLoading} />
+                    <AvgServingTimeCard dailyMetrics={metrics} isLoading={isLoading} />
                     <AvgRefillsCard storeId={activeStore.id} dateRange={{ start, end }} />
                 </div>
             </div>

@@ -31,8 +31,13 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
             const guestData = metric.guests ?? {};
 
             // Aggregate final guests
-            const finalGuestsTotal = guestData.guestCountFinalTotal || 0;
-            // Distribute total guests proportionally later
+            const coversByPkgName = guestData.guestCountFinalByPackageName ?? {};
+            for(const [pkgName, guests] of Object.entries(coversByPkgName)) {
+                if (!tally[pkgName]) {
+                    tally[pkgName] = { name: pkgName, finalGuests: 0, billedCovers: 0 };
+                }
+                tally[pkgName].finalGuests += guests;
+            }
 
             // Aggregate billed covers
             const coversByPkg = guestData.packageCoversBilledByPackageName ?? {};
@@ -44,17 +49,6 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
             }
         });
 
-        // Distribute total guests across packages based on their proportion of billed covers
-        const totalBilledCovers = Object.values(tally).reduce((sum, pkg) => sum + pkg.billedCovers, 0);
-        const totalFinalGuests = dailyMetrics.reduce((sum, m) => sum + (m.guests?.guestCountFinalTotal || 0), 0);
-
-        if (totalBilledCovers > 0) {
-            for(const key in tally) {
-                const proportion = tally[key].billedCovers / totalBilledCovers;
-                tally[key].finalGuests = Math.round(totalFinalGuests * proportion);
-            }
-        }
-        
         return Object.values(tally)
             .map(pkg => ({
                 ...pkg,
