@@ -51,13 +51,18 @@ function pickDayContribution(contrib: ContributionSet, dayId: string): Contribut
     return contrib;
 }
 
+function toSafeDocId(raw: string) {
+  // stable + Firestore-safe (avoid / and weird chars)
+  return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
+}
+
 
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
  * to the daily analytics documents. This can be part of a larger batch.
  *
  * @param db The Firestore instance.
- * @param storeId The ID of the store.
+ * @param storeId The ID of the store to backfill.
  * @param oldReceipt The receipt data *before* the change (or the receipt being deleted).
  * @param newReceipt The receipt data *after* the change (or null if deleting).
  * @param opts Optional object containing a WriteBatch to join.
@@ -153,12 +158,46 @@ export async function applyAnalyticsDeltaV2(
         if (delta !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(delta);
     });
 
-     const allAddonItems = new Set([...Object.keys(dayOld.sales.addonSalesByItem), ...Object.keys(dayNew.sales.addonSalesByItem)]);
-     allAddonItems.forEach(item => {
-        const qtyDelta = (dayNew.sales.addonSalesByItem[item]?.qty || 0) - (dayOld.sales.addonSalesByItem[item]?.qty || 0);
-        const amountDelta = (dayNew.sales.addonSalesByItem[item]?.amount || 0) - (dayOld.sales.addonSalesByItem[item]?.amount || 0);
-        if(qtyDelta !== 0) payload[`sales.addonSalesByItem.${item}.qty`] = increment(qtyDelta);
-        if(amountDelta !== 0) payload[`sales.addonSalesByItem.${item}.amount`] = increment(amountDelta);
+    const allAddonItems = new Set([
+      ...Object.keys(dayOld.sales.addonSalesByItem || {}),
+      ...Object.keys(dayNew.sales.addonSalesByItem || {}),
+    ]);
+
+    const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
+    const monthId = dayId.slice(0, 6);
+    const yearId = dayId.slice(0, 4);
+    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
+    const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
+
+    allAddonItems.forEach((itemName) => {
+      const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
+      const newItem = dayNew.sales.addonSalesByItem?.[itemName];
+
+      const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
+      const amountDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
+      if (qtyDelta === 0 && amountDelta === 0) return;
+
+      const categoryName = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
+      const itemId = toSafeDocId(itemName);
+
+      const write = (parent: any) => {
+        const itemRef = doc(parent, "addonItems", itemId);
+        batch.set(
+          itemRef,
+          {
+            itemName,
+            categoryName,
+            qty: increment(qtyDelta),
+            amount: increment(amountDelta),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      };
+
+      write(dayRef);
+      write(monthRef);
+      write(yearRef);
     });
 
     // --- Peak Hour Delta ---
@@ -167,6 +206,7 @@ export async function applyAnalyticsDeltaV2(
           payload[`sales.salesAmountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.amount);
           payload[`sales.sessionCountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.count);
         }
+        const newNew = dayNew as any; // temp fix for typescript
         if(newNew.peak.hourKey && dayNew.peak.count > 0) {
           payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.amount);
           payload[`sales.sessionCountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.count);
@@ -190,20 +230,14 @@ export async function applyAnalyticsDeltaV2(
         if(delta !== 0) payload[`refills.servedRefillsByName.${name}`] = increment(delta);
     });
     
-    const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
     batch.set(dayRef, payload, { merge: true });
 
     // ---- NEW: Month + Year rollups ----
-    const monthId = dayId.slice(0, 6); // YYYYMM
-    const yearId = dayId.slice(0, 4);  // YYYY
-
-    // Clone payload and remove day-specific meta keys so it won't pollute month/year docs
     const basePayload: Record<string, any> = { ...payload };
     delete basePayload["meta.dayId"];
     delete basePayload["meta.dayStartMs"];
 
     // Month doc
-    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
     batch.set(
       monthRef,
       {
@@ -215,7 +249,6 @@ export async function applyAnalyticsDeltaV2(
     );
 
     // Year doc
-    const yearRef = doc(db, "stores", storeId, "analyticsYears", yearId);
     batch.set(
       yearRef,
       {

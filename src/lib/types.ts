@@ -381,7 +381,6 @@ export type DailyMetric = {
         packageSalesAmountByName: Record<string, number>;
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
-        addonSalesByItem: Record<string, { qty: number, amount: number }>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
     };

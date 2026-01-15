@@ -1,5 +1,5 @@
 
-"use client";
+'use client';
 
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
@@ -139,10 +139,11 @@ type GuestCoversContribution = {
     packageName: string | null;
     packageSessionsCount: number;
     guestCountFinalByPackageName: Record<string, number>;
+    packageCoversBilledByPackageName: Record<string, number>;
 };
 
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0, guestCountFinalByPackageName: {} };
+    const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0, guestCountFinalByPackageName: {}, packageCoversBilledByPackageName: {} };
     
     if (!receipt || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
@@ -156,8 +157,11 @@ export function getGuestCoversContribution(receipt: Receipt | null): GuestCovers
     
     const packageName = snapshot.packageName || "Unknown Package";
     const guestCountFinalByPackageName: Record<string, number> = {};
+    const packageCoversBilledByPackageName: Record<string, number> = {};
+
     if (packageName) {
         guestCountFinalByPackageName[packageName] = snapshot.finalGuestCount || 0;
+        packageCoversBilledByPackageName[packageName] = snapshot.billedPackageCovers || 0;
     }
 
     return {
@@ -169,6 +173,7 @@ export function getGuestCoversContribution(receipt: Receipt | null): GuestCovers
         packageName: packageName,
         packageSessionsCount: 1,
         guestCountFinalByPackageName: guestCountFinalByPackageName,
+        packageCoversBilledByPackageName,
     };
 }
 
@@ -179,7 +184,7 @@ type SalesContribution = {
     packageSalesAmountByName: Record<string, number>;
     packageSalesQtyByName: Record<string, number>;
     addonSalesAmountByCategory: Record<string, number>;
-    addonSalesByItem: Record<string, { qty: number; amount: number; }>;
+    addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }>;
 };
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
@@ -194,17 +199,19 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     const packageSalesAmountByName: Record<string, number> = {};
     const packageSalesQtyByName: Record<string, number> = {};
     const addonSalesAmountByCategory: Record<string, number> = {};
-    const addonSalesByItem: Record<string, { qty: number; amount: number; }> = {};
+    const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
 
 
     if (analytics.salesByItem) {
         for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-            if (!values.categoryName || values.categoryName === "Uncategorized") {
+            const isPackage = !values.categoryName || values.categoryName === "Uncategorized";
+
+            if (isPackage) {
                 packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
                 packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
             } else {
                  if (!addonSalesByItem[itemName]) {
-                    addonSalesByItem[itemName] = { qty: 0, amount: 0 };
+                    addonSalesByItem[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
                 }
                 addonSalesByItem[itemName].qty += values.qty;
                 addonSalesByItem[itemName].amount += values.amount;
@@ -372,5 +379,3 @@ export function getRefillContribution(receipt: Receipt | null): RefillContributi
         packageSessionsCount: 1,
     };
 }
-
-    
