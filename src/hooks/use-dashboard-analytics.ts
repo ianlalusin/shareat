@@ -59,20 +59,20 @@ export async function fetchYearDoc(db: any, storeId: string, year: number) {
 // --- Aggregation Helpers ---
 
 function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
-  let gross = 0, tx = 0;
+  let netSales = 0, transactions = 0;
   const mop: Record<string, number> = {};
 
   for (let i = 0; i < upToIndexExclusive; i++) {
     const d = monthDocs[i]?.data;
     if (!d) continue;
 
-    gross += d?.payments?.totalGross ?? 0;
-    tx += d?.payments?.txCount ?? 0;
+    netSales += d?.payments?.totalGross ?? 0;
+    transactions += d?.payments?.txCount ?? 0;
 
     const byMethod = d?.payments?.byMethod ?? {};
     for (const [k, v] of Object.entries(byMethod)) mop[k] = (mop[k] || 0) + (v as number);
   }
-  return { netSales: gross, transactions: tx, avgBasket: tx > 0 ? gross / tx : 0, mop };
+  return { netSales, transactions, avgBasket: transactions > 0 ? netSales / transactions : 0, mop };
 }
 
 function buildMonthlyTrendRows(curMonths: any[], prevMonths: any[]): TrendRow[] {
@@ -126,7 +126,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [activeSessions, setActiveSessions] = useState(0);
     const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
-    const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: {start: Date, end: Date} }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()}});
+    const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: {start: Date, end: Date} }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
     
     // --- DERIVED STATE (Date Range) ---
     const dateRange = useMemo(() => {
@@ -135,7 +135,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         switch (preset) {
             case "today": s = startOfDay(now); e = endOfDay(now); break;
             case "yesterday": s = startOfDay(new Date(new Date().setDate(now.getDate() - 1))); e = endOfDay(s); break;
-            case "week": 
+            case "week":
                 s = startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()));
                 e = endOfDay(new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6));
                 break;
@@ -180,6 +180,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const curMonthDailies = await fetchPartialDays(db, storeId, curMonthStart, tomorrowStart);
                 if (cancelled) return;
                 
+                // Leap day safe
                 const cutoffPrev = new Date(prevYear, today.getMonth(), Math.min(today.getDate(), 28));
                 const prevMonthStart = new Date(prevYear, currentMonthIndex, 1);
                 const dayAfterCutoffPrev = new Date(cutoffPrev);
@@ -201,7 +202,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 setYtdData({ cur: finalCurYtd, prev: finalPrevYtd, range: {start: new Date(currentYear, 0, 1), end: today} });
                 
             } else {
-                setTrendRows([]); // Clear YTD data to prevent flashes
+                setTrendRows([]); // Clear YTD data
                 setYtdData({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
                 
                 const tomorrow = new Date(dateRange.end);
@@ -254,6 +255,22 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         return isSameDay(dateRange.start, dateRange.end) ? fmtDate(dateRange.start) : `${fmtDate(dateRange.start)} - ${fmtDate(dateRange.end)}`;
     }, [dateRange.start, dateRange.end, ytdMode]);
 
+    // Data Sanity Checks
+    const warnings: string[] = [];
+    const net = stats.netSales ?? 0;
+    const tx = stats.transactions ?? 0;
+
+    // 1) txCount but zero sales
+    if (tx > 0 && net === 0) warnings.push("Transactions > 0 but Net Sales is 0 (possible rollup issue).");
+
+    // 2) Avg basket sanity
+    if (tx > 0 && stats.avgBasket === 0) warnings.push("Avg Basket is 0 while Transactions > 0.");
+
+    // 3) Payment mix sanity (allow rounding)
+    const mopSum = Object.values(paymentMix || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    const diff = Math.abs(mopSum - net);
+    if (tx > 0 && diff > 2) warnings.push(`Payment mix mismatch vs Net Sales (diff ₱${diff.toFixed(2)}).`);
+
     return {
         isLoading,
         dateRangeLabel,
@@ -262,8 +279,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         paymentMix,
         dailyMetrics,
         ytdData,
-        trendRows
+        trendRows,
+        warnings
     };
 }
-
-    

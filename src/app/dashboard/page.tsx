@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState } from "react";
@@ -9,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { PaymentMix } from "@/components/dashboard/PaymentMix";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
@@ -23,6 +22,7 @@ import { useDashboardAnalytics, type DatePreset } from "@/hooks/use-dashboard-an
 import { MonthlySalesTrendChart } from "@/components/dashboard/MonthlySalesTrendChart";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -58,7 +58,8 @@ export default function DashboardPage() {
         paymentMix,
         dailyMetrics,
         ytdData,
-        trendRows
+        trendRows,
+        warnings
     } = useDashboardAnalytics({
         storeId: activeStore?.id,
         preset: datePreset,
@@ -116,6 +117,21 @@ export default function DashboardPage() {
                 </div>
             </PageHeader>
             <div className="grid gap-6">
+                
+                {warnings && warnings.length > 0 && (
+                    <RoleGuard allow={['admin', 'manager']}>
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Data Integrity Warning</AlertTitle>
+                            <AlertDescription>
+                                <ul className="list-disc pl-5">
+                                    {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
+                                </ul>
+                            </AlertDescription>
+                        </Alert>
+                    </RoleGuard>
+                )}
+
                 {showYtd ? (
                     <>
                         <MonthlySalesTrendChart data={trendRows} isLoading={isLoading} />
@@ -156,7 +172,7 @@ export default function DashboardPage() {
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <AvgRefillsCard storeId={activeStore.id} dateRange={{ start: dateRange.start, end: dateRange.end }} />
+                            <AvgRefillsCard storeId={activeStore.id} dateRange={dateRange} />
                         </div>
                     </>
                 )}
