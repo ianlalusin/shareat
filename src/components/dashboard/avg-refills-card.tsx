@@ -1,78 +1,109 @@
-
+// src/components/dashboard/avg-refills-card.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
-import type { DailyMetric } from "@/lib/types";
+import { useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+
+import type { DailyMetric } from "@/lib/analytics/types"; // adjust path if yours differs
 
 interface AvgRefillsCardProps {
-    dailyMetrics?: DailyMetric[];
-    isLoading: boolean;
+  dailyMetrics: DailyMetric[];
+  isLoading: boolean;
 }
 
-type AnalyticsTally = {
-    sessionCount: number;
-    overallTotal: number;
-};
-
 export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps) {
-    const analytics = useMemo<AnalyticsTally>(() => {
-        const tally: AnalyticsTally = {
-            sessionCount: 0,
-            overallTotal: 0,
-        };
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-        if (!dailyMetrics) return tally;
+  const analytics = useMemo(() => {
+    let sessionCount = 0;
+    let overallTotal = 0;
 
-        dailyMetrics.forEach(metric => {
-            tally.sessionCount += metric.refills?.packageSessionsCount ?? 0;
-            tally.overallTotal += metric.refills?.servedRefillsTotal ?? 0;
-        });
+    (dailyMetrics || []).forEach((m) => {
+      sessionCount += m?.refills?.packageSessionsCount ?? 0;
+      overallTotal += m?.refills?.servedRefillsTotal ?? 0;
+    });
 
-        return tally;
-    }, [dailyMetrics]);
+    const avg = sessionCount > 0 ? overallTotal / sessionCount : 0;
 
-    const overallAvg = analytics.sessionCount > 0 ? analytics.overallTotal / analytics.sessionCount : 0;
+    return {
+      sessionCount,
+      overallTotal,
+      avg,
+    };
+  }, [dailyMetrics]);
 
-    if (isLoading) {
-        return (
-            <Card>
-                <CardHeader>
-                    <CardTitle>Avg. Refill Count</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
-                </CardContent>
-            </Card>
-        );
-    }
-    
-    if (analytics.sessionCount === 0) {
-        return (
-             <Card>
-                <CardHeader>
-                    <CardTitle>Avg. Refill Count</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-center text-sm text-muted-foreground py-10">No package sessions in this range.</p>
-                </CardContent>
-            </Card>
-        )
-    }
-    
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Avg. Refill Count</CardTitle>
-                <CardDescription>Served refills per package session.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="text-4xl font-bold">{overallAvg.toFixed(1)}</div>
-                <p className="text-xs text-muted-foreground">
-                    {analytics.overallTotal} total refills across {analytics.sessionCount} sessions
-                </p>
-            </CardContent>
-        </Card>
-    );
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Average Refills</CardTitle>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+        ) : (
+          <>
+            <div className="text-2xl font-semibold tabular-nums">
+              {analytics.avg.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Total refills served:{" "}
+              <span className="font-medium text-foreground">
+                {analytics.overallTotal.toLocaleString("en-US")}
+              </span>{" "}
+              • Package sessions:{" "}
+              <span className="font-medium text-foreground">
+                {analytics.sessionCount.toLocaleString("en-US")}
+              </span>
+            </div>
+
+            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="secondary" size="sm" disabled={isLoading}>
+                  Details
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:max-w-lg">
+                <SheetHeader>
+                  <SheetTitle>Refill Summary</SheetTitle>
+                </SheetHeader>
+
+                <div className="mt-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Average refills / package session</span>
+                    <span className="font-medium tabular-nums">
+                      {analytics.avg.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Total refills served</span>
+                    <span className="font-medium tabular-nums">
+                      {analytics.overallTotal.toLocaleString("en-US")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Package sessions counted</span>
+                    <span className="font-medium tabular-nums">
+                      {analytics.sessionCount.toLocaleString("en-US")}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 text-xs text-muted-foreground">
+                    Per-refill breakdown moved to the <span className="font-medium text-foreground">Top Refills</span>{" "}
+                    card (from refillItems rollup).
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
