@@ -17,40 +17,34 @@ import { toJsDate } from "@/lib/utils/date";
 import { formatKitchenQty } from "@/lib/uom";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
 
-interface KdsItemCardProps {
-    ticket: KitchenTicket;
-    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
+function formatDuration(ms: number): string {
+    if (isNaN(ms) || ms < 0) return "00:00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    const paddedHours = hours.toString().padStart(2, '0');
+    const paddedMinutes = minutes.toString().padStart(2, '0');
+    const paddedSeconds = seconds.toString().padStart(2, '0');
+
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
 function TimeLapse({ startTime }: { startTime: any }) {
-    const [elapsed, setElapsed] = useState('...');
+    const [elapsed, setElapsed] = useState('00:00:00');
     const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
 
     useEffect(() => {
         if (!jsDate || !Number.isFinite(jsDate.getTime())) {
-            setElapsed('just now');
+            setElapsed('00:00:00');
             return;
         }
 
         const update = () => {
             const now = Date.now();
-            const totalSeconds = Math.floor((now - jsDate.getTime()) / 1000);
-            
-            if (totalSeconds < 0) {
-                setElapsed('0s');
-            } else if (totalSeconds < 60) {
-                setElapsed(`${totalSeconds}s`);
-            } else {
-                const totalMinutes = Math.floor(totalSeconds / 60);
-                 if (totalMinutes < 60) {
-                    setElapsed(`${totalMinutes}m`);
-                } else {
-                    const hours = Math.floor(totalMinutes / 60);
-                    const minutes = totalMinutes % 60;
-                    const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-                    setElapsed(`${hours}h ${paddedMinutes}m`);
-                }
-            }
+            const elapsedMs = Math.max(0, now - jsDate.getTime());
+            setElapsed(formatDuration(elapsedMs));
         };
 
         update();
@@ -65,7 +59,7 @@ function TimeLapse({ startTime }: { startTime: any }) {
     }, [jsDate, elapsed]); // Recalculate color when elapsed time changes.
 
     return (
-        <div className={cn("flex items-center gap-1.5 text-sm", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
+        <div className={cn("flex items-center gap-1.5 text-sm font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
             <Clock size={14} />
             <span>{elapsed}</span>
         </div>
@@ -170,5 +164,3 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
         </>
     );
 }
-
-    
