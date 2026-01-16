@@ -201,10 +201,19 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         }
 
         let cancelled = false;
+        let unsubscribeDailyMetrics: (() => void) | null = null;
         setIsLoading(true);
 
-        async function fetchData() {
-            if (ytdMode) {
+        const sessionsRef = collection(db, "stores", storeId, "sessions");
+        const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
+        const unsubSessions = onSnapshot(activeSessionsQuery, (snapshot) => {
+            if (!cancelled) {
+                setActiveSessions(snapshot.size);
+            }
+        });
+
+        if (ytdMode) {
+            async function fetchYtdData() {
                 setDailyMetrics([]); // Clear daily data to prevent flashes
                 
                 const today = new Date();
@@ -252,52 +261,64 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
                 const topAddons = await fetchTopAddonsForRollupDocs(monthRefs, 20);
                 if(cancelled) return;
                 setTopCategories(groupByCategory(topAddons));
+            }
+            
+            fetchYtdData().finally(() => {
+                if (!cancelled) setIsLoading(false);
+            });
 
+        } else {
+            // --- REALTIME LOGIC FOR DAILY VIEW ---
+            setTrendRows([]);
+            setYtdData({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
+
+            if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
+                 setDailyMetrics([]);
+                 setTopCategories([]);
+                 setIsLoading(false);
             } else {
-                setTrendRows([]); // Clear YTD data
-                setYtdData({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
-                
-                 // Date range guard
-                if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
-                    setDailyMetrics([]);
-                    setTopCategories([]);
-                    return; // Stop further execution
-                }
-                
                 const tomorrow = new Date(dateRange.end);
                 tomorrow.setDate(dateRange.end.getDate() + 1);
                 const tomorrowStart = startOfDay(tomorrow);
-                const metrics = await fetchPartialDays(db, storeId, dateRange.start, tomorrowStart);
-                if (cancelled) return;
-                setDailyMetrics(metrics);
-                
-                if (metrics.length > 0) {
-                    const dayRefs = metrics.map(m => doc(db, 'stores', storeId, 'analytics', m.meta.dayId));
-                    const topAddons = await fetchTopAddonsForRollupDocs(dayRefs, 20);
-                    if(cancelled) return;
-                    setTopCategories(groupByCategory(topAddons));
-                } else {
-                    setTopCategories([]);
-                }
+
+                const ref = collection(db, "stores", storeId, "analytics");
+                const q = query(
+                    ref,
+                    where("meta.dayStartMs", ">=", dateRange.start.getTime()),
+                    where("meta.dayStartMs", "<", tomorrowStart.getTime())
+                );
+
+                unsubscribeDailyMetrics = onSnapshot(q, async (snapshot) => {
+                    if (cancelled) return;
+
+                    const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
+                    setDailyMetrics(metrics);
+
+                    if (metrics.length > 0) {
+                        const dayRefs = metrics.map(m => doc(db, 'stores', storeId, 'analytics', m.meta.dayId));
+                        const topAddons = await fetchTopAddonsForRollupDocs(dayRefs, 20);
+                        if(cancelled) return;
+                        setTopCategories(groupByCategory(topAddons));
+                    } else {
+                        setTopCategories([]);
+                    }
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Dashboard daily metrics listener failed:", error);
+                    setIsLoading(false);
+                });
             }
         }
         
-        fetchData().finally(() => {
-            if (!cancelled) setIsLoading(false);
-        });
-
-        const sessionsRef = collection(db, "stores", storeId, "sessions");
-        const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
-        const unsubSessions = onSnapshot(activeSessionsQuery, (snapshot) => {
-            setActiveSessions(snapshot.size);
-        });
-
         return () => {
             cancelled = true;
             unsubSessions();
+            if (unsubscribeDailyMetrics) {
+                unsubscribeDailyMetrics();
+            }
         };
     }, [storeId, dateRange.start, dateRange.end, ytdMode]);
-
+    
     const stats = useMemo<DashboardStats>(() => {
         if (ytdMode) return ytdData.cur;
         if (!dailyMetrics || dailyMetrics.length === 0) return { netSales: 0, transactions: 0, avgBasket: 0 };
