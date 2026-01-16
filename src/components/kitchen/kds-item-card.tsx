@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -21,7 +22,7 @@ interface KdsItemCardProps {
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
 }
 
-function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null | undefined }) {
+function TimeLapse({ startTime }: { startTime: any }) {
     const [elapsed, setElapsed] = useState('...');
     const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
 
@@ -121,7 +122,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                     </div>
                      <CardDescription className="flex items-center justify-between">
                         <span>{identifier} {isPackage && `(${ticket.guestCount} guests)`}</span>
-                        <TimeLapse startTime={ticket.createdAt} />
+                        <TimeLapse startTime={ticket.createdAt ?? (ticket.createdAtClientMs ? new Date(ticket.createdAtClientMs) : null)} />
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2">
@@ -169,3 +170,5 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
         </>
     );
 }
+
+    

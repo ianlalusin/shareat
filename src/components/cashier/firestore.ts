@@ -188,6 +188,7 @@ export async function startSession(
         qty: 1, // The package itself is one unit
         createdByUid: user.uid,
         createdAt: serverTimestamp(),
+        createdAtClientMs: Date.now(),
         sessionMode: 'package_dinein',
         customerName: payload.customer?.name,
         sessionLabel: sessionLabel,
@@ -577,3 +578,5 @@ export async function updateSessionBillLine(
 
     await updateDoc(lineRef, updatePayload);
 }
+
+    

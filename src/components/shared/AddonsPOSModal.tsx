@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo } from "react";
@@ -301,6 +302,7 @@ function POSContent({
             storeId,
             createdByUid: appUser.uid,
             createdAt: serverTimestamp(),
+            createdAtClientMs: Date.now(),
             sessionLabel: computeSessionLabel(session),
           });
           tx.set(ticketRef, ticketPayload);
@@ -467,3 +469,5 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
     </Dialog>
   );
 }
+
+    

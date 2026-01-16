@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -214,6 +215,7 @@ function POSContent({
                 notes: finalNotes || null,
                 status: "preparing",
                 createdAt: serverTimestamp(),
+                createdAtClientMs: Date.now(),
                 updatedAt: serverTimestamp(),
                 createdByUid: appUser.uid,
                 sessionId: session.id, 
@@ -284,6 +286,7 @@ function POSContent({
                 kitchenLocationId: refill.kitchenLocationId,
                 kitchenLocationName: refill.kitchenLocationName,
                 createdAt: serverTimestamp(),
+                createdAtClientMs: Date.now(),
                 updatedAt: serverTimestamp(),
                 createdByUid: appUser.uid,
                 sessionId: session.id,
@@ -542,3 +545,5 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
+
+    
