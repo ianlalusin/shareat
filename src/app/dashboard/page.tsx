@@ -175,13 +175,13 @@ export default function DashboardPage() {
                         </div>
                          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                            <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                            <TopRefillsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
                         </div>
                         <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3 items-start">
-                            <div className="lg:col-span-2">
-                                <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={10} />
-                            </div>
-                            <TopRefillsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                           <div className="lg:col-span-2">
+                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                           </div>
                         </div>
                     </>
                 )}
