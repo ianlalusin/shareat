@@ -1,11 +1,19 @@
 
-
 'use client';
 
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
+
+/**
+ * Checks if a receipt object is null or represents a voided transaction.
+ * @param r The receipt object to check.
+ * @returns `true` if the receipt is considered void.
+ */
+function isVoidReceipt(r: any): boolean {
+  return !r || r.status === "voided" || r.isVoided === true;
+}
 
 /**
  * Gets the start of the day (midnight) for a given timestamp in the 'Asia/Manila' timezone.
@@ -97,36 +105,20 @@ type PaymentContribution = {
 
 export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {} };
-    if (!receipt || receipt.status === "voided") return defaultReturn;
+    if (isVoidReceipt(receipt)) return defaultReturn;
     
-    // Prioritize client-side timestamp for dayId generation
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
-    const byMethod: Record<string, number> = {};
     const analytics = (receipt.analytics || {}) as ReceiptAnalyticsV2;
-    const paymentMethods = analytics.mop || {};
-    
-    let nonCashTotal = 0;
-    for (const [method, amount] of Object.entries(paymentMethods)) {
-        if (method.toLowerCase() !== 'cash') {
-            nonCashTotal += amount;
-            byMethod[method] = (byMethod[method] || 0) + amount;
-        }
-    }
-    
-    const cashAmount = Math.max(0, receipt.total - nonCashTotal);
-    if (cashAmount > 0) {
-        byMethod['Cash'] = (byMethod['Cash'] || 0) + cashAmount;
-    }
+    const gross = Number(receipt.total ?? analytics?.grandTotal ?? 0);
 
-    // NOTE: payments.totalGross stores receipt.total (grandTotal) => Net Sales after discounts/charges.
     return {
         dayId: getDayIdFromTimestamp(eventMs),
         dayStartMs: getDayStartMs(eventMs),
-        totalGross: receipt.total,
+        totalGross: gross,
         txCount: 1,
-        byMethod: byMethod,
+        byMethod: analytics?.mop ?? {},
     };
 }
 
@@ -147,7 +139,7 @@ type GuestCoversContribution = {
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0, guestCountFinalByPackageName: {}, packageCoversBilledByPackageName: {} };
     
-    if (!receipt || receipt.status === "voided" || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
+    if (isVoidReceipt(receipt) || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
     }
 
@@ -191,7 +183,7 @@ type SalesContribution = {
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesByItem: {} };
-    if (!receipt || receipt.status === "voided" || receipt.analytics?.v !== 2) return defaultReturn;
+    if (isVoidReceipt(receipt) || receipt.analytics?.v !== 2) return defaultReturn;
     
     const analytics = receipt.analytics as ReceiptAnalyticsV2;
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
@@ -249,7 +241,7 @@ type PeakHourContribution = {
 
 export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
-    if (!receipt || receipt.status === "voided" || receipt.analytics?.v !== 2) return defaultReturn;
+    if (isVoidReceipt(receipt) || receipt.analytics?.v !== 2) return defaultReturn;
     
     // Use session start time first, which is more accurate for peak hour calculation
     const eventMs = receipt.analytics.sessionStartedAtClientMs || toJsDate(receipt.analytics.sessionStartedAt)?.getTime();
@@ -337,7 +329,7 @@ type ClosedSessionsContribution = {
 
 export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
-    if (!receipt || receipt.status === "voided") return defaultReturn;
+    if (isVoidReceipt(receipt)) return defaultReturn;
 
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
@@ -362,7 +354,7 @@ type RefillContribution = {
 
 export function getRefillContribution(receipt: Receipt | null): RefillContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 };
-    if (!receipt || receipt.status === "voided" || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
+    if (isVoidReceipt(receipt) || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
     }
     
