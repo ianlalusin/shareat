@@ -5,7 +5,6 @@ import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Providers } from './providers';
 import { AppLayout } from '@/components/layout/AppLayout';
-import PwaInstaller from '@/components/pwa-installer';
 
 // Define fonts
 const fontSans = Poppins({
@@ -79,7 +78,6 @@ export default function RootLayout({
           </AppLayout>
         </Providers>
         <Toaster />
-        <PwaInstaller />
       </body>
     </html>
   );
