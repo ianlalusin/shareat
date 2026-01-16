@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -32,36 +31,38 @@ function formatDuration(ms: number): string {
 }
 
 function TimeLapse({ startTime }: { startTime: any }) {
-    const [elapsed, setElapsed] = useState('00:00:00');
     const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
+    const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
         if (!jsDate || !Number.isFinite(jsDate.getTime())) {
-            setElapsed('00:00:00');
             return;
         }
 
-        const update = () => {
-            const now = Date.now();
-            const elapsedMs = Math.max(0, now - jsDate.getTime());
-            setElapsed(formatDuration(elapsedMs));
-        };
-
-        update();
-        const timerId = setInterval(update, 1000);
+        const timerId = setInterval(() => {
+            setNow(Date.now());
+        }, 1000);
 
         return () => clearInterval(timerId);
     }, [jsDate]);
-
-    const totalMinutes = useMemo(() => {
-        if (!jsDate) return 0;
-        return Math.floor((Date.now() - jsDate.getTime()) / 60000);
-    }, [jsDate, elapsed]); // Recalculate color when elapsed time changes.
+    
+    if (!jsDate || !Number.isFinite(jsDate.getTime())) {
+        return (
+            <div className="flex items-center gap-1.5 text-sm font-mono text-amber-600">
+                <Clock size={14} />
+                <span>00:00:00</span>
+            </div>
+        );
+    }
+    
+    const elapsedMs = Math.max(0, now - jsDate.getTime());
+    const elapsedFormatted = formatDuration(elapsedMs);
+    const totalMinutes = Math.floor(elapsedMs / 60000);
 
     return (
         <div className={cn("flex items-center gap-1.5 text-sm font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
             <Clock size={14} />
-            <span>{elapsed}</span>
+            <span>{elapsedFormatted}</span>
         </div>
     );
 }
@@ -72,6 +73,11 @@ const CANCELLATION_REASONS = [
     "Customer request",
     "Incorrect order",
 ];
+
+interface KdsItemCardProps {
+    ticket: KitchenTicket;
+    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
+}
 
 export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
     const { confirm, Dialog } = useConfirmDialog();
