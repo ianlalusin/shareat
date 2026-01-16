@@ -19,6 +19,11 @@ function writerSet(w: Writer, ref: any, data: any, opts: any) {
   return w.batch.set(ref, data, opts);
 }
 
+function writerUpdate(w: Writer, ref: any, data: any) {
+  if (w.kind === "tx") return w.tx.update(ref, data);
+  return w.batch.update(ref, data);
+}
+
 function toSafeDocId(raw: string) {
   return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
 }
@@ -86,6 +91,12 @@ export async function applyKdsTicketDelta(
   const typeKey = ticket.type;
   const dur = Number(ticket.durationMs ?? 0);
   const qty = Number(ticket.qty ?? 1);
+  
+  // Ensure docs exist by setting meta field. This is a safe "upsert".
+  const dayStartMs = ms;
+  writerSet(w, dayRef, { meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+  writerSet(w, monthRef, { meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+  writerSet(w, yearRef, { meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
 
   // Base kitchen counters
   const payload: Record<string, any> = {
@@ -126,8 +137,8 @@ export async function applyKdsTicketDelta(
     }
   }
 
-  // Write to day/month/year
-  writerSet(w, dayRef, payload, { merge: true });
-  writerSet(w, monthRef, payload, { merge: true });
-  writerSet(w, yearRef, payload, { merge: true });
+  // Write to day/month/year using update
+  writerUpdate(w, dayRef, payload);
+  writerUpdate(w, monthRef, payload);
+  writerUpdate(w, yearRef, payload);
 }

@@ -126,18 +126,15 @@ export async function applyAnalyticsDeltaV2(
       ? dayNew.payment.dayStartMs 
       : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
 
-    const initialDocPayload = {
-        meta: { updatedAt: serverTimestamp() },
-        payments: {}, sales: {}, guests: {}, kitchen: {}, refills: {}, sessions: {}
-    };
-
+    // Ensure docs exist by setting meta field. This is a safe "upsert" that won't overwrite existing data maps.
     if (dayStartMs > 0) {
-        writerSet(w, dayRef, { ...initialDocPayload, meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+        writerSet(w, dayRef, { meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
     } else {
-        writerSet(w, dayRef, { ...initialDocPayload, meta: { dayId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+        writerSet(w, dayRef, { meta: { dayId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
     }
-    writerSet(w, monthRef, { ...initialDocPayload, meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
-    writerSet(w, yearRef, { ...initialDocPayload, meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    writerSet(w, monthRef, { meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    writerSet(w, yearRef, { meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+
 
     // --- Step 3: Prepare and apply increments ---
     const payload: Record<string, any> = {
