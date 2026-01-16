@@ -20,6 +20,7 @@ interface BillableItemsProps {
   discounts: Discount[];
   isLocked?: boolean;
   onUpdateLine: (line: SessionBillLine) => void;
+  onAddLine?: (line: SessionBillLine) => void;
 }
 
 function BillableLineRow({ 
@@ -66,7 +67,8 @@ export function BillableItems({
     session,
     discounts,
     isLocked = false,
-    onUpdateLine
+    onUpdateLine,
+    onAddLine
 }: BillableItemsProps) {
   
   const { appUser } = useAuthContext();
@@ -86,6 +88,7 @@ export function BillableItems({
               storeId={storeId}
               session={session}
               sessionIsLocked={isLocked}
+              onAddLine={onAddLine}
             />
         </CardHeader>
         <CardContent className="p-0 flex-1 overflow-y-auto">

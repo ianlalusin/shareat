@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo } from "react";
@@ -28,6 +29,7 @@ interface AddonsPOSModalProps {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
+  onAddLine?: (line: SessionBillLine) => void;
 }
 
 type EnrichedStoreAddon = InventoryItem & {
@@ -118,11 +120,13 @@ function POSContent({
   session,
   sessionIsLocked,
   onClose,
+  onAddLine,
 }: {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
   onClose: () => void;
+  onAddLine?: (line: SessionBillLine) => void;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -212,6 +216,33 @@ function POSContent({
     if (safeUnitPrice <= 0) {
       toast({ variant: "destructive", title: "Invalid Price", description: `Cannot add "${selectedAddon.displayName}" with a price of zero.`});
       return;
+    }
+
+    // If onAddLine is provided, we're in "edit receipt" mode.
+    if (onAddLine) {
+        const newLine: SessionBillLine = {
+            id: `addon_${selectedAddon.id}`, // Stable ID for merging quantities
+            type: "addon",
+            itemId: selectedAddon.id,
+            itemName: selectedAddon.displayName,
+            category: selectedAddon.subCategory ?? null,
+            barcode: selectedAddon.barcode ?? null,
+            unitPrice: safeUnitPrice,
+            qtyOrdered: quantity,
+            discountType: null,
+            discountValue: 0,
+            discountQty: 0,
+            freeQty: 0,
+            voidedQty: 0,
+            createdAt: new Date(), // Temporary, won't be saved to Firestore directly
+            updatedAt: new Date(),
+        };
+        onAddLine(newLine);
+        toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added to bill.` });
+        setSelectedAddon(null);
+        setQuantity(1);
+        onClose();
+        return;
     }
 
 
@@ -392,7 +423,7 @@ function POSContent({
   );
 }
 
-export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked }: AddonsPOSModalProps) {
+export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine }: AddonsPOSModalProps) {
   const isMobile = useIsMobile();
 
   const content = (
@@ -401,6 +432,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
       session={session}
       sessionIsLocked={sessionIsLocked}
       onClose={() => onOpenChange(false)}
+      onAddLine={onAddLine}
     />
   );
 

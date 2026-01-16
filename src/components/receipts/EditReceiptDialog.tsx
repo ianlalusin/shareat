@@ -137,6 +137,28 @@ function EditReceiptContent({
             session={mockSession}
             discounts={itemDiscounts}
             onUpdateLine={(line) => setEditingLine(line)}
+            onAddLine={(newLine) => {
+                setLines((currentLines) => {
+                    // Check if an identical addon line already exists
+                    const existingLineIndex = currentLines.findIndex(
+                        (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
+                    );
+
+                    if (existingLineIndex >= 0) {
+                        // If it exists, update the quantity
+                        const nextLines = [...currentLines];
+                        const existingLine = nextLines[existingLineIndex];
+                        nextLines[existingLineIndex] = {
+                            ...existingLine,
+                            qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
+                        };
+                        return nextLines;
+                    } else {
+                        // If it doesn't exist, add the new line
+                        return [...currentLines, newLine];
+                    }
+                });
+            }}
           />
           <PaymentSection
             paymentMethods={paymentMethods}

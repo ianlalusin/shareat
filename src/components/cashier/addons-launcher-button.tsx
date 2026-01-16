@@ -5,15 +5,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
 import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
-import type { PendingSession } from "@/lib/types";
+import type { PendingSession, SessionBillLine } from "@/lib/types";
 
 interface AddonsLauncherButtonProps {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
+  onAddLine?: (line: SessionBillLine) => void;
 }
 
-export function AddonsLauncherButton({ storeId, session, sessionIsLocked }: AddonsLauncherButtonProps) {
+export function AddonsLauncherButton({ storeId, session, sessionIsLocked, onAddLine }: AddonsLauncherButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
@@ -29,6 +30,7 @@ export function AddonsLauncherButton({ storeId, session, sessionIsLocked }: Addo
           storeId={storeId}
           session={session}
           sessionIsLocked={sessionIsLocked}
+          onAddLine={onAddLine}
         />
       )}
     </>
