@@ -34,6 +34,7 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { v4 as uuidv4 } from "uuid";
 
 
 // --- Date Helpers ---
@@ -284,6 +285,8 @@ export default function ReceiptsPageContents() {
           reason,
           snapshot: editingReceipt,
         });
+        
+        const applyId = uuidv4();
     
         // 2) Overwrite original receipt (new receipt)
         batch.update(originalReceiptRef, {
@@ -294,6 +297,9 @@ export default function ReceiptsPageContents() {
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           editReason: reason,
+          analyticsApplied: true,
+          analyticsAppliedAt: serverTimestamp(),
+          analyticsApplyId: applyId,
         });
     
         // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
@@ -426,6 +432,8 @@ export default function ReceiptsPageContents() {
       const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
     
       await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+      
+      const applyId = uuidv4();
     
       batch.update(receiptRef, {
         status: "voided",
@@ -433,6 +441,9 @@ export default function ReceiptsPageContents() {
         voidedByUid: appUser.uid,
         voidedByEmail: appUser.email,
         voidReason: reason,
+        analyticsApplied: true,
+        analyticsAppliedAt: serverTimestamp(),
+        analyticsApplyId: applyId,
       });
     
       await batch.commit();
@@ -719,3 +730,6 @@ export default function ReceiptsPageContents() {
         </RoleGuard>
     )
 }
+
+
+    
