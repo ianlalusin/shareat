@@ -247,30 +247,19 @@ export async function completePaymentFromUnits(
       tx.get(counterRef)
     ]);
     
-    if (!sessionSnap.exists()) throw new Error(`Session ${sessionId} does not exist.`);
+    const sessionData = sessionSnap.data();
+    if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
     
-    // Idempotency Guard: Check if analytics have already been applied for this session.
+    // Idempotency Guard
     if (receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) {
       console.warn(`Payment completion skipped: Analytics for session ${sessionId} already applied.`);
       receiptId = receiptRef.id;
       return;
     }
-    
-    const sessionData = sessionSnap.data();
     if (sessionData.status === "closed" || sessionData.isPaid === true) {
       console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
       receiptId = receiptSnap.exists() ? receiptSnap.id : "";
       return;
-    }
-    
-    // Gating for Ala Carte
-    if (sessionData.sessionMode === 'alacarte') {
-        const billedAddonQty = billLines
-            .filter(line => line.type === 'addon')
-            .reduce((sum, line) => sum + Math.max(0, line.qtyOrdered - line.voidedQty - line.freeQty), 0);
-        if (billedAddonQty <= 0) {
-            throw new Error("Ala carte session requires at least one billable item.");
-        }
     }
     
     let tableRef = null;
@@ -286,11 +275,10 @@ export async function completePaymentFromUnits(
     const amountDueCents = Math.round(amountDue * 100);
 
     if (totalPaidCents < amountDueCents) {
-      throw new Error(`Cannot complete payment: balance is not zero. Paid: ${totalPaidCents}, Due: ${amountDueCents}`);
+      throw new Error(`Cannot complete payment: balance is not zero. Paid: ₱${(totalPaidCents / 100).toFixed(2)}, Due: ₱${(amountDueCents / 100).toFixed(2)}`);
     }
 
     const actor = getActorStamp(user);
-    const shouldCreateReceipt = !receiptSnap.exists();
     
     // --- 2. WRITE PHASE ---
     
@@ -316,161 +304,158 @@ export async function completePaymentFromUnits(
         updatedAt: serverTimestamp(),
     });
 
-    if (shouldCreateReceipt) {
-        const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
-        const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
-        const nextSeq = currentSeq + 1;
-        
-        tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
-        
-        const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
-        const totalPaid = totalPaidCents / 100;
-        const change = Math.max(0, totalPaid - amountDue);
-        
-        const mopMap: Record<string, number> = {};
-        payments.forEach(p => {
-            const method = paymentMethods.find(m => m.id === p.methodId);
-            const key = method?.name || p.methodId || "unknown";
-            mopMap[key] = (mopMap[key] || 0) + p.amount;
-        });
-        
-        const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
-            id: sessionId,
-            storeId,
-            sessionId,
-            createdByUid: actor.uid,
-            createdByUsername: actor.username,
-            sessionMode: sessionData.sessionMode,
-            tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
-            tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
-            customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-            total: amountDue,
-            totalPaid,
-            change: Math.max(0, totalPaid - amountDue),
-            status: "final",
-            receiptSeq: nextSeq,
-            receiptNumber,
-            receiptNoFormatUsed: receiptNoFormat,
-            createdAtClientMs: Date.now(),
-            lines: billLines,
-        } as Omit<Receipt, 'createdAt'>);
-        
-        const salesAnalytics = billLines.reduce(
-            (acc, line) => {
-                if (line.type !== 'package' && line.type !== 'addon') return acc;
-                
-                const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
-                if (netQty <= 0) return acc;
-
-                const grossAmount = netQty * line.unitPrice;
-                const discountQty = Math.min(line.discountQty || 0, netQty);
-                
-                let discountAmount = 0;
-                if (discountQty > 0) {
-                    const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
-                        ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
-                        : line.unitPrice;
-
-                    if (line.discountType === 'percent') {
-                        discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
-                    } else { // fixed
-                        discountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountQty;
-                    }
-                }
-                const netAmount = grossAmount - discountAmount;
-                
-                const categoryName = line.category || 'Uncategorized';
-                
-                acc.salesByItem ??= {};
-                acc.salesByCategory ??= {};
-                
-                if (!acc.salesByItem[line.itemName]) {
-                    acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
-                }
-                acc.salesByItem[line.itemName].qty += netQty;
-                acc.salesByItem[line.itemName].amount += netAmount;
-                
-                if (!acc.salesByCategory[categoryName]) {
-                    acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
-                }
-                acc.salesByCategory[categoryName].qty += netQty;
-                acc.salesByCategory[categoryName].amount += netAmount;
-
-                return acc;
-            },
-            {} as {
-                salesByItem?: ReceiptAnalyticsV2['salesByItem'];
-                salesByCategory?: ReceiptAnalyticsV2['salesByCategory'];
-            }
-        );
-        
-        const startedDate = new Date(sessionData.startedAtClientMs);
-        const sessionStartedAtHour = startedDate.getHours();
-        
-        let guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] | undefined = undefined;
-        if (sessionData.sessionMode === 'package_dinein') {
-            const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
-            const serverVerified = sessionData.guestCountServerVerified ?? 0;
-            const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
-
-            const pkgLine = billLines.find(l => l.type === 'package');
-            const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
-            const discrepancy = billedPackageCovers - finalGuestCount;
+    const receiptNoFormat = settingsSnap.exists() ? (settingsSnap.data()?.receiptNoFormat ?? "SELIP-######") : "SELIP-######";
+    const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
+    const nextSeq = currentSeq + 1;
+    
+    tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
+    
+    const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
+    const totalPaid = totalPaidCents / 100;
+    const change = Math.max(0, totalPaid - amountDue);
+    
+    const mopMap: Record<string, number> = {};
+    payments.forEach(p => {
+        const method = paymentMethods.find(m => m.id === p.methodId);
+        const key = method?.name || p.methodId || "unknown";
+        mopMap[key] = (mopMap[key] || 0) + p.amount;
+    });
+    
+    const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
+        id: sessionId,
+        storeId,
+        sessionId,
+        createdByUid: actor.uid,
+        createdByUsername: actor.username,
+        sessionMode: sessionData.sessionMode,
+        tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
+        tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
+        customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
+        total: amountDue,
+        totalPaid,
+        change: Math.max(0, totalPaid - amountDue),
+        status: "final",
+        receiptSeq: nextSeq,
+        receiptNumber,
+        receiptNoFormatUsed: receiptNoFormat,
+        createdAtClientMs: Date.now(),
+        lines: billLines,
+    } as Omit<Receipt, 'createdAt'>);
+    
+    const salesAnalytics = billLines.reduce(
+        (acc, line) => {
+            if (line.type !== 'package' && line.type !== 'addon') return acc;
             
-            const packageOfferingId = sessionData.packageOfferingId ?? null;
-            const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
+            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
+            if (netQty <= 0) return acc;
 
-            guestCountSnapshot = {
-                packageOfferingId,
-                packageName,
-                finalGuestCount,
-                billedPackageCovers,
-                discrepancy,
-                computedAtClientMs: Date.now(),
-                rule: "MAX",
-            };
+            const grossAmount = netQty * line.unitPrice;
+            const discountQty = Math.min(line.discountQty || 0, netQty);
+            
+            let discountAmount = 0;
+            if (discountQty > 0) {
+                const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
+                    ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
+                    : line.unitPrice;
+
+                if (line.discountType === 'percent') {
+                    discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
+                } else { // fixed
+                    discountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountQty;
+                }
+            }
+            const netAmount = grossAmount - discountAmount;
+            
+            const categoryName = line.category || 'Uncategorized';
+            
+            acc.salesByItem ??= {};
+            acc.salesByCategory ??= {};
+            
+            if (!acc.salesByItem[line.itemName]) {
+                acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
+            }
+            acc.salesByItem[line.itemName].qty += netQty;
+            acc.salesByItem[line.itemName].amount += netAmount;
+            
+            if (!acc.salesByCategory[categoryName]) {
+                acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
+            }
+            acc.salesByCategory[categoryName].qty += netQty;
+            acc.salesByCategory[categoryName].amount += netAmount;
+
+            return acc;
+        },
+        {} as {
+            salesByItem?: ReceiptAnalyticsV2['salesByItem'];
+            salesByCategory?: ReceiptAnalyticsV2['salesByCategory'];
         }
-        
-        const applyId = uuidv4();
-        const analyticsV2: ReceiptAnalyticsV2 = {
-          v: 2,
-          sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
-          sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
-          sessionStartedAtHour: sessionStartedAtHour,
-          subtotal: finalTotals.subtotal,
-          discountsTotal: finalTotals.totalDiscounts,
-          chargesTotal: finalTotals.chargesTotal,
-          taxAmount: finalTotals.taxTotal,
-          grandTotal: finalTotals.grandTotal,
-          totalPaid: totalPaid,
-          change: change,
-          mop: mopMap,
-          salesByItem: salesAnalytics.salesByItem,
-          salesByCategory: salesAnalytics.salesByCategory,
-          addonSalesByItem: {}, // Placeholder, to be populated if needed
-          servedRefillsByName: sessionData.servedRefillsByName || {},
-          serveCountByType: sessionData.serveCountByType || {},
-          serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
-          guestCountSnapshot,
-        };
-        
-        const finalReceiptPayload = { 
-            ...receiptPayload, 
-            analytics: analyticsV2, 
-            createdAt: serverTimestamp(),
-            analyticsApplied: true,
-            analyticsAppliedAt: serverTimestamp(),
-            analyticsApplyId: applyId,
-        };
-        tx.set(receiptRef, finalReceiptPayload);
-        finalReceipt = finalReceiptPayload as Receipt;
-        
-        // This must be inside the write phase
-        await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
-        
-        receiptId = receiptRef.id;
-    }
+    );
+    
+    const startedDate = new Date(sessionData.startedAtClientMs);
+    const sessionStartedAtHour = startedDate.getHours();
+    
+    let guestCountSnapshot: ReceiptAnalyticsV2["guestCountSnapshot"] | undefined = undefined;
+    if (sessionData.sessionMode === 'package_dinein') {
+        const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
+        const serverVerified = sessionData.guestCountServerVerified ?? 0;
+        const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
 
+        const pkgLine = billLines.find(l => l.type === 'package');
+        const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
+        const discrepancy = billedPackageCovers - finalGuestCount;
+        
+        const packageOfferingId = sessionData.packageOfferingId ?? null;
+        const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
+
+        guestCountSnapshot = {
+            packageOfferingId,
+            packageName,
+            finalGuestCount,
+            billedPackageCovers,
+            discrepancy,
+            computedAtClientMs: Date.now(),
+            rule: "MAX",
+        };
+    }
+    
+    const applyId = uuidv4();
+    const analyticsV2: ReceiptAnalyticsV2 = {
+      v: 2,
+      sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
+      sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
+      sessionStartedAtHour: sessionStartedAtHour,
+      subtotal: finalTotals.subtotal,
+      discountsTotal: finalTotals.totalDiscounts,
+      chargesTotal: finalTotals.chargesTotal,
+      taxAmount: finalTotals.taxTotal,
+      grandTotal: finalTotals.grandTotal,
+      totalPaid: totalPaid,
+      change: change,
+      mop: mopMap,
+      salesByItem: salesAnalytics.salesByItem,
+      salesByCategory: salesAnalytics.salesByCategory,
+      addonSalesByItem: {}, // Placeholder, to be populated if needed
+      servedRefillsByName: sessionData.servedRefillsByName || {},
+      serveCountByType: sessionData.serveCountByType || {},
+      serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
+      guestCountSnapshot,
+    };
+    
+    finalReceipt = { 
+        ...receiptPayload, 
+        analytics: analyticsV2, 
+        createdAt: serverTimestamp(),
+        analyticsApplied: true,
+        analyticsAppliedAt: serverTimestamp(),
+        analyticsApplyId: applyId,
+    } as Receipt;
+
+    // This must be inside the write phase
+    await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
+    tx.set(receiptRef, finalReceipt);
+    
+    receiptId = receiptRef.id;
+    
     if (tableSnap && tableRef && tableSnap.exists()) {
       const t = tableSnap.data();
       if (t.currentSessionId === sessionId) {
@@ -482,7 +467,6 @@ export async function completePaymentFromUnits(
       }
     }
   });
-
 
   if (receiptId) {
      await writeActivityLog({
