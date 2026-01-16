@@ -71,6 +71,11 @@ function writerSet(w: Writer, ref: any, data: any, opts: any) {
   return w.batch.set(ref, data, opts);
 }
 
+function writerUpdate(w: Writer, ref: any, data: any) {
+  if (w.kind === "tx") return w.tx.update(ref, data);
+  return w.batch.update(ref, data);
+}
+
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
  * to the daily analytics documents. This can be part of a larger batch.
@@ -110,19 +115,35 @@ export async function applyAnalyticsDeltaV2(
     const dayOld = pickDayContribution(oldContrib, dayId);
     const dayNew = pickDayContribution(newContrib, dayId);
 
+    const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
+    const monthId = dayId.slice(0, 6);
+    const yearId = dayId.slice(0, 4);
+    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
+    const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
+
+    // --- Step 2: Ensure Docs Exist ---
+    const dayStartMs = dayNew.payment.dayStartMs > 0 
+      ? dayNew.payment.dayStartMs 
+      : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
+
+    const initialDocPayload = {
+        meta: { updatedAt: serverTimestamp() },
+        payments: {}, sales: {}, guests: {}, kitchen: {}, refills: {}, sessions: {}
+    };
+
+    if (dayStartMs > 0) {
+        writerSet(w, dayRef, { ...initialDocPayload, meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    } else {
+        writerSet(w, dayRef, { ...initialDocPayload, meta: { dayId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    }
+    writerSet(w, monthRef, { ...initialDocPayload, meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    writerSet(w, yearRef, { ...initialDocPayload, meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+
+    // --- Step 3: Prepare and apply increments ---
     const payload: Record<string, any> = {
-      "meta.dayId": dayId,
-      "meta.storeId": storeId,
       "meta.updatedAt": serverTimestamp(),
     };
     
-    // Add dayStartMs only if it's from a valid contribution, ensuring the meta doc is created.
-    if (dayNew.payment.dayStartMs > 0) {
-        payload["meta.dayStartMs"] = dayNew.payment.dayStartMs;
-    } else if (dayOld.payment.dayStartMs > 0) {
-        payload["meta.dayStartMs"] = dayOld.payment.dayStartMs;
-    }
-
     // --- Payments Delta ---
     const paymentDelta = {
       totalGross: dayNew.payment.totalGross - dayOld.payment.totalGross,
@@ -151,7 +172,6 @@ export async function applyAnalyticsDeltaV2(
         if (delta !== 0) payload[`guests.guestCountFinalByPackageName.${name}`] = increment(delta);
     });
 
-    // Billed covers
     const allBilledPkgNames = new Set([...Object.keys(dayOld.guest.packageCoversBilledByPackageName), ...Object.keys(dayNew.guest.packageCoversBilledByPackageName)]);
     allBilledPkgNames.forEach(name => {
         const delta = (dayNew.guest.packageCoversBilledByPackageName[name] || 0) - (dayOld.guest.packageCoversBilledByPackageName[name] || 0);
@@ -197,13 +217,7 @@ export async function applyAnalyticsDeltaV2(
     for (const [cat, ad] of Object.entries(catAmtDelta)) {
       if (ad !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(ad);
     }
-
-    const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
-    const monthId = dayId.slice(0, 6);
-    const yearId = dayId.slice(0, 4);
-    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
-    const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
-
+    
     allAddonItems.forEach((itemName) => {
       const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
       const newItem = dayNew.sales.addonSalesByItem?.[itemName];
@@ -283,26 +297,10 @@ export async function applyAnalyticsDeltaV2(
       writeToSubcollection(yearRef);
     });
     
-    writerSet(w, dayRef, payload, { merge: true });
-
-    // ---- NEW: Month + Year rollups ----
-    const basePayload: Record<string, any> = { ...payload };
-    delete basePayload["meta.dayId"];
-    delete basePayload["meta.dayStartMs"];
-
-    // Month doc
-    writerSet(w, monthRef, {
-        ...basePayload,
-        "meta.monthId": monthId,
-        "meta.updatedAt": serverTimestamp(),
-      }, { merge: true });
-
-    // Year doc
-    writerSet(w, yearRef, {
-        ...basePayload,
-        "meta.yearId": yearId,
-        "meta.updatedAt": serverTimestamp(),
-      }, { merge: true });
+    // Apply the increments using update
+    writerUpdate(w, dayRef, payload);
+    writerUpdate(w, monthRef, payload);
+    writerUpdate(w, yearRef, payload);
   }
 
   // If the caller is not providing a transaction or batch, we create our own and commit it.
