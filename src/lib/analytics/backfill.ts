@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import {
@@ -13,9 +12,10 @@ import {
   doc,
   serverTimestamp,
   type Firestore,
+  collectionGroup,
 } from "firebase/firestore";
 import { toast } from "@/hooks/use-toast";
-import type { DailyMetric, Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
+import type { DailyMetric, Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
 import {
   getDayIdFromTimestamp,
   getDayStartMs,
@@ -25,25 +25,12 @@ import {
   getPeakHourContribution,
   getRefillContribution,
   getClosedSessionsContribution,
+  getKitchenTicketContribution,
 } from "./daily";
-import {
-  merge,
-  mergeWith,
-  isObject
-} from "lodash";
+import { toJsDate } from "@/lib/utils/date";
 
 /**
- * Custom merger for lodash.mergeWith that sums numbers.
- */
-function customMerger(objValue: any, srcValue: any) {
-  if (typeof objValue === 'number' && typeof srcValue === 'number') {
-    return objValue + srcValue;
-  }
-  // Let lodash handle the rest
-}
-
-/**
- * Rebuilds daily analytics documents for a given date range by processing existing receipts.
+ * Rebuilds daily analytics documents for a given date range by processing existing receipts and kitchen tickets.
  * This function overwrites existing daily analytics documents for the specified range.
  *
  * @param db The Firestore instance.
@@ -59,56 +46,76 @@ export async function rebuildDailyAnalyticsFromReceipts(
   endDate: Date,
   onProgress: (message: string) => void
 ) {
-  onProgress("Querying receipts for the selected date range...");
+  onProgress("Querying receipts and kitchen tickets for the selected date range...");
 
-  // 1. Query all receipts within the date range
+  // 1. Query all receipts and tickets within the date range
   const receiptsRef = collection(db, "stores", storeId, "receipts");
-  const q = query(
+  const qReceipts = query(
     receiptsRef,
     where("createdAt", ">=", Timestamp.fromDate(startDate)),
     where("createdAt", "<=", Timestamp.fromDate(endDate)),
     orderBy("createdAt", "asc")
   );
 
-  const receiptsSnapshot = await getDocs(q);
+  const ticketsRef = collectionGroup(db, 'kitchentickets');
+  const qTickets = query(
+      ticketsRef,
+      where("storeId", "==", storeId),
+      // Query a slightly wider range for tickets to catch items served the next day
+      where("createdAt", ">=", Timestamp.fromDate(new Date(startDate.getTime() - 24 * 60 * 60 * 1000))),
+      where("createdAt", "<=", Timestamp.fromDate(new Date(endDate.getTime() + 24 * 60 * 60 * 1000)))
+  );
+
+  const [receiptsSnapshot, ticketsSnapshot] = await Promise.all([
+    getDocs(qReceipts),
+    getDocs(qTickets)
+  ]);
+  
   const receipts = receiptsSnapshot.docs.map(
     (d) => ({ id: d.id, ...d.data() } as Receipt)
   );
+  const tickets = ticketsSnapshot.docs.map(d => d.data() as KitchenTicket);
 
-  if (receipts.length === 0) {
-    onProgress("No receipts found in the selected date range. Nothing to do.");
+
+  if (receipts.length === 0 && tickets.length === 0) {
+    onProgress("No data found in the selected date range. Nothing to do.");
     return;
   }
 
-  onProgress(`Found ${receipts.length} receipts. Aggregating daily totals...`);
+  onProgress(`Found ${receipts.length} receipts and ${tickets.length} tickets. Aggregating daily totals...`);
 
   // 2. Aggregate data in memory
   const dailyAggregates = new Map < string, DailyMetric > ();
 
-  for (const receipt of receipts) {
-    if (receipt.status === 'voided') continue; // Skip voided receipts
-    
-    const dayId = getDayIdFromTimestamp(receipt.createdAt);
-    if (!dayId) continue;
-
+  const ensureDay = (dayId: string, dayStartMs: number) => {
     if (!dailyAggregates.has(dayId)) {
       dailyAggregates.set(dayId, {
         meta: {
           dayId,
-          dayStartMs: getDayStartMs(receipt.createdAt),
+          dayStartMs,
           storeId,
           updatedAt: serverTimestamp(),
         },
         payments: { byMethod: {}, totalGross: 0, txCount: 0 },
         guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} },
-        sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesByItem: {}, salesAmountByHour: {}, sessionCountByHour: {} },
+        sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, salesAmountByHour: {}, sessionCountByHour: {} },
         kitchen: { servedCountByType: {}, cancelledCountByType: {}, durationMsSumByType: {}, durationCountByType: {} },
         sessions: { closedCount: 0, totalPaid: 0 },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
       });
     }
+    return dailyAggregates.get(dayId)!;
+  }
 
-    const dayData = dailyAggregates.get(dayId) !;
+  for (const receipt of receipts) {
+    if (receipt.status === 'voided') continue; // Skip voided receipts
+    
+    const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
+    if (!eventMs) continue;
+    
+    const dayId = getDayIdFromTimestamp(eventMs);
+    const dayStartMs = getDayStartMs(eventMs);
+    const dayData = ensureDay(dayId, dayStartMs);
 
     // Get contributions from all helpers
     const paymentContrib = getPaymentContribution(receipt);
@@ -119,45 +126,65 @@ export async function rebuildDailyAnalyticsFromReceipts(
     const refillContrib = getRefillContribution(receipt);
 
     // Merge contributions into the daily aggregate
-    dayData.payments.totalGross += paymentContrib.totalGross;
-    dayData.payments.txCount += paymentContrib.txCount;
+    dayData.payments!.totalGross = (dayData.payments!.totalGross || 0) + paymentContrib.totalGross;
+    dayData.payments!.txCount = (dayData.payments!.txCount || 0) + paymentContrib.txCount;
     for (const [method, amount] of Object.entries(paymentContrib.byMethod)) {
-        dayData.payments.byMethod[method] = (dayData.payments.byMethod[method] || 0) + amount;
+        dayData.payments!.byMethod[method] = (dayData.payments!.byMethod[method] || 0) + amount;
     }
 
-    dayData.guests.guestCountFinalTotal += guestContrib.guestCountFinal;
-    dayData.guests.packageSessionsCount += guestContrib.packageSessionsCount;
+    dayData.guests!.guestCountFinalTotal = (dayData.guests!.guestCountFinalTotal || 0) + guestContrib.guestCountFinal;
+    dayData.guests!.packageSessionsCount = (dayData.guests!.packageSessionsCount || 0) + guestContrib.packageSessionsCount;
      for (const [pkgName, count] of Object.entries(guestContrib.guestCountFinalByPackageName)) {
-        dayData.guests.guestCountFinalByPackageName[pkgName] = (dayData.guests.guestCountFinalByPackageName[pkgName] || 0) + count;
+        dayData.guests!.guestCountFinalByPackageName[pkgName] = (dayData.guests!.guestCountFinalByPackageName[pkgName] || 0) + count;
     }
     for (const [pkgName, count] of Object.entries(guestContrib.packageCoversBilledByPackageName)) {
-        dayData.guests.packageCoversBilledByPackageName[pkgName] = (dayData.guests.packageCoversBilledByPackageName[pkgName] || 0) + count;
+        dayData.guests!.packageCoversBilledByPackageName[pkgName] = (dayData.guests!.packageCoversBilledByPackageName[pkgName] || 0) + count;
     }
     
     for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName)) {
-        dayData.sales.packageSalesAmountByName[pkgName] = (dayData.sales.packageSalesAmountByName[pkgName] || 0) + amount;
+        dayData.sales!.packageSalesAmountByName[pkgName] = (dayData.sales!.packageSalesAmountByName[pkgName] || 0) + amount;
     }
     for (const [pkgName, qty] of Object.entries(salesContrib.packageSalesQtyByName)) {
-        dayData.sales.packageSalesQtyByName[pkgName] = (dayData.sales.packageSalesQtyByName[pkgName] || 0) + qty;
+        dayData.sales!.packageSalesQtyByName[pkgName] = (dayData.sales!.packageSalesQtyByName[pkgName] || 0) + qty;
     }
     for (const [catName, amount] of Object.entries(salesContrib.addonSalesAmountByCategory)) {
-        dayData.sales.addonSalesAmountByCategory[catName] = (dayData.sales.addonSalesAmountByCategory[catName] || 0) + amount;
+        dayData.sales!.addonSalesAmountByCategory[catName] = (dayData.sales!.addonSalesAmountByCategory[catName] || 0) + amount;
     }
 
     if(peakHourContrib.hourKey) {
-        dayData.sales.salesAmountByHour![peakHourContrib.hourKey] = (dayData.sales.salesAmountByHour![peakHourContrib.hourKey] || 0) + peakHourContrib.amount;
-        dayData.sales.sessionCountByHour![peakHourContrib.hourKey] = (dayData.sales.sessionCountByHour![peakHourContrib.hourKey] || 0) + peakHourContrib.count;
+        dayData.sales!.salesAmountByHour[peakHourContrib.hourKey] = (dayData.sales!.salesAmountByHour[peakHourContrib.hourKey] || 0) + peakHourContrib.amount;
+        dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] = (dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] || 0) + peakHourContrib.count;
     }
 
-    dayData.sessions.closedCount += closedSessionContrib.closedCount;
-    dayData.sessions.totalPaid += closedSessionContrib.totalPaid;
+    dayData.sessions!.closedCount = (dayData.sessions!.closedCount || 0) + closedSessionContrib.closedCount;
+    dayData.sessions!.totalPaid = (dayData.sessions!.totalPaid || 0) + closedSessionContrib.totalPaid;
     
-    dayData.refills.packageSessionsCount += refillContrib.packageSessionsCount;
-    dayData.refills.servedRefillsTotal += refillContrib.servedRefillsTotal;
+    dayData.refills!.packageSessionsCount = (dayData.refills!.packageSessionsCount || 0) + refillContrib.packageSessionsCount;
+    dayData.refills!.servedRefillsTotal = (dayData.refills!.servedRefillsTotal || 0) + refillContrib.servedRefillsTotal;
     for (const [refillName, qty] of Object.entries(refillContrib.servedRefillsByName)) {
-        dayData.refills.servedRefillsByName[refillName] = (dayData.refills.servedRefillsByName[refillName] || 0) + qty;
+        dayData.refills!.servedRefillsByName[refillName] = (dayData.refills!.servedRefillsByName[refillName] || 0) + qty;
     }
   }
+
+  // Process kitchen tickets
+  for (const ticket of tickets) {
+      const kitchenContrib = getKitchenTicketContribution(ticket);
+      if (!kitchenContrib.dayId) continue;
+      
+      const dayStartMs = kitchenContrib.dayStartMs;
+      // Only include tickets that were served/cancelled within the requested range
+      if(dayStartMs < startDate.getTime() || dayStartMs > endDate.getTime()) continue;
+
+      const dayData = ensureDay(kitchenContrib.dayId, dayStartMs);
+      
+      // Merge kitchen contributions
+      const typeKey = kitchenContrib.typeKey;
+      dayData.kitchen!.servedCountByType[typeKey] = (dayData.kitchen!.servedCountByType[typeKey] || 0) + kitchenContrib.servedCount;
+      dayData.kitchen!.cancelledCountByType[typeKey] = (dayData.kitchen!.cancelledCountByType[typeKey] || 0) + kitchenContrib.cancelledCount;
+      dayData.kitchen!.durationMsSumByType[typeKey] = (dayData.kitchen!.durationMsSumByType[typeKey] || 0) + kitchenContrib.durationMsSum;
+      dayData.kitchen!.durationCountByType[typeKey] = (dayData.kitchen!.durationCountByType[typeKey] || 0) + kitchenContrib.durationCount;
+  }
+
 
   onProgress(`Aggregated into ${dailyAggregates.size} daily documents. Preparing to write...`);
 
@@ -172,7 +199,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     
     // Add backfill timestamp to meta
     data.meta.backfilledAt = serverTimestamp();
-    data.meta.source = "backfill_receipts_v2";
+    data.meta.source = "backfill_v3_receipts_and_kds";
 
     batchArray[batchIndex].set(docRef, data, { merge: false }); // Overwrite!
     operationCount++;
@@ -188,5 +215,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
   onProgress(`Writing ${dailyAggregates.size} documents across ${batchArray.length} batches...`);
   await Promise.all(batchArray.map((batch) => batch.commit()));
 
-  onProgress(`Backfill complete for ${receipts.length} receipts.`);
+  onProgress(`Backfill complete.`);
 }
+
+    
