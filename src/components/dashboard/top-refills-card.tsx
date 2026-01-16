@@ -2,65 +2,92 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { doc } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import type { DailyMetric } from "@/lib/analytics/types"; // adjust path if yours differs
+import type { DailyMetric } from "@/lib/types";
 import { fetchTopRefillsForRollupDocs } from "@/lib/analytics/top-refills";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 type TopRefillRow = { refillName: string; qty: number };
 
 interface TopRefillsCardProps {
   storeId: string;
-  dailyMetrics: DailyMetric[];
-  isLoading: boolean;
+  dateRange?: { start: Date; end: Date }; // Make optional
   topN?: number;
+  dailyMetrics?: DailyMetric[];
+  isLoading: boolean;
 }
 
-export function TopRefillsCard({ storeId, dailyMetrics, isLoading, topN = 5 }: TopRefillsCardProps) {
+export function TopRefillsCard({ storeId, dateRange, topN = 5, dailyMetrics, isLoading: isLoadingProp }: TopRefillsCardProps) {
+  const [localDailyMetrics, setLocalDailyMetrics] = useState<DailyMetric[]>([]);
+  const [isLoadingLocal, setIsLoadingLocal] = useState(!dailyMetrics);
   const [topRefills, setTopRefills] = useState<TopRefillRow[]>([]);
-  const [isLoadingTop, setIsLoadingTop] = useState(false);
+  
+  const metrics = dailyMetrics ?? localDailyMetrics;
+  const isLoading = isLoadingProp || isLoadingLocal;
 
-  const totalRefillsInRange = useMemo(() => {
-    return (dailyMetrics || []).reduce((sum, m) => sum + (m?.refills?.servedRefillsTotal ?? 0), 0);
-  }, [dailyMetrics]);
+  useEffect(() => {
+    if (dailyMetrics) {
+      setIsLoadingLocal(false);
+      setLocalDailyMetrics([]);
+      return;
+    }
+    
+    if (!storeId || !dateRange) {
+        setIsLoadingLocal(false);
+        return;
+    }
 
+    const startDayId = getDayIdFromTimestamp(dateRange.start);
+    const endDayId = getDayIdFromTimestamp(dateRange.end);
+    const q = query(
+      collection(db, "stores", storeId, "analytics"),
+      where("meta.dayId", ">=", startDayId),
+      where("meta.dayId", "<=", endDayId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        setLocalDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
+        setIsLoadingLocal(false);
+    }, (error) => {
+        console.error("Error fetching daily metrics for TopRefillsCard:", error);
+        setIsLoadingLocal(false);
+    });
+
+    return () => unsubscribe();
+  }, [storeId, dateRange, dailyMetrics]);
+  
   useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
-      if (!storeId || !dailyMetrics || dailyMetrics.length === 0) {
-        setTopRefills([]);
-        return;
-      }
-
-      setIsLoadingTop(true);
+      if (!storeId) return;
+      setIsLoadingLocal(true);
       try {
-        const dayRefs = dailyMetrics
+        const dayRefs = (metrics || [])
           .map((m) => m?.meta?.dayId)
           .filter(Boolean)
           .map((dayId) => doc(db, "stores", storeId, "analytics", dayId as string));
 
         const items = await fetchTopRefillsForRollupDocs(db, dayRefs, topN);
         if (!cancelled) setTopRefills(items as TopRefillRow[]);
-      } catch (e) {
-        console.error("Error loading top refills:", e);
-        if (!cancelled) setTopRefills([]);
       } finally {
-        if (!cancelled) setIsLoadingTop(false);
+        if (!cancelled) setIsLoadingLocal(false);
       }
     };
 
     run();
-    return () => {
-      cancelled = true;
-    };
-  }, [storeId, dailyMetrics, topN]);
+    return () => { cancelled = true; };
+  }, [storeId, topN, metrics]);
 
-  const loading = isLoading || isLoadingTop;
+  const totalRefillsInRange = useMemo(() => {
+    return (metrics || []).reduce((sum, m) => sum + (m?.refills?.servedRefillsTotal ?? 0), 0);
+  }, [metrics]);
+
 
   return (
     <Card>
@@ -69,7 +96,7 @@ export function TopRefillsCard({ storeId, dailyMetrics, isLoading, topN = 5 }: T
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {loading ? (
+        {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-5 w-40" />
             <Skeleton className="h-4 w-full" />

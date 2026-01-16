@@ -1,27 +1,66 @@
 // src/components/dashboard/avg-refills-card.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
-import type { DailyMetric } from "@/lib/analytics/types"; // adjust path if yours differs
+import type { DailyMetric } from "@/lib/types";
 
 interface AvgRefillsCardProps {
-  dailyMetrics: DailyMetric[];
+  storeId: string;
+  dateRange: { start: Date; end: Date };
+  dailyMetrics?: DailyMetric[];
   isLoading: boolean;
 }
 
-export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps) {
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
+export function AvgRefillsCard({ storeId, dateRange, dailyMetrics, isLoading: isLoadingProp }: AvgRefillsCardProps) {
+  const [localDailyMetrics, setLocalDailyMetrics] = useState<DailyMetric[]>([]);
+  const [isLoadingLocal, setIsLoadingLocal] = useState(!dailyMetrics);
+
+  useEffect(() => {
+    if (dailyMetrics) {
+      setIsLoadingLocal(false);
+      return;
+    }
+    
+    if(!storeId) {
+        setIsLoadingLocal(false);
+        return;
+    }
+
+    const startDayId = getDayIdFromTimestamp(dateRange.start);
+    const endDayId = getDayIdFromTimestamp(dateRange.end);
+    const q = query(
+      collection(db, "stores", storeId, "analytics"),
+      where("meta.dayId", ">=", startDayId),
+      where("meta.dayId", "<=", endDayId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        setLocalDailyMetrics(snapshot.docs.map(doc => doc.data() as DailyMetric));
+        setIsLoadingLocal(false);
+    }, (error) => {
+        console.error("Error fetching daily metrics for AvgRefillsCard:", error);
+        setIsLoadingLocal(false);
+    });
+
+    return () => unsubscribe();
+  }, [storeId, dateRange, dailyMetrics]);
+
+  const metrics = dailyMetrics ?? localDailyMetrics;
+  const isLoading = isLoadingProp || isLoadingLocal;
 
   const analytics = useMemo(() => {
     let sessionCount = 0;
     let overallTotal = 0;
 
-    (dailyMetrics || []).forEach((m) => {
+    (metrics || []).forEach((m) => {
       sessionCount += m?.refills?.packageSessionsCount ?? 0;
       overallTotal += m?.refills?.servedRefillsTotal ?? 0;
     });
@@ -33,7 +72,8 @@ export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps)
       overallTotal,
       avg,
     };
-  }, [dailyMetrics]);
+  }, [metrics]);
+
 
   return (
     <Card>
@@ -62,45 +102,6 @@ export function AvgRefillsCard({ dailyMetrics, isLoading }: AvgRefillsCardProps)
                 {analytics.sessionCount.toLocaleString("en-US")}
               </span>
             </div>
-
-            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-              <SheetTrigger asChild>
-                <Button variant="secondary" size="sm" disabled={isLoading}>
-                  Details
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:max-w-lg">
-                <SheetHeader>
-                  <SheetTitle>Refill Summary</SheetTitle>
-                </SheetHeader>
-
-                <div className="mt-4 space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Average refills / package session</span>
-                    <span className="font-medium tabular-nums">
-                      {analytics.avg.toLocaleString("en-US", { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Total refills served</span>
-                    <span className="font-medium tabular-nums">
-                      {analytics.overallTotal.toLocaleString("en-US")}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Package sessions counted</span>
-                    <span className="font-medium tabular-nums">
-                      {analytics.sessionCount.toLocaleString("en-US")}
-                    </span>
-                  </div>
-
-                  <div className="pt-2 text-xs text-muted-foreground">
-                    Per-refill breakdown moved to the <span className="font-medium text-foreground">Top Refills</span>{" "}
-                    card (from refillItems rollup).
-                  </div>
-                </div>
-              </SheetContent>
-            </Sheet>
           </>
         )}
       </CardContent>

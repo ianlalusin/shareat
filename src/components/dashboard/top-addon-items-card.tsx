@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -8,7 +7,7 @@ import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import type { DailyMetric } from "@/lib/analytics/types"; // adjust if needed
+import type { DailyMetric } from "@/lib/types";
 import { fetchTopAddonsForRollupDocs, type AddonAgg } from "@/lib/analytics/top-addons";
 
 function fmtCurrency(n: number) {
