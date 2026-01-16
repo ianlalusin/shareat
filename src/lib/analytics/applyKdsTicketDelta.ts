@@ -1,5 +1,5 @@
 
-"use client";
+'use client';
 
 import {
   doc,
@@ -86,7 +86,7 @@ export async function applyKdsTicketDelta(
   const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
   const yearRef = doc(db, "stores", storeId, "analyticsYears", yearId);
 
-  const ticket = isServed ? (newTicket as KdsTicket) : (oldTicket as KdsTicket);
+  const ticket = sign > 0 ? (newTicket as KdsTicket) : (oldTicket as KdsTicket);
 
   const typeKey = ticket.type;
   const dur = Number(ticket.durationMs ?? 0);
