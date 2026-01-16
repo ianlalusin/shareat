@@ -15,7 +15,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { toast } from "@/hooks/use-toast";
-import type { DailyMetric, Receipt } from "@/lib/types";
+import type { DailyMetric, Receipt, ReceiptAnalyticsV2 } from "@/lib/types";
 import {
   getDayIdFromTimestamp,
   getDayStartMs,
@@ -86,6 +86,8 @@ export async function rebuildDailyAnalyticsFromReceipts(
   const dailyAggregates = new Map < string, DailyMetric > ();
 
   for (const receipt of receipts) {
+    if (receipt.status === 'voided') continue; // Skip voided receipts
+    
     const dayId = getDayIdFromTimestamp(receipt.createdAt);
     if (!dayId) continue;
 
@@ -117,15 +119,44 @@ export async function rebuildDailyAnalyticsFromReceipts(
     const refillContrib = getRefillContribution(receipt);
 
     // Merge contributions into the daily aggregate
-    dayData.payments = mergeWith(dayData.payments, paymentContrib, customMerger);
-    dayData.guests = mergeWith(dayData.guests, guestContrib, customMerger);
-    dayData.sales = mergeWith(dayData.sales, salesContrib, customMerger);
+    dayData.payments.totalGross += paymentContrib.totalGross;
+    dayData.payments.txCount += paymentContrib.txCount;
+    for (const [method, amount] of Object.entries(paymentContrib.byMethod)) {
+        dayData.payments.byMethod[method] = (dayData.payments.byMethod[method] || 0) + amount;
+    }
+
+    dayData.guests.guestCountFinalTotal += guestContrib.guestCountFinal;
+    dayData.guests.packageSessionsCount += guestContrib.packageSessionsCount;
+     for (const [pkgName, count] of Object.entries(guestContrib.guestCountFinalByPackageName)) {
+        dayData.guests.guestCountFinalByPackageName[pkgName] = (dayData.guests.guestCountFinalByPackageName[pkgName] || 0) + count;
+    }
+    for (const [pkgName, count] of Object.entries(guestContrib.packageCoversBilledByPackageName)) {
+        dayData.guests.packageCoversBilledByPackageName[pkgName] = (dayData.guests.packageCoversBilledByPackageName[pkgName] || 0) + count;
+    }
+    
+    for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName)) {
+        dayData.sales.packageSalesAmountByName[pkgName] = (dayData.sales.packageSalesAmountByName[pkgName] || 0) + amount;
+    }
+    for (const [pkgName, qty] of Object.entries(salesContrib.packageSalesQtyByName)) {
+        dayData.sales.packageSalesQtyByName[pkgName] = (dayData.sales.packageSalesQtyByName[pkgName] || 0) + qty;
+    }
+    for (const [catName, amount] of Object.entries(salesContrib.addonSalesAmountByCategory)) {
+        dayData.sales.addonSalesAmountByCategory[catName] = (dayData.sales.addonSalesAmountByCategory[catName] || 0) + amount;
+    }
+
     if(peakHourContrib.hourKey) {
         dayData.sales.salesAmountByHour![peakHourContrib.hourKey] = (dayData.sales.salesAmountByHour![peakHourContrib.hourKey] || 0) + peakHourContrib.amount;
         dayData.sales.sessionCountByHour![peakHourContrib.hourKey] = (dayData.sales.sessionCountByHour![peakHourContrib.hourKey] || 0) + peakHourContrib.count;
     }
-    dayData.sessions = mergeWith(dayData.sessions, closedSessionContrib, customMerger);
-    dayData.refills = mergeWith(dayData.refills, refillContrib, customMerger);
+
+    dayData.sessions.closedCount += closedSessionContrib.closedCount;
+    dayData.sessions.totalPaid += closedSessionContrib.totalPaid;
+    
+    dayData.refills.packageSessionsCount += refillContrib.packageSessionsCount;
+    dayData.refills.servedRefillsTotal += refillContrib.servedRefillsTotal;
+    for (const [refillName, qty] of Object.entries(refillContrib.servedRefillsByName)) {
+        dayData.refills.servedRefillsByName[refillName] = (dayData.refills.servedRefillsByName[refillName] || 0) + qty;
+    }
   }
 
   onProgress(`Aggregated into ${dailyAggregates.size} daily documents. Preparing to write...`);
@@ -141,7 +172,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     
     // Add backfill timestamp to meta
     data.meta.backfilledAt = serverTimestamp();
-    data.meta.source = "backfill_receipts_v1";
+    data.meta.source = "backfill_receipts_v2";
 
     batchArray[batchIndex].set(docRef, data, { merge: false }); // Overwrite!
     operationCount++;
