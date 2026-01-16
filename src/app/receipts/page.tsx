@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -35,6 +36,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
+import ReasonModal from "@/components/shared/ReasonModal";
 
 
 // --- Date Helpers ---
@@ -88,6 +90,9 @@ export default function ReceiptsPageContents() {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
+    const [voidOpen, setVoidOpen] = useState(false);
+    const [voidTarget, setVoidTarget] = useState<ReceiptType | null>(null);
 
     // --- Pagination State ---
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -585,16 +590,9 @@ export default function ReceiptsPageContents() {
         setIsCalendarOpen(false);
     };
 
-    const handleVoidClick = async (receipt: ReceiptType) => {
-      const reason = prompt("Please provide a reason for voiding this receipt:");
-      if (!reason) return;
-
-      setIsProcessing(receipt.id);
-      try {
-        await handleVoidReceipt(receipt, reason);
-      } finally {
-        setIsProcessing(null);
-      }
+    const handleVoidClick = (r: ReceiptType) => {
+      setVoidTarget(r);
+      setVoidOpen(true);
     };
 
     if (storeLoading) {
@@ -772,6 +770,28 @@ export default function ReceiptsPageContents() {
                     onSave={handleSaveCorrection}
                 />
             )}
+
+            <ReasonModal
+              open={voidOpen}
+              onOpenChange={(o) => {
+                setVoidOpen(o);
+                if (!o) setVoidTarget(null);
+              }}
+              title="Void Receipt"
+              description="Provide a reason. This will reverse analytics and keep the receipt for audit."
+              confirmLabel="Void Receipt"
+              placeholder="Reason..."
+              onConfirm={async (reason) => {
+                if (!voidTarget) return;
+                setIsProcessing(voidTarget.id);
+                try {
+                  await handleVoidReceipt(voidTarget, reason);
+                } finally {
+                  setIsProcessing(null);
+                  setVoidTarget(null);
+                }
+              }}
+            />
 
             {/* This div is only for printing */}
             <div className="hidden print-block">
