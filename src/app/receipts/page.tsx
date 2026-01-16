@@ -587,13 +587,13 @@ export default function ReceiptsPageContents() {
 
     const handleVoidClick = async (receipt: ReceiptType) => {
         const reason = prompt("Please provide a reason for voiding this receipt:");
-        if (!reason) return;
-      
-        setIsProcessing(receipt.id);
-        try {
-          await handleVoidReceipt(receipt, reason);
-        } finally {
-          setIsProcessing(null);
+        if (reason) {
+            setIsProcessing(receipt.id);
+            try {
+                await handleVoidReceipt(receipt, reason);
+            } finally {
+                setIsProcessing(null);
+            }
         }
     };
 
@@ -691,15 +691,15 @@ export default function ReceiptsPageContents() {
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
                                                     
-                                                    {appUser?.role === "admin" && (
+                                                    {(appUser?.role === "admin" || appUser?.role === "manager") && (
                                                         <Button
                                                             variant="destructive"
                                                             size="sm"
                                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
-                                                            disabled={isProcessing === r.id || r.status === "voided"}
+                                                            disabled={isProcessing === r.id || r.status === 'voided' || (appUser?.role === 'manager' && r.isEdited === true)}
                                                             type="button"
                                                         >
-                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
                                                         </Button>
                                                     )}
                                                 </TableCell>
@@ -776,4 +776,3 @@ export default function ReceiptsPageContents() {
         </RoleGuard>
     )
 }
-
