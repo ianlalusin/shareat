@@ -194,12 +194,12 @@ function POSContent({
   };
 
   const handleAddToOrder = async () => {
-    if (!appUser || !storeId || !session?.id || !selectedAddon) {
-      toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
+    if (sessionIsLocked) {
+      toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
       return;
     }
-    if (sessionIsLocked) {
-      toast({ variant: "destructive", title: "Cannot Add Item", description: "This session is locked and cannot be modified." });
+    if (!appUser || !storeId || !session?.id || !selectedAddon) {
+      toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
       return;
     }
     if (!selectedAddon.kitchenLocationId) {
@@ -391,7 +391,7 @@ function POSContent({
               variant="outline"
               size="icon"
               onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-              disabled={!selectedAddon || isSubmitting}
+              disabled={!selectedAddon || isSubmitting || sessionIsLocked}
             >
               <Minus className="h-4 w-4" />
             </Button>
@@ -399,7 +399,7 @@ function POSContent({
             <QuantityInput
               value={quantity}
               onChange={setQuantity}
-              disabled={!selectedAddon || isSubmitting}
+              disabled={!selectedAddon || isSubmitting || sessionIsLocked}
               allowsDecimal={selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false}
             />
 
@@ -407,12 +407,12 @@ function POSContent({
               variant="outline"
               size="icon"
               onClick={() => setQuantity((q) => q + 1)}
-              disabled={!selectedAddon || isSubmitting}
+              disabled={!selectedAddon || isSubmitting || sessionIsLocked}
             >
               <Plus className="h-4 w-4" />
             </Button>
 
-            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading}>
+            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading || sessionIsLocked}>
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Add to Order
             </Button>

@@ -166,12 +166,12 @@ function POSContent({
   };
   
   const handleAddToOrder = async () => {
-    if (!appUser || cart.size === 0) {
-      toast({ variant: "destructive", title: "Cannot Add Item", description: "Your order list is empty." });
+    if (sessionIsLocked) {
+      toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
       return;
     }
-    if (sessionIsLocked) {
-      toast({ variant: "destructive", title: "Session Locked", description: "This session is locked and cannot be modified." });
+    if (!appUser || cart.size === 0) {
+      toast({ variant: "destructive", title: "Cannot Add Item", description: "Your order list is empty." });
       return;
     }
     
@@ -238,6 +238,10 @@ function POSContent({
   };
 
   const handleRepeatFirstOrder = async () => {
+    if (sessionIsLocked) {
+      toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
+      return;
+    }
     if (!appUser || !currentPackage) {
         toast({ variant: "destructive", title: "Cannot Repeat Order", description: "Package information not found." });
         return;
