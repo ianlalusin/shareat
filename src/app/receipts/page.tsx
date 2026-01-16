@@ -265,7 +265,7 @@ export default function ReceiptsPageContents() {
         setEditingReceipt(receipt);
     }
 
-    const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
+    const handleSaveCorrection = async (updatedReceiptData: Partial<ReceiptType>, reason: string) => {
       if (!appUser || !activeStore || !editingReceipt) return;
     
       try {
@@ -276,45 +276,46 @@ export default function ReceiptsPageContents() {
         const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
         const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
     
-        // 1) Write revision snapshot (old receipt)
+        // 1. Create a revision document with a snapshot of the original receipt data.
         batch.set(revisionRef, {
           version: nextVersion,
           editedAt: serverTimestamp(),
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           reason,
-          snapshot: editingReceipt,
+          snapshot: editingReceipt, // The original, unedited data
         });
         
         const applyId = uuidv4();
     
-        // 2) Overwrite original receipt (new receipt)
-        batch.update(originalReceiptRef, {
-          ...updatedReceipt,
+        // 2. Prepare the final updated receipt object for writing.
+        const finalReceiptPayload = {
+          ...updatedReceiptData,
           isEdited: true,
           editVersion: nextVersion,
           editedAt: serverTimestamp(),
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           editReason: reason,
-          analyticsApplied: true,
+          analyticsApplied: true, // Mark analytics as applied
           analyticsAppliedAt: serverTimestamp(),
           analyticsApplyId: applyId,
-        });
+        };
+        batch.update(originalReceiptRef, finalReceiptPayload);
     
-        // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
+        // 3. Calculate and apply the analytics delta within the same atomic batch.
         await applyAnalyticsDeltaV2(
           db,
           activeStore.id,
-          editingReceipt,
-          updatedReceipt as ReceiptType,
-          { batch }
+          editingReceipt, // Pass the original receipt as the "before" state
+          updatedReceiptData as ReceiptType, // Pass the new data as the "after" state
+          { batch } // Join the existing batch
         );
     
-        // 4) Commit once
+        // 4. Commit all operations atomically.
         await batch.commit();
     
-        // 5) Log activity (can stay outside batch)
+        // 5. Log the successful activity (this can happen outside the batch).
         await writeActivityLog({
           action: "RECEIPT_EDITED",
           storeId: activeStore.id,
@@ -324,14 +325,16 @@ export default function ReceiptsPageContents() {
             receiptId: editingReceipt.id,
             receiptNumber: editingReceipt.receiptNumber,
             editVersion: nextVersion,
+            reason: reason,
           },
         });
     
         toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
-        setEditingReceipt(null);
+        setEditingReceipt(null); // Close the dialog
       } catch (error: any) {
+        console.error("handleSaveCorrection error:", error);
         toast({ variant: "destructive", title: "Correction Failed", description: error.message });
-        throw error;
+        throw error; // Re-throw to indicate failure to the caller
       }
     };
 
@@ -730,5 +733,3 @@ export default function ReceiptsPageContents() {
         </RoleGuard>
     )
 }
-
-    
