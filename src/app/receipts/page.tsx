@@ -449,7 +449,9 @@ export default function ReceiptsPageContents() {
     }
 
     const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
-      if (!appUser || !activeStore) return;
+      if (!appUser || !activeStore) {
+        throw new Error("User or store not available.");
+      }
     
       if (receipt.status === "voided") {
         toast({ title: "Already voided", description: "This receipt was already voided." });
@@ -483,8 +485,6 @@ export default function ReceiptsPageContents() {
         user: appUser,
         meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
       });
-    
-      toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
     };
 
     const handleExport = async () => {
@@ -786,6 +786,10 @@ export default function ReceiptsPageContents() {
                 setIsProcessing(voidTarget.id);
                 try {
                   await handleVoidReceipt(voidTarget, reason);
+                  toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
+                  setReceipts(prev => prev.map(r => r.id === voidTarget.id ? { ...r, status: 'voided', voidReason: reason } : r));
+                } catch (error: any) {
+                    toast({ variant: 'destructive', title: 'Void Failed', description: error.message });
                 } finally {
                   setIsProcessing(null);
                   setVoidTarget(null);
