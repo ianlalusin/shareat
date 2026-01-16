@@ -302,7 +302,7 @@ export function EditBillableItemDialog({
         
         if (isPackage && isIncreasingQty) {
             (after as any).qtyOverrideActive = true;
-            (after as any).qtyOverrideAt = serverTimestamp();
+            (after as any).qtyOverrideAt = new Date();
         }
 
         try {
