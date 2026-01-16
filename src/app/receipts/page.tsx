@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -294,7 +293,7 @@ export default function ReceiptsPageContents() {
           ...updatedReceiptData,
           isEdited: true,
           editVersion: nextVersion,
-          editedAt: serverTimestamp(),
+          editedAt: new Date(), // Use JS Date for immediate state update
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           editReason: reason,
@@ -302,7 +301,7 @@ export default function ReceiptsPageContents() {
           analyticsAppliedAt: serverTimestamp(),
           analyticsApplyId: applyId,
         };
-        batch.update(originalReceiptRef, finalReceiptPayload);
+        batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
     
         // 3. Calculate and apply the analytics delta within the same atomic batch.
         await applyAnalyticsDeltaV2(
@@ -316,28 +315,27 @@ export default function ReceiptsPageContents() {
         // 4. Commit all operations atomically.
         await batch.commit();
 
-        // update list item locally
+        // 5. Update local state immediately after successful commit
         setReceipts(prev =>
-          prev.map(r => r.id === editingReceipt!.id ? ({ ...r, ...finalReceiptPayload } as ReceiptType) : r)
+            prev.map(r => r.id === editingReceipt!.id ? ({ ...r, ...finalReceiptPayload } as ReceiptType) : r)
         );
 
-        // if the edited receipt is currently selected, refresh preview from Firestore
         if (selectedReceiptId === editingReceipt.id) {
-          setIsLoadingPreview(true);
-          const receiptSnap = await getDoc(doc(db, "stores", activeStore.id, "receipts", editingReceipt.id));
-          if (receiptSnap.exists()) {
-            const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-            setSelectedReceiptData(prev => prev ? ({
-              ...prev,
-              lines: receiptDocData.lines || [],
-              analytics: receiptDocData.analytics,
-              payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
-            }) : prev);
-          }
-          setIsLoadingPreview(false);
+            setIsLoadingPreview(true);
+            const receiptSnap = await getDoc(doc(db, "stores", activeStore.id, "receipts", editingReceipt.id));
+            if (receiptSnap.exists()) {
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                setSelectedReceiptData(prev => prev ? ({
+                ...prev,
+                lines: receiptDocData.lines || [],
+                analytics: receiptDocData.analytics,
+                payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
+                }) : prev);
+            }
+            setIsLoadingPreview(false);
         }
     
-        // 5. Log the successful activity (this can happen outside the batch).
+        // 6. Log the successful activity (this can happen outside the batch).
         await writeActivityLog({
           action: "RECEIPT_EDITED",
           storeId: activeStore.id,
@@ -588,13 +586,16 @@ export default function ReceiptsPageContents() {
     };
 
     const handleVoidClick = async (receipt: ReceiptType) => {
-      const reason = prompt("Please provide a reason for voiding this receipt:");
-      if (reason) {
+        const reason = prompt("Please provide a reason for voiding this receipt:");
+        if (!reason) return;
+      
         setIsProcessing(receipt.id);
-        await handleVoidReceipt(receipt, reason);
-        setIsProcessing(null);
-      }
-    }
+        try {
+          await handleVoidReceipt(receipt, reason);
+        } finally {
+          setIsProcessing(null);
+        }
+    };
 
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
@@ -672,13 +673,33 @@ export default function ReceiptsPageContents() {
                                             </TableCell>
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
-                                                <TableCell className="text-right py-2">
-                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2" disabled={r.status === 'voided'}>
+                                                <TableCell
+                                                    className="text-right py-2"
+                                                    onClickCapture={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                    }}
+                                                >
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
+                                                        className="mr-2"
+                                                        disabled={r.status === "voided"}
+                                                        type="button"
+                                                    >
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
-                                                    {appUser?.role === 'admin' && (
-                                                         <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleVoidClick(r); }} disabled={isProcessing === r.id || r.status === 'voided'}>
-                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                    
+                                                    {appUser?.role === "admin" && (
+                                                        <Button
+                                                            variant="destructive"
+                                                            size="sm"
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
+                                                            disabled={isProcessing === r.id || r.status === "voided"}
+                                                            type="button"
+                                                        >
+                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
                                                         </Button>
                                                     )}
                                                 </TableCell>
@@ -755,3 +776,4 @@ export default function ReceiptsPageContents() {
         </RoleGuard>
     )
 }
+
