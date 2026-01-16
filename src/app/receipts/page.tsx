@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -35,6 +34,7 @@ import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { v4 as uuidv4 } from "uuid";
+import { Badge } from "@/components/ui/badge";
 
 
 // --- Date Helpers ---
@@ -730,6 +730,5 @@ export default function ReceiptsPageContents() {
         </RoleGuard>
     )
 }
-
 
     
