@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -314,6 +315,27 @@ export default function ReceiptsPageContents() {
     
         // 4. Commit all operations atomically.
         await batch.commit();
+
+        // update list item locally
+        setReceipts(prev =>
+          prev.map(r => r.id === editingReceipt!.id ? ({ ...r, ...finalReceiptPayload } as ReceiptType) : r)
+        );
+
+        // if the edited receipt is currently selected, refresh preview from Firestore
+        if (selectedReceiptId === editingReceipt.id) {
+          setIsLoadingPreview(true);
+          const receiptSnap = await getDoc(doc(db, "stores", activeStore.id, "receipts", editingReceipt.id));
+          if (receiptSnap.exists()) {
+            const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+            setSelectedReceiptData(prev => prev ? ({
+              ...prev,
+              lines: receiptDocData.lines || [],
+              analytics: receiptDocData.analytics,
+              payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
+            }) : prev);
+          }
+          setIsLoadingPreview(false);
+        }
     
         // 5. Log the successful activity (this can happen outside the batch).
         await writeActivityLog({
