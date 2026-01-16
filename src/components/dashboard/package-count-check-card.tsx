@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -62,8 +61,8 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
     if (isLoading) {
         return (
             <Card>
-                <CardHeader>
-                    <CardTitle>Package Count Check</CardTitle>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Package Count Check</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
@@ -74,37 +73,30 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
     
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Package Count Check</CardTitle>
-                <CardDescription>Final Guest vs. Billed Package Covers</CardDescription>
+            <CardHeader className="pb-3">
+                <CardTitle className="text-base">Package Count Check</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+                <div className="text-xs text-muted-foreground">
+                    Final Guests vs. Billed Covers
+                </div>
                 {!hasData ? (
                     <p className="text-center text-sm text-muted-foreground py-10">No package receipts with guest snapshots found.</p>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Package</TableHead>
-                                    <TableHead className="text-right">Final Guests</TableHead>
-                                    <TableHead className="text-right">Billed Covers</TableHead>
-                                    <TableHead className="text-right">Δ</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {aggregatedData.map(pkg => (
-                                    <TableRow key={pkg.name}>
-                                        <TableCell className="font-medium">{pkg.name}</TableCell>
-                                        <TableCell className="text-right font-mono">{pkg.finalGuests}</TableCell>
-                                        <TableCell className="text-right font-mono">{pkg.billedCovers}</TableCell>
-                                        <TableCell className={cn("text-right font-bold font-mono", pkg.delta !== 0 && "text-destructive")}>
-                                            {pkg.delta > 0 ? `+${pkg.delta}` : pkg.delta}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                    <div className="space-y-2">
+                        {aggregatedData.map(pkg => (
+                            <div key={pkg.name} className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate text-sm">{pkg.name}</div>
+                                </div>
+                                <div className="shrink-0 text-sm font-medium tabular-nums text-right">
+                                    <div>{pkg.billedCovers} billed / {pkg.finalGuests} guests</div>
+                                    <div className={cn("text-xs", pkg.delta !== 0 ? "text-destructive" : "text-muted-foreground")}>
+                                        Δ {pkg.delta > 0 ? `+${pkg.delta}` : pkg.delta}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
             </CardContent>

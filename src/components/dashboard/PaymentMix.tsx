@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,11 +36,15 @@ export function PaymentMix({ data, isLoading }: PaymentMixProps) {
     }
 
     return (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-2">
             {sortedTally.map(([method, amount]) => (
-                <div key={method} className="flex justify-between items-center">
-                    <span className="font-medium capitalize">{method}</span>
-                    <span className="text-muted-foreground">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <div key={method} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="truncate text-sm capitalize">{method}</div>
+                    </div>
+                    <div className="shrink-0 text-sm font-medium tabular-nums">
+                        ₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
                 </div>
             ))}
         </div>

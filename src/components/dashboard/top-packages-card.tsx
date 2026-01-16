@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -62,12 +61,12 @@ export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProp
         });
     }, [itemSales, metric]);
 
-    const topItems = sortedItems.slice(0, 8);
+    const topItems = sortedItems.slice(0, 5);
 
     if (isLoading) {
         return (
             <Card>
-                <CardHeader><CardTitle>Top Packages</CardTitle></CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Top Packages</CardTitle></CardHeader>
                 <CardContent><div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div></CardContent>
             </Card>
         );
@@ -76,7 +75,7 @@ export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProp
     if (!hasData) {
         return (
              <Card>
-                <CardHeader><CardTitle>Top Packages</CardTitle></CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Top Packages</CardTitle></CardHeader>
                 <CardContent><p className="text-center text-sm text-muted-foreground py-10">No package sales data for this period.</p></CardContent>
             </Card>
         )
@@ -85,36 +84,31 @@ export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProp
     return (
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
             <Card>
-                <CardHeader>
+                <CardHeader className="pb-3">
                     <div className="flex justify-between items-center">
-                        <div>
-                            <CardTitle>Top Packages</CardTitle>
-                            <CardDescription>Based on finalized receipts.</CardDescription>
-                        </div>
+                        <CardTitle className="text-base">Top Packages</CardTitle>
                         <Button variant="outline" size="sm" onClick={() => setIsSheetOpen(true)}>
-                            View All Packages
+                            View All
                         </Button>
                     </div>
                 </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Package</TableHead>
-                                <TableHead className="text-right">Qty</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {topItems.map(([name, { qty, amount }]) => (
-                                <TableRow key={name}>
-                                    <TableCell className="font-medium">{name}</TableCell>
-                                    <TableCell className="text-right">{qty.toLocaleString('en-US')}</TableCell>
-                                    <TableCell className="text-right">₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                <CardContent className="space-y-3">
+                    <div className="text-xs text-muted-foreground">
+                        Based on finalized receipts.
+                    </div>
+                     <div className="space-y-2">
+                        {topItems.map(([name, { qty, amount }]) => (
+                            <div key={name} className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate text-sm">{name}</div>
+                                    <div className="text-xs text-muted-foreground">{qty.toLocaleString('en-US')} sold</div>
+                                </div>
+                                <div className="shrink-0 text-sm font-medium tabular-nums">
+                                    ₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </CardContent>
             </Card>
             <SheetContent className="w-full sm:max-w-lg flex flex-col">

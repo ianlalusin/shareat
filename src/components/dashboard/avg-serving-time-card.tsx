@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -7,11 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import type { DailyMetric } from "@/lib/types";
-
-interface AvgServingTimeCardProps {
-    dailyMetrics: DailyMetric[];
-    isLoading: boolean;
-}
 
 function formatDuration(ms: number): string {
     if (isNaN(ms) || ms < 0) return "00:00:00";
@@ -68,9 +62,8 @@ export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCa
     if (isLoading) {
         return (
             <Card>
-                <CardHeader>
-                    <CardTitle>Avg. Serving Time</CardTitle>
-                    <CardDescription>Kitchen performance metrics.</CardDescription>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Avg. Serving Time</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
@@ -82,8 +75,8 @@ export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCa
     if (!analytics.hasData) {
         return (
              <Card>
-                <CardHeader>
-                    <CardTitle>Avg. Serving Time</CardTitle>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Avg. Serving Time</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <p className="text-center text-sm text-muted-foreground py-10">No served tickets in this range.</p>
@@ -94,29 +87,24 @@ export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCa
     
     return (
         <Card>
-            <CardHeader>
-                 <CardTitle>Avg. Serving Time</CardTitle>
-                 <CardDescription>Overall average: <span className="font-bold text-lg">{formatDuration(analytics.overallAvg)}</span></CardDescription>
+            <CardHeader className="pb-3">
+                 <CardTitle className="text-base">Avg. Serving Time</CardTitle>
             </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Item Type</TableHead>
-                            <TableHead className="text-right">Avg (hh:mm:ss)</TableHead>
-                            <TableHead className="text-right">Count</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {analytics.data.map(({ type, avgMs, count }) => (
-                            <TableRow key={type}>
-                                <TableCell className="font-medium capitalize">{type}</TableCell>
-                                <TableCell className="text-right font-mono">{formatDuration(avgMs)}</TableCell>
-                                <TableCell className="text-right font-mono">{count}</TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+            <CardContent className="space-y-3">
+                <div className="text-xs text-muted-foreground">Overall average: <span className="font-medium text-foreground">{formatDuration(analytics.overallAvg)}</span></div>
+                <div className="space-y-2">
+                    {analytics.data.map(({ type, avgMs, count }) => (
+                         <div key={type} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="truncate text-sm capitalize">{type}</div>
+                                <div className="text-xs text-muted-foreground">{count.toLocaleString('en-US')} items</div>
+                            </div>
+                            <div className="shrink-0 text-sm font-medium tabular-nums">
+                                {formatDuration(avgMs)}
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </CardContent>
         </Card>
     )

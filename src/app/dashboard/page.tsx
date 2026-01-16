@@ -162,7 +162,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                             <Card className="lg:col-span-1">
-                                <CardHeader><CardTitle>Payment Mix</CardTitle></CardHeader>
+                                <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
                                 <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                             </Card>
                             <div className="lg:col-span-2 space-y-6">
@@ -173,10 +173,10 @@ export default function DashboardPage() {
                             <Card className="lg:col-span-1"><TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/></Card>
                             <div className="lg:col-span-2"><TopCategoryCard categorySales={topCategories} isLoading={isLoading} /></div>
                         </div>
-                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
+                         <div className="grid gap-6 md:grid-cols-3 items-start">
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
-                            <TopRefillsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                            <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
                         </div>
                         <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3 items-start">
                            <div className="lg:col-span-2">

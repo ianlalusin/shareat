@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -85,9 +84,7 @@ export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
     if (isLoading) {
         return (
             <Card>
-                <CardHeader>
-                    <CardTitle>Peak Hours</CardTitle>
-                </CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Peak Hours</CardTitle></CardHeader>
                 <CardContent>
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
                 </CardContent>
@@ -98,9 +95,7 @@ export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
     if (hourlyData.totalReceipts === 0) {
         return (
              <Card>
-                <CardHeader>
-                    <CardTitle>Peak Hours</CardTitle>
-                </CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Peak Hours</CardTitle></CardHeader>
                 <CardContent>
                     <p className="text-center text-sm text-muted-foreground py-10">No sales data in this range.</p>
                 </CardContent>
@@ -110,29 +105,26 @@ export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
     
     return (
         <Card>
-            <CardHeader>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle>Peak Hours</CardTitle>
-                        <CardDescription>Based on session start times.</CardDescription>
-                    </div>
+            <CardHeader className="pb-3">
+                <div className="flex justify-between items-center">
+                    <CardTitle className="text-base">Peak Hours</CardTitle>
                      <div className="flex items-center space-x-2">
-                        <Label htmlFor="show-all-hours">Show All Hours</Label>
+                        <Label htmlFor="show-all-hours" className="text-xs">Show All Hours</Label>
                         <Switch id="show-all-hours" checked={showAllHours} onCheckedChange={setShowAllHours} />
                     </div>
                 </div>
             </CardHeader>
-            <CardContent>
-                <div className="mb-4 text-center">
-                    <p className="text-sm text-muted-foreground">Peak Hour</p>
-                    <p className="text-lg font-bold">
-                        {formatHour(hourlyData.peakHour.hour)}
+            <CardContent className="space-y-3">
+                 <div className="text-xs text-muted-foreground">Based on session start times.</div>
+                <div className="text-center">
+                    <p className="text-sm font-medium">
+                        Peak Hour: {formatHour(hourlyData.peakHour.hour)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                         {formatCurrency(hourlyData.peakHour.sales)} • {hourlyData.peakHour.receipts} receipts
                     </p>
                 </div>
-                <ChartContainer config={chartConfig} className="h-[260px] w-full">
+                <ChartContainer config={chartConfig} className="h-[200px] w-full">
                     <BarChart accessibilityLayer data={chartData}>
                         <CartesianGrid vertical={false} />
                         <XAxis
