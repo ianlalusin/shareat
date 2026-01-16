@@ -586,15 +586,15 @@ export default function ReceiptsPageContents() {
     };
 
     const handleVoidClick = async (receipt: ReceiptType) => {
-        const reason = prompt("Please provide a reason for voiding this receipt:");
-        if (reason) {
-            setIsProcessing(receipt.id);
-            try {
-                await handleVoidReceipt(receipt, reason);
-            } finally {
-                setIsProcessing(null);
-            }
-        }
+      const reason = prompt("Please provide a reason for voiding this receipt:");
+      if (!reason) return;
+
+      setIsProcessing(receipt.id);
+      try {
+        await handleVoidReceipt(receipt, reason);
+      } finally {
+        setIsProcessing(null);
+      }
     };
 
     if (storeLoading) {
@@ -661,10 +661,19 @@ export default function ReceiptsPageContents() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {filteredReceipts.map(r => (
+                                    {filteredReceipts.map(r => {
+                                        const isVoidDisabled =
+                                            (isProcessing === r.id) ||
+                                            (r.status === "voided") ||
+                                            ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
+                                        return (
                                         <TableRow 
                                             key={r.id} 
-                                            onClick={() => handleSelectReceipt(r.id)}
+                                            onClick={(e) => {
+                                                const el = e.target as HTMLElement;
+                                                if (el.closest("button")) return;
+                                                handleSelectReceipt(r.id);
+                                            }}
                                             className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
                                         >
                                             <TableCell className="font-medium py-2">
@@ -675,10 +684,6 @@ export default function ReceiptsPageContents() {
                                             {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
                                                 <TableCell
                                                     className="text-right py-2"
-                                                    onClickCapture={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                    }}
                                                 >
                                                     <Button
                                                         variant="outline"
@@ -696,7 +701,7 @@ export default function ReceiptsPageContents() {
                                                             variant="destructive"
                                                             size="sm"
                                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
-                                                            disabled={isProcessing === r.id || r.status === 'voided' || (appUser?.role === 'manager' && r.isEdited === true)}
+                                                            disabled={isVoidDisabled}
                                                             type="button"
                                                         >
                                                             {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
@@ -705,7 +710,7 @@ export default function ReceiptsPageContents() {
                                                 </TableCell>
                                             )}
                                         </TableRow>
-                                    ))}
+                                    )})}
                                 </TableBody>
                             </Table>
                         )}
