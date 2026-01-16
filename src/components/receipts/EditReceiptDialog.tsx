@@ -12,7 +12,7 @@ import { BillTotals } from "../cashier/bill-totals";
 import { BillAdjustments } from "../cashier/bill-adjustments";
 import { PaymentSection } from "../cashier/payment-section";
 import { EditBillableItemDialog } from "../cashier/edit-billable-item-dialog";
-import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession } from "@/lib/types";
+import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession, ReceiptAnalyticsV2 } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { Loader2 } from "lucide-react";
 import { Input } from "../ui/input";
@@ -87,6 +87,56 @@ function EditReceiptContent({
 
     setIsSubmitting(true);
     
+    // Recalculate sales analytics from the edited lines
+    const salesAnalytics = lines.reduce(
+        (acc, line) => {
+            if (line.type !== 'package' && line.type !== 'addon') return acc;
+            
+            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
+            if (netQty <= 0) return acc;
+
+            const grossAmount = netQty * line.unitPrice;
+            const discountQty = Math.min(line.discountQty || 0, netQty);
+            
+            let discountAmount = 0;
+            if (discountQty > 0) {
+                const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
+                    ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
+                    : line.unitPrice;
+
+                if (line.discountType === 'percent') {
+                    discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
+                } else { // fixed
+                    discountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountQty;
+                }
+            }
+            const netAmount = grossAmount - discountAmount;
+            
+            const categoryName = line.category || 'Uncategorized';
+            
+            acc.salesByItem ??= {};
+            acc.salesByCategory ??= {};
+            
+            if (!acc.salesByItem[line.itemName]) {
+                acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
+            }
+            acc.salesByItem[line.itemName].qty += netQty;
+            acc.salesByItem[line.itemName].amount += netAmount;
+            
+            if (!acc.salesByCategory[categoryName]) {
+                acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
+            }
+            acc.salesByCategory[categoryName].qty += netQty;
+            acc.salesByCategory[categoryName].amount += netAmount;
+
+            return acc;
+        },
+        {} as {
+            salesByItem?: ReceiptAnalyticsV2['salesByItem'];
+            salesByCategory?: ReceiptAnalyticsV2['salesByCategory'];
+        }
+    );
+
     // Reconstruct the receipt data
     const updatedReceiptData: Partial<Receipt> = {
       ...receipt,
@@ -111,6 +161,8 @@ function EditReceiptContent({
             acc[key] = (acc[key] || 0) + p.amount;
             return acc;
         }, {} as Record<string, number>),
+        salesByItem: salesAnalytics.salesByItem,
+        salesByCategory: salesAnalytics.salesByCategory,
       },
     };
 
