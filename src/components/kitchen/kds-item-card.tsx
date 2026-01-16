@@ -22,45 +22,46 @@ interface KdsItemCardProps {
 }
 
 function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null | undefined }) {
-    const [now, setNow] = useState(() => new Date());
-
+    const [elapsed, setElapsed] = useState('...');
     const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
 
     useEffect(() => {
         if (!jsDate || !Number.isFinite(jsDate.getTime())) {
+            setElapsed('just now');
             return;
         }
-        const timer = setInterval(() => {
-            setNow(new Date());
-        }, 1000); // Tick every second for live updates
-        return () => clearInterval(timer);
+
+        const update = () => {
+            const now = Date.now();
+            const totalSeconds = Math.floor((now - jsDate.getTime()) / 1000);
+            
+            if (totalSeconds < 0) {
+                setElapsed('0s');
+            } else if (totalSeconds < 60) {
+                setElapsed(`${totalSeconds}s`);
+            } else {
+                const totalMinutes = Math.floor(totalSeconds / 60);
+                 if (totalMinutes < 60) {
+                    setElapsed(`${totalMinutes}m`);
+                } else {
+                    const hours = Math.floor(totalMinutes / 60);
+                    const minutes = totalMinutes % 60;
+                    const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+                    setElapsed(`${hours}h ${paddedMinutes}m`);
+                }
+            }
+        };
+
+        update();
+        const timerId = setInterval(update, 1000);
+
+        return () => clearInterval(timerId);
     }, [jsDate]);
 
-    if (!jsDate || !Number.isFinite(jsDate.getTime())) {
-        return (
-            <div className={cn("flex items-center gap-1.5 text-sm text-amber-600")}>
-                <Clock size={14} />
-                <span>just now</span>
-            </div>
-        );
-    }
-    
-    const totalSeconds = Math.floor((now.getTime() - jsDate.getTime()) / 1000);
-    const totalMinutes = Math.floor(totalSeconds / 60);
-
-    let elapsed = "...";
-    if (totalSeconds < 0) {
-        elapsed = "0s";
-    } else if (totalSeconds < 60) {
-        elapsed = `${totalSeconds}s`;
-    } else if (totalMinutes < 60) {
-        elapsed = `${totalMinutes}m`;
-    } else {
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-        elapsed = `${hours}h ${paddedMinutes}m`;
-    }
+    const totalMinutes = useMemo(() => {
+        if (!jsDate) return 0;
+        return Math.floor((Date.now() - jsDate.getTime()) / 60000);
+    }, [jsDate, elapsed]); // Recalculate color when elapsed time changes.
 
     return (
         <div className={cn("flex items-center gap-1.5 text-sm", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
@@ -69,6 +70,7 @@ function TimeLapse({ startTime }: { startTime: Timestamp | Date | string | null 
         </div>
     );
 }
+
 
 const CANCELLATION_REASONS = [
     "Out of stock",
