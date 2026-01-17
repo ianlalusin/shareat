@@ -44,6 +44,25 @@ type Flavor = {
     name: string;
 };
 
+function getStartMs(input: any): number | null {
+  if (!input) return null;
+  // number (ms)
+  if (typeof input === "number" && Number.isFinite(input)) return input;
+  // Date
+  if (input instanceof Date) {
+    const t = input.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  // Firestore Timestamp (v9)
+  if (typeof input.toMillis === "function") return input.toMillis();
+  // Timestamp-like object { seconds, nanoseconds }
+  if (typeof input.seconds === "number") {
+    const ns = typeof input.nanoseconds === "number" ? input.nanoseconds : 0;
+    return input.seconds * 1000 + Math.floor(ns / 1e6);
+  }
+  return null;
+}
+
 export default function KitchenPage() {
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
@@ -181,11 +200,8 @@ export default function KitchenPage() {
             
             if (newStatus === 'served') {
                 const nowMs = Date.now();
-                const createdAtMs =
-                  oldTicketState.createdAtClientMs ??
-                  toJsDate(oldTicketState.createdAt)?.getTime() ??
-                  nowMs;
-                const durationMs = Math.max(0, nowMs - createdAtMs);
+                const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
+                const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
                 
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
