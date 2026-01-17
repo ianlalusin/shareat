@@ -35,6 +35,8 @@ import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { v4 as uuidv4 } from "uuid";
+import { Badge } from "@/components/ui/badge";
+import ReasonModal from "@/components/shared/ReasonModal";
 
 
 // --- Date Helpers ---
@@ -88,6 +90,9 @@ export default function ReceiptsPageContents() {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
+
+    const [voidOpen, setVoidOpen] = useState(false);
+    const [voidTarget, setVoidTarget] = useState<ReceiptType | null>(null);
 
     // --- Pagination State ---
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -265,7 +270,7 @@ export default function ReceiptsPageContents() {
         setEditingReceipt(receipt);
     }
 
-    const handleSaveCorrection = async (updatedReceipt: Partial<ReceiptType>, reason: string) => {
+    const handleSaveCorrection = async (updatedReceiptData: Partial<ReceiptType>, reason: string) => {
       if (!appUser || !activeStore || !editingReceipt) return;
     
       try {
@@ -276,45 +281,66 @@ export default function ReceiptsPageContents() {
         const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
         const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
     
-        // 1) Write revision snapshot (old receipt)
+        // 1. Create a revision document with a snapshot of the original receipt data.
         batch.set(revisionRef, {
           version: nextVersion,
           editedAt: serverTimestamp(),
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           reason,
-          snapshot: editingReceipt,
+          snapshot: editingReceipt, // The original, unedited data
         });
         
         const applyId = uuidv4();
     
-        // 2) Overwrite original receipt (new receipt)
-        batch.update(originalReceiptRef, {
-          ...updatedReceipt,
+        // 2. Prepare the final updated receipt object for writing.
+        const finalReceiptPayload = {
+          ...updatedReceiptData,
           isEdited: true,
           editVersion: nextVersion,
-          editedAt: serverTimestamp(),
+          editedAt: new Date(), // Use JS Date for immediate state update
           editedByUid: appUser.uid,
           editedByEmail: appUser.email,
           editReason: reason,
-          analyticsApplied: true,
+          analyticsApplied: true, // Mark analytics as applied
           analyticsAppliedAt: serverTimestamp(),
           analyticsApplyId: applyId,
-        });
+        };
+        batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
     
-        // 3) ✅ Apply analytics delta INSIDE the same batch (atomic)
+        // 3. Calculate and apply the analytics delta within the same atomic batch.
         await applyAnalyticsDeltaV2(
           db,
           activeStore.id,
-          editingReceipt,
-          updatedReceipt as ReceiptType,
-          { batch }
+          editingReceipt, // Pass the original receipt as the "before" state
+          updatedReceiptData as ReceiptType, // Pass the new data as the "after" state
+          { batch } // Join the existing batch
         );
     
-        // 4) Commit once
+        // 4. Commit all operations atomically.
         await batch.commit();
+
+        // 5. Update local state immediately after successful commit
+        setReceipts(prev =>
+            prev.map(r => r.id === editingReceipt!.id ? ({ ...r, ...finalReceiptPayload } as ReceiptType) : r)
+        );
+
+        if (selectedReceiptId === editingReceipt.id) {
+            setIsLoadingPreview(true);
+            const receiptSnap = await getDoc(doc(db, "stores", activeStore.id, "receipts", editingReceipt.id));
+            if (receiptSnap.exists()) {
+                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                setSelectedReceiptData(prev => prev ? ({
+                ...prev,
+                lines: receiptDocData.lines || [],
+                analytics: receiptDocData.analytics,
+                payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
+                }) : prev);
+            }
+            setIsLoadingPreview(false);
+        }
     
-        // 5) Log activity (can stay outside batch)
+        // 6. Log the successful activity (this can happen outside the batch).
         await writeActivityLog({
           action: "RECEIPT_EDITED",
           storeId: activeStore.id,
@@ -324,14 +350,16 @@ export default function ReceiptsPageContents() {
             receiptId: editingReceipt.id,
             receiptNumber: editingReceipt.receiptNumber,
             editVersion: nextVersion,
+            reason: reason,
           },
         });
     
         toast({ title: "Receipt Updated", description: "The correction has been saved and audited." });
-        setEditingReceipt(null);
+        setEditingReceipt(null); // Close the dialog
       } catch (error: any) {
+        console.error("handleSaveCorrection error:", error);
         toast({ variant: "destructive", title: "Correction Failed", description: error.message });
-        throw error;
+        throw error; // Re-throw to indicate failure to the caller
       }
     };
 
@@ -421,42 +449,48 @@ export default function ReceiptsPageContents() {
     }
 
     const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
-      if (!appUser || !activeStore) return;
+      if (!appUser || !activeStore) {
+        throw new Error("User or store not available.");
+      }
     
       if (receipt.status === "voided") {
         toast({ title: "Already voided", description: "This receipt was already voided." });
         return;
       }
-    
-      const batch = writeBatch(db);
-      const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-    
-      await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
       
-      const applyId = uuidv4();
-    
-      batch.update(receiptRef, {
-        status: "voided",
-        voidedAt: serverTimestamp(),
-        voidedByUid: appUser.uid,
-        voidedByEmail: appUser.email,
-        voidReason: reason,
-        analyticsApplied: true,
-        analyticsAppliedAt: serverTimestamp(),
-        analyticsApplyId: applyId,
-      });
-    
-      await batch.commit();
-    
-      await writeActivityLog({
-        action: "RECEIPT_VOIDED",
-        storeId: activeStore.id,
-        sessionId: receipt.sessionId,
-        user: appUser,
-        meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
-      });
-    
-      toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
+      try {
+        const batch = writeBatch(db);
+        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
+      
+        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+        
+        const applyId = uuidv4();
+      
+        batch.update(receiptRef, {
+          status: "voided",
+          voidedAt: serverTimestamp(),
+          voidedByUid: appUser.uid,
+          voidedByEmail: appUser.email,
+          voidReason: reason,
+          analyticsApplied: true,
+          analyticsAppliedAt: serverTimestamp(),
+          analyticsApplyId: applyId,
+        });
+      
+        await batch.commit();
+      
+        await writeActivityLog({
+          action: "RECEIPT_VOIDED",
+          storeId: activeStore.id,
+          sessionId: receipt.sessionId,
+          user: appUser,
+          meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
+        });
+      } catch (error) {
+          console.error("Error voiding receipt:", error);
+          // Re-throw the error so the caller can handle it (e.g., show a toast)
+          throw error;
+      }
     };
 
     const handleExport = async () => {
@@ -562,14 +596,10 @@ export default function ReceiptsPageContents() {
         setIsCalendarOpen(false);
     };
 
-    const handleVoidClick = async (receipt: ReceiptType) => {
-      const reason = prompt("Please provide a reason for voiding this receipt:");
-      if (reason) {
-        setIsProcessing(receipt.id);
-        await handleVoidReceipt(receipt, reason);
-        setIsProcessing(null);
-      }
-    }
+    const handleVoidClick = (r: ReceiptType) => {
+      setVoidTarget(r);
+      setVoidOpen(true);
+    };
 
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
@@ -635,10 +665,19 @@ export default function ReceiptsPageContents() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {filteredReceipts.map(r => (
+                                    {filteredReceipts.map(r => {
+                                        const isVoidDisabled =
+                                            (isProcessing === r.id) ||
+                                            (r.status === "voided") ||
+                                            ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
+                                        return (
                                         <TableRow 
                                             key={r.id} 
-                                            onClick={() => handleSelectReceipt(r.id)}
+                                            onClick={(e) => {
+                                                const el = e.target as HTMLElement;
+                                                if (el.closest("button")) return;
+                                                handleSelectReceipt(r.id);
+                                            }}
                                             className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
                                         >
                                             <TableCell className="font-medium py-2">
@@ -647,19 +686,35 @@ export default function ReceiptsPageContents() {
                                             </TableCell>
                                             <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                                             {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
-                                                <TableCell className="text-right py-2">
-                                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditReceipt(r); }} className="mr-2" disabled={r.status === 'voided'}>
+                                                <TableCell
+                                                    className="text-right py-2"
+                                                >
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
+                                                        className="mr-2"
+                                                        disabled={r.status === "voided"}
+                                                        type="button"
+                                                    >
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
-                                                    {appUser?.role === 'admin' && (
-                                                         <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleVoidClick(r); }} disabled={isProcessing === r.id || r.status === 'voided'}>
+                                                    
+                                                    {(appUser?.role === "admin" || appUser?.role === "manager") && (
+                                                        <Button
+                                                            variant="destructive"
+                                                            size="sm"
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
+                                                            disabled={isVoidDisabled}
+                                                            type="button"
+                                                        >
                                                             {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
                                                         </Button>
                                                     )}
                                                 </TableCell>
                                             )}
                                         </TableRow>
-                                    ))}
+                                    )})}
                                 </TableBody>
                             </Table>
                         )}
@@ -721,6 +776,32 @@ export default function ReceiptsPageContents() {
                     onSave={handleSaveCorrection}
                 />
             )}
+
+            <ReasonModal
+              open={voidOpen}
+              onOpenChange={(o) => {
+                setVoidOpen(o);
+                if (!o) setVoidTarget(null);
+              }}
+              title="Void Receipt"
+              description="Provide a reason. This will reverse analytics and keep the receipt for audit."
+              confirmLabel="Void Receipt"
+              placeholder="Reason..."
+              onConfirm={async (reason) => {
+                if (!voidTarget) return;
+                setIsProcessing(voidTarget.id);
+                try {
+                  await handleVoidReceipt(voidTarget, reason);
+                  toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
+                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: reason } : r));
+                } catch (error: any) {
+                    toast({ variant: 'destructive', title: 'Void Failed', description: error.message });
+                } finally {
+                  setIsProcessing(null);
+                  setVoidTarget(null);
+                }
+              }}
+            />
 
             {/* This div is only for printing */}
             <div className="hidden print-block">
