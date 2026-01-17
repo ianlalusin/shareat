@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -182,7 +181,10 @@ export default function KitchenPage() {
             
             if (newStatus === 'served') {
                 const nowMs = Date.now();
-                const createdAtMs = toJsDate(oldTicketState.createdAt)?.getTime() ?? nowMs;
+                const createdAtMs =
+                  oldTicketState.createdAtClientMs ??
+                  toJsDate(oldTicketState.createdAt)?.getTime() ??
+                  nowMs;
                 const durationMs = Math.max(0, nowMs - createdAtMs);
                 
                 updatePayload.servedAt = serverTimestamp();
