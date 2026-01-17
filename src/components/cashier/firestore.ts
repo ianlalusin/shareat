@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -315,12 +314,22 @@ export async function completePaymentFromUnits(
     const totalPaid = totalPaidCents / 100;
     const change = Math.max(0, totalPaid - amountDue);
     
+    // --- Analytics MOP Calculation (with change adjustment) ---
     const mopMap: Record<string, number> = {};
     payments.forEach(p => {
         const method = paymentMethods.find(m => m.id === p.methodId);
         const key = method?.name || p.methodId || "unknown";
         mopMap[key] = (mopMap[key] || 0) + p.amount;
     });
+
+    // If change exists, subtract it from the cash payment for accurate analytics.
+    if (change > 0) {
+      const cashMethod = paymentMethods.find(pm => pm.type === 'cash');
+      if (cashMethod && mopMap[cashMethod.name]) {
+        mopMap[cashMethod.name] -= change;
+      }
+    }
+    // --- End Analytics MOP Calculation ---
     
     const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
         id: sessionId,
