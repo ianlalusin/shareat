@@ -161,23 +161,27 @@ export default function DashboardPage() {
                             <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
                         </div>
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                            <Card className="lg:col-span-1">
-                                <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                            </Card>
+                            <div className="lg:col-span-1">
+                                <Card>
+                                    <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
+                                    <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
+                                </Card>
+                            </div>
                             <div className="lg:col-span-2 space-y-6">
                                 <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             </div>
                         </div>
+
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                            <Card className="lg:col-span-1"><TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/></Card>
-                            <div className="lg:col-span-2"><TopCategoryCard categorySales={topCategories} isLoading={isLoading} /></div>
+                            <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                            <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
+                            <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
                         </div>
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 items-start">
+
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                            <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                           <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                           <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
                            <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
+                           <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                         </div>
                     </>
                 )}
