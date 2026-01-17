@@ -120,6 +120,22 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
     // Get contributions from all helpers
     const paymentContrib = getPaymentContribution(receipt);
+    
+    // --- Correction for historical data ---
+    // On old receipts, the `mop` (byMethod) included the full cash tendered,
+    // not accounting for change. We correct this here during backfill.
+    const change = receipt.change ?? 0;
+    // This assumes the primary cash payment method is named 'Cash'.
+    if (change > 0 && paymentContrib.byMethod['Cash']) {
+        paymentContrib.byMethod['Cash'] -= change;
+
+        // Ensure we don't go below zero if there were multiple cash payments
+        if (paymentContrib.byMethod['Cash'] < 0) {
+            paymentContrib.byMethod['Cash'] = 0;
+        }
+    }
+    // --- End Correction ---
+
     const guestContrib = getGuestCoversContribution(receipt);
     const salesContrib = getSalesContribution(receipt);
     const peakHourContrib = getPeakHourContribution(receipt);
