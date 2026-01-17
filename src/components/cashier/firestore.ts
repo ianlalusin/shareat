@@ -219,8 +219,8 @@ export async function completePaymentFromUnits(
   billDiscount: Discount | null,
   customAdjustments: Adjustment[]
 ) {
-  let receiptId = '';
   let finalReceipt: Receipt | null = null;
+  let receiptId = '';
 
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
@@ -315,38 +315,48 @@ export async function completePaymentFromUnits(
 
     const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-    const totalPaid = totalPaidCents / 100;
-    const changeCents = Math.max(0, totalPaidCents - amountDueCents);
-    const change = changeCents / 100;
-
-    // --- Analytics MOP Calculation (robust: sum per methodId, subtract change from cash once) ---
-    const mopCentsById: Record<string, number> = {};
-    payments.forEach((p) => {
-      const id = p.methodId || 'unknown';
-      mopCentsById[id] = (mopCentsById[id] || 0) + Math.round(Number(p.amount || 0) * 100);
-    });
-
-    if (changeCents > 0) {
-      const cashMethod = paymentMethods.find((pm) => (pm as any).type === 'cash');
-      const cashId = cashMethod?.id;
-
-      if (!cashId) throw new Error('Cash method not configured, but change exists.');
-
-      const cashCents = mopCentsById[cashId] || 0; // already sums multiple cash payments
-      if (cashCents < changeCents) {
-        throw new Error(`Invalid payment: change (${(changeCents / 100).toFixed(2)}) exceeds cash paid (${(cashCents / 100).toFixed(2)}).`);
-      }
-      mopCentsById[cashId] = cashCents - changeCents;
+    // --- Analytics MOP Calculation ---
+    // Sum all payments in cents into a map keyed by method name.
+    const mopCentsMap: Record<string, number> = {};
+    for (const payment of payments) {
+        const method = paymentMethods.find((m) => m.id === payment.methodId);
+        const key = method?.name || payment.methodId || "unknown";
+        mopCentsMap[key] = (mopCentsMap[key] || 0) + Math.round(Number(payment.amount || 0) * 100);
     }
 
-    // readable map keyed by method name (or methodId fallback)
+    const changeCents = Math.max(0, totalPaidCents - amountDueCents);
+    
+    // If change exists, subtract it from the cash payment for accurate analytics.
+    if (changeCents > 0) {
+        // Robustly find the cash payment key. Fallback to name match if type isn't set.
+        const cashMethod =
+          paymentMethods.find((pm: any) => String(pm.type || "").toLowerCase() === "cash") ||
+          paymentMethods.find((pm: any) => String(pm.name || "").toLowerCase().includes("cash"));
+
+        let cashKey = cashMethod?.name;
+        if (!cashKey) cashKey = Object.keys(mopCentsMap).find((k) => k.toLowerCase().includes("cash"));
+
+        if (!cashKey || mopCentsMap[cashKey] == null) {
+          throw new Error("Change exists but no Cash payment was included. Add Cash payment.");
+        }
+        
+        if (mopCentsMap[cashKey] < changeCents) {
+            throw new Error(`Invalid payment: change (₱${(changeCents / 100).toFixed(2)}) exceeds cash paid (₱${(mopCentsMap[cashKey] / 100).toFixed(2)}).`);
+        }
+        
+        // Subtract change from the cash amount in the map.
+        mopCentsMap[cashKey] -= changeCents;
+    }
+
+    // Create the final map with dollar amounts for the receipt record.
     const mopMap: Record<string, number> = {};
-    for (const [methodId, cents] of Object.entries(mopCentsById)) {
-      const method = paymentMethods.find((m) => m.id === methodId);
-      const key = method?.name || methodId;
-      mopMap[key] = (mopMap[key] || 0) + cents / 100;
+    for (const [key, cents] of Object.entries(mopCentsMap)) {
+        mopMap[key] = cents / 100;
     }
     // --- End Analytics MOP Calculation ---
+    
+    const totalPaid = totalPaidCents / 100;
+    const change = changeCents / 100;
 
     const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
       id: sessionId,
