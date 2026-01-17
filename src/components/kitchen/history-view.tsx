@@ -8,7 +8,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock } from "lucide-react";
+
+function formatDuration(ms: number): string {
+    if (isNaN(ms) || ms <= 0) return "";
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+    }
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+}
 
 interface HistoryViewProps {
     items: KitchenTicket[];
@@ -46,14 +62,18 @@ export function HistoryView({ items }: HistoryViewProps) {
                         {currentItems.map(item => {
                              const isAlaCarte = item.sessionMode === 'alacarte';
                              const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
+                             const hasDuration = item.status === 'served' && item.durationMs && item.durationMs > 0;
                              return (
                             <div key={item.id} className="border rounded-lg p-3 text-sm">
-                                <div className="flex justify-between items-center">
-                                    <p className="font-semibold">{displayLocation}</p>
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                      <p className="font-semibold">{displayLocation}</p>
+                                      <p className="text-muted-foreground">{item.itemName}</p>
+                                    </div>
                                     <Badge 
                                         variant="outline"
                                         className={cn(
-                                            "capitalize",
+                                            "capitalize flex-shrink-0",
                                             item.status === 'served' && "bg-green-100 text-green-800 border-green-300",
                                             item.status === 'cancelled' && "bg-red-100 text-red-800 border-red-300",
                                         )}
@@ -61,7 +81,12 @@ export function HistoryView({ items }: HistoryViewProps) {
                                         {item.status}
                                     </Badge>
                                 </div>
-                                <p className="text-muted-foreground">{item.itemName}</p>
+                                {hasDuration && (
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                                        <Clock size={12} />
+                                        <span>Served in {formatDuration(item.durationMs!)}</span>
+                                    </div>
+                                )}
                             </div>
                         )})}
                     </div>
