@@ -173,15 +173,11 @@ export default function DashboardPage() {
                             <Card className="lg:col-span-1"><TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading}/></Card>
                             <div className="lg:col-span-2"><TopCategoryCard categorySales={topCategories} isLoading={isLoading} /></div>
                         </div>
-                         <div className="grid gap-6 md:grid-cols-3 items-start">
-                            <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
-                            <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
-                        </div>
-                        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3 items-start">
-                           <div className="lg:col-span-2">
-                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                           </div>
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 items-start">
+                           <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                           <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                           <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                           <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
                         </div>
                     </>
                 )}
