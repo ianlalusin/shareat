@@ -115,7 +115,7 @@ export function PeakHoursCard({ dailyMetrics, isLoading }: PeakHoursCardProps) {
                 </div>
             </CardHeader>
             <CardContent className="space-y-3">
-                 <div className="text-xs text-muted-foreground">Based on session start times.</div>
+                 <div className="text-xs text-muted-foreground text-center">Based on session start times.</div>
                 <div className="text-center">
                     <p className="text-sm font-medium">
                         Peak Hour: {formatHour(hourlyData.peakHour.hour)}

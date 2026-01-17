@@ -93,7 +93,7 @@ export function TopPackagesCard({ dailyMetrics, isLoading }: TopPackagesCardProp
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                    <div className="text-xs text-muted-foreground">
+                     <div className="text-xs text-muted-foreground text-center">
                         Based on finalized receipts.
                     </div>
                      <div className="space-y-2">

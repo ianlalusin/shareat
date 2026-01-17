@@ -21,7 +21,7 @@ function formatDuration(ms: number): string {
     return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
-export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCardProps) {
+export function AvgServingTimeCard({ dailyMetrics, isLoading }: { dailyMetrics: DailyMetric[]; isLoading: boolean; }) {
     
     const analytics = useMemo(() => {
         const tally: Record<string, { totalMs: number; count: number }> = {};
@@ -91,7 +91,7 @@ export function AvgServingTimeCard({ dailyMetrics, isLoading }: AvgServingTimeCa
                  <CardTitle className="text-base">Avg. Serving Time</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-                <div className="text-xs text-muted-foreground">Overall average: <span className="font-medium text-foreground">{formatDuration(analytics.overallAvg)}</span></div>
+                <div className="text-xs text-muted-foreground text-center">Overall average: <span className="font-medium text-foreground">{formatDuration(analytics.overallAvg)}</span></div>
                 <div className="space-y-2">
                     {analytics.data.map(({ type, avgMs, count }) => (
                          <div key={type} className="flex items-center justify-between gap-3">

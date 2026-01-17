@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -84,10 +85,10 @@ export function TopAddonItemsCard({ storeId, dailyMetrics, isLoading, topN = 10 
             <Skeleton className="h-4 w-10/12" />
           </div>
         ) : items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No add-on data for this range.</div>
+          <div className="text-sm text-center text-muted-foreground">No add-on data for this range.</div>
         ) : (
           <>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground text-center">
               Total add-on sales (by category):{" "}
               <span className="font-medium text-foreground">{fmtCurrency(totalAddonSales)}</span>
             </div>

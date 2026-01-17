@@ -1,3 +1,4 @@
+
 // src/components/dashboard/top-refills-card.tsx
 "use client";
 
@@ -104,10 +105,10 @@ export function TopRefillsCard({ storeId, dateRange, topN = 5, dailyMetrics, isL
             <Skeleton className="h-4 w-10/12" />
           </div>
         ) : topRefills.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No refill data for this range.</div>
+          <div className="text-sm text-center text-muted-foreground">No refill data for this range.</div>
         ) : (
           <>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground text-center">
               Total refills served:{" "}
               <span className="font-medium text-foreground">
                 {totalRefillsInRange.toLocaleString("en-US")}
