@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -16,9 +16,10 @@ import { DiscountEditDialog } from "./DiscountEditDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Store, Discount } from "@/lib/types";
 
-function formatScope(scope: ("item" | "bill")[] | undefined) {
-  if (!scope || scope.length === 0) return "—";
-  return scope
+function formatScope(scope: ("item" | "bill")[] | undefined | string) {
+  if (!scope) return "—";
+  const scopeArray = Array.isArray(scope) ? scope : [scope];
+  return scopeArray
     .map(s => (s === "item" ? "Item" : "Bill"))
     .join(", ");
 }
@@ -147,40 +148,70 @@ export function DiscountsSettings({ store }: { store: Store }) {
             </Button>
           </div>
           {discounts.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Stackable</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Sort Order</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Desktop Table */}
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Scope</TableHead>
+                      <TableHead>Stackable</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Sort Order</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {discounts.map(discount => (
+                      <TableRow key={discount.id}>
+                        <TableCell className="font-medium">{discount.name}</TableCell>
+                        <TableCell className="capitalize">{discount.type}</TableCell>
+                        <TableCell>{discount.type === 'percent' ? `${discount.value}%` : `₱${discount.value.toFixed(2)}`}</TableCell>
+                        <TableCell className="capitalize">{formatScope(discount.scope)}</TableCell>
+                        <TableCell><Checkbox checked={discount.stackable} disabled /></TableCell>
+                        <TableCell><Badge variant={discount.isEnabled ? "default" : "outline"}>{discount.isEnabled ? "Enabled" : "Disabled"}</Badge></TableCell>
+                        <TableCell>{discount.sortOrder}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => handleOpenDialog(discount)} className="mr-2">Edit</Button>
+                          <Button variant={discount.isEnabled ? "secondary" : "default"} size="sm" onClick={() => handleToggleEnabled(discount)} className="mr-2">
+                            {discount.isEnabled ? <PowerOff /> : <Power />}
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleArchive(discount)}><Trash2 /></Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Mobile Cards */}
+              <div className="lg:hidden space-y-3">
                 {discounts.map(discount => (
-                  <TableRow key={discount.id}>
-                    <TableCell className="font-medium">{discount.name}</TableCell>
-                    <TableCell className="capitalize">{discount.type}</TableCell>
-                    <TableCell>{discount.type === 'percent' ? `${discount.value}%` : `₱${discount.value.toFixed(2)}`}</TableCell>
-                    <TableCell className="capitalize">{formatScope(discount.scope)}</TableCell>
-                    <TableCell><Checkbox checked={discount.stackable} disabled /></TableCell>
-                    <TableCell><Badge variant={discount.isEnabled ? "default" : "outline"}>{discount.isEnabled ? "Enabled" : "Disabled"}</Badge></TableCell>
-                    <TableCell>{discount.sortOrder}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenDialog(discount)} className="mr-2">Edit</Button>
-                      <Button variant={discount.isEnabled ? "secondary" : "default"} size="sm" onClick={() => handleToggleEnabled(discount)} className="mr-2">
-                        {discount.isEnabled ? <PowerOff /> : <Power />}
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleArchive(discount)}><Trash2 /></Button>
-                    </TableCell>
-                  </TableRow>
+                  <Card key={discount.id}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{discount.name}</CardTitle>
+                      <CardDescription>
+                        {discount.type === 'percent' ? `${discount.value}%` : `₱${discount.value.toFixed(2)}`}
+                        <Badge variant={discount.isEnabled ? "default" : "outline"} className="ml-2">{discount.isEnabled ? "Enabled" : "Disabled"}</Badge>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                        <p>Scope: {formatScope(discount.scope)}</p>
+                        <p>Stackable: {discount.stackable ? 'Yes' : 'No'}</p>
+                    </CardContent>
+                    <CardFooter className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleOpenDialog(discount)} className="mr-2">Edit</Button>
+                        <Button variant={discount.isEnabled ? "secondary" : "default"} size="sm" onClick={() => handleToggleEnabled(discount)} className="mr-2">
+                            {discount.isEnabled ? <PowerOff /> : <Power />}
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleArchive(discount)}><Trash2 /></Button>
+                    </CardFooter>
+                  </Card>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           ) : (
             <p className="text-center text-muted-foreground py-8">No discounts configured yet.</p>
           )}

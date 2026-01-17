@@ -10,7 +10,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Loader, PlusCircle, Power, PowerOff, Download, ImageIcon } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -278,71 +278,112 @@ export default function StoreManagementPage() {
             <div className="flex justify-center items-center h-40">
               <Loader className="animate-spin" />
             </div>
-          ) : stores.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Logo</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Opening Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stores.map((store) => {
-                    const openingDate = toJsDate(store.openingDate);
-                    return (
-                        <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
-                            <TableCell>
-                                <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
-                                    {store.logoUrl ? (
-                                        <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
-                                    ) : (
-                                        <ImageIcon className="text-muted-foreground" />
-                                    )}
-                                </div>
-                            </TableCell>
-                            <TableCell className="font-medium">{store.name}</TableCell>
-                            <TableCell>{store.code}</TableCell>
-                            <TableCell>
-                                <div className="text-sm">{store.contactNumber || 'N/A'}</div>
-                                <div className="text-xs text-muted-foreground">{store.email || ''}</div>
-                            </TableCell>
-                            <TableCell>
-                                {openingDate ? format(openingDate, 'yyyy-MM-dd') : '—'}
-                            </TableCell>
-                            <TableCell>
-                            <Badge variant={store.isActive ? "default" : "secondary"}>
-                                {store.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); downloadStoreData(store.id); }} className="mr-2" disabled={isDownloading === store.id}>
-                                {isDownloading === store.id ? <Loader className="animate-spin" /> : <Download />}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(store); }} className="mr-2">
-                                Edit
-                            </Button>
-                            <Button
-                                variant={store.isActive ? "destructive" : "default"}
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handleToggleActive(store);}}
-                                disabled={isSubmitting}
-                            >
-                                {store.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
-                                {store.isActive ? "Deactivate" : "Activate"}
-                            </Button>
-                            </TableCell>
-                        </TableRow>
-                    );
-                })}
-              </TableBody>
-            </Table>
-          ) : (
+          ) : stores.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No stores found. Click "Create Store" to add one.</p>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Logo</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Code</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Opening Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stores.map((store) => {
+                        const openingDate = toJsDate(store.openingDate);
+                        return (
+                            <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
+                                <TableCell>
+                                    <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                        {store.logoUrl ? (
+                                            <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                                        ) : (
+                                            <ImageIcon className="text-muted-foreground" />
+                                        )}
+                                    </div>
+                                </TableCell>
+                                <TableCell className="font-medium">{store.name}</TableCell>
+                                <TableCell>{store.code}</TableCell>
+                                <TableCell>
+                                    <div className="text-sm">{store.contactNumber || 'N/A'}</div>
+                                    <div className="text-xs text-muted-foreground">{store.email || ''}</div>
+                                </TableCell>
+                                <TableCell>
+                                    {openingDate ? format(openingDate, 'yyyy-MM-dd') : '—'}
+                                </TableCell>
+                                <TableCell>
+                                <Badge variant={store.isActive ? "default" : "secondary"}>
+                                    {store.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); downloadStoreData(store.id); }} className="mr-2" disabled={isDownloading === store.id}>
+                                    {isDownloading === store.id ? <Loader className="animate-spin" /> : <Download />}
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(store); }} className="mr-2">
+                                    Edit
+                                </Button>
+                                <Button
+                                    variant={store.isActive ? "destructive" : "default"}
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleToggleActive(store);}}
+                                    disabled={isSubmitting}
+                                >
+                                    {store.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                    {store.isActive ? "Deactivate" : "Activate"}
+                                </Button>
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="md:hidden space-y-4">
+                {stores.map((store) => (
+                  <Card key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
+                    <CardHeader>
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative flex-shrink-0">
+                          {store.logoUrl ? (
+                              <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                          ) : (
+                              <ImageIcon className="text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <CardTitle>{store.name}</CardTitle>
+                          <CardDescription>{store.code}</CardDescription>
+                        </div>
+                        <Badge variant={store.isActive ? "default" : "secondary"}>
+                          {store.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground">{store.address}</div>
+                      <div className="text-sm text-muted-foreground">{store.contactNumber || 'No contact'}</div>
+                    </CardContent>
+                    <CardFooter className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(store); }}>Edit</Button>
+                      <Button variant={store.isActive ? "destructive" : "default"} size="sm" onClick={(e) => { e.stopPropagation(); handleToggleActive(store); }} disabled={isSubmitting}>
+                        {store.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -370,5 +411,3 @@ export default function StoreManagementPage() {
     </RoleGuard>
   );
 }
-
-    
