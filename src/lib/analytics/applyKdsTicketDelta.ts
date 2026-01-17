@@ -104,13 +104,10 @@ export async function applyKdsTicketDelta(
     [`kitchen.servedCountByType.${typeKey}`]: increment(sign * qty),
     // Always update the count of items that have a duration, even if it's 0
     [`kitchen.durationCountByType.${typeKey}`]: increment(sign * qty),
+    // Always update the sum of durations. A duration of 0 is valid for an accurate average.
+    [`kitchen.durationMsSumByType.${typeKey}`]: increment(sign * dur),
   };
-
-  // Only add to the sum if the duration is positive to avoid NaN or incorrect averages
-  if (dur > 0) {
-    payload[`kitchen.durationMsSumByType.${typeKey}`] = increment(sign * dur);
-  }
-
+  
   // Refill totals + refillItems subcollection
   if (typeKey === "refill") {
     payload["refills.servedRefillsTotal"] = increment(sign * qty);
