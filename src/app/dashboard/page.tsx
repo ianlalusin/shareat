@@ -162,23 +162,22 @@ export default function DashboardPage() {
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                             <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
                         </div>
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-                            <div className="lg:col-span-1">
-                                <Card>
-                                    <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
-                                    <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                                </Card>
-                            </div>
-                            <div className="lg:col-span-2 space-y-6">
-                                <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+                            {/* Row 1 */}
+                            <Card>
+                                <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
+                                <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
+                            </Card>
+                            <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                            <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                            
+                            {/* Row 2 */}
                             <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
                             <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
-                            <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                            
+                            {/* Row 3 */}
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
