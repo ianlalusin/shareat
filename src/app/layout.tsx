@@ -26,6 +26,11 @@ const APP_TITLE_TEMPLATE = "%s - SharEat Hub";
 const APP_DESCRIPTION = "A complete POS, KDS, and ERP solution for restaurants.";
 
 export const metadata: Metadata = {
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icons/icon-192.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
   applicationName: APP_NAME,
   title: {
     default: APP_DEFAULT_TITLE,
