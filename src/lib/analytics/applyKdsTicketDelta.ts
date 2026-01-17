@@ -102,11 +102,13 @@ export async function applyKdsTicketDelta(
   const payload: Record<string, any> = {
     "meta.updatedAt": serverTimestamp(),
     [`kitchen.servedCountByType.${typeKey}`]: increment(sign * qty),
+    // Always update the count of items that have a duration, even if it's 0
+    [`kitchen.durationCountByType.${typeKey}`]: increment(sign * qty),
   };
 
+  // Only add to the sum if the duration is positive to avoid NaN or incorrect averages
   if (dur > 0) {
     payload[`kitchen.durationMsSumByType.${typeKey}`] = increment(sign * dur);
-    payload[`kitchen.durationCountByType.${typeKey}`] = increment(sign * qty);
   }
 
   // Refill totals + refillItems subcollection
