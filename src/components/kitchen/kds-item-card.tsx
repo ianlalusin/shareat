@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -30,41 +29,65 @@ function formatDuration(ms: number): string {
     return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
-function TimeLapse({ startTime }: { startTime: any }) {
-    const jsDate = useMemo(() => toJsDate(startTime), [startTime]);
-    const [now, setNow] = useState(() => Date.now());
+function getStartMs(input: any): number | null {
+  if (!input) return null;
 
-    useEffect(() => {
-        if (!jsDate || !Number.isFinite(jsDate.getTime())) {
-            return;
-        }
+  // number (ms)
+  if (typeof input === "number" && Number.isFinite(input)) return input;
 
-        const timerId = setInterval(() => {
-            setNow(Date.now());
-        }, 1000);
+  // Date
+  if (input instanceof Date) {
+    const t = input.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
 
-        return () => clearInterval(timerId);
-    }, [jsDate]);
-    
-    if (!jsDate || !Number.isFinite(jsDate.getTime())) {
-        return (
-            <div className="flex items-center gap-1.5 text-sm font-mono text-amber-600">
-                <Clock size={14} />
-                <span>00:00:00</span>
-            </div>
-        );
-    }
-    
-    const elapsedMs = Math.max(0, now - jsDate.getTime());
-    const elapsedFormatted = formatDuration(elapsedMs);
-    const totalMinutes = Math.floor(elapsedMs / 60000);
+  // Firestore Timestamp (v9)
+  if (typeof input.toMillis === "function") return input.toMillis();
 
+  // Timestamp-like object { seconds, nanoseconds }
+  if (typeof input.seconds === "number") {
+    const ns = typeof input.nanoseconds === "number" ? input.nanoseconds : 0;
+    return input.seconds * 1000 + Math.floor(ns / 1e6);
+  }
+
+  return null;
+}
+
+function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAtClientMs?: number | null }) {
+  const startMs = useMemo(() => {
+    return Number.isFinite(createdAtClientMs as number)
+      ? (createdAtClientMs as number)
+      : getStartMs(createdAt);
+  }, [createdAt, createdAtClientMs]);
+
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!Number.isFinite(startMs as number)) return;
+
+    const timerId = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timerId);
+  }, [startMs]);
+
+  if (!Number.isFinite(startMs as number)) {
     return (
-        <div className={cn("flex items-center gap-1.5 text-sm font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
-            <Clock size={14} />
-            <span>{elapsedFormatted}</span>
-        </div>
+      <div className="flex items-center gap-1.5 text-sm font-mono text-amber-600">
+        <Clock size={14} />
+        <span>00:00:00</span>
+      </div>
     );
+  }
+
+  const elapsedMs = Math.max(0, now - (startMs as number));
+  const elapsedFormatted = formatDuration(elapsedMs);
+  const totalMinutes = Math.floor(elapsedMs / 60000);
+
+  return (
+    <div className={cn("flex items-center gap-1.5 text-sm font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
+      <Clock size={14} />
+      <span>{elapsedFormatted}</span>
+    </div>
+  );
 }
 
 
@@ -122,7 +145,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                     </div>
                      <CardDescription className="flex items-center justify-between">
                         <span>{identifier} {isPackage && `(${ticket.guestCount} guests)`}</span>
-                        <TimeLapse startTime={ticket.createdAt ?? (ticket.createdAtClientMs ? new Date(ticket.createdAtClientMs) : null)} />
+                        <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2">
