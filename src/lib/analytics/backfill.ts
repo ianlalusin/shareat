@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import {
@@ -96,7 +97,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           storeId,
           updatedAt: serverTimestamp(),
         },
-        payments: { byMethod: {}, totalGross: 0, txCount: 0 },
+        payments: { byMethod: {}, totalGross: 0, txCount: 0, discountsTotal: 0, chargesTotal: 0 },
         guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} },
         sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, salesAmountByHour: {}, sessionCountByHour: {} },
         kitchen: { servedCountByType: {}, cancelledCountByType: {}, durationMsSumByType: {}, durationCountByType: {} },
@@ -128,6 +129,8 @@ export async function rebuildDailyAnalyticsFromReceipts(
     // Merge contributions into the daily aggregate
     dayData.payments!.totalGross = (dayData.payments!.totalGross || 0) + paymentContrib.totalGross;
     dayData.payments!.txCount = (dayData.payments!.txCount || 0) + paymentContrib.txCount;
+    dayData.payments!.discountsTotal = (dayData.payments!.discountsTotal || 0) + paymentContrib.discountsTotal;
+    dayData.payments!.chargesTotal = (dayData.payments!.chargesTotal || 0) + paymentContrib.chargesTotal;
     for (const [method, amount] of Object.entries(paymentContrib.byMethod)) {
         dayData.payments!.byMethod[method] = (dayData.payments!.byMethod[method] || 0) + amount;
     }
@@ -217,5 +220,3 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
   onProgress(`Backfill complete.`);
 }
-
-    

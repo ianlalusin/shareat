@@ -145,9 +145,13 @@ export async function applyAnalyticsDeltaV2(
     const paymentDelta = {
       totalGross: dayNew.payment.totalGross - dayOld.payment.totalGross,
       txCount: dayNew.payment.txCount - dayOld.payment.txCount,
+      discountsTotal: dayNew.payment.discountsTotal - dayOld.payment.discountsTotal,
+      chargesTotal: dayNew.payment.chargesTotal - dayOld.payment.chargesTotal,
     };
     if (paymentDelta.totalGross !== 0) payload['payments.totalGross'] = increment(paymentDelta.totalGross);
     if (paymentDelta.txCount !== 0) payload['payments.txCount'] = increment(paymentDelta.txCount);
+    if (paymentDelta.discountsTotal !== 0) payload['payments.discountsTotal'] = increment(paymentDelta.discountsTotal);
+    if (paymentDelta.chargesTotal !== 0) payload['payments.chargesTotal'] = increment(paymentDelta.chargesTotal);
     
     const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(newContrib.payment.byMethod)]);
     allPaymentMethods.forEach(method => {

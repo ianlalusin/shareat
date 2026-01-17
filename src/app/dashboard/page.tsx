@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState } from "react";
@@ -25,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
 import { TopAddonItemsCard } from "@/components/dashboard/top-addon-items-card";
+import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-card";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -172,10 +174,11 @@ export default function DashboardPage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
                             <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
                             <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                            <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                             <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
                             <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />

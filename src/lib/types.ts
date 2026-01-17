@@ -169,6 +169,7 @@ export type KitchenTicket = {
     uom?: string;
     createdByUid: string;
     createdAt: any;
+    createdAtClientMs?: number;
     preparedByUid?: string | null;
     preparedAt?: any | null;
     servedByUid?: string | null;
@@ -365,7 +366,9 @@ export type DailyMetric = {
         txCount: number;
         byMethod: {
             [methodName: string]: number;
-        }
+        };
+        discountsTotal?: number;
+        chargesTotal?: number;
     };
     guests?: {
         guestCountFinalTotal: number;

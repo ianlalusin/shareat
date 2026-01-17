@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { doc, type Firestore } from "firebase/firestore";
@@ -101,10 +102,12 @@ type PaymentContribution = {
   totalGross: number;
   txCount: number;
   byMethod: Record<string, number>;
+  discountsTotal: number;
+  chargesTotal: number;
 };
 
 export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {} };
+    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0 };
     if (isVoidReceipt(receipt)) return defaultReturn;
     
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
@@ -119,6 +122,8 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
         totalGross: gross,
         txCount: 1,
         byMethod: analytics?.mop ?? {},
+        discountsTotal: analytics?.discountsTotal ?? 0,
+        chargesTotal: analytics?.chargesTotal ?? 0,
     };
 }
 
@@ -373,5 +378,3 @@ export function getRefillContribution(receipt: Receipt | null): RefillContributi
         packageSessionsCount: 1,
     };
 }
-
-    
