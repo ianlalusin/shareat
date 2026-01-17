@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -513,7 +514,7 @@ export async function completePaymentFromUnits(
       note: 'Payment completed',
       meta: {
         receiptId,
-        receiptNumber: finalReceipt?.receiptNumber,
+        receiptNumber: finalReceipt?.receiptNumber ?? null,
         paymentTotal: amountDue,
       },
     });
