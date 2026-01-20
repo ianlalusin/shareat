@@ -11,6 +11,7 @@ import { Check, ChevronsUpDown, Loader } from "lucide-react";
 import { db, auth } from "@/lib/firebase/client";
 import { Separator } from "@/components/ui/separator";
 import { AppUser, useAuthContext } from "@/context/auth-context";
+import { useStoreContext } from "@/context/store-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { UserDetailsModal, type StoreOption } from "@/components/admin/user-details-modal";
@@ -29,6 +30,7 @@ type AssignableRole = Exclude<UserRole, "pending">;
 
 export default function UserManagementPage() {
     const { appUser } = useAuthContext();
+    const { stores: availableStores, loading: storesLoading } = useStoreContext();
     const { toast } = useToast();
     const [pendingUsers, setPendingUsers] = useState<AppUser[]>([]);
     const [activeUsers, setActiveUsers] = useState<AppUser[]>([]);
@@ -38,7 +40,6 @@ export default function UserManagementPage() {
     const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
     const { confirm, Dialog } = useConfirmDialog();
     
-    const [availableStores, setAvailableStores] = useState<StoreOption[]>([]);
     const [selectedRoles, setSelectedRoles] = useState<Record<string, AssignableRole>>({});
     const [selectedStoreAssignments, setSelectedStoreAssignments] = useState<Record<string, string[]>>({});
     const [popoverOpen, setPopoverOpen] = useState<Record<string, boolean>>({});
@@ -51,17 +52,9 @@ export default function UserManagementPage() {
         let pendingUnsub: Function | null = null;
         let activeUnsub: Function | null = null;
         let deactivatedUnsub: Function | null = null;
-        let storesUnsub: Function | null = null;
 
         function fetchUsers() {
             setIsLoadingUsers(true);
-            
-            // Fetch active stores
-            const storesQuery = query(collection(db, "stores"), where("isActive", "==", true));
-            storesUnsub = onSnapshot(storesQuery, (snapshot) => {
-                const storesData = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name })) as StoreOption[];
-                setAvailableStores(storesData);
-            }, (error) => console.error("Failed to fetch stores:", error));
 
             const qPending = query(usersRef, where("status", "==", "pending"));
             pendingUnsub = onSnapshot(qPending, (querySnapshot) => {
@@ -109,7 +102,6 @@ export default function UserManagementPage() {
             if (pendingUnsub) pendingUnsub();
             if (activeUnsub) activeUnsub();
             if (deactivatedUnsub) deactivatedUnsub();
-            if (storesUnsub) storesUnsub();
         };
     }, [appUser]);
 
@@ -338,6 +330,7 @@ export default function UserManagementPage() {
                                                                         {availableStores.map((store) => (
                                                                             <CommandItem
                                                                                 key={store.id}
+                                                                                value={store.id}
                                                                                 onSelect={() => handleStoreSelect(user.uid, store.id)}
                                                                             >
                                                                                 <Check className={cn("mr-2 h-4 w-4", assigned.includes(store.id) ? "opacity-100" : "opacity-0")} />
@@ -459,7 +452,7 @@ export default function UserManagementPage() {
                     onClose={() => setSelectedUser(null)}
                     currentUserRole={appUser.role}
                     currentUserId={appUser.uid}
-                    availableStores={availableStores}
+                    availableStores={availableStores as StoreOption[]}
                     onDeactivate={async (user) => {
                         const confirmed = await confirm({
                             title: `Deactivate ${user.name || 'user'}?`,
