@@ -53,7 +53,7 @@ export default function InventoryManagementPage() {
     setIsLoading(true);
     
     const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
-    const q = query(inventoryRef, where("isArchived", "!=", true));
+    const q = query(inventoryRef, where("isArchived", "==", false));
     const unsubInv = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(items);
@@ -140,6 +140,7 @@ export default function InventoryManagementPage() {
         sellingPrice: 0,
         isActive: true,
         isAddon: false, // Default to not being an add-on
+        isArchived: false,
         kitchenLocationId: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
