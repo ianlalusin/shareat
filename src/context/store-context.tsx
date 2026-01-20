@@ -1,11 +1,11 @@
+
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { doc, getDoc, getDocs, collection, updateDoc } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, updateDoc, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import type { Store } from "@/lib/types";
-import { useStoreContext as useStore } from "@/context/store-context";
 
 type StoreContextValue = {
   stores: Store[];
@@ -30,7 +30,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   const [storeAddons, setStoreAddons] = useState<any[]>([]);
   const [storeAddonsLoading, setStoreAddonsLoading] = useState(true);
 
-  const isAdmin = useMemo(() => !!appUser?.roles?.includes("admin"), [appUser]);
+  const isAdmin = useMemo(() => appUser?.role === 'admin' || (Array.isArray(appUser?.roles) && appUser.roles.includes("admin")), [appUser]);
 
   const loadStoresOnce = useCallback(async () => {
     if (!appUser) {

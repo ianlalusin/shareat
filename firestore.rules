@@ -63,14 +63,25 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // single-role model: role string
-      return isPlatformAdmin() ||
-        (isActiveUser() && myUser().role == "admin");
-    }
+  return isPlatformAdmin() || (
+    isActiveUser() && (
+      // role string (case-insensitive)
+      ((myUser().role is string) && (myUser().role.lower() == "admin")) ||
+      // roles array (legacy/alternate)
+      ((myUser().roles is list) && myUser().roles.hasAny(["admin"]))
+    )
+  );
+}
 
-    function isManager() {
-      return isAdmin() || (isActiveUser() && myUser().role == "manager");
-    }
+function isManager() {
+  return isAdmin() || (
+    isActiveUser() && (
+      ((myUser().role is string) && (myUser().role.lower() == "manager")) ||
+      ((myUser().roles is list) && myUser().roles.hasAny(["manager"]))
+    )
+  );
+}
+
 
     function hasStoreAccess(storeId) {
       // assignedStoreIds is the authorization scope
