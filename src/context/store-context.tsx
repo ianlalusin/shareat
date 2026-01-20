@@ -32,7 +32,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   const [storeAddons, setStoreAddons] = useState<any[]>([]);
   const [storeAddonsLoading, setStoreAddonsLoading] = useState(true);
 
-  const isAdmin = useMemo(() => appUser?.role === 'admin' || (Array.isArray(appUser?.roles) && appUser.roles.includes("admin")), [appUser]);
+  const isAdmin = useMemo(() => appUser?.role === 'admin', [appUser]);
 
   const loadStoresOnce = useCallback(async () => {
     if (!appUser) {
@@ -44,21 +44,8 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
     setLoading(true);
     try {
-      // Admin: one-time load all stores (filter inactive)
-      if (isAdmin) {
-        const snap = await getDocs(collection(db, "stores"));
-        const all = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as Store))
-          .filter((s: any) => s.isActive !== false);
-
-        setStores(all);
-
-        const preferred = appUser.storeId ? all.find((s) => s.id === appUser.storeId) : null;
-        setActiveStore(preferred || all[0] || null);
-        return;
-      }
-
-      // Non-admin: one-time load only assigned stores
+      // All users, including admins, fetch stores based on their assignedStoreIds.
+      // This complies with the Firestore rule `allow list: if false` on the /stores collection.
       const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
       if (assigned.length === 0) {
         setStores([]);
@@ -66,24 +53,35 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      const fetched: Store[] = [];
-      for (const storeId of assigned) {
+      // Fetch all assigned stores in parallel for efficiency.
+      const storePromises = assigned.map(async (storeId) => {
         const sref = doc(db, "stores", storeId);
         const ssnap = await getDoc(sref);
-        if (!ssnap.exists()) continue;
+        if (ssnap.exists()) {
+            const s = { id: ssnap.id, ...ssnap.data() } as Store;
+            if ((s as any).isActive !== false) {
+                return s;
+            }
+        }
+        return null;
+      });
 
-        const s = { id: ssnap.id, ...ssnap.data() } as Store;
-        if ((s as any).isActive !== false) fetched.push(s);
-      }
+      const results = await Promise.all(storePromises);
+      const validStores = results.filter((s): s is Store => s !== null);
 
-      setStores(fetched);
+      setStores(validStores);
 
-      const preferred = appUser.storeId ? fetched.find((s) => s.id === appUser.storeId) : null;
-      setActiveStore(preferred || fetched[0] || null);
+      const preferred = appUser.storeId ? validStores.find((s) => s.id === appUser.storeId) : null;
+      setActiveStore(preferred || validStores[0] || null);
+
+    } catch (e) {
+        console.error("Failed to load stores:", e);
+        setStores([]);
+        setActiveStore(null);
     } finally {
       setLoading(false);
     }
-  }, [appUser, isAdmin]);
+  }, [appUser]);
 
   const fetchStoreAddons = useCallback(() => {
     if (!activeStore?.id) {
@@ -126,20 +124,17 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   const setActiveStoreById = useCallback(
     async (storeId: string) => {
       if (!appUser) return;
-
-      if (!isAdmin) {
-        const allowed = new Set(Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : []);
-        if (!allowed.has(storeId)) {
-          throw new Error("Store not assigned to this user.");
-        }
-      }
-
+      
+      // The firestore rule for updating the user doc's storeId already enforces
+      // that the user can only switch to a store in their assignedStoreIds.
+      // So, no need for a redundant client-side check.
       await updateDoc(doc(db, "users", appUser.uid), { storeId });
 
+      // After successful DB update, update local state
       const next = stores.find((s) => s.id === storeId) || null;
       setActiveStore(next);
     },
-    [appUser, isAdmin, stores]
+    [appUser, stores]
   );
 
   const value = useMemo<StoreContextValue>(
