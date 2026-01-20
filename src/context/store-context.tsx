@@ -1,232 +1,121 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, getDocs, getDoc } from "firebase/firestore";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { doc, getDoc, getDocs, collection, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useAuthContext } from "./auth-context";
-import type { Store, InventoryItem } from "@/lib/types";
-import { errorEmitter, FirestorePermissionError } from "@/firebase";
-import { getDisplayName, getGroupKey } from "@/lib/products/variants";
+import { useAuth } from "@/context/auth-context";
+import type { Store } from "@/lib/types";
 
-export type EnrichedStoreAddon = InventoryItem & {
-  displayName: string;
-  groupKey: string;
-  groupName?: string;
-  imageUrl?: string | null;
-};
-
-type StoreCtx = {
-  activeStoreId: string | null;
+type StoreContextValue = {
+  stores: Store[];
   activeStore: Store | null;
-  allowedStores: Store[];
-  setActiveStore: (storeId: string) => Promise<void>;
   loading: boolean;
-
-  // Cached addons for POS / server pages
-  storeAddons: EnrichedStoreAddon[];
-  storeAddonsLoading: boolean;
-  refreshStoreAddons: () => Promise<void>;
+  setActiveStoreById: (storeId: string) => Promise<void>;
+  refreshStoresOnce: () => Promise<void>;
 };
 
-const StoreContext = createContext<StoreCtx | undefined>(undefined);
+const StoreContext = createContext<StoreContextValue | null>(null);
 
-export function StoreContextProvider({ children }: { children: React.ReactNode }) {
-  const { appUser, loading: authLoading } = useAuthContext();
-  const [allActiveStores, setAllActiveStores] = useState<Store[]>([]);
-  const [loadingStores, setLoadingStores] = useState(true);
+export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const { appUser } = useAuth();
+  const [stores, setStores] = useState<Store[]>([]);
+  const [activeStore, setActiveStore] = useState<Store | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Cached store addons (per activeStoreId)
-  const [storeAddons, setStoreAddons] = useState<EnrichedStoreAddon[]>([]);
-  const [storeAddonsLoading, setStoreAddonsLoading] = useState(false);
+  const isAdmin = useMemo(() => !!appUser?.roles?.includes("admin"), [appUser]);
 
-  const activeStoreId = appUser?.storeId || null;
-
-  async function loadStoreAddons(storeId: string) {
-    const addonsQuery = query(
-      collection(db, "stores", storeId, "inventory"),
-      where("isActive", "==", true),
-      where("isAddon", "==", true),
-    );
-
-    const snap = await getDocs(addonsQuery);
-    const inventoryAddons = snap.docs.map(d => ({ ...d.data(), id: d.id } as InventoryItem));
-
-    const enriched = await Promise.all(
-      inventoryAddons.map(async (item) => {
-        let productData: any = {};
-        try {
-          const productDoc = await getDoc(doc(db, "products", item.productId));
-          if (productDoc.exists()) productData = productDoc.data();
-        } catch (e) {
-          console.error("[StoreContext] Error fetching product details for addon:", item.id, e);
-        }
-
-        const combined = {
-          ...productData,
-          ...item,
-          barcode: item.barcode ?? productData.barcode ?? null,
-          imageUrl: productData.imageUrl ?? null,
-        };
-
-        const sp = Number((combined as any).sellingPrice);
-        const safeSellingPrice = Number.isFinite(sp) ? sp : 0;
-
-        return {
-          ...(combined as any),
-          sellingPrice: safeSellingPrice,
-          displayName: getDisplayName(combined as any),
-          groupKey: getGroupKey(combined as any),
-          groupName: productData?.groupName || (item as any).name,
-          imageUrl: productData?.imageUrl ?? null,
-        } as EnrichedStoreAddon;
-      })
-    );
-
-    enriched.sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
-    setStoreAddons(enriched);
-  }
-
-  const refreshStoreAddons = async () => {
-    if (!activeStoreId) {
-      setStoreAddons([]);
+  const loadStoresOnce = useCallback(async () => {
+    if (!appUser) {
+      setStores([]);
+      setActiveStore(null);
+      setLoading(false);
       return;
     }
-    setStoreAddonsLoading(true);
+
+    setLoading(true);
     try {
-      await loadStoreAddons(activeStoreId);
-    } catch (e) {
-      console.error("[StoreContext] Failed to load store addons:", e);
-    } finally {
-      setStoreAddonsLoading(false);
-    }
-  };
+      // Admin: one-time load all stores (filter inactive)
+      if (isAdmin) {
+        const snap = await getDocs(collection(db, "stores"));
+        const all = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Store))
+          .filter((s: any) => s.isActive !== false);
 
-  // Load addons once per active store change (no realtime needed)
-  useEffect(() => {
-    let cancelled = false;
+        setStores(all);
 
-    async function run() {
-      if (!activeStoreId) {
-        setStoreAddons([]);
-        setStoreAddonsLoading(false);
+        const preferred = appUser.storeId ? all.find((s) => s.id === appUser.storeId) : null;
+        setActiveStore(preferred || all[0] || null);
         return;
       }
-      setStoreAddonsLoading(true);
-      try {
-        await loadStoreAddons(activeStoreId);
-        if (cancelled) return;
-      } catch (e) {
-        console.error("[StoreContext] Failed to load store addons:", e);
-        if (cancelled) return;
-        setStoreAddons([]);
-      } finally {
-        if (!cancelled) setStoreAddonsLoading(false);
+
+      // Non-admin: one-time load only assigned stores
+      const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
+      if (assigned.length === 0) {
+        setStores([]);
+        setActiveStore(null);
+        return;
       }
+
+      const fetched: Store[] = [];
+      for (const storeId of assigned) {
+        const sref = doc(db, "stores", storeId);
+        const ssnap = await getDoc(sref);
+        if (!ssnap.exists()) continue;
+
+        const s = { id: ssnap.id, ...ssnap.data() } as Store;
+        if ((s as any).isActive !== false) fetched.push(s);
+      }
+
+      setStores(fetched);
+
+      const preferred = appUser.storeId ? fetched.find((s) => s.id === appUser.storeId) : null;
+      setActiveStore(preferred || fetched[0] || null);
+    } finally {
+      setLoading(false);
     }
+  }, [appUser, isAdmin]);
 
-    run();
-    return () => { cancelled = true; };
-  }, [activeStoreId]);
-
-  // 1. Subscribe to all active stores
   useEffect(() => {
-    // Guard: Only run this query if the user is loaded and has a role.
-    if (authLoading || !appUser?.role) {
-      setLoadingStores(false); // Not loading if we're not going to fetch
-      return;
-    }
+    loadStoresOnce();
+  }, [loadStoresOnce]);
 
-    const storesRef = collection(db, "stores");
-    const q = query(storesRef, where("isActive", "==", true));
+  const setActiveStoreById = useCallback(
+    async (storeId: string) => {
+      if (!appUser) return;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
-      setAllActiveStores(storesData);
-      setLoadingStores(false);
-    }, () => {
-      const contextualError = new FirestorePermissionError({
-        operation: 'list',
-        path: 'stores',
-      });
-      errorEmitter.emit('permission-error', contextualError);
-      setLoadingStores(false);
-    });
+      // Non-admin: block selecting a store not assigned
+      if (!isAdmin) {
+        const allowed = new Set(Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : []);
+        if (!allowed.has(storeId)) {
+          throw new Error("Store not assigned to this user.");
+        }
+      }
 
-    return () => unsubscribe();
-  }, [appUser, authLoading]); // Re-run when user/auth state changes
+      await updateDoc(doc(db, "users", appUser.uid), { storeId });
 
-  // 2. Compute allowed stores based on user role
-  const allowedStores = useMemo(() => {
-    if (!appUser || authLoading || loadingStores) return [];
+      // Update local state immediately (no re-subscribe; one-time load model)
+      const next = stores.find((s) => s.id === storeId) || null;
+      setActiveStore(next);
+    },
+    [appUser, isAdmin, stores]
+  );
 
-    if (appUser.role === 'admin') {
-      return allActiveStores;
-    }
-
-    const assignedIds = appUser.assignedStoreIds || [];
-    return allActiveStores.filter(store => assignedIds.includes(store.id));
-  }, [allActiveStores, appUser, authLoading, loadingStores]);
-
-  // 3. Resolve active store and handle auto-selection
-  useEffect(() => {
-    // Wait for all data to be loaded
-    if (!appUser || authLoading || loadingStores || allowedStores.length === 0) return;
-
-    const currentActiveId = appUser.storeId;
-    const isActiveStoreAllowed = allowedStores.some(store => store.id === currentActiveId);
-
-    // If current active store is not valid or not set, and there are allowed stores,
-    // auto-select the first one.
-    if ((!currentActiveId || !isActiveStoreAllowed) && appUser.uid) {
-      const firstStoreId = allowedStores[0].id;
-      const userDocRef = doc(db, "users", appUser.uid);
-      updateDoc(userDocRef, {
-        storeId: firstStoreId,
-        updatedAt: serverTimestamp(),
-      }).catch(err => console.error("Failed to auto-set active store:", err));
-    }
-  }, [appUser, allowedStores, authLoading, loadingStores]);
-
-  const setActiveStore = async (storeId: string) => {
-    if (!appUser) throw new Error("User not authenticated.");
-
-    const userDocRef = doc(db, "users", appUser.uid);
-    await updateDoc(userDocRef, {
-      storeId: storeId,
-      updatedAt: serverTimestamp(),
-    });
-  };
-
-  const activeStore = useMemo(() => {
-    if (!appUser?.storeId || allowedStores.length === 0) return null;
-    return allowedStores.find(store => store.id === appUser.storeId) || null;
-  }, [allowedStores, appUser?.storeId]);
-
-  const value = useMemo(() => ({
-    activeStoreId: appUser?.storeId || null,
-    activeStore,
-    allowedStores,
-    setActiveStore,
-    loading: authLoading || loadingStores,
-
-    storeAddons,
-    storeAddonsLoading,
-    refreshStoreAddons,
-  }), [
-    appUser?.storeId,
-    activeStore,
-    allowedStores,
-    authLoading,
-    loadingStores,
-    storeAddons,
-    storeAddonsLoading
-  ]);
+  const value = useMemo<StoreContextValue>(
+    () => ({
+      stores,
+      activeStore,
+      loading,
+      setActiveStoreById,
+      refreshStoresOnce: loadStoresOnce,
+    }),
+    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce]
+  );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
-export function useStoreContext() {
+export function useStore() {
   const ctx = useContext(StoreContext);
-  if (!ctx) throw new Error("useStoreContext must be used within a StoreContextProvider");
+  if (!ctx) throw new Error("useStore must be used within a StoreProvider");
   return ctx;
 }
