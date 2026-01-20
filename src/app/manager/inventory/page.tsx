@@ -160,6 +160,7 @@ export default function InventoryManagementPage() {
     } finally {
       setIsSubmitting(false);
       setIsAddDialogOpen(false);
+      setSearchTerm("");
     }
   };
 
