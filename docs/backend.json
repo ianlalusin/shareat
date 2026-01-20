@@ -416,21 +416,6 @@
       },
       "required": ["id", "name", "isActive"]
     },
-    "Addon": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Addon",
-      "type": "object",
-      "description": "Represents add-on items for products.",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "stationKey": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "name", "stationKey", "isActive"]
-    },
     "AddonCategory": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "AddonCategory",
@@ -952,15 +937,6 @@
           "schema": { "$ref": "#/backend/entities/Package" },
           "description": "Global product packages.",
           "params": [{"name": "packageId", "description": "Unique ID for the package."}]
-        }
-      },
-      {
-        "path": "/addons/{addonId}",
-        "definition": {
-          "entityName": "Addon",
-          "schema": { "$ref": "#/backend/entities/Addon" },
-          "description": "Global add-on items.",
-          "params": [{"name": "addonId", "description": "Unique ID for the add-on."}]
         }
       },
       {
