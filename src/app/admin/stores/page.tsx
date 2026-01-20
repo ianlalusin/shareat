@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import { StoreDetailsModal } from "@/components/admin/store-details-modal";
 import type { Store } from "@/lib/types";
 import Image from "next/image";
+import { useStoreContext } from "@/context/store-context";
 
 function toJsDate(v: any): Date | null {
   if (!v) return null;
@@ -72,31 +73,13 @@ async function getCollectionData(collectionRef: any) {
 export default function StoreManagementPage() {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
-  const [stores, setStores] = useState<Store[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { stores, loading: isLoading } = useStoreContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const { confirm, Dialog } = useConfirmDialog();
-
-  useEffect(() => {
-    if (!appUser || appUser.role !== 'admin') return;
-
-    const storesRef = collection(db, "stores");
-    const unsubscribe = onSnapshot(storesRef, (snapshot) => {
-      const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
-      setStores(storesData);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Failed to fetch stores:", error);
-      toast({ variant: "destructive", title: "Error", description: "Could not fetch stores." });
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [appUser, toast]);
 
   const handleOpenDialog = (store: Store | null = null) => {
     if (store) {
@@ -191,7 +174,7 @@ export default function StoreManagementPage() {
             description: error.message || "Could not update the store status.",
         });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
   
