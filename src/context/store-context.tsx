@@ -3,8 +3,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { doc, getDoc, getDocs, collection, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useAuth } from "@/context/auth-context";
+import { useAuthContext } from "@/context/auth-context";
 import type { Store } from "@/lib/types";
+import { useStoreContext as useStore } from "@/context/store-context";
 
 type StoreContextValue = {
   stores: Store[];
@@ -12,15 +13,22 @@ type StoreContextValue = {
   loading: boolean;
   setActiveStoreById: (storeId: string) => Promise<void>;
   refreshStoresOnce: () => Promise<void>;
+  storeAddons: any[]; // Add this
+  storeAddonsLoading: boolean; // Add this
+  refreshStoreAddons: () => void; // Add this
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const { appUser } = useAuth();
+export function StoreContextProvider({ children }: { children: React.ReactNode }) {
+  const { appUser } = useAuthContext();
   const [stores, setStores] = useState<Store[]>([]);
   const [activeStore, setActiveStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // New state for store-specific addons
+  const [storeAddons, setStoreAddons] = useState<any[]>([]);
+  const [storeAddonsLoading, setStoreAddonsLoading] = useState(true);
 
   const isAdmin = useMemo(() => !!appUser?.roles?.includes("admin"), [appUser]);
 
@@ -75,15 +83,51 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [appUser, isAdmin]);
 
+  const fetchStoreAddons = useCallback(async () => {
+    if (!activeStore?.id) {
+        setStoreAddons([]);
+        setStoreAddonsLoading(false);
+        return;
+    }
+    setStoreAddonsLoading(true);
+
+    // This query is simplified for demonstration. You might need a more complex
+    // query joining with a global `products` collection if `storeAddons` only stores overrides.
+    const addonsRef = collection(db, "stores", activeStore.id, "inventory");
+    const q = query(addonsRef, where("isAddon", "==", true), where("isActive", "==", true));
+    
+    // Using onSnapshot for realtime updates, but getDocs would also work for a one-time fetch.
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const addonsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setStoreAddons(addonsData);
+        setStoreAddonsLoading(false);
+    }, (error) => {
+        console.error("Failed to fetch store addons:", error);
+        setStoreAddonsLoading(false);
+    });
+
+    return unsubscribe;
+  }, [activeStore?.id]);
+
+
   useEffect(() => {
     loadStoresOnce();
   }, [loadStoresOnce]);
+
+  useEffect(() => {
+      const unsub = fetchStoreAddons();
+      return () => {
+        if (unsub) {
+            // If fetchStoreAddons returns an unsubscribe function
+            unsub.then(u => u()).catch(() => {});
+        }
+      }
+  }, [fetchStoreAddons])
 
   const setActiveStoreById = useCallback(
     async (storeId: string) => {
       if (!appUser) return;
 
-      // Non-admin: block selecting a store not assigned
       if (!isAdmin) {
         const allowed = new Set(Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : []);
         if (!allowed.has(storeId)) {
@@ -93,7 +137,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       await updateDoc(doc(db, "users", appUser.uid), { storeId });
 
-      // Update local state immediately (no re-subscribe; one-time load model)
       const next = stores.find((s) => s.id === storeId) || null;
       setActiveStore(next);
     },
@@ -107,15 +150,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       loading,
       setActiveStoreById,
       refreshStoresOnce: loadStoresOnce,
+      storeAddons,
+      storeAddonsLoading,
+      refreshStoreAddons: () => { fetchStoreAddons() },
     }),
-    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce]
+    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, fetchStoreAddons]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
-export function useStore() {
+export function useStoreContext() {
   const ctx = useContext(StoreContext);
-  if (!ctx) throw new Error("useStore must be used within a StoreProvider");
+  if (!ctx) throw new Error("useStoreContext must be used within a StoreContextProvider");
   return ctx;
 }
