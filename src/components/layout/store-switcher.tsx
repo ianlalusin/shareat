@@ -34,7 +34,7 @@ interface StoreSwitcherProps extends PopoverTriggerProps {
 
 export function StoreSwitcher({ className, variant = "desktop", onSelected }: StoreSwitcherProps) {
   const { appUser } = useAuthContext();
-  const { activeStore, allowedStores, setActiveStore, loading } = useStoreContext();
+  const { activeStore, stores, setActiveStoreById, loading } = useStoreContext();
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
@@ -44,8 +44,8 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
     if (activeStore?.id === storeId) return;
 
     try {
-        await setActiveStore(storeId);
-        const selectedStore = allowedStores.find(s => s.id === storeId);
+        await setActiveStoreById(storeId);
+        const selectedStore = stores.find(s => s.id === storeId);
         toast({
             title: "Store Switched",
             description: `You are now managing ${selectedStore?.name}.`,
@@ -66,7 +66,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
     onSelected?.();
   };
   
-  if (loading || !appUser || allowedStores.length === 0) {
+  if (loading || !appUser || stores.length === 0) {
       // Render a placeholder or null while loading or if no stores are available
       return (
          <Button
@@ -85,7 +85,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
 
   // Hide switcher if there's only one store and the user isn't an admin
   // who might need to create more.
-  if (allowedStores.length <= 1 && appUser.role !== 'admin' && variant === 'desktop') {
+  if (stores.length <= 1 && appUser.role !== 'admin' && variant === 'desktop') {
       return null;
   }
   
@@ -102,7 +102,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
              handleStoreSelect(id);
            }}
          >
-           {allowedStores.map(s => (
+           {stores.map(s => (
              <option key={s.id} value={s.id}>{s.name}</option>
            ))}
          </select>
@@ -133,7 +133,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
             <CommandInput placeholder="Search store..." />
             <CommandEmpty>No store found.</CommandEmpty>
             <CommandGroup heading="Accessible Stores">
-              {allowedStores.map((store) => (
+              {stores.map((store) => (
                 <CommandItem
                   key={store.id}
                   value={store.id}

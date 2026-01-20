@@ -130,7 +130,7 @@ service cloud.firestore {
     // ----------------------------
     match /stores/{storeId} {
       // Users should NOT be able to list all stores.
-      allow list: if false;
+      allow list: if isAdmin();
 
       // Only allow reading a store doc if assigned (or platform admin).
       allow get: if hasStoreAccess(storeId);
