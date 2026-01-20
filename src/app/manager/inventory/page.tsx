@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2, Search } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -22,6 +22,8 @@ import type { InventoryItem, KitchenLocation } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
 import { getDisplayName } from "@/lib/products/variants";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { useDebounce } from "@/hooks/use-debounce";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -39,6 +41,9 @@ export default function InventoryManagementPage() {
   
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
   useEffect(() => {
     if (!activeStore) {
       setIsLoading(false);
@@ -48,7 +53,7 @@ export default function InventoryManagementPage() {
     setIsLoading(true);
     
     const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
-    const q = query(inventoryRef);
+    const q = query(inventoryRef, where("isArchived", "!=", true));
     const unsubInv = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(items);
@@ -72,8 +77,20 @@ export default function InventoryManagementPage() {
     };
   }, [activeStore, toast]);
 
+  const filteredInventory = useMemo(() => {
+    if (!debouncedSearchTerm) {
+      return inventory;
+    }
+    const lowercasedFilter = debouncedSearchTerm.toLowerCase();
+    return inventory.filter(item => 
+        getDisplayName(item).toLowerCase().includes(lowercasedFilter) ||
+        item.barcode?.toLowerCase().includes(lowercasedFilter)
+    );
+  }, [inventory, debouncedSearchTerm]);
+
+
   const groupedInventory = useMemo(() => {
-    const grouped = inventory.reduce((acc, item) => {
+    const grouped = filteredInventory.reduce((acc, item) => {
       const subCategory = item.subCategory || 'Uncategorized';
       if (!acc[subCategory]) {
         acc[subCategory] = [];
@@ -92,7 +109,7 @@ export default function InventoryManagementPage() {
         acc[subCategory] = grouped[subCategory];
         return acc;
     }, {} as Record<string, InventoryItem[]>);
-  }, [inventory]);
+  }, [filteredInventory]);
 
   const handleAddItems = async (productsToAdd: any[]) => {
     if (!activeStore || !appUser) return;
@@ -247,8 +264,21 @@ export default function InventoryManagementPage() {
       </PageHeader>
       <Card>
         <CardHeader>
-          <CardTitle>Current Stock</CardTitle>
-          <CardDescription>All products currently tracked in this store's inventory.</CardDescription>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle>Current Stock</CardTitle>
+              <CardDescription>All products currently tracked in this store's inventory.</CardDescription>
+            </div>
+            <div className="relative w-full max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                placeholder="Search by name or barcode..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
+                />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -280,7 +310,7 @@ export default function InventoryManagementPage() {
                         <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">
                           <Switch
-                            checked={item.isAddon}
+                            checked={!!item.isAddon}
                             onCheckedChange={() => handleToggle(item, 'isAddon')}
                           />
                         </TableCell>
@@ -307,6 +337,15 @@ export default function InventoryManagementPage() {
                   </TableBody>
                 </React.Fragment>
               ))}
+              {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
+                <TableBody>
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      No results found for "{debouncedSearchTerm}".
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              )}
             </Table>
           ) : (
             <p className="text-center text-muted-foreground py-8">No inventory items found. Click "Add Products" to get started.</p>
