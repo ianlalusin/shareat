@@ -6,16 +6,18 @@ import { doc, getDoc, getDocs, collection, updateDoc, query, where, onSnapshot }
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import type { Store } from "@/lib/types";
+import { getDisplayName } from "@/lib/products/variants";
 
 type StoreContextValue = {
   stores: Store[];
   activeStore: Store | null;
+  activeStoreId: string | null;
   loading: boolean;
   setActiveStoreById: (storeId: string) => Promise<void>;
   refreshStoresOnce: () => Promise<void>;
-  storeAddons: any[]; // Add this
-  storeAddonsLoading: boolean; // Add this
-  refreshStoreAddons: () => void; // Add this
+  storeAddons: any[];
+  storeAddonsLoading: boolean;
+  refreshStoreAddons: () => void;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -83,22 +85,24 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     }
   }, [appUser, isAdmin]);
 
-  const fetchStoreAddons = useCallback(async () => {
+  const fetchStoreAddons = useCallback(() => {
     if (!activeStore?.id) {
         setStoreAddons([]);
         setStoreAddonsLoading(false);
-        return;
+        return () => {};
     }
     setStoreAddonsLoading(true);
 
-    // This query is simplified for demonstration. You might need a more complex
-    // query joining with a global `products` collection if `storeAddons` only stores overrides.
     const addonsRef = collection(db, "stores", activeStore.id, "inventory");
     const q = query(addonsRef, where("isAddon", "==", true), where("isActive", "==", true));
     
-    // Using onSnapshot for realtime updates, but getDocs would also work for a one-time fetch.
     const unsubscribe = onSnapshot(q, (snapshot) => {
-        const addonsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const addonsData = snapshot.docs.map(doc => ({ 
+            id: doc.id,
+            ...doc.data(),
+            displayName: getDisplayName(doc.data() as any),
+            groupKey: (doc.data() as any).groupId || doc.id,
+        }));
         setStoreAddons(addonsData);
         setStoreAddonsLoading(false);
     }, (error) => {
@@ -116,12 +120,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
       const unsub = fetchStoreAddons();
-      return () => {
-        if (unsub) {
-            // If fetchStoreAddons returns an unsubscribe function
-            unsub.then(u => u()).catch(() => {});
-        }
-      }
+      return () => { unsub(); }
   }, [fetchStoreAddons])
 
   const setActiveStoreById = useCallback(
@@ -147,12 +146,13 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     () => ({
       stores,
       activeStore,
+      activeStoreId: activeStore?.id || null,
       loading,
       setActiveStoreById,
       refreshStoresOnce: loadStoresOnce,
       storeAddons,
       storeAddonsLoading,
-      refreshStoreAddons: () => { fetchStoreAddons() },
+      refreshStoreAddons: fetchStoreAddons,
     }),
     [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, fetchStoreAddons]
   );
