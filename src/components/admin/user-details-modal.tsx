@@ -68,9 +68,6 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
         const updatedData: Partial<AppUser> = { ...editableUser };
         const assigned = updatedData.assignedStoreIds || [];
         
-        // If the current active storeId is no longer in the assigned list,
-        // or if there is no active storeId but there are assigned stores,
-        // set the active store to the first one in the assigned list.
         if ((updatedData.storeId && !assigned.includes(updatedData.storeId)) || (!updatedData.storeId && assigned.length > 0)) {
             updatedData.storeId = assigned[0] || null;
         }
@@ -121,7 +118,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                     {isEditing ? (
                          <div className="grid gap-1.5 w-full">
                             <Label htmlFor="name" className="sr-only">Full Name</Label>
-                            <Input id="name" value={editableUser.name || ''} onChange={(e) => handleInputChange('name', e.target.value)} className="text-2xl font-semibold leading-none tracking-tight" />
+                            <Input id="name" value={editableUser.name || ''} onChange={(e) => handleInputChange('name', e.target.value)} className="text-2xl font-semibold leading-none tracking-tight" disabled={!isAdmin} />
                             <DialogDescription>{user.email}</DialogDescription>
                         </div>
                     ) : (
@@ -160,11 +157,11 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                             <Label htmlFor="contactNumber" className="text-sm text-muted-foreground">Contact</Label>
-                            <Input id="contactNumber" value={editableUser.contactNumber || ''} onChange={(e) => handleInputChange('contactNumber', e.target.value)} className="h-9" />
+                            <Input id="contactNumber" value={editableUser.contactNumber || ''} onChange={(e) => handleInputChange('contactNumber', e.target.value)} className="h-9" disabled={!isAdmin} />
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                             <Label htmlFor="address" className="text-sm text-muted-foreground">Address</Label>
-                            <Input id="address" value={editableUser.address || ''} onChange={(e) => handleInputChange('address', e.target.value)} className="h-9" />
+                            <Input id="address" value={editableUser.address || ''} onChange={(e) => handleInputChange('address', e.target.value)} className="h-9" disabled={!isAdmin} />
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-start gap-3 pt-1">
                             <Label className="text-sm text-muted-foreground pt-2">Stores</Label>
@@ -241,7 +238,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                 {isEditing ? (
                     <div className="flex justify-end gap-2 w-full">
                         <Button variant="ghost" onClick={handleCancel} disabled={isProcessing}>Cancel</Button>
-                        <Button onClick={handleSave} disabled={isProcessing}>
+                        <Button onClick={handleSave} disabled={isProcessing || !isAdmin}>
                             {isProcessing ? 'Saving...' : <><Save className="mr-2 h-4 w-4" /> Save Changes</>}
                         </Button>
                     </div>
@@ -278,9 +275,11 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                             )}
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => setIsEditing(true)}>
-                                <Edit className="mr-2 h-4 w-4" /> Edit
-                            </Button>
+                            {isAdmin && (
+                                <Button variant="outline" onClick={() => setIsEditing(true)}>
+                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                </Button>
+                            )}
                             <Button variant="secondary" onClick={onClose}>Close</Button>
                         </div>
                     </div>

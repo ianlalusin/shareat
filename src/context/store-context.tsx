@@ -44,40 +44,38 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
     setLoading(true);
     try {
-      // All users, including admins, fetch stores based on their assignedStoreIds.
-      // This complies with the Firestore rule `allow list: if false` on the /stores collection.
-      const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
-      if (assigned.length === 0) {
-        setStores([]);
-        setActiveStore(null);
-        return;
-      }
+      let fetchedStores: Store[] = [];
 
-      // Fetch all assigned stores in parallel for efficiency.
-      const storePromises = assigned.map(async (storeId) => {
-        const sref = doc(db, "stores", storeId);
-        const ssnap = await getDoc(sref);
-        if (ssnap.exists()) {
-            const s = { id: ssnap.id, ...ssnap.data() } as Store;
-            if ((s as any).isActive !== false) {
-                return s;
-            }
+      if (appUser.role === 'admin') {
+        const q = query(collection(db, "stores"));
+        const querySnapshot = await getDocs(q);
+        fetchedStores = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
+      } else {
+        const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
+        if (assigned.length > 0) {
+          const storePromises = assigned.map(async (storeId) => {
+            const sref = doc(db, "stores", storeId);
+            const ssnap = await getDoc(sref);
+            return ssnap.exists() ? { id: ssnap.id, ...ssnap.data() } as Store : null;
+          });
+          const results = await Promise.all(storePromises);
+          fetchedStores = results.filter((s): s is Store => s !== null);
         }
-        return null;
-      });
-
-      const results = await Promise.all(storePromises);
-      const validStores = results.filter((s): s is Store => s !== null);
-
+      }
+      
+      const validStores = fetchedStores
+        .filter(s => (s as any).isActive !== false)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      
       setStores(validStores);
 
       const preferred = appUser.storeId ? validStores.find((s) => s.id === appUser.storeId) : null;
       setActiveStore(preferred || validStores[0] || null);
 
     } catch (e) {
-        console.error("Failed to load stores:", e);
-        setStores([]);
-        setActiveStore(null);
+      console.error("Failed to load stores:", e);
+      setStores([]);
+      setActiveStore(null);
     } finally {
       setLoading(false);
     }
@@ -125,12 +123,8 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     async (storeId: string) => {
       if (!appUser) return;
       
-      // The firestore rule for updating the user doc's storeId already enforces
-      // that the user can only switch to a store in their assignedStoreIds.
-      // So, no need for a redundant client-side check.
-      await updateDoc(doc(db, "users", appUser.uid), { storeId });
+      await updateDoc(doc(db, "staff", appUser.uid), { storeId });
 
-      // After successful DB update, update local state
       const next = stores.find((s) => s.id === storeId) || null;
       setActiveStore(next);
     },
