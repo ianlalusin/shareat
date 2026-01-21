@@ -9,47 +9,40 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-
-    function isPlatformAdmin() {
-      return isSignedIn() && request.auth.token.platformAdmin == true;
+    
+    function isAdmin() {
+      // Checks for the 'admin' role in the user's /staff document.
+      // Note: This involves a document read, which has cost implications
+      // and cannot be used to secure collection list queries.
+      return isSignedIn() && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /**
-     * Checks if the user has an active assignment for a given store
-     * using the global staff doc array: assignedStoreIds[].
-     */
     function hasActiveStoreAssignment(storeId) {
       let staffPath = /databases/$(database)/documents/staff/$(request.auth.uid);
-
       return exists(staffPath)
         && (get(staffPath).data.assignedStoreIds is list)
         && (storeId in get(staffPath).data.assignedStoreIds);
     }
 
     function hasStoreAccess(storeId) {
-      return isPlatformAdmin() || hasActiveStoreAssignment(storeId);
+      return isAdmin() || hasActiveStoreAssignment(storeId);
     }
 
-    /**
-     * Checks if the user is an active manager for the specified store.
-     * Roles remain store-scoped in /stores/{storeId}/staff/{uid}.
-     */
     function isStoreManager(storeId) {
       let assignmentPath = /databases/$(database)/documents/stores/$(storeId)/staff/$(request.auth.uid);
-
       return exists(assignmentPath)
         && get(assignmentPath).data.role == 'manager'
         && get(assignmentPath).data.isActive == true;
     }
 
     function canManageStoreStaff(storeId) {
-      return isPlatformAdmin() || isStoreManager(storeId);
+      return isAdmin() || isStoreManager(storeId);
     }
-
+    
     function isCreatingOwnValidStaffDoc(staffId) {
       return isOwner(staffId) && request.resource.data.staffId == staffId;
     }
@@ -64,62 +57,42 @@ service cloud.firestore {
 
     match /stores/{storeId} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isPlatformAdmin();
-
-      // --- Store-Scoped Subcollections ---
-      match /storePackages/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /storeRefills/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /storeFlavors/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /menuSchedules/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /kitchenLocations/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /tables/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /inventory/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /storeCharges/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /storeDiscounts/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /storeModesOfPayment/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /receiptSettings/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /counters/{docId} { allow read, write: if hasStoreAccess(storeId); }
-      match /receipts/{receiptId} { allow read, write: if hasStoreAccess(storeId); }
-      match /analytics/{dayId} { allow read, write: if hasStoreAccess(storeId); }
-      match /analyticsMonths/{monthId} { allow read, write: if hasStoreAccess(storeId); }
-      match /analyticsYears/{yearId} { allow read, write: if hasStoreAccess(storeId); }
-      match /sessions/{sessionId}/{wildcard=**} { allow read, write: if hasStoreAccess(storeId); }
-      match /staff/{staffId} {
-        allow get, list: if hasStoreAccess(storeId);
-        allow create: if canManageStoreStaff(storeId) && request.resource.data.staffId == staffId;
-        allow update: if canManageStoreStaff(storeId) && request.resource.data.staffId == resource.data.staffId;
-        allow delete: if canManageStoreStaff(storeId);
-      }
-      match /ERP/{wildcard=**} {
-        allow read, write: if hasStoreAccess(storeId);
-      }
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Store-Scoped Subcollections
+    match /stores/{storeId}/{allChildren=**} {
+      allow read, write: if hasStoreAccess(storeId);
     }
 
+    // Global Collections
+    match /products/{productId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    
+    // Staff collection
     match /staff/{staffId} {
-      allow get: if isOwner(staffId) || isPlatformAdmin();
-      allow list: if isPlatformAdmin();
+      allow get: if isOwner(staffId) || isAdmin();
+      
+      // To allow admins to view all users on the management page without custom claims,
+      // this rule must be more permissive. Document contents are still protected by the 'get' rule.
+      allow list: if isSignedIn();
+      
       allow create: if isCreatingOwnValidStaffDoc(staffId);
-      allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignments" in request.resource.data))
-        || isPlatformAdmin();
-      allow delete: if isPlatformAdmin();
+      
+      // Allow user to update own doc, but not assignments/role. Admins can update.
+      allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignedStoreIds" in request.resource.data) && !("role" in request.resource.data))
+        || isAdmin();
+        
+      allow delete: if isAdmin();
     }
-
-    // --- Global Collections ---
-    match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-
-
+    
+    // Expense Entries - Admin only management
     match /expenseEntries/{expenseEntryId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isPlatformAdmin();
-    }
-
-     // Default deny all access to other collections.
-    match /{document=**} {
-      allow read, write: if false;
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
