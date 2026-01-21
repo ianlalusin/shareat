@@ -123,8 +123,9 @@ export default function UserManagementPage() {
             const staffDocRef = doc(db, "staff", user.uid);
             batch.update(staffDocRef, {
                 status: "active",
+                role: roleToAssign, // Set the role on the main staff doc
                 assignedStoreIds: storesToAssign,
-                storeId: storesToAssign[0] || null,
+                storeId: storesToAssign[0] || null, // Set initial active store
                 updatedAt: serverTimestamp(),
             });
     
@@ -430,17 +431,25 @@ export default function UserManagementPage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {activeUsers.map(user => (
-                                        <TableRow key={user.uid} onClick={() => setSelectedUser(user)} className="cursor-pointer">
-                                            <TableCell>{user.name}</TableCell>
-                                            <TableCell>{user.email}</TableCell>
-                                            <TableCell className="capitalize">{user.role}</TableCell>
-                                            <TableCell>{user.storeId ? availableStores.find(s => s.id === user.storeId)?.name || 'N/A' : 'N/A'}</TableCell>
-                                            <TableCell className="text-right">
-                                                <Button variant="outline" size="sm">Manage</Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                    {activeUsers.map(user => {
+                                        const activeStoreName = user.storeId 
+                                            ? availableStores.find(s => s.id === user.storeId)?.name
+                                            : (user.assignedStoreIds && user.assignedStoreIds.length > 0
+                                                ? availableStores.find(s => s.id === user.assignedStoreIds![0])?.name
+                                                : 'N/A');
+
+                                        return (
+                                            <TableRow key={user.uid} onClick={() => setSelectedUser(user)} className="cursor-pointer">
+                                                <TableCell>{user.name}</TableCell>
+                                                <TableCell>{user.email}</TableCell>
+                                                <TableCell className="capitalize">{user.role}</TableCell>
+                                                <TableCell>{activeStoreName || 'N/A'}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button variant="outline" size="sm">Manage</Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })}
                                 </TableBody>
                             </Table>
                         ) : <p className="text-muted-foreground text-center py-4">No active users.</p>}
