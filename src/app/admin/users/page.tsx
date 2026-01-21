@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc, writeBatch, getDoc } from "firebase/firestore";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ export default function UserManagementPage() {
     useEffect(() => {
         if (!appUser) return;
         
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "staff");
         let pendingUnsub: Function | null = null;
         let activeUnsub: Function | null = null;
         let deactivatedUnsub: Function | null = null;
@@ -69,7 +69,7 @@ export default function UserManagementPage() {
                 setIsLoadingUsers(false);
             });
     
-            const qActive = query(usersRef, where("status", "==", "active"), where("role", "!=", null));
+            const qActive = query(usersRef, where("status", "==", "active"));
             activeUnsub = onSnapshot(qActive, (querySnapshot) => {
                 const users: AppUser[] = [];
                 querySnapshot.forEach((doc) => {
@@ -92,11 +92,7 @@ export default function UserManagementPage() {
             });
         }
 
-        if (appUser.role === 'admin') {
-            fetchUsers();
-        } else {
-            setIsLoadingUsers(false);
-        }
+        fetchUsers();
 
         return () => {
             if (pendingUnsub) pendingUnsub();
@@ -111,7 +107,7 @@ export default function UserManagementPage() {
         const roleToAssign = selectedRoles[user.uid] || 'server';
         const storesToAssign = selectedStoreAssignments[user.uid] || [];
 
-        if (storesToAssign.length === 0 && appUser.role !== 'admin') {
+        if (storesToAssign.length === 0) {
             toast({
                 variant: "destructive",
                 title: "Assignment Required",
@@ -122,19 +118,28 @@ export default function UserManagementPage() {
 
         setIsProcessing(prev => ({...prev, [user.uid]: true}));
         try {
-            console.log("ADMIN AUTH:", auth.currentUser?.uid, auth.currentUser?.email);
-            console.log("APPROVING TARGET:", user.uid, user.email);
-            const userDocRef = doc(db, "users", user.uid);
-            await updateDoc(userDocRef, {
+            const batch = writeBatch(db);
+            
+            const staffDocRef = doc(db, "staff", user.uid);
+            batch.update(staffDocRef, {
                 status: "active",
-                role: roleToAssign,
-                roles: [roleToAssign],
                 assignedStoreIds: storesToAssign,
-                // Set the first assigned store as the active one
                 storeId: storesToAssign[0] || null,
                 updatedAt: serverTimestamp(),
             });
-            console.log("AFTER APPROVE AUTH:", auth.currentUser?.uid, auth.currentUser?.email);
+    
+            for (const storeId of storesToAssign) {
+                const storeStaffRef = doc(db, "stores", storeId, "staff", user.uid);
+                batch.set(storeStaffRef, {
+                    staffId: user.uid,
+                    role: roleToAssign,
+                    isActive: true,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                });
+            }
+            
+            await batch.commit();
             
             toast({
                 title: "User Approved",
@@ -176,11 +181,28 @@ export default function UserManagementPage() {
         const pastTenseVerb = status === 'disabled' ? 'deactivated' : 'reactivated';
         setIsProcessing(prev => ({...prev, [uid]: true}));
         try {
-            const userDocRef = doc(db, "users", uid);
-            await updateDoc(userDocRef, {
+            const staffDocRef = doc(db, "staff", uid);
+            const staffSnap = await getDoc(staffDocRef);
+
+            if (!staffSnap.exists()) {
+                throw new Error("Staff document not found.");
+            }
+
+            const batch = writeBatch(db);
+
+            batch.update(staffDocRef, {
                 status,
                 updatedAt: serverTimestamp(),
             });
+
+            const assignedStoreIds = staffSnap.data().assignedStoreIds || [];
+            for (const storeId of assignedStoreIds) {
+                const storeStaffRef = doc(db, "stores", storeId, "staff", uid);
+                batch.update(storeStaffRef, { isActive: status === 'active' });
+            }
+            
+            await batch.commit();
+
             toast({
                 title: `User ${pastTenseVerb}`,
                 description: `The user account has been ${pastTenseVerb}.`,
@@ -198,12 +220,11 @@ export default function UserManagementPage() {
     }
 
     async function handleDeleteUser(uid: string, name?: string) {
-        // Always close the parent modal BEFORE showing the confirmation
         setSelectedUser(null);
 
         const confirmed = await confirm({
             title: `Permanently delete ${name || 'user'}?`,
-            description: "This action cannot be undone. This will permanently delete the user's data.",
+            description: "This will remove the user and all their store assignments. This action cannot be undone.",
             confirmText: "Yes, Delete Permanently",
             destructive: true,
         });
@@ -212,8 +233,21 @@ export default function UserManagementPage() {
 
         setIsProcessing(prev => ({...prev, [uid]: true}));
         try {
-            const userDocRef = doc(db, "users", uid);
-            await deleteDoc(userDocRef);
+            const staffDocRef = doc(db, "staff", uid);
+            const staffSnap = await getDoc(staffDocRef);
+            
+            const batch = writeBatch(db);
+
+            if (staffSnap.exists()) {
+                const assignedStoreIds = staffSnap.data().assignedStoreIds || [];
+                for (const storeId of assignedStoreIds) {
+                    const storeStaffRef = doc(db, "stores", storeId, "staff", uid);
+                    batch.delete(storeStaffRef);
+                }
+            }
+            batch.delete(staffDocRef);
+            await batch.commit();
+
             toast({
                 title: "User Deleted",
                 description: "The user account has been permanently removed.",
@@ -232,15 +266,19 @@ export default function UserManagementPage() {
     async function handleUpdateUserDetails(uid: string, data: Partial<AppUser>) {
         setIsProcessing(prev => ({ ...prev, [uid]: true }));
         try {
-            const userDocRef = doc(db, "users", uid);
-            await updateDoc(userDocRef, {
-                ...data,
+            const staffDocRef = doc(db, "staff", uid);
+            await updateDoc(staffDocRef, {
+                name: data.name,
+                contactNumber: data.contactNumber,
+                address: data.address,
                 updatedAt: serverTimestamp(),
             });
+            
             toast({
                 title: "User Updated",
                 description: "The user's details have been successfully updated.",
             });
+
             if (selectedUser && selectedUser.uid === uid) {
                 setSelectedUser(prev => prev ? { ...prev, ...data } : null);
             }

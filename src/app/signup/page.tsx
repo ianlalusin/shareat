@@ -88,16 +88,16 @@ export default function SignupPage() {
     setIsSavingDetails(true);
 
     try {
-      const userDocRef = doc(db, "users", createdUser.uid);
+      const userDocRef = doc(db, "staff", createdUser.uid);
       await setDoc(userDocRef, {
+        staffId: createdUser.uid,
         id: createdUser.uid,
         email: createdUser.email,
         name,
         address,
         contactNumber,
         status: "pending",
-        role: null,
-        roles: [],
+        assignedStoreIds: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
