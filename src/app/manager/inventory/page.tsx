@@ -220,12 +220,12 @@ export default function InventoryManagementPage() {
   };
 
   const handleDeleteItem = async (item: InventoryItem) => {
-    if (!activeStore || !appUser) return;
+    if (!activeStore || !appUser?.isPlatformAdmin) return;
     
     const confirmed = await confirm({
-        title: `Delete ${getDisplayName(item)}?`,
-        description: "This will permanently remove the item from this store's inventory. This action cannot be undone.",
-        confirmText: "Yes, Delete",
+        title: `Archive ${getDisplayName(item)}?`,
+        description: "This will archive the item, hiding it from inventory. This action can be reversed by an administrator.",
+        confirmText: "Yes, Archive",
         destructive: true,
     });
 
@@ -328,7 +328,7 @@ export default function InventoryManagementPage() {
                           <Button variant="ghost" size="icon" onClick={() => handleToggle(item, 'isActive')}>
                             {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
                           </Button>
-                          {appUser?.role === 'admin' && (
+                          {appUser?.isPlatformAdmin && (
                              <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteItem(item)}>
                                 <Trash2 />
                             </Button>

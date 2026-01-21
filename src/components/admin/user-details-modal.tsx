@@ -23,7 +23,7 @@ interface UserDetailsModalProps {
   user: AppUser;
   isOpen: boolean;
   onClose: () => void;
-  currentUserRole?: 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
+  isCurrentUserPlatformAdmin?: boolean;
   currentUserId?: string;
   availableStores: StoreOption[];
   onDeactivate: (user: AppUser) => void;
@@ -36,7 +36,7 @@ interface UserDetailsModalProps {
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
 
-export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, currentUserId, availableStores, onDeactivate, onReactivate, onDelete, onUpdate, isProcessing }: UserDetailsModalProps) {
+export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformAdmin, currentUserId, availableStores, onDeactivate, onReactivate, onDelete, onUpdate, isProcessing }: UserDetailsModalProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [editableUser, setEditableUser] = useState<Partial<AppUser>>({});
 
@@ -60,7 +60,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
 
     if (!user) return null;
 
-    const isAdmin = currentUserRole === 'admin';
+    const isPlatformAdmin = isCurrentUserPlatformAdmin === true;
     const isSelf = user.uid === currentUserId;
     const isDeactivated = user.status === 'disabled';
 
@@ -118,7 +118,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                     {isEditing ? (
                          <div className="grid gap-1.5 w-full">
                             <Label htmlFor="name" className="sr-only">Full Name</Label>
-                            <Input id="name" value={editableUser.name || ''} onChange={(e) => handleInputChange('name', e.target.value)} className="text-2xl font-semibold leading-none tracking-tight" disabled={!isAdmin} />
+                            <Input id="name" value={editableUser.name || ''} onChange={(e) => handleInputChange('name', e.target.value)} className="text-2xl font-semibold leading-none tracking-tight" disabled={!isPlatformAdmin} />
                             <DialogDescription>{user.email}</DialogDescription>
                         </div>
                     ) : (
@@ -143,7 +143,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                             <Select
                                 value={editableUser.role}
                                 onValueChange={handleRoleChange}
-                                disabled={!isAdmin || isSelf}
+                                disabled={!isPlatformAdmin || isSelf}
                             >
                                 <SelectTrigger className="h-9">
                                     <SelectValue placeholder="Select a role" />
@@ -157,17 +157,17 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                             <Label htmlFor="contactNumber" className="text-sm text-muted-foreground">Contact</Label>
-                            <Input id="contactNumber" value={editableUser.contactNumber || ''} onChange={(e) => handleInputChange('contactNumber', e.target.value)} className="h-9" disabled={!isAdmin} />
+                            <Input id="contactNumber" value={editableUser.contactNumber || ''} onChange={(e) => handleInputChange('contactNumber', e.target.value)} className="h-9" disabled={!isPlatformAdmin} />
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-center gap-3">
                             <Label htmlFor="address" className="text-sm text-muted-foreground">Address</Label>
-                            <Input id="address" value={editableUser.address || ''} onChange={(e) => handleInputChange('address', e.target.value)} className="h-9" disabled={!isAdmin} />
+                            <Input id="address" value={editableUser.address || ''} onChange={(e) => handleInputChange('address', e.target.value)} className="h-9" disabled={!isPlatformAdmin} />
                         </div>
                         <div className="grid grid-cols-[120px_1fr] items-start gap-3 pt-1">
                             <Label className="text-sm text-muted-foreground pt-2">Stores</Label>
                             <Popover>
                                 <PopoverTrigger asChild>
-                                    <Button variant="outline" role="combobox" className="h-auto justify-between flex-wrap" disabled={!isEditing || !isAdmin}>
+                                    <Button variant="outline" role="combobox" className="h-auto justify-between flex-wrap" disabled={!isEditing || !isPlatformAdmin}>
                                         <span className="truncate">
                                             {editableUser.assignedStoreIds?.length || 0} selected
                                         </span>
@@ -238,14 +238,14 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                 {isEditing ? (
                     <div className="flex justify-end gap-2 w-full">
                         <Button variant="ghost" onClick={handleCancel} disabled={isProcessing}>Cancel</Button>
-                        <Button onClick={handleSave} disabled={isProcessing || !isAdmin}>
+                        <Button onClick={handleSave} disabled={isProcessing || !isPlatformAdmin}>
                             {isProcessing ? 'Saving...' : <><Save className="mr-2 h-4 w-4" /> Save Changes</>}
                         </Button>
                     </div>
                 ) : (
                      <div className="flex justify-between items-center w-full">
                         <div className="flex gap-2">
-                             {!isSelf && currentUserRole === 'admin' && (
+                             {!isSelf && isPlatformAdmin && (
                                 <>
                                     {isDeactivated ? (
                                          <Button 
@@ -275,7 +275,7 @@ export function UserDetailsModal({ user, isOpen, onClose, currentUserRole, curre
                             )}
                         </div>
                         <div className="flex gap-2">
-                            {isAdmin && (
+                            {isPlatformAdmin && (
                                 <Button variant="outline" onClick={() => setIsEditing(true)}>
                                     <Edit className="mr-2 h-4 w-4" /> Edit
                                 </Button>

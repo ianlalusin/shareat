@@ -90,12 +90,14 @@ export default function SignupPage() {
     try {
       const userDocRef = doc(db, "staff", createdUser.uid);
       await setDoc(userDocRef, {
+        id: createdUser.uid, // Per new requirement
         staffId: createdUser.uid,
         email: createdUser.email,
         name,
         address,
         contactNumber,
         status: "pending",
+        role: "server", // Default role
         assignedStoreIds: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

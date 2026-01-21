@@ -60,7 +60,7 @@ export default function AdminPage() {
         <RoleGuard allow={["admin", "manager"]}>
             <PageHeader title="Admin & Manager Hub" description="Global configurations and store-level operations." />
             <div className="grid gap-6">
-                {appUser?.role === 'admin' && (
+                {appUser?.isPlatformAdmin && (
                     <>
                         <Card>
                             <CardHeader>
@@ -88,7 +88,7 @@ export default function AdminPage() {
                     </>
                 )}
 
-                {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
+                {(appUser?.isPlatformAdmin || appUser?.role === 'manager') && (
                     <>
                         <Card>
                             <CardHeader>
@@ -104,7 +104,7 @@ export default function AdminPage() {
                     </>
                 )}
                 
-                {appUser?.role === 'admin' && (
+                {appUser?.isPlatformAdmin && (
                      <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="data-tools" className="border-b-0">
                              <Card>

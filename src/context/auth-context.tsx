@@ -2,8 +2,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, User as FirebaseUser, getIdTokenResult } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 
 export type AppUser = {
@@ -19,6 +19,7 @@ export type AppUser = {
   name?: string;
   contactNumber?: string;
   address?: string;
+  isPlatformAdmin?: boolean;
 };
 
 type AuthCtx = {
@@ -49,25 +50,39 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
       const unsubUser = onSnapshot(
         staffDocRef,
-        (snap) => {
+        async (snap) => {
+          let isPlatformAdmin = false;
+          try {
+            const tokenResult = await getIdTokenResult(u);
+            isPlatformAdmin = tokenResult.claims.platformAdmin === true;
+          } catch (error) {
+            console.error("Error getting custom claims:", error);
+          }
+
           if (snap.exists()) {
             const data = snap.data();
             
-            // The global staff document is now the source of truth for the role.
             const baseAppUser: AppUser = {
               uid: u.uid,
               email: u.email,
               displayName: u.displayName || data.name,
               photoURL: u.photoURL || data.photoURL,
-              ...data, // This includes the `role` from the /staff doc
+              ...data,
+              isPlatformAdmin, // Add the claim result to the user object
             };
             
             setAppUser(baseAppUser);
             setLoading(false);
             
           } else {
-            // This case handles brand new signups before a staff doc is created.
-            setAppUser({ uid: u.uid, email: u.email, displayName: u.displayName, photoURL: u.photoURL, status: "needs_profile" });
+            setAppUser({ 
+              uid: u.uid, 
+              email: u.email, 
+              displayName: u.displayName, 
+              photoURL: u.photoURL, 
+              status: "needs_profile",
+              isPlatformAdmin,
+            });
             setLoading(false);
           }
         },

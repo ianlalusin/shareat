@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -11,41 +10,32 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isPlatformAdmin() {
+      return isSignedIn() && request.auth.token.platformAdmin == true;
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
+
     function staffDocPath() {
       return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
 
-    function isPlatformAdmin() {
-      let p = staffDocPath();
-      return isSignedIn()
-        && exists(p)
-        && (
-          get(p).data.role == 'admin'
-          || ((get(p).data.roles is list) && ('admin' in get(p).data.roles))
-        );
+    function isActiveStaff() {
+      return exists(staffDocPath()) && get(staffDocPath()).data.status == 'active';
     }
-    
-    function hasActiveStoreAssignment(storeId) {
-      let p = staffDocPath();
-      return isSignedIn()
-        && exists(p)
-        && (get(p).data.assignedStoreIds is list)
-        && (storeId in get(p).data.assignedStoreIds);
+
+    function staffDoc() {
+      return get(staffDocPath()).data;
     }
 
     function hasStoreAccess(storeId) {
-      return isPlatformAdmin() || hasActiveStoreAssignment(storeId);
+      return isPlatformAdmin() || (isActiveStaff() && storeId in staffDoc().assignedStoreIds);
     }
 
     function isStoreManager(storeId) {
-      let assignmentPath = /databases/$(database)/documents/stores/$(storeId)/staff/$(request.auth.uid);
-      return exists(assignmentPath)
-        && get(assignmentPath).data.role == 'manager'
-        && get(assignmentPath).data.isActive == true;
+      return isPlatformAdmin() || (isActiveStaff() && storeId in staffDoc().assignedStoreIds && staffDoc().role == 'manager');
     }
 
     function canManageStoreStaff(storeId) {
@@ -56,59 +46,54 @@ service cloud.firestore {
       return isOwner(staffId) && request.resource.data.staffId == staffId;
     }
 
-    function isUpdatingOwnValidStaffDoc(staffId) {
-      return isOwner(staffId) && request.resource.data.staffId == resource.data.staffId;
-    }
-
     // --------------------------------
     // Collection Rules
     // --------------------------------
 
-    // Global collections - readable by any signed-in user, writable only by admins
+    // Global collections - readable by any signed-in user, writable only by platform admins
     match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow create, update, delete: if isPlatformAdmin(); }
 
+    // Store management (only platform admins can create/edit stores)
     match /stores/{storeId} {
       allow get, list: if isSignedIn();
       allow create, update, delete: if isPlatformAdmin();
     }
     
-    // Allows access to all store subcollections like sessions, inventory, kitchentickets, etc.
-    match /stores/{storeId}/{allChildren=**} {
-      allow read, write: if hasStoreAccess(storeId);
-    }
-    
-    // This is redundant with the rule above but is kept as requested.
-    match /stores/{storeId}/ERP/{wildcard=**} {
-      allow read, write: if hasStoreAccess(storeId);
-    }
-    
-    // Overriding the generic subcollection rule for more specific staff management
-    match /stores/{storeId}/staff/{staffId} {
-      allow get, list: if hasStoreAccess(storeId);
-      allow create: if canManageStoreStaff(storeId) && request.resource.data.staffId == staffId;
-      allow update: if canManageStoreStaff(storeId) && request.resource.data.staffId == resource.data.staffId;
-      allow delete: if canManageStoreStaff(storeId);
-    }
-    
+    // Global staff profiles
     match /staff/{staffId} {
       allow get: if isOwner(staffId) || isPlatformAdmin();
-      allow list: if isSignedIn(); // Allows user management page to function for admins.
+      allow list: if isPlatformAdmin();
       allow create: if isCreatingOwnValidStaffDoc(staffId);
-      
-      // User can update their own doc, but not assignments/role. Admins can update all.
-      allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignedStoreIds" in request.resource.data) && !("role" in request.resource.data))
-        || isPlatformAdmin();
-        
+      allow update: if (isOwner(staffId) &&
+                        !('role' in request.resource.data) &&
+                        !('status' in request.resource.data) &&
+                        !('assignedStoreIds' in request.resource.data) &&
+                        !('staffId' in request.resource.data) &&
+                        !('id' in request.resource.data))
+                     || isPlatformAdmin();
       allow delete: if isPlatformAdmin();
     }
     
-    match /expenseEntries/{expenseEntryId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isPlatformAdmin();
+    // Manager-only settings pages
+    match /stores/{storeId}/storePackages/{packageId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/storeRefills/{refillId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/storeFlavors/{flavorId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/menuSchedules/{scheduleId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/kitchenLocations/{locationId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/tables/{tableId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/storeCharges/{chargeId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/storeDiscounts/{discountId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/storeModesOfPayment/{mopId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    match /stores/{storeId}/receiptSettings/{settingsId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
+    
+    // General store subcollections (sessions, tickets, etc.)
+    match /stores/{storeId}/{allChildren=**} {
+      allow read, write: if hasStoreAccess(storeId);
     }
   }
 }

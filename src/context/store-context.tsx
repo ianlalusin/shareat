@@ -32,7 +32,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   const [storeAddons, setStoreAddons] = useState<any[]>([]);
   const [storeAddonsLoading, setStoreAddonsLoading] = useState(true);
 
-  const isAdmin = useMemo(() => appUser?.role === 'admin', [appUser]);
+  const isPlatformAdmin = useMemo(() => appUser?.isPlatformAdmin === true, [appUser]);
 
   const loadStoresOnce = useCallback(async () => {
     if (!appUser) {
@@ -46,7 +46,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     try {
       let fetchedStores: Store[] = [];
 
-      if (appUser.role === 'admin') {
+      if (isPlatformAdmin) {
         const q = query(collection(db, "stores"));
         const querySnapshot = await getDocs(q);
         fetchedStores = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
@@ -79,7 +79,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     } finally {
       setLoading(false);
     }
-  }, [appUser]);
+  }, [appUser, isPlatformAdmin]);
 
   const fetchStoreAddons = useCallback(() => {
     if (!activeStore?.id) {

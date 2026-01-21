@@ -74,7 +74,7 @@ export function ProductDetailsModal({ product, isOpen, onClose, onEdit, onDelete
             </div>
             
              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between w-full">
-                {appUser?.role === 'admin' ? (
+                {appUser?.isPlatformAdmin ? (
                      <Button variant="destructive" onClick={() => onDelete(product)}>
                         <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </Button>

@@ -222,7 +222,7 @@ export default function ProductManagementPage() {
     // so its overlay doesn't interfere with the confirmation dialog.
     setSelectedProduct(null);
     
-    if (!appUser || appUser.role !== 'admin') {
+    if (!appUser?.isPlatformAdmin) {
       toast({ variant: "destructive", title: "Permission Denied" });
       return;
     }
@@ -472,7 +472,3 @@ export default function ProductManagementPage() {
     </RoleGuard>
   );
 }
-
-    
-
-    

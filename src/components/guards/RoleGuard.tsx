@@ -15,7 +15,7 @@ function roleHome(role?: string) {
     case "admin":
       return "/admin";
     case "manager":
-      return "/manager";
+      return "/admin"; // Managers also go to the hub
     case "cashier":
       return "/cashier";
     case "kitchen":
@@ -40,46 +40,48 @@ export function RoleGuard({ allow, children }: Props) {
       return;
     }
 
-    // wait until profile loaded
     if (!appUser) return;
 
-    // only active users can access protected pages
     if (appUser.status !== "active") {
       router.replace("/pending");
       return;
     }
 
-    const userRoles = Array.isArray(appUser.roles) && appUser.roles.length > 0
-      ? appUser.roles
-      : appUser.role
-        ? [appUser.role]
-        : [];
+    // New RBAC check
+    const isAllowed = allow.some(requiredRole => {
+        // Platform Admins can access everything.
+        if (appUser.isPlatformAdmin) return true;
 
-    const ok = allow.some((r) => userRoles.includes(r));
+        // For non-admins, check their role from the staff doc.
+        if (requiredRole === appUser.role) return true;
+        
+        // The 'admin' role in the UI now specifically requires the platformAdmin claim.
+        // If a page requires 'admin' and the user is not a platformAdmin, deny access.
+        if (requiredRole === 'admin' && !appUser.isPlatformAdmin) return false;
 
-    if (!ok) {
-      // send them to their home instead of leaving them stuck
+        return false;
+    });
+
+    if (!isAllowed) {
       const home = roleHome(appUser.role);
       if (pathname !== home) router.replace(home);
     }
   }, [allow, appUser, loading, pathname, router, user]);
 
+  // Determine if children can be rendered
   const canRender =
     !!user &&
     !!appUser &&
     appUser.status === "active" &&
-    (() => {
-      const userRoles =
-        Array.isArray(appUser.roles) && appUser.roles.length > 0
-          ? appUser.roles
-          : appUser.role
-            ? [appUser.role]
-            : [];
-      return allow.some((r) => userRoles.includes(r));
-    })();
+    allow.some(requiredRole => {
+      if (requiredRole === 'admin') return appUser.isPlatformAdmin === true;
+      if (appUser.isPlatformAdmin) return true; // Platform admins can access non-admin pages too.
+      return appUser.role === requiredRole;
+    });
 
-  if (loading) return null;
-  if (!canRender) return null; 
+  if (loading || !canRender) {
+    return null; // Or a loading spinner
+  }
 
   return <>{children}</>;
 }
