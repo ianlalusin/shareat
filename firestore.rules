@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -9,27 +10,35 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    function isAdmin() {
-      // Checks for the 'admin' role in the user's /staff document.
-      // Note: This involves a document read, which has cost implications
-      // and cannot be used to secure collection list queries.
-      return isSignedIn() && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.role == 'admin';
-    }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+    
+    function staffDocPath() {
+      return /databases/$(database)/documents/staff/$(request.auth.uid);
+    }
 
+    function isPlatformAdmin() {
+      let p = staffDocPath();
+      return isSignedIn()
+        && exists(p)
+        && (
+          get(p).data.role == 'admin'
+          || ((get(p).data.roles is list) && ('admin' in get(p).data.roles))
+        );
+    }
+    
     function hasActiveStoreAssignment(storeId) {
-      let staffPath = /databases/$(database)/documents/staff/$(request.auth.uid);
-      return exists(staffPath)
-        && (get(staffPath).data.assignedStoreIds is list)
-        && (storeId in get(staffPath).data.assignedStoreIds);
+      let p = staffDocPath();
+      return isSignedIn()
+        && exists(p)
+        && (get(p).data.assignedStoreIds is list)
+        && (storeId in get(p).data.assignedStoreIds);
     }
 
     function hasStoreAccess(storeId) {
-      return isAdmin() || hasActiveStoreAssignment(storeId);
+      return isPlatformAdmin() || hasActiveStoreAssignment(storeId);
     }
 
     function isStoreManager(storeId) {
@@ -40,9 +49,9 @@ service cloud.firestore {
     }
 
     function canManageStoreStaff(storeId) {
-      return isAdmin() || isStoreManager(storeId);
+      return isPlatformAdmin() || isStoreManager(storeId);
     }
-    
+
     function isCreatingOwnValidStaffDoc(staffId) {
       return isOwner(staffId) && request.resource.data.staffId == staffId;
     }
@@ -55,44 +64,51 @@ service cloud.firestore {
     // Collection Rules
     // --------------------------------
 
+    // Global collections - readable by any signed-in user, writable only by admins
+    match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+
     match /stores/{storeId} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isPlatformAdmin();
     }
     
-    // Store-Scoped Subcollections
+    // Allows access to all store subcollections like sessions, inventory, kitchentickets, etc.
     match /stores/{storeId}/{allChildren=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
-
-    // Global Collections
-    match /products/{productId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isAdmin(); }
     
-    // Staff collection
-    match /staff/{staffId} {
-      allow get: if isOwner(staffId) || isAdmin();
-      
-      // To allow admins to view all users on the management page without custom claims,
-      // this rule must be more permissive. Document contents are still protected by the 'get' rule.
-      allow list: if isSignedIn();
-      
-      allow create: if isCreatingOwnValidStaffDoc(staffId);
-      
-      // Allow user to update own doc, but not assignments/role. Admins can update.
-      allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignedStoreIds" in request.resource.data) && !("role" in request.resource.data))
-        || isAdmin();
-        
-      allow delete: if isAdmin();
+    // This is redundant with the rule above but is kept as requested.
+    match /stores/{storeId}/ERP/{wildcard=**} {
+      allow read, write: if hasStoreAccess(storeId);
     }
     
-    // Expense Entries - Admin only management
+    // Overriding the generic subcollection rule for more specific staff management
+    match /stores/{storeId}/staff/{staffId} {
+      allow get, list: if hasStoreAccess(storeId);
+      allow create: if canManageStoreStaff(storeId) && request.resource.data.staffId == staffId;
+      allow update: if canManageStoreStaff(storeId) && request.resource.data.staffId == resource.data.staffId;
+      allow delete: if canManageStoreStaff(storeId);
+    }
+    
+    match /staff/{staffId} {
+      allow get: if isOwner(staffId) || isPlatformAdmin();
+      allow list: if isSignedIn(); // Allows user management page to function for admins.
+      allow create: if isCreatingOwnValidStaffDoc(staffId);
+      
+      // User can update their own doc, but not assignments/role. Admins can update all.
+      allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignedStoreIds" in request.resource.data) && !("role" in request.resource.data))
+        || isPlatformAdmin();
+        
+      allow delete: if isPlatformAdmin();
+    }
+    
     match /expenseEntries/{expenseEntryId} {
-      allow read, list: if isSignedIn();
-      allow write: if isAdmin();
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isPlatformAdmin();
     }
   }
 }
