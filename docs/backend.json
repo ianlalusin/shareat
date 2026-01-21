@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "Store": {
@@ -408,7 +409,6 @@
       "description": "Represents a global staff member profile.",
       "properties": {
         "staffId": { "type": "string" },
-        "id": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "name": { "type": "string" },
         "address": { "type": "string" },
@@ -417,7 +417,7 @@
         "assignedStoreIds": { "type": "array", "items": { "type": "string" } },
         "storeId": { "type": "string", "description": "The user's currently active store." }
       },
-      "required": ["staffId", "id", "email", "status"]
+      "required": ["staffId", "email", "status"]
     },
     "StoreStaff": {
       "title": "Store Staff",
