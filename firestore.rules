@@ -21,11 +21,6 @@ service cloud.firestore {
     /**
      * Checks if the user has an active assignment for a given store
      * using the global staff doc array: assignedStoreIds[].
-     *
-     * REQUIRED CHANGE:
-     * - Uses /staff/{uid}.assignedStoreIds (array)
-     * - NOT storeId string filtering
-     * - NOT store assignment doc existence for gating store access
      */
     function hasActiveStoreAssignment(storeId) {
       let staffPath = /databases/$(database)/documents/staff/$(request.auth.uid);
@@ -42,7 +37,6 @@ service cloud.firestore {
     /**
      * Checks if the user is an active manager for the specified store.
      * Roles remain store-scoped in /stores/{storeId}/staff/{uid}.
-     * (No change in intent; just made safe with exists().)
      */
     function isStoreManager(storeId) {
       let assignmentPath = /databases/$(database)/documents/stores/$(storeId)/staff/$(request.auth.uid);
@@ -72,40 +66,45 @@ service cloud.firestore {
       allow get, list: if isSignedIn();
       allow create, update, delete: if isPlatformAdmin();
 
-        // --- Store-Scoped Collections from original rules ---
-        match /storePackages/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /storeRefills/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /storeFlavors/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /menuSchedules/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /kitchenLocations/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /tables/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /inventory/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /storeCharges/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /storeDiscounts/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /storeModesOfPayment/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /receiptSettings/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /counters/{docId} { allow read, write: if hasStoreAccess(storeId); }
-        match /receipts/{receiptId} { allow read, write: if hasStoreAccess(storeId); }
-        match /analytics/{dayId} { allow read, write: if hasStoreAccess(storeId); }
-        match /analyticsMonths/{monthId} { allow read, write: if hasStoreAccess(storeId); }
-        match /analyticsYears/{yearId} { allow read, write: if hasStoreAccess(storeId); }
-        match /sessions/{sessionId}/{wildcard=**} { allow read, write: if hasStoreAccess(storeId); }
+      // --- Store-Scoped Subcollections ---
+      match /storePackages/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /storeRefills/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /storeFlavors/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /menuSchedules/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /kitchenLocations/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /tables/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /inventory/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /storeCharges/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /storeDiscounts/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /storeModesOfPayment/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /receiptSettings/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /counters/{docId} { allow read, write: if hasStoreAccess(storeId); }
+      match /receipts/{receiptId} { allow read, write: if hasStoreAccess(storeId); }
+      match /analytics/{dayId} { allow read, write: if hasStoreAccess(storeId); }
+      match /analyticsMonths/{monthId} { allow read, write: if hasStoreAccess(storeId); }
+      match /analyticsYears/{yearId} { allow read, write: if hasStoreAccess(storeId); }
+      match /sessions/{sessionId}/{wildcard=**} { allow read, write: if hasStoreAccess(storeId); }
+      match /staff/{staffId} {
+        allow get, list: if hasStoreAccess(storeId);
+        allow create: if canManageStoreStaff(storeId) && request.resource.data.staffId == staffId;
+        allow update: if canManageStoreStaff(storeId) && request.resource.data.staffId == resource.data.staffId;
+        allow delete: if canManageStoreStaff(storeId);
+      }
+      match /ERP/{wildcard=**} {
+        allow read, write: if hasStoreAccess(storeId);
+      }
     }
 
     match /staff/{staffId} {
       allow get: if isOwner(staffId) || isPlatformAdmin();
       allow list: if isPlatformAdmin();
       allow create: if isCreatingOwnValidStaffDoc(staffId);
-
-      // Allow user to update their own doc, but not the 'assignments' field.
-      // That field should only be updated by a backend process.
       allow update: if (isUpdatingOwnValidStaffDoc(staffId) && !("assignments" in request.resource.data))
         || isPlatformAdmin();
-
       allow delete: if isPlatformAdmin();
     }
-    
-    // --- Global Collections from original rules ---
+
+    // --- Global Collections ---
     match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
@@ -116,17 +115,6 @@ service cloud.firestore {
     match /expenseEntries/{expenseEntryId} {
       allow get, list: if isSignedIn();
       allow create, update, delete: if isPlatformAdmin();
-    }
-
-    match /stores/{storeId}/staff/{staffId} {
-      allow get, list: if hasStoreAccess(storeId);
-      allow create: if canManageStoreStaff(storeId) && request.resource.data.staffId == staffId;
-      allow update: if canManageStoreStaff(storeId) && request.resource.data.staffId == resource.data.staffId;
-      allow delete: if canManageStoreStaff(storeId);
-    }
-
-    match /stores/{storeId}/ERP/{wildcard=**} {
-      allow read, write: if hasStoreAccess(storeId);
     }
 
      // Default deny all access to other collections.
