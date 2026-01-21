@@ -14,36 +14,25 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.platformAdmin == true;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function staffDocPath() {
-      return /databases/$(database)/documents/staff/$(request.auth.uid);
-    }
-
-    function isActiveStaff() {
-      return exists(staffDocPath()) && get(staffDocPath()).data.status == 'active';
+    function isOwner(staffId) {
+      return isSignedIn() && request.auth.uid == staffId;
     }
 
     function staffDoc() {
-      return get(staffDocPath()).data;
+        return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+    
+    function isActiveStaff() {
+        let staffPath = /databases/$(database)/documents/staff/$(request.auth.uid);
+        return exists(staffPath) && get(staffPath).data.status == 'active';
     }
 
     function hasStoreAccess(storeId) {
       return isPlatformAdmin() || (isActiveStaff() && storeId in staffDoc().assignedStoreIds);
     }
-
+    
     function isStoreManager(storeId) {
-      return isPlatformAdmin() || (isActiveStaff() && storeId in staffDoc().assignedStoreIds && staffDoc().role == 'manager');
-    }
-
-    function canManageStoreStaff(storeId) {
-      return isPlatformAdmin() || isStoreManager(storeId);
-    }
-
-    function isCreatingOwnValidStaffDoc(staffId) {
-      return isOwner(staffId) && request.resource.data.staffId == staffId;
+        return isPlatformAdmin() || (hasStoreAccess(storeId) && staffDoc().role == 'manager');
     }
 
     // --------------------------------
@@ -67,14 +56,19 @@ service cloud.firestore {
     // Global staff profiles
     match /staff/{staffId} {
       allow get: if isOwner(staffId) || isPlatformAdmin();
-      allow list: if isPlatformAdmin();
-      allow create: if isCreatingOwnValidStaffDoc(staffId);
+      // Allow any signed-in user to list staff for user management pages
+      allow list: if isSignedIn();
+      // On creation, the UID must match the staffId in the document.
+      allow create: if isOwner(staffId) && request.resource.data.staffId == staffId;
+      // An owner can update their own document, but CANNOT change critical fields.
+      // Only a platform admin can change role, status, or assignments.
       allow update: if (isOwner(staffId) &&
+                        // staffId is immutable for owner
+                        request.resource.data.staffId == resource.data.staffId &&
+                        // owner cannot change these fields
                         !('role' in request.resource.data) &&
                         !('status' in request.resource.data) &&
-                        !('assignedStoreIds' in request.resource.data) &&
-                        !('staffId' in request.resource.data) &&
-                        !('id' in request.resource.data))
+                        !('assignedStoreIds' in request.resource.data))
                      || isPlatformAdmin();
       allow delete: if isPlatformAdmin();
     }
