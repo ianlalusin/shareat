@@ -45,49 +45,34 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       }
 
       setLoading(true);
-      const ref = doc(db, "staff", u.uid);
+      const staffDocRef = doc(db, "staff", u.uid);
 
       const unsubUser = onSnapshot(
-        ref,
+        staffDocRef,
         (snap) => {
           if (snap.exists()) {
             const data = snap.data();
             
+            // The global staff document is now the source of truth for the role.
             const baseAppUser: AppUser = {
               uid: u.uid,
               email: u.email,
               displayName: u.displayName || data.name,
               photoURL: u.photoURL || data.photoURL,
-              ...data,
+              ...data, // This includes the `role` from the /staff doc
             };
             
-            if (data.storeId) {
-              const storeStaffRef = doc(db, "stores", data.storeId, "staff", u.uid);
-              getDoc(storeStaffRef).then(staffSnap => {
-                const finalAppUser = {...baseAppUser};
-                if (staffSnap.exists()) {
-                    const staffData = staffSnap.data();
-                    finalAppUser.role = staffData.role;
-                    finalAppUser.roles = [staffData.role];
-                }
-                setAppUser(finalAppUser);
-              }).catch(err => {
-                console.error("Failed to fetch store-specific role:", err);
-                setAppUser(baseAppUser);
-              }).finally(() => {
-                setLoading(false);
-              });
-            } else {
-               setAppUser(baseAppUser);
-               setLoading(false);
-            }
+            setAppUser(baseAppUser);
+            setLoading(false);
             
           } else {
+            // This case handles brand new signups before a staff doc is created.
             setAppUser({ uid: u.uid, email: u.email, displayName: u.displayName, photoURL: u.photoURL, status: "needs_profile" });
             setLoading(false);
           }
         },
-        () => {
+        (error) => {
+          console.error("AuthContext: Error listening to staff document:", error);
           setLoading(false);
           setAppUser(null);
         }
