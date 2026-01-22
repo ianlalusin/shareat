@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import * as React from "react";
-import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2, Search } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2, Search, RefreshCw } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -240,6 +240,51 @@ export default function InventoryManagementPage() {
     }
   };
 
+  const handleRecoverAll = async () => {
+    if (!activeStore || !appUser) return;
+    
+    const confirmed = await confirm({
+        title: `Un-archive all items?`,
+        description: "This will set 'isArchived' to false for ALL inventory items in this store. This is useful for data cleanup but cannot be undone.",
+        confirmText: "Yes, Un-archive All",
+        destructive: false,
+    });
+
+    if (!confirmed) return;
+
+    setIsSubmitting(true);
+    toast({ title: "Starting recovery..." });
+
+    try {
+        const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
+        const snapshot = await getDocs(inventoryRef);
+        
+        const batch = writeBatch(db);
+        let updatedCount = 0;
+
+        snapshot.docs.forEach(docSnap => {
+            const item = docSnap.data();
+            // Only update if isArchived is not already false
+            if (item.isArchived !== false) {
+                 batch.update(docSnap.ref, { isArchived: false, updatedAt: serverTimestamp() });
+                 updatedCount++;
+            }
+        });
+        
+        if (updatedCount > 0) {
+            await batch.commit();
+            toast({ title: "Recovery Complete", description: `${updatedCount} items were un-archived.` });
+        } else {
+            toast({ title: "No Items to Recover", description: "All items are already active." });
+        }
+
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Recovery Failed", description: error.message });
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
 
   if (!activeStore) {
     return (
@@ -259,10 +304,16 @@ export default function InventoryManagementPage() {
   return (
     <RoleGuard allow={["admin", "manager"]}>
       <PageHeader title="Inventory Management" description={`Manage stock for ${activeStore.name}`}>
-        <Button onClick={() => setIsAddDialogOpen(true)}>
-          <PlusCircle className="mr-2" />
-          Add Products to Inventory
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleRecoverAll} disabled={isSubmitting}>
+                <RefreshCw className="mr-2" />
+                Un-archive All
+            </Button>
+            <Button onClick={() => setIsAddDialogOpen(true)}>
+              <PlusCircle className="mr-2" />
+              Add Products to Inventory
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader>
