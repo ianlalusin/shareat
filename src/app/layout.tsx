@@ -4,8 +4,8 @@ import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Providers } from './providers';
-import { AppLayout } from '@/components/layout/AppLayout';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 // Define fonts
 const fontSans = Poppins({
@@ -80,9 +80,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <FirstLoginGuard>
-            <AppLayout>
-              {children}
-            </AppLayout>
+            {children}
           </FirstLoginGuard>
         </Providers>
         <Toaster />

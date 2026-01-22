@@ -34,22 +34,19 @@ function combineUser(
 
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-    const { user, appUser, loading } = useAuthContext();
+    const { user, appUser } = useAuthContext();
     const combinedUser = combineUser(user, appUser);
 
-    const showMainLayout = !loading && combinedUser && combinedUser.status === 'active';
+    // This component now *only* renders if the user is authenticated and active.
+    // The decision to render it is made by FirstLoginGuard.
+    if (!combinedUser) return null; // Or a loader, but the guard should handle loading state.
 
-    if (showMainLayout) {
-        return (
-            <div className="flex min-h-screen w-full flex-col">
-                <Header user={combinedUser as any} />
-                <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8 mt-14">
-                    {children}
-                </main>
-            </div>
-        );
-    }
-    
-    // For users who are not logged in, pending, etc.
-    return <>{children}</>;
+    return (
+        <div className="flex min-h-screen w-full flex-col">
+            <Header user={combinedUser as any} />
+            <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8 mt-14">
+                {children}
+            </main>
+        </div>
+    );
 }
