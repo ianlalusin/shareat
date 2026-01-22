@@ -32,7 +32,7 @@ export default function LoginPage() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
-      const userDocRef = doc(db, "users", userCredential.user.uid);
+      const userDocRef = doc(db, "staff", userCredential.user.uid);
       const userDoc = await getDoc(userDocRef);
 
       if (userDoc.exists()) {

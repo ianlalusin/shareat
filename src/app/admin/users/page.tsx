@@ -48,7 +48,7 @@ export default function UserManagementPage() {
     useEffect(() => {
         if (!appUser) return;
         
-        const usersRef = collection(db, "staff");
+        const staffRef = collection(db, "staff");
         let pendingUnsub: Function | null = null;
         let activeUnsub: Function | null = null;
         let deactivatedUnsub: Function | null = null;
@@ -56,7 +56,7 @@ export default function UserManagementPage() {
         function fetchUsers() {
             setIsLoadingUsers(true);
 
-            const qPending = query(usersRef, where("status", "==", "pending"));
+            const qPending = query(staffRef, where("status", "==", "pending"));
             pendingUnsub = onSnapshot(qPending, (querySnapshot) => {
                 const users: AppUser[] = [];
                 querySnapshot.forEach((doc) => {
@@ -69,7 +69,7 @@ export default function UserManagementPage() {
                 setIsLoadingUsers(false);
             });
     
-            const qActive = query(usersRef, where("status", "==", "active"));
+            const qActive = query(staffRef, where("status", "==", "active"));
             activeUnsub = onSnapshot(qActive, (querySnapshot) => {
                 const users: AppUser[] = [];
                 querySnapshot.forEach((doc) => {
@@ -80,7 +80,7 @@ export default function UserManagementPage() {
                 console.error("Failed to fetch active users:", error);
             });
 
-            const qDeactivated = query(usersRef, where("status", "==", "disabled"));
+            const qDeactivated = query(staffRef, where("status", "==", "disabled"));
             deactivatedUnsub = onSnapshot(qDeactivated, (querySnapshot) => {
                 const users: AppUser[] = [];
                 querySnapshot.forEach((doc) => {

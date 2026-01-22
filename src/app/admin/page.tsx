@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -9,6 +8,7 @@ import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { MigrateUsersToStaff } from "@/components/admin/MigrateUsersToStaff";
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
@@ -121,6 +121,7 @@ export default function AdminPage() {
                                         ))}
                                     </div>
                                     <BackfillTool />
+                                    <MigrateUsersToStaff />
                                 </AccordionContent>
                              </Card>
                         </AccordionItem>
