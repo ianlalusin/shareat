@@ -21,21 +21,25 @@
           "description": "The physical address of the store."
         },
         "tin": {
-            "type": "string",
-            "description": "The Taxpayer Identification Number of the store."
+          "type": "string",
+          "description": "The Taxpayer Identification Number of the store."
         },
         "logoUrl": {
-            "type": "string",
-            "description": "URL for the store's logo."
+          "type": "string",
+          "description": "URL for the store's logo."
         },
         "taxType": {
-            "type": "string",
-            "enum": ["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"],
-            "description": "The tax type for the store."
+          "type": "string",
+          "enum": [
+            "VAT_INCLUSIVE",
+            "VAT_EXCLUSIVE",
+            "NON_VAT"
+          ],
+          "description": "The tax type for the store."
         },
         "taxRatePct": {
-            "type": "number",
-            "description": "The tax rate percentage for the store."
+          "type": "number",
+          "description": "The tax rate percentage for the store."
         },
         "isActive": {
           "type": "boolean",
@@ -65,31 +69,65 @@
         },
         "variant": {
           "type": "string",
-          "description": "A specific variant of the product (e.g., color, size)."
+          "description": "A specific variant of the product (e.g., color, size). Legacy field; use variantLabel for new products."
         },
         "uom": {
           "type": "string",
           "description": "The unit of measurement for the product (e.g., kg, piece)."
         },
         "category": {
-            "type": "string",
-            "description": "The category of the product."
+          "type": "string",
+          "description": "The category of the product."
         },
         "subCategory": {
-            "type": "string",
-            "description": "The sub-category of the product."
+          "type": "string",
+          "description": "The sub-category of the product."
         },
         "barcode": {
-            "type": "string",
-            "description": "The barcode of the product."
+          "type": "string",
+          "description": "The barcode of the product."
         },
         "imageUrl": {
-            "type": "string",
-            "description": "URL for the product image."
+          "type": "string",
+          "description": "URL for the product image."
         },
         "isActive": {
-            "type": "boolean",
-            "description": "Indicates whether the product is currently active."
+          "type": "boolean",
+          "description": "Indicates whether the product is currently active."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "single",
+            "group",
+            "variant"
+          ],
+          "description": "The type of product: a single item, a group parent, or a variant."
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "For variants, the ID of the parent group product."
+        },
+        "groupName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Denormalized name of the group for display."
+        },
+        "variantLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The specific label for this variant (e.g., '500ml', 'Large')."
+        },
+        "isSku": {
+          "type": "boolean",
+          "description": "True if the product is a sellable SKU (single or variant)."
         }
       },
       "required": [
@@ -345,11 +383,17 @@
         },
         "status": {
           "type": "string",
-          "enum": ["available", "occupied"],
+          "enum": [
+            "available",
+            "occupied"
+          ],
           "description": "The current status of the table."
         },
         "currentSessionId": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "The ID of the active session on this table, if any."
         }
       },
@@ -360,38 +404,32 @@
         "status"
       ]
     },
-    "User": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "User",
+    "Staff": {
+      "title": "Staff",
       "type": "object",
-      "description": "Represents a user of the CulinaryFlow application.",
+      "description": "Represents a global staff member profile.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the User entity."
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's email address.",
-          "format": "email"
-        },
-        "role": {
-          "type": "string",
-          "description": "The user's role within the application (e.g., admin, manager, cashier, kitchen, server)."
-        },
-        "assignedStoreIds": {
-          "type": "array",
-          "description": "References to Stores that this user is assigned to. (Relationship: Store N:N User)",
-          "items": {
-            "type": "string"
-          }
-        }
+        "staffId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "contactNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "active", "disabled", "needs_profile"] },
+        "assignedStoreIds": { "type": "array", "items": { "type": "string" } },
+        "storeId": { "type": "string", "description": "The user's currently active store." }
       },
-      "required": [
-        "id",
-        "email",
-        "role"
-      ]
+      "required": ["staffId", "email", "status"]
+    },
+    "StoreStaff": {
+      "title": "Store Staff",
+      "type": "object",
+      "description": "Represents a staff member's role and status within a specific store.",
+      "properties": {
+        "staffId": { "type": "string" },
+        "role": { "type": "string", "enum": ["manager", "cashier", "server", "kitchen"] },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["staffId", "role", "isActive"]
     },
     "Flavor": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -399,13 +437,29 @@
       "type": "object",
       "description": "Represents available flavors for applicable products.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "isActive"]
+      "required": [
+        "id",
+        "name",
+        "isActive"
+      ]
     },
     "Refill": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -413,15 +467,39 @@
       "type": "object",
       "description": "Defines refillable items.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "requiresFlavor": { "type": "boolean" },
-        "allowedFlavorIds": { "type": "array", "items": { "type": "string" } },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requiresFlavor": {
+          "type": "boolean"
+        },
+        "allowedFlavorIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "requiresFlavor", "isActive"]
+      "required": [
+        "id",
+        "name",
+        "requiresFlavor",
+        "isActive"
+      ]
     },
     "Package": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -429,29 +507,35 @@
       "type": "object",
       "description": "Represents product packages or bundles.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "allowedRefillIds": { "type": "array", "items": { "type": "string" } },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "allowedRefillIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "name", "isActive"]
-    },
-    "Addon": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Addon",
-      "type": "object",
-      "description": "Represents add-on items for products.",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "stationKey": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "name", "stationKey", "isActive"]
+      "required": [
+        "id",
+        "name",
+        "isActive"
+      ]
     },
     "AddonCategory": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -459,42 +543,37 @@
       "type": "object",
       "description": "Represents a category for add-on products.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "slug": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "sortOrder": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "name", "slug", "isActive", "sortOrder"]
-    },
-    "StoreAddon": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "StoreAddon",
-      "type": "object",
-      "description": "Represents store-specific settings for a global Addon, including pricing.",
-      "properties": {
         "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "type": "number"
+        },
+        "createdAt": {
           "type": "string",
-          "description": "Unique identifier for the StoreAddon, mirroring the global Addon ID."
+          "format": "date-time"
         },
-        "isEnabled": {
-          "type": "boolean",
-          "description": "Indicates whether this addon is available for sale in this specific store."
-        },
-        "price": {
-          "type": "number",
-          "description": "The price for this addon in this specific store."
-        },
-        "imageUrl": {
-            "type": "string",
-            "description": "Denormalized URL for the add-on image from the global product."
-        },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "isEnabled", "price"]
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "isActive",
+        "sortOrder"
+      ]
     },
     "Session": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -502,91 +581,318 @@
       "description": "Represents a single customer dining session.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "storeId": { "type": "string" },
-        "tableId": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending_verification", "active", "closed", "voided"] },
-        "sessionMode": { "type": "string", "enum": ["package_dinein", "alacarte"] },
-        "startedAt": { "type": "string", "format": "date-time" },
-        "startedByUid": { "type": "string" },
-        "closedAt": { "type": ["string", "null"], "format": "date-time" },
-        "closedByUid": { "type": ["string", "null"] },
-        "guestCountCashierInitial": { "type": "number" },
-        "guestCountServerVerified": { "type": ["number", "null"] },
-        "guestCountFinal": { "type": ["number", "null"] },
-        "guestCountVerifyLocked": { "type": "boolean" },
-        "packageOfferingId": { "type": "string" },
+        "id": {
+          "type": "string"
+        },
+        "storeId": {
+          "type": "string"
+        },
+        "tableId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending_verification",
+            "active",
+            "closed",
+            "voided"
+          ]
+        },
+        "sessionMode": {
+          "type": "string",
+          "enum": [
+            "package_dinein",
+            "alacarte"
+          ]
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "startedByUid": {
+          "type": "string"
+        },
+        "closedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "closedByUid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "guestCountCashierInitial": {
+          "type": "number"
+        },
+        "guestCountServerVerified": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "guestCountFinal": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "guestCountVerifyLocked": {
+          "type": "boolean"
+        },
+        "packageOfferingId": {
+          "type": "string"
+        },
         "packageSnapshot": {
           "type": "object",
           "properties": {
-            "name": { "type": "string" },
-            "pricePerHead": { "type": "number" },
-            "kitchenLocationId": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "pricePerHead": {
+              "type": "number"
+            },
+            "kitchenLocationId": {
+              "type": "string"
+            }
           }
         },
-        "initialFlavorIds": { "type": "array", "items": { "type": "string" } },
+        "initialFlavorIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "customer": {
           "type": "object",
           "properties": {
-            "name": { "type": ["string", "null"] },
-            "phone": { "type": ["string", "null"] },
-            "notes": { "type": ["string", "null"] },
-            "tin": { "type": ["string", "null"] },
-            "address": { "type": ["string", "null"] }
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "phone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "notes": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tin": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "address": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         },
         "guestCountChange": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "properties": {
-            "status": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
-            "requestedCount": { "type": ["number", "null"] },
-            "requestedByUid": { "type": ["string", "null"] },
-            "requestedAt": { "type": ["string", "null"], "format": "date-time" },
-            "approvedByUid": { "type": ["string", "null"] },
-            "approvedAt": { "type": ["string", "null"], "format": "date-time" },
-            "rejectedByUid": { "type": ["string", "null"] },
-            "rejectedAt": { "type": ["string", "null"], "format": "date-time" },
-            "reason": { "type": ["string", "null"] },
-            "reasonNote": { "type": ["string", "null"] }
+            "status": {
+              "type": "string",
+              "enum": [
+                "none",
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            },
+            "requestedCount": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "requestedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "approvedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "approvedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rejectedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rejectedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasonNote": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         },
         "packageChange": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "properties": {
-            "status": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
-            "requestedPackageId": { "type": ["string", "null"] },
-            "requestedPackageSnapshot": { "type": ["object", "null"] },
-            "requestedByUid": { "type": ["string", "null"] },
-            "requestedAt": { "type": ["string", "null"], "format": "date-time" },
-            "approvedByUid": { "type": ["string", "null"] },
-            "approvedAt": { "type": ["string", "null"], "format": "date-time" },
-            "rejectedByUid": { "type": ["string", "null"] },
-            "rejectedAt": { "type": ["string", "null"], "format": "date-time" },
-            "reason": { "type": ["string", "null"] },
-            "reasonNote": { "type": ["string", "null"] }
+            "status": {
+              "type": "string",
+              "enum": [
+                "none",
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            },
+            "requestedPackageId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestedPackageSnapshot": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "requestedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "approvedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "approvedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "rejectedByUid": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rejectedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasonNote": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         },
         "servedRefillsTotal": {
-            "type": "number",
-            "description": "Total count of served refill items for this session."
+          "type": "number",
+          "description": "Total count of served refill items for this session."
         },
         "servedRefillsByName": {
-            "type": "object",
-            "description": "A map of refill names to their served counts for this session.",
-            "additionalProperties": { "type": "number" }
+          "type": "object",
+          "description": "A map of refill names to their served counts for this session.",
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "serveCountByType": {
-            "type": "object",
-            "description": "A map of item types (package, addon, refill) to their served counts.",
-            "additionalProperties": { "type": "number" }
+          "type": "object",
+          "description": "A map of item types (package, addon, refill) to their served counts.",
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "serveTimeMsTotalByType": {
-            "type": "object",
-            "description": "A map of item types to the total milliseconds taken to serve them.",
-            "additionalProperties": { "type": "number" }
+          "type": "object",
+          "description": "A map of item types to the total milliseconds taken to serve them.",
+          "additionalProperties": {
+            "type": "number"
+          }
         }
       },
-      "required": ["id", "storeId", "tableId", "status", "startedAt", "startedByUid", "guestCountCashierInitial", "packageOfferingId", "packageSnapshot"]
+      "required": [
+        "id",
+        "storeId",
+        "tableId",
+        "status",
+        "startedAt",
+        "startedByUid",
+        "guestCountCashierInitial",
+        "packageOfferingId",
+        "packageSnapshot"
+      ]
     },
     "PackageUnit": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -594,21 +900,51 @@
       "type": "object",
       "description": "Represents a single billable guest unit in a package session.",
       "properties": {
-        "guestId": { "type": "string", "description": "Deterministic ID, e.g., guest-001" },
-        "packageId": { "type": "string" },
-        "packageName": { "type": "string" },
-        "unitPrice": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" },
+        "guestId": {
+          "type": "string",
+          "description": "Deterministic ID, e.g., guest-001"
+        },
+        "packageId": {
+          "type": "string"
+        },
+        "packageName": {
+          "type": "string"
+        },
+        "unitPrice": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "billing": {
           "type": "object",
           "properties": {
-            "isFree": { "type": "boolean", "default": false },
-            "discountType": { "type": "string", "enum": ["percent", "fixed"] },
-            "discountValue": { "type": "number" }
+            "isFree": {
+              "type": "boolean",
+              "default": false
+            },
+            "discountType": {
+              "type": "string",
+              "enum": [
+                "percent",
+                "fixed"
+              ]
+            },
+            "discountValue": {
+              "type": "number"
+            }
           }
         }
       },
-      "required": ["guestId", "packageId", "packageName", "unitPrice", "createdAt", "billing"]
+      "required": [
+        "guestId",
+        "packageId",
+        "packageName",
+        "unitPrice",
+        "createdAt",
+        "billing"
+      ]
     },
     "SessionBillLine": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -616,25 +952,112 @@
       "type": "object",
       "description": "Represents a single billable line item in a session, using counters.",
       "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string", "enum": ["package", "addon"] },
-        "itemId": { "type": "string" },
-        "itemName": { "type": "string" },
-        "category": { "type": ["string", "null"] },
-        "barcode": { "type": ["string", "null"] },
-        "unitPrice": { "type": "number" },
-        "qtyOrdered": { "type": "number" },
-        "discountType": { "type": ["string", "null"], "enum": ["percent", "fixed", null] },
-        "discountValue": { "type": ["number", "null"] },
-        "discountQty": { "type": "number" },
-        "freeQty": { "type": "number" },
-        "voidedQty": { "type": "number", "description": "Number of units from this line that have been voided." },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "updatedByUid": { "type": ["string", "null"] },
-        "updatedByName": { "type": ["string", "null"] }
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "package",
+            "addon"
+          ]
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "itemName": {
+          "type": "string"
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "barcode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unitPrice": {
+          "type": "number"
+        },
+        "qtyOrdered": {
+          "type": "number"
+        },
+        "discountType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "percent",
+            "fixed",
+            null
+          ]
+        },
+        "discountValue": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "discountQty": {
+          "type": "number"
+        },
+        "freeQty": {
+          "type": "number"
+        },
+        "voidedQty": {
+          "type": "number",
+          "description": "Number of units from this line that have been voided."
+        },
+        "qtyOverrideActive": {
+          "type": "boolean"
+        },
+        "qtyOverrideAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "qtyLastSyncedApprovedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedByUid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedByName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["id", "type", "itemId", "itemName", "unitPrice", "qtyOrdered", "discountQty", "freeQty", "voidedQty"]
+      "required": [
+        "id",
+        "type",
+        "itemId",
+        "itemName",
+        "unitPrice",
+        "qtyOrdered",
+        "discountQty",
+        "freeQty",
+        "voidedQty"
+      ]
     },
     "Charge": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -642,22 +1065,77 @@
       "type": "object",
       "description": "Represents a service charge or other fee applicable to a bill.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["fixed", "percent"] },
-        "value": { "type": "number" },
-        "appliesTo": { "type": "string", "enum": ["subtotal", "total"] },
-        "isEnabled": { "type": "boolean" },
-        "sortOrder": { "type": "number" },
-        "isArchived": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "createdBy": { "type": "string" },
-        "updatedBy": { "type": "string" },
-        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
-        "archivedBy": { "type": ["string", "null"] }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "fixed",
+            "percent"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "appliesTo": {
+          "type": "string",
+          "enum": [
+            "subtotal",
+            "total"
+          ]
+        },
+        "isEnabled": {
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "type": "number"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        },
+        "archivedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "archivedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["id", "name", "type", "value", "isEnabled", "sortOrder", "isArchived", "createdBy", "updatedBy"]
+      "required": [
+        "id",
+        "name",
+        "type",
+        "value",
+        "isEnabled",
+        "sortOrder",
+        "isArchived",
+        "createdBy",
+        "updatedBy"
+      ]
     },
     "Discount": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -665,23 +1143,82 @@
       "type": "object",
       "description": "Represents a discount that can be applied to a bill.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["fixed", "percent"] },
-        "value": { "type": "number" },
-        "scope": { "type": "string", "enum": ["bill", "item"] },
-        "stackable": { "type": "boolean" },
-        "isEnabled": { "type": "boolean" },
-        "sortOrder": { "type": "number" },
-        "isArchived": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "createdBy": { "type": "string" },
-        "updatedBy": { "type": "string" },
-        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
-        "archivedBy": { "type": ["string", "null"] }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "fixed",
+            "percent"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "bill",
+            "item"
+          ]
+        },
+        "stackable": {
+          "type": "boolean"
+        },
+        "isEnabled": {
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "type": "number"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        },
+        "archivedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "archivedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["id", "name", "type", "value", "scope", "stackable", "isEnabled", "sortOrder", "isArchived", "createdBy", "updatedBy"]
+      "required": [
+        "id",
+        "name",
+        "type",
+        "value",
+        "scope",
+        "stackable",
+        "isEnabled",
+        "sortOrder",
+        "isArchived",
+        "createdBy",
+        "updatedBy"
+      ]
     },
     "ModeOfPayment": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -689,21 +1226,73 @@
       "type": "object",
       "description": "Represents an accepted mode of payment.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["cash", "card", "online", "other"] },
-        "sortOrder": { "type": "number" },
-        "isActive": { "type": "boolean" },
-        "hasRef": { "type": "boolean", "description": "Indicates if this mode of payment requires a reference number." },
-        "isArchived": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "createdBy": { "type": "string" },
-        "updatedBy": { "type": "string" },
-        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
-        "archivedBy": { "type": ["string", "null"] }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "cash",
+            "card",
+            "online",
+            "other"
+          ]
+        },
+        "sortOrder": {
+          "type": "number"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "hasRef": {
+          "type": "boolean",
+          "description": "Indicates if this mode of payment requires a reference number."
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        },
+        "archivedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "archivedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["id", "name", "type", "sortOrder", "isActive", "isArchived", "createdBy", "updatedBy", "hasRef"]
+      "required": [
+        "id",
+        "name",
+        "type",
+        "sortOrder",
+        "isActive",
+        "isArchived",
+        "createdBy",
+        "updatedBy",
+        "hasRef"
+      ]
     },
     "ReceiptSettings": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -711,24 +1300,70 @@
       "type": "object",
       "description": "Represents the receipt configuration for a store.",
       "properties": {
-        "businessName": { "type": "string" },
-        "branchName": { "type": "string" },
-        "address": { "type": "string" },
-        "contact": { "type": "string" },
-        "tin": { "type": "string" },
-        "vatType": { "type": "string", "enum": ["VAT", "NON_VAT"] },
-        "logoUrl": { "type": "string" },
-        "footerText": { "type": "string" },
-        "showCashierName": { "type": "boolean" },
-        "showTableOrCustomer": { "type": "boolean" },
-        "showItemNotes": { "type": "boolean" },
-        "showDiscountBreakdown": { "type": "boolean" },
-        "showChargeBreakdown": { "type": "boolean" },
-        "paperWidth": { "type": "string", "enum": ["58mm", "80mm", "A4"] },
-        "receiptNoFormat": { "type": "string" },
-        "autoPrintAfterPayment": { "type": "boolean" }
+        "businessName": {
+          "type": "string"
+        },
+        "branchName": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "contact": {
+          "type": "string"
+        },
+        "tin": {
+          "type": "string"
+        },
+        "vatType": {
+          "type": "string",
+          "enum": [
+            "VAT",
+            "NON_VAT"
+          ]
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "footerText": {
+          "type": "string"
+        },
+        "showCashierName": {
+          "type": "boolean"
+        },
+        "showTableOrCustomer": {
+          "type": "boolean"
+        },
+        "showItemNotes": {
+          "type": "boolean"
+        },
+        "showDiscountBreakdown": {
+          "type": "boolean"
+        },
+        "showChargeBreakdown": {
+          "type": "boolean"
+        },
+        "paperWidth": {
+          "type": "string",
+          "enum": [
+            "58mm",
+            "80mm",
+            "A4"
+          ]
+        },
+        "receiptNoFormat": {
+          "type": "string"
+        },
+        "autoPrintAfterPayment": {
+          "type": "boolean"
+        }
       },
-      "required": ["businessName", "branchName", "address", "contact"]
+      "required": [
+        "businessName",
+        "branchName",
+        "address",
+        "contact"
+      ]
     }
   },
   "auth": {
@@ -920,9 +1555,15 @@
           },
           "description": "Represents a single billable guest in a package session. Used as the source of truth for package billing.",
           "params": [
-            { "name": "storeId" },
-            { "name": "sessionId" },
-            { "name": "guestId" }
+            {
+              "name": "storeId"
+            },
+            {
+              "name": "sessionId"
+            },
+            {
+              "name": "guestId"
+            }
           ]
         }
       },
@@ -935,98 +1576,97 @@
           },
           "description": "Represents a single billable line item within a session, consolidating all units of a specific item variant.",
           "params": [
-            { "name": "storeId" },
-            { "name": "sessionId" },
-            { "name": "lineId" }
-          ]
-        }
-      },
-      {
-        "path": "/users/{userId}",
-        "definition": {
-          "entityName": "User",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Represents a user of the application.  Access is restricted to the user themselves or to admins.",
-          "params": [
             {
-              "name": "userId",
-              "description": "The unique identifier for the user."
+              "name": "storeId"
+            },
+            {
+              "name": "sessionId"
+            },
+            {
+              "name": "lineId"
             }
           ]
         }
       },
       {
-        "path": "/roles_admin/{userId}",
+        "path": "/staff/{staffId}",
         "definition": {
-          "entityName": "roles_admin",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Collection used to grant admin privileges.  The existence of a document here grants admin access.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier for the user."
-            }
-          ]
+          "entityName": "Staff",
+          "schema": { "$ref": "#/backend/entities/Staff" },
+          "description": "Global staff profile. Contains store assignments.",
+          "params": [{"name": "staffId"}]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/staff/{staffId}",
+        "definition": {
+          "entityName": "StoreStaff",
+          "schema": { "$ref": "#/backend/entities/StoreStaff" },
+          "description": "Defines a staff member's role within a specific store.",
+          "params": [{"name": "storeId"}, {"name": "staffId"}]
         }
       },
       {
         "path": "/flavors/{flavorId}",
         "definition": {
           "entityName": "Flavor",
-          "schema": { "$ref": "#/backend/entities/Flavor" },
+          "schema": {
+            "$ref": "#/backend/entities/Flavor"
+          },
           "description": "Global flavors.",
-          "params": [{"name": "flavorId", "description": "Unique ID for the flavor."}]
+          "params": [
+            {
+              "name": "flavorId",
+              "description": "Unique ID for the flavor."
+            }
+          ]
         }
       },
       {
         "path": "/refills/{refillId}",
         "definition": {
           "entityName": "Refill",
-          "schema": { "$ref": "#/backend/entities/Refill" },
+          "schema": {
+            "$ref": "#/backend/entities/Refill"
+          },
           "description": "Global refill options.",
-          "params": [{"name": "refillId", "description": "Unique ID for the refill."}]
+          "params": [
+            {
+              "name": "refillId",
+              "description": "Unique ID for the refill."
+            }
+          ]
         }
       },
       {
         "path": "/packages/{packageId}",
         "definition": {
           "entityName": "Package",
-          "schema": { "$ref": "#/backend/entities/Package" },
+          "schema": {
+            "$ref": "#/backend/entities/Package"
+          },
           "description": "Global product packages.",
-          "params": [{"name": "packageId", "description": "Unique ID for the package."}]
-        }
-      },
-      {
-        "path": "/addons/{addonId}",
-        "definition": {
-          "entityName": "Addon",
-          "schema": { "$ref": "#/backend/entities/Addon" },
-          "description": "Global add-on items.",
-          "params": [{"name": "addonId", "description": "Unique ID for the add-on."}]
+          "params": [
+            {
+              "name": "packageId",
+              "description": "Unique ID for the package."
+            }
+          ]
         }
       },
       {
         "path": "/addonCategories/{addonCategoryId}",
         "definition": {
           "entityName": "AddonCategory",
-          "schema": { "$ref": "#/backend/entities/AddonCategory" },
+          "schema": {
+            "$ref": "#/backend/entities/AddonCategory"
+          },
           "description": "Global add-on categories.",
-          "params": [{"name": "addonCategoryId", "description": "Unique ID for the add-on category."}]
-        }
-      },
-      {
-        "path": "/stores/{storeId}/storeAddons/{addonId}",
-        "definition": {
-          "entityName": "StoreAddon",
-          "schema": { "$ref": "#/backend/entities/StoreAddon" },
-          "description": "Store-specific settings for global addons.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "addonId", "description": "The unique identifier for the addon being configured."}
+            {
+              "name": "addonCategoryId",
+              "description": "Unique ID for the add-on category."
+            }
           ]
         }
       },
@@ -1034,11 +1674,19 @@
         "path": "/stores/{storeId}/storeCharges/{chargeId}",
         "definition": {
           "entityName": "Charge",
-          "schema": { "$ref": "#/backend/entities/Charge" },
+          "schema": {
+            "$ref": "#/backend/entities/Charge"
+          },
           "description": "Store-level service charges or other fees.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "chargeId", "description": "Unique ID for the charge."}
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "chargeId",
+              "description": "Unique ID for the charge."
+            }
           ]
         }
       },
@@ -1046,11 +1694,19 @@
         "path": "/stores/{storeId}/storeDiscounts/{discountId}",
         "definition": {
           "entityName": "Discount",
-          "schema": { "$ref": "#/backend/entities/Discount" },
+          "schema": {
+            "$ref": "#/backend/entities/Discount"
+          },
           "description": "Store-level discounts.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "discountId", "description": "Unique ID for the discount."}
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "discountId",
+              "description": "Unique ID for the discount."
+            }
           ]
         }
       },
@@ -1058,11 +1714,19 @@
         "path": "/stores/{storeId}/storeModesOfPayment/{mopId}",
         "definition": {
           "entityName": "ModeOfPayment",
-          "schema": { "$ref": "#/backend/entities/ModeOfPayment" },
+          "schema": {
+            "$ref": "#/backend/entities/ModeOfPayment"
+          },
           "description": "Store-level modes of payment.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "mopId", "description": "Unique ID for the mode of payment."}
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "mopId",
+              "description": "Unique ID for the mode of payment."
+            }
           ]
         }
       },
@@ -1073,30 +1737,67 @@
           "schema": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
-              "storeId": { "type": "string" },
-              "sessionId": { "type": "string" },
-              "createdAt": { "type": "string", "format": "date-time" },
-              "createdAtClientMs": { "type": "number" },
-              "createdByUid": { "type": "string" },
-              "sessionMode": { "type": "string" },
-              "tableId": { "type": "string" },
-              "tableNumber": { "type": "string" },
-              "customerName": { "type": "string" },
+              "id": {
+                "type": "string"
+              },
+              "storeId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdAtClientMs": {
+                "type": "number"
+              },
+              "createdByUid": {
+                "type": "string"
+              },
+              "sessionMode": {
+                "type": "string"
+              },
+              "tableId": {
+                "type": "string"
+              },
+              "tableNumber": {
+                "type": "string"
+              },
+              "customerName": {
+                "type": "string"
+              },
               "lines": {
                 "type": "array",
-                "items": { "$ref": "#/backend/entities/SessionBillLine" }
+                "items": {
+                  "$ref": "#/backend/entities/SessionBillLine"
+                }
               },
-              "total": { "type": "number" },
-              "totalPaid": { "type": "number" },
-              "change": { "type": "number" },
-              "status": { "type": "string" }
+              "total": {
+                "type": "number"
+              },
+              "totalPaid": {
+                "type": "number"
+              },
+              "change": {
+                "type": "number"
+              },
+              "status": {
+                "type": "string"
+              }
             }
           },
           "description": "A snapshot of a receipt created when a session is closed.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "receiptId", "description": "Unique ID for the receipt, same as sessionId."}
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "receiptId",
+              "description": "Unique ID for the receipt, same as sessionId."
+            }
           ]
         }
       },
@@ -1104,11 +1805,19 @@
         "path": "/stores/{storeId}/receiptSettings/{settingsId}",
         "definition": {
           "entityName": "ReceiptSettings",
-          "schema": { "$ref": "#/backend/entities/ReceiptSettings" },
+          "schema": {
+            "$ref": "#/backend/entities/ReceiptSettings"
+          },
           "description": "Singleton document for store receipt settings.",
           "params": [
-            {"name": "storeId", "description": "The unique identifier for the store."},
-            {"name": "settingsId", "description": "Should be a fixed ID like 'config'."}
+            {
+              "name": "storeId",
+              "description": "The unique identifier for the store."
+            },
+            {
+              "name": "settingsId",
+              "description": "Should be a fixed ID like 'config'."
+            }
           ]
         }
       }
@@ -1116,4 +1825,4 @@
     "reasoning": "The Firestore structure is designed to support CulinaryFlow's core features: store management, product and inventory, menu management, POS, KDS, and admin settings with role-based access control. The structure prioritizes authorization independence and simplifies security rules. It avoids hierarchical authorization dependencies to ensure atomic operations.\n\n**Authorization Independence and QAPs:**\n\n*   **Stores:** Store documents are located at `/stores/{storeId}`. Access control is managed through the `User.assignedStoreIds` array, with a rule function `canAccessStore(storeId)` defined in the security rules to check if a user is authorized to access a specific store. This design decouples authorization logic from the store document itself, facilitating atomic operations.\n*   **Products:** Products are global and stored in the `/products/{productId}` collection, managed exclusively by admins. This segregation ensures products can be listed securely since all documents in the collection have the same access controls (QAP).\n*   **Inventory:** Inventory documents, located at `/stores/{storeId}/inventory/{inventoryId}`, store denormalized information regarding product availability in a specific store. Authorization independence is achieved because access is controlled via the `canAccessStore(storeId)` function. Additionally, the `storeId` is included in each inventory document, eliminating the need to fetch the parent store to validate permissions.\n*   **MenuItems:** Menu items, located at `/stores/{storeId}/menuItems/{menuItemId}`, use the same access pattern as inventory. Including the `storeId` in each document enables access control via `canAccessStore(storeId)` without requiring a `get()` call, maintaining authorization independence.\n*   **Orders:** Orders are stored at `/stores/{storeId}/orders/{orderId}` and include the `storeId`. Access is granted to users through `canAccessStore(storeId)`. The `cashierId` field links to the user who created the order, but this is not used for authorization; it is for audit/reporting purposes.\n*   **OrderItems:** Order items, nested under their respective orders at `/stores/{storeId}/orders/{orderId}/orderItems/{orderItemId}`, inherit authorization context from the order. Since all docs share security needs, listing is secure (QAP).\n*   **KitchenStations:** Kitchen stations are global and located at `/kitchenStations/{kitchenStationId}`. Admin-only access is enforced, and all documents share the same security requirements, supporting QAPs for listing.\n*   **Tables:** Tables are stored at `/stores/{storeId}/tables/{tableId}`. Access is controlled through `canAccessStore(storeId)`, with the `storeId` denormalized into each document for authorization independence.\n*   **Users:** User profiles are stored at `/users/{userId}`. Access to a user profile is restricted to the user themselves or to admins. The `assignedStoreIds` array is used by security rules to determine which stores a user can manage. Existence of a document in `/roles_admin/{userId}` provides admin privileges.\n*   **Admin Roles:** Global admin roles are managed via document existence in the `/roles_admin/{userId}` collection. This Existence over Content strategy simplifies checking admin privileges in rules.\n\nThis structure adheres to the core design principles by denormalizing authorization data, segregating data based on security posture, and using consistent access modeling."
   }
 }
-  
+

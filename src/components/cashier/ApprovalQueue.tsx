@@ -52,9 +52,18 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
 
       let userProfiles: Record<string, string> = {};
       if (userIds.size > 0) {
-        const usersQuery = query(collection(db, "staff"), where(documentId(), "in", Array.from(userIds)));
-        const userSnap = await getDocs(usersQuery);
-        userSnap.forEach(doc => userProfiles[doc.id] = doc.data().name || "Unknown");
+        const idChunks: string[][] = [];
+        const userIdsArray = Array.from(userIds);
+        for (let i = 0; i < userIdsArray.length; i += 30) {
+          idChunks.push(userIdsArray.slice(i, i + 30));
+        }
+
+        for (const chunk of idChunks) {
+          if (chunk.length === 0) continue;
+          const staffQuery = query(collection(db, "staff"), where(documentId(), "in", chunk));
+          const userSnap = await getDocs(staffQuery);
+          userSnap.forEach(doc => userProfiles[doc.id] = doc.data().name || "Unknown");
+        }
       }
 
       const pendingRequests: ChangeRequest[] = [];

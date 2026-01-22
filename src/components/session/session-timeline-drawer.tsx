@@ -1,10 +1,11 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { db } from "@/lib/firebase/client";
-import { collection, doc, onSnapshot, query, where, orderBy, limit, getDocs, Timestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where, orderBy, limit, getDocs, Timestamp, documentId } from "firebase/firestore";
 import { Loader, User, Clock, Package, Users, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
@@ -38,8 +39,8 @@ const useUserProfiles = (uids: string[]) => {
         const profilesToFetch = uids.filter(uid => !profiles[uid]);
         if (profilesToFetch.length === 0) return;
 
-        const usersRef = collection(db, "users");
-        const q = query(usersRef, where("id", "in", profilesToFetch));
+        const staffRef = collection(db, "staff");
+        const q = query(staffRef, where(documentId(), "in", profilesToFetch));
 
         getDocs(q).then(snapshot => {
             const newProfiles: Record<string, AppUser> = {};
