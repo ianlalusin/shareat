@@ -1,93 +1,289 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --------------------------------
-    // Helper Functions
-    // --------------------------------
+    // Default deny all access. Specific rules below will grant access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =====================================================================
+    // Helper Functions (NEW MODEL)
+    // =====================================================================
 
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Global super-admin (ONLY via custom claim)
     function isPlatformAdmin() {
       return isSignedIn() && request.auth.token.platformAdmin == true;
     }
 
-    function isOwner(staffId) {
-      return isSignedIn() && request.auth.uid == staffId;
+    // Root staff doc is the ONLY DB source of truth
+    function staffPath(uid) {
+      return /databases/$(database)/documents/staff/$(uid);
     }
 
-    function staffDoc() {
-        return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
-    }
-    
-    function isActiveStaff() {
-        let staffPath = /databases/$(database)/documents/staff/$(request.auth.uid);
-        return exists(staffPath) && get(staffPath).data.status == 'active';
+    function hasStaffDoc() {
+      return isSignedIn() && exists(staffPath(request.auth.uid));
     }
 
-    function hasStoreAccess(storeId) {
-      return isPlatformAdmin() || (isActiveStaff() && storeId in staffDoc().assignedStoreIds);
-    }
-    
-    function isStoreManager(storeId) {
-        return isPlatformAdmin() || (hasStoreAccess(storeId) && staffDoc().role == 'manager');
+    function staffData() {
+      // Only call when hasStaffDoc() is true
+      return get(staffPath(request.auth.uid)).data;
     }
 
-    // --------------------------------
+    function isUserActive() {
+      // Only "active" staff can operate (platformAdmin bypasses)
+      return isPlatformAdmin()
+        || (hasStaffDoc() && staffData().status == 'active');
+    }
+
+    function hasAssignedStore(storeId) {
+      return isUserActive()
+        && (staffData().assignedStoreIds is list)
+        && (storeId in staffData().assignedStoreIds);
+    }
+
+    // Store membership boundary
+    function isStoreMember(storeId) {
+      return isPlatformAdmin() || hasAssignedStore(storeId);
+    }
+
+    // Role helpers (single string role in /staff)
+    // NOTE: platformAdmin bypasses all role checks.
+    function roleIs(r) {
+      return isPlatformAdmin() || (isUserActive() && staffData().role == r);
+    }
+
+    // Keep the old hierarchy behavior but backed by /staff.role
+    // Optional: treat 'admin' role as manager-level *within assigned stores* (not global).
+    function isManager() {
+      return isPlatformAdmin()
+        || (isUserActive() && (staffData().role == 'manager' || staffData().role == 'admin'));
+    }
+
+    function isCashier() {
+      return isPlatformAdmin()
+        || (isUserActive() && (staffData().role == 'cashier' || staffData().role == 'manager' || staffData().role == 'admin'));
+    }
+
+    function isServer() {
+      return isPlatformAdmin()
+        || (isUserActive() && (staffData().role == 'server' || staffData().role == 'manager' || staffData().role == 'admin'));
+    }
+
+    function isKitchen() {
+      return isPlatformAdmin()
+        || (isUserActive() && (staffData().role == 'kitchen' || staffData().role == 'manager' || staffData().role == 'admin'));
+    }
+
+    // -- Data Validation Helpers --
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Only allow updating certain keys (field-level guard)
+    function changedKeysOnly(allowedKeys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedKeys);
+    }
+
+    function isAllowedAnalyticsWrite() {
+      // Only allow touching known top-level namespaces (prevents random field injection)
+      return request.resource.data.keys().hasOnly([
+        "meta", "payments", "sales", "guests", "kitchen", "refills", "sessions"
+      ]);
+    }
+
+    function isSafeSubcol(subcol) {
+      // Only allow the new item rollup subcollections you intentionally created
+      return subcol in ["addonItems", "refillItems"];
+    }
+
+    // =====================================================================
     // Collection Rules
-    // --------------------------------
+    // =====================================================================
 
-    // Global collections - readable by any signed-in user, writable only by platform admins
-    match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
-    match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow create, update, delete: if isPlatformAdmin(); }
-
-    // Store management (only platform admins can create/edit stores)
-    match /stores/{storeId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isPlatformAdmin();
-    }
-    
-    // Global staff profiles
+    // -------------------------------------------------
+    // Root Staff (single source of truth)
+    // -------------------------------------------------
     match /staff/{staffId} {
+      // Read own doc; platform admin can read any
       allow get: if isOwner(staffId) || isPlatformAdmin();
-      // Allow any signed-in user to list staff for user management pages
-      allow list: if isSignedIn();
-      // On creation, the UID must match the staffId in the document.
-      allow create: if isOwner(staffId) && request.resource.data.staffId == staffId;
-      // An owner can update their own document, but CANNOT change critical fields.
-      // Only a platform admin can change role, status, or assignments.
-      allow update: if (isOwner(staffId) &&
-                        // staffId is immutable for owner
-                        request.resource.data.staffId == resource.data.staffId &&
-                        // owner cannot change these fields
-                        !('role' in request.resource.data) &&
-                        !('status' in request.resource.data) &&
-                        !('assignedStoreIds' in request.resource.data))
-                     || isPlatformAdmin();
+
+      // Keep list tight (recommended). If you truly want less strict, change to: if isSignedIn();
+      allow list: if isPlatformAdmin();
+
+      // Create only your own staff doc and must set staffId correctly
+      allow create: if isOwner(staffId)
+        && request.resource.data.staffId == staffId;
+
+      // "Not too strict" but still prevents privilege escalation:
+      // - Owner can update only profile-ish fields
+      // - Platform admin can update anything
+      allow update: if isPlatformAdmin()
+        || (
+          isOwner(staffId)
+          && isUserActive() // if you want to allow inactive to update profile, remove this line
+          && changedKeysOnly(['name', 'address', 'contactNumber', 'email', 'updatedAt'])
+          // keep staffId immutable even if user includes it
+          && request.resource.data.staffId == resource.data.staffId
+        );
+
       allow delete: if isPlatformAdmin();
     }
-    
-    // Manager-only settings pages
-    match /stores/{storeId}/storePackages/{packageId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/storeRefills/{refillId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/storeFlavors/{flavorId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/menuSchedules/{scheduleId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/kitchenLocations/{locationId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/tables/{tableId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/storeCharges/{chargeId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/storeDiscounts/{discountId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/storeModesOfPayment/{mopId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    match /stores/{storeId}/receiptSettings/{settingsId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
-    
-    // General store subcollections (sessions, tickets, etc.)
-    match /stores/{storeId}/{allChildren=**} {
-      allow read, write: if hasStoreAccess(storeId);
+
+    // -------------------------------------------------
+    // Global Collections (master data)
+    // -------------------------------------------------
+    // Read: any active user
+    // Write: platformAdmin only
+    match /products/{productId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+    match /flavors/{flavorId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+    match /refills/{refillId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+    match /packages/{packageId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+    match /addons/{addonId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+    match /addonCategories/{categoryId} { allow read: if isUserActive(); allow write: if isPlatformAdmin(); }
+
+    // Chart of accounts / expense master list
+    match /expenseEntries/{expenseEntryId} {
+      allow get, list: if isUserActive();
+      allow create, update, delete: if isPlatformAdmin();
+    }
+
+    // -------------------------------------------------
+    // Stores (store docs themselves)
+    // -------------------------------------------------
+    match /stores/{storeId} {
+      // Store list can be readable to signed-in users (per your earlier requirement)
+      allow get, list: if isSignedIn();
+
+      // Only platform admin manages store docs
+      allow create, update, delete: if isPlatformAdmin();
+
+      // -- Store-Level Settings (Manager within assigned store, or platformAdmin) --
+      match /storePackages/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /storeRefills/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /storeFlavors/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /menuSchedules/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /kitchenLocations/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /tables/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /inventory/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /storeCharges/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /storeDiscounts/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /storeModesOfPayment/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+      match /receiptSettings/{docId} { allow read: if isStoreMember(storeId); allow write: if isStoreMember(storeId) && isManager(); }
+
+      match /counters/{docId} {
+        allow read: if isStoreMember(storeId);
+        // Allow cashier/manager/platformAdmin to increment counters
+        allow create, update: if isStoreMember(storeId) && isCashier();
+        allow delete: if isPlatformAdmin();
+      }
+
+      match /receipts/{receiptId} {
+        allow read: if isStoreMember(storeId);
+        allow create: if isStoreMember(storeId) && isCashier();
+        allow update: if isStoreMember(storeId) && (isCashier() || isManager());
+        allow delete: if isPlatformAdmin();
+      }
+
+      // --- Analytics (Daily) ---
+      match /analytics/{dayId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
+        match /{subcol}/{docId} {
+          allow read: if isStoreMember(storeId);
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
+        }
+      }
+
+      // --- Analytics (Monthly) ---
+      match /analyticsMonths/{monthId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
+        match /{subcol}/{docId} {
+          allow read: if isStoreMember(storeId);
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
+        }
+      }
+
+      // --- Analytics (Yearly) ---
+      match /analyticsYears/{yearId} {
+        allow read: if isStoreMember(storeId);
+        allow write: if isStoreMember(storeId) && isCashier() && isAllowedAnalyticsWrite();
+
+        match /{subcol}/{docId} {
+          allow read: if isStoreMember(storeId);
+          allow write: if isStoreMember(storeId) && isCashier() && isSafeSubcol(subcol);
+        }
+      }
+
+      // -- Operational Data --
+      match /sessions/{sessionId} {
+        allow read: if isStoreMember(storeId);
+        allow create: if isStoreMember(storeId) && (isServer() || isCashier());
+        allow update: if isStoreMember(storeId) && (isServer() || isCashier());
+        allow delete: if isPlatformAdmin();
+
+        match /activityLogs/{logId} {
+          allow read, list: if isStoreMember(storeId) && isCashier();
+          allow create: if isStoreMember(storeId) && isCashier();
+          allow update: if false;
+          allow delete: if isPlatformAdmin();
+        }
+
+        match /kitchentickets/{ticketId} {
+          allow read: if isStoreMember(storeId);
+          allow create: if isStoreMember(storeId) && isServer();
+
+          allow update: if isStoreMember(storeId) && (
+            // Kitchen role can ONLY update status fields
+            (isKitchen() && changedKeysOnly([
+              'status', 'preparedAt', 'preparedByUid', 'servedAt', 'servedByUid',
+              'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt'
+            ])) ||
+            // Server/Cashier can cancel/void
+            ((isServer() || isCashier()) && changedKeysOnly([
+              'status', 'cancelledAt', 'cancelledByUid', 'cancelReason', 'updatedAt', 'billing'
+            ])) ||
+            // Manager/platformAdmin can do more
+            isManager()
+          );
+
+          allow delete: if isPlatformAdmin();
+        }
+
+        match /billableLines/{lineId} {
+          allow read: if isStoreMember(storeId);
+          allow create, update: if isStoreMember(storeId) && isCashier();
+          allow delete: if isPlatformAdmin();
+        }
+
+        match /sessionBillLines/{lineId} {
+          allow read: if isStoreMember(storeId);
+          allow create, update: if isStoreMember(storeId) && (isCashier() || isKitchen());
+          allow delete: if isPlatformAdmin();
+        }
+
+        match /payments/{paymentId} {
+          allow read: if isStoreMember(storeId) && (isCashier() || isManager());
+          allow create: if isStoreMember(storeId) && isCashier();
+          allow update: if isStoreMember(storeId) && isManager();
+          allow delete: if isPlatformAdmin();
+        }
+
+        match /packageUnits/{guestId} {
+          allow read: if isStoreMember(storeId);
+          allow create, update: if isStoreMember(storeId) && isCashier();
+          allow delete: if isPlatformAdmin();
+        }
+      }
     }
   }
 }

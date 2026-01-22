@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -52,7 +52,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
 
       let userProfiles: Record<string, string> = {};
       if (userIds.size > 0) {
-        const usersQuery = query(collection(db, "users"), where("uid", "in", Array.from(userIds)));
+        const usersQuery = query(collection(db, "staff"), where(documentId(), "in", Array.from(userIds)));
         const userSnap = await getDocs(usersQuery);
         userSnap.forEach(doc => userProfiles[doc.id] = doc.data().name || "Unknown");
       }
