@@ -1,19 +1,15 @@
-
 "use client";
 
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth, db } from "@/lib/firebase/client";
+import { auth } from "@/lib/firebase/client";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
-import { AppUser } from "@/context/auth-context";
-import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { BrandLoader } from "@/components/ui/BrandLoader";
 
 export default function LoginPage() {
@@ -23,28 +19,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
-  const [firstName, setFirstName] = useState("there");
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      const userDocRef = doc(db, "staff", userCredential.user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        const appUser = { uid: userCredential.user.uid, ...userDoc.data() } as AppUser;
-        const name = appUser.name || appUser.displayName;
-        if (name) {
-          setFirstName(name.split(" ")[0]);
-        }
-      }
+      await signInWithEmailAndPassword(auth, email, password);
       setIsRedirecting(true);
-      // The redirect is handled by the FirstLoginGuard, this just updates the UI.
-
+      // The redirect is handled by the AuthContextProvider and FirstLoginGuard.
+      // This component's only job is to perform the sign-in.
     } catch (err: any) {
       const rawError = err?.message ?? "Login failed";
       const cleanedError = rawError.replace("Firebase: ", "");
