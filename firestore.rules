@@ -18,11 +18,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
     
-    // Check for the platformAdmin custom claim. This is the global override.
-    function isPlatformAdmin() {
-      return isSignedIn() && request.auth.token.platformAdmin == true;
-    }
-
     function staffDocPath() {
       return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
@@ -30,6 +25,13 @@ service cloud.firestore {
     function staffData() {
       // Note: Always check exists() before calling get().
       return get(staffDocPath()).data;
+    }
+
+    function isPlatformAdmin() {
+      let p = staffDocPath();
+      return isSignedIn()
+        && exists(p)
+        && get(p).data.role == 'admin';
     }
 
     function isActiveStaff() {
@@ -45,7 +47,8 @@ service cloud.firestore {
     // These check the user's single, global role from their /staff document.
     
     function isManager() {
-      return isPlatformAdmin() || isRole('manager');
+      // isPlatformAdmin implicitly has manager rights via hasStoreAccess/isStoreManager
+      return isRole('manager');
     }
     
     function isCashier() {
@@ -63,25 +66,30 @@ service cloud.firestore {
     // --- Access Control Helpers ---
 
     function hasStoreAccess(storeId) {
+      // Platform admins have access to everything. Otherwise, check staff doc.
       return isPlatformAdmin() || (isActiveStaff() && storeId in staffData().assignedStoreIds);
     }
     
     function isStoreManager(storeId) {
-      // Checks if the user has access to the store AND has a manager-level role.
-      return hasStoreAccess(storeId) && isManager();
+      // Checks if the user can access the store AND has a manager-level role.
+      // This correctly uses the global role from /staff but applies it on a per-store basis.
+      return isPlatformAdmin() || (hasStoreAccess(storeId) && isManager());
     }
     
     // --- Data Validation Helpers ---
     
     function isCreatingOwnValidStaffDoc(staffId) {
-        return isOwner(staffId)
-            && request.resource.data.staffId == staffId;
+      // On create, user must be creating their own doc, and staffId must match uid.
+      return isOwner(staffId)
+          && request.resource.data.staffId == staffId;
     }
 
     // Ensures a user updating their own profile does not change protected fields.
     function isUpdatingOwnProfile(staffId) {
       return isOwner(staffId)
+        // staffId is immutable for non-admins
         && request.resource.data.staffId == resource.data.staffId
+        // these fields are protected from self-update
         && request.resource.data.role == resource.data.role
         && request.resource.data.status == resource.data.status
         && request.resource.data.assignedStoreIds == resource.data.assignedStoreIds;
@@ -97,7 +105,7 @@ service cloud.firestore {
 
     match /staff/{staffId} {
       allow get: if isOwner(staffId) || isPlatformAdmin();
-      allow list: if isPlatformAdmin();
+      allow list: if isPlatformAdmin() || isSignedIn(); // Allow any signed-in user to list for user management UI
       allow create: if isCreatingOwnValidStaffDoc(staffId);
       allow update: if isPlatformAdmin() || isUpdatingOwnProfile(staffId);
       allow delete: if isPlatformAdmin();

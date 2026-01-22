@@ -50,41 +50,36 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
       const unsubUser = onSnapshot(
         staffDocRef,
-        async (snap) => {
-          let isPlatformAdmin = false;
-          try {
-            const tokenResult = await getIdTokenResult(u);
-            isPlatformAdmin = tokenResult.claims.platformAdmin === true;
-          } catch (error) {
-            console.error("Error getting custom claims:", error);
-          }
-
+        (snap) => {
           if (snap.exists()) {
             const data = snap.data();
             
+            // Set isPlatformAdmin based on the role in the database document.
+            const isPlatformAdmin = data.role === 'admin';
+
             const baseAppUser: AppUser = {
               uid: u.uid,
               email: u.email,
               displayName: u.displayName || data.name,
               photoURL: u.photoURL || data.photoURL,
               ...data,
-              isPlatformAdmin, // Add the claim result to the user object
+              isPlatformAdmin, // Add the flag based on DB role
             };
             
             setAppUser(baseAppUser);
-            setLoading(false);
             
           } else {
+            // No staff doc exists, so definitely not an admin.
             setAppUser({ 
               uid: u.uid, 
               email: u.email, 
               displayName: u.displayName, 
               photoURL: u.photoURL, 
               status: "needs_profile",
-              isPlatformAdmin,
+              isPlatformAdmin: false, // Set to false
             });
-            setLoading(false);
           }
+          setLoading(false);
         },
         (error) => {
           console.error("AuthContext: Error listening to staff document:", error);
