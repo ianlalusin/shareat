@@ -26,6 +26,7 @@ import type {
   Adjustment,
   ReceiptAnalyticsV2,
   Receipt,
+  KitchenTicket,
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
@@ -34,6 +35,8 @@ import { writeActivityLog } from './activity-log';
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
+import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
+import { toJsDate } from '@/lib/utils/date';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -226,6 +229,12 @@ export async function completePaymentFromUnits(
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
 
+  // Read active tickets OUTSIDE the transaction
+  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ["preparing", "ready"]));
+  const activeTicketsSnap = await getDocs(activeTicketsQuery);
+  const activeTicketRefs = activeTicketsSnap.docs.map(doc => doc.ref);
+
   await runTransaction(db, async (tx) => {
     // --- 1. READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
@@ -276,9 +285,37 @@ export async function completePaymentFromUnits(
     }
 
     const actor = getActorStamp(user);
+    const serverTs = serverTimestamp();
 
-    // --- 2. WRITE PHASE ---
+    // --- 2. UPDATE ACTIVE KITCHEN TICKETS ---
+    for (const ticketRef of activeTicketRefs) {
+        const ticketSnap = await tx.get(ticketRef);
+        if (!ticketSnap.exists()) continue;
 
+        const oldTicketState = ticketSnap.data() as KitchenTicket;
+        if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
+            continue; // Already finalized
+        }
+        
+        const startMs = oldTicketState.createdAtClientMs || toJsDate(oldTicketState.createdAt)?.getTime();
+        const durationMs = startMs ? Math.max(0, now - startMs) : 0;
+        
+        const updatePayload: any = {
+            status: 'served',
+            servedAt: serverTs,
+            servedAtClientMs: now,
+            servedByUid: actor.uid,
+            durationMs: durationMs,
+        };
+
+        const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
+        
+        await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
+        
+        tx.update(ticketRef, updatePayload);
+    }
+
+    // --- 3. WRITE PHASE (existing logic) ---
     // write payments subcollection
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, 'payments');
     payments.forEach((payment) => {
@@ -288,7 +325,7 @@ export async function completePaymentFromUnits(
         id: paymentRef.id,
         createdByUid: actor.uid,
         createdByUsername: actor.username,
-        createdAt: serverTimestamp(),
+        createdAt: serverTs,
       });
     });
 
@@ -298,9 +335,9 @@ export async function completePaymentFromUnits(
       isPaid: true,
       closedByUid: actor.uid,
       closedByUsername: actor.username,
-      closedAt: serverTimestamp(),
+      closedAt: serverTs,
       closedAtClientMs: now,
-      updatedAt: serverTimestamp(),
+      updatedAt: serverTs,
     });
 
     // receipt numbering
@@ -311,7 +348,7 @@ export async function completePaymentFromUnits(
     const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
     const nextSeq = currentSeq + 1;
 
-    tx.set(counterRef, { seq: nextSeq, updatedAt: serverTimestamp() }, { merge: true });
+    tx.set(counterRef, { seq: nextSeq, updatedAt: serverTs }, { merge: true });
 
     const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
@@ -489,9 +526,9 @@ export async function completePaymentFromUnits(
     finalReceipt = {
       ...receiptPayload,
       analytics: analyticsV2,
-      createdAt: serverTimestamp(),
+      createdAt: serverTs,
       analyticsApplied: true,
-      analyticsAppliedAt: serverTimestamp(),
+      analyticsAppliedAt: serverTs,
       analyticsApplyId: applyId,
     } as Receipt;
 
@@ -509,7 +546,7 @@ export async function completePaymentFromUnits(
         tx.update(tableRef, {
           status: 'available',
           currentSessionId: null,
-          updatedAt: serverTimestamp(),
+          updatedAt: serverTs,
         });
       }
     }
@@ -621,3 +658,5 @@ export async function updateSessionBillLine(
 
   await updateDoc(lineRef, updatePayload);
 }
+
+    
