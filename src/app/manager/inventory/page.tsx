@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, MoreHorizontal, Package } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -25,6 +25,8 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Label } from "@/components/ui/label";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import Image from "next/image";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -400,11 +402,12 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
                     <TableRow>
+                        <TableHead>Image</TableHead>
                         <TableHead>Product</TableHead>
                         <TableHead>Cost</TableHead>
                         <TableHead>Selling Price</TableHead>
@@ -416,6 +419,15 @@ export default function InventoryManagementPage() {
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.id}>
+                        <TableCell>
+                            <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                {item.imageUrl ? (
+                                    <Image src={item.imageUrl} alt={getDisplayName(item)} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                ) : (
+                                    <Package className="h-6 w-6 text-muted-foreground"/>
+                                )}
+                            </div>
+                        </TableCell>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
                         <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
@@ -432,25 +444,38 @@ export default function InventoryManagementPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right py-1">
-                            {showArchived ? (
-                                <Button variant="outline" size="sm" onClick={() => handleRestoreItem(item)} disabled={!appUser?.isPlatformAdmin}>
-                                    <RefreshCw className="mr-2" /> Restore
-                                </Button>
-                            ) : (
-                                <>
-                                    <Button variant="outline" size="sm" onClick={() => { setSelectedItem(item); setIsEditOpen(true); }} className="mr-2">
-                                        <Pencil />
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
+                                        <MoreHorizontal className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleToggle(item, 'isActive')}>
-                                        {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
-                                    </Button>
-                                    {appUser?.isPlatformAdmin && (
-                                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteItem(item)}>
-                                            <Archive />
-                                        </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                    {showArchived ? (
+                                        <DropdownMenuItem onClick={() => handleRestoreItem(item)} disabled={!appUser?.isPlatformAdmin}>
+                                            <RefreshCw className="mr-2 h-4 w-4" /> Restore
+                                        </DropdownMenuItem>
+                                    ) : (
+                                        <>
+                                            <DropdownMenuItem onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}>
+                                                <Pencil className="mr-2 h-4 w-4" /> Edit
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleToggle(item, 'isActive')}>
+                                                {item.isActive ? <PowerOff className="mr-2 h-4 w-4 text-destructive" /> : <Power className="mr-2 h-4 w-4" />}
+                                                {item.isActive ? 'Deactivate' : 'Activate'}
+                                            </DropdownMenuItem>
+                                            {appUser?.isPlatformAdmin && (
+                                                <>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeleteItem(item)}>
+                                                        <Archive className="mr-2 h-4 w-4" /> Archive
+                                                    </DropdownMenuItem>
+                                                </>
+                                            )}
+                                        </>
                                     )}
-                                </>
-                            )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -460,7 +485,7 @@ export default function InventoryManagementPage() {
               {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       No results found for "{debouncedSearchTerm}".
                     </TableCell>
                   </TableRow>
@@ -498,3 +523,5 @@ export default function InventoryManagementPage() {
     </RoleGuard>
   );
 }
+
+    
