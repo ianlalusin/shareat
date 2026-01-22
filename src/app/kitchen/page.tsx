@@ -22,6 +22,7 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
+import { cn } from "@/lib/utils";
 
 export type KitchenStation = {
     id: string;
@@ -63,8 +64,22 @@ function getStartMs(input: any): number | null {
   return null;
 }
 
+function formatDuration(ms: number): string {
+    if (isNaN(ms) || ms < 0) return "00:00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    const paddedHours = hours.toString().padStart(2, '0');
+    const paddedMinutes = minutes.toString().padStart(2, '0');
+    const paddedSeconds = seconds.toString().padStart(2, '0');
+
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+}
+
 export default function KitchenPage() {
-  const { appUser } = useAuthContext();
+  const { appUser, isSigningOut } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -145,13 +160,36 @@ export default function KitchenPage() {
         }
         setIsLoading(false);
     }, (error) => {
+        if (isSigningOut || !appUser) return;
         console.error("Error fetching kitchen tickets:", error);
         toast({ variant: "destructive", title: "Error", description: "Could not fetch kitchen tickets." });
         setIsLoading(false);
     }));
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [activeStore, toast, activeTab]);
+  }, [activeStore, toast, activeTab, isSigningOut, appUser]);
+
+  const avgServingTime = useMemo(() => {
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const servedToday = tickets.filter((t) => {
+        if (t.status !== 'served' || typeof t.durationMs !== 'number' || t.durationMs <= 0) {
+            return false;
+        }
+        const servedAtDate = toJsDate(t.servedAt);
+        return servedAtDate && servedAtDate >= startOfToday;
+    });
+
+    if (servedToday.length === 0) {
+      return { avgMs: 0, count: 0 };
+    }
+
+    const totalDuration = servedToday.reduce((sum, t) => sum + (t.durationMs || 0), 0);
+    const avgMs = totalDuration / servedToday.length;
+
+    return { avgMs, count: servedToday.length };
+  }, [tickets]);
 
   const ticketsWithData = useMemo(() => {
     return tickets.map(ticket => {
@@ -287,7 +325,20 @@ export default function KitchenPage() {
 
   return (
     <RoleGuard allow={["admin", "manager", "kitchen"]}>
-      <PageHeader title="Kitchen Display System" description="Monitor and manage all active food and beverage orders." />
+      <PageHeader 
+        title="Kitchen Display System" 
+        description="Monitor and manage all active food and beverage orders."
+      >
+        <div className="text-right">
+            <p className="text-sm font-medium text-muted-foreground">Today's Avg Serving Time</p>
+            <p className={cn(
+                "text-2xl font-bold font-mono",
+                avgServingTime.avgMs > 0 && avgServingTime.avgMs <= 300000 ? "text-green-600" : "text-destructive"
+            )}>
+                {formatDuration(avgServingTime.avgMs)}
+            </p>
+        </div>
+      </PageHeader>
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
             <div className="lg:col-span-3">
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
