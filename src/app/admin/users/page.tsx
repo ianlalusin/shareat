@@ -272,7 +272,7 @@ export default function UserManagementPage() {
 
     return (
         <RoleGuard allow={["admin"]}>
-            <PageHeader title="User Management" description="Manage roles, permissions, and verify new user accounts." />
+            <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts." />
              <div className="grid gap-6">
                 <Card>
                     <CardHeader>

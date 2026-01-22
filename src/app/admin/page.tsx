@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -11,7 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import dynamic from 'next/dynamic';
 
 const adminTools = [
-    { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
+    { title: "Staff Management", description: "Manage staff roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
     { title: "Store Management", description: "Create, edit, or deactivate store locations.", href: "/admin/stores", icon: Store },
 ]
 
