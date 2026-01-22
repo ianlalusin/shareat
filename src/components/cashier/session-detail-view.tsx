@@ -302,7 +302,18 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         isLocked={isBillingLocked} 
                     />
                 </div>
-                <BillAdjustments charges={charges} discounts={billableDiscounts} onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])} onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])} onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))} onSetBillDiscount={setBillDiscount} billDiscount={billDiscount} adjustments={customAdjustments || []} isLocked={isBillingLocked} />
+                <BillAdjustments
+                    appUser={appUser}
+                    charges={charges} 
+                    discounts={billableDiscounts} 
+                    onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])} 
+                    onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])} 
+                    onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))} 
+                    onSetBillDiscount={setBillDiscount} 
+                    billDiscount={billDiscount} 
+                    adjustments={customAdjustments || []} 
+                    isLocked={isBillingLocked} 
+                />
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 

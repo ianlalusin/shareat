@@ -1,7 +1,8 @@
 
+
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,10 @@ import { Check, Percent, Tag, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "../ui/separator";
 import type { Discount, Charge, Adjustment } from "@/lib/types";
+import { type AppUser } from "@/context/auth-context";
 
 interface BillAdjustmentsProps {
+  appUser: AppUser | null;
   adjustments: Adjustment[];
   billDiscount: Discount | null;
   charges: Charge[];
@@ -98,6 +101,7 @@ function normalizeDiscountType(t: any): "fixed" | "percent" {
 
 
 export function BillAdjustments({
+  appUser,
   adjustments,
   billDiscount,
   charges,
@@ -207,11 +211,20 @@ export function BillAdjustments({
         setShowCustomCharge(false);
     }
   };
+  
+  const canSeeDiscountButton = useMemo(() => {
+    if (!appUser) return false;
+    if (appUser.isPlatformAdmin) return true;
+    if (appUser.role === 'manager') return true;
+    return false;
+  }, [appUser]);
 
   return (
     <div className="p-3 border-t bg-background space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-            <Button variant={mode === 'discount' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('discount')}>Bill Discount</Button>
+        <div className={cn("grid gap-2", canSeeDiscountButton ? "grid-cols-2" : "grid-cols-1")}>
+            {canSeeDiscountButton && (
+                <Button variant={mode === 'discount' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('discount')}>Bill Discount</Button>
+            )}
             <Button variant={mode === 'charge' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('charge')}>Add Charge</Button>
         </div>
         
