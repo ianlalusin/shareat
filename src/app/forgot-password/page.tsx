@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => router.push("/")} className="w-full">
+            <Button onClick={() => router.push("/login")} className="w-full">
               Back to Login
             </Button>
           </CardContent>
@@ -95,7 +95,7 @@ export default function ForgotPasswordPage() {
           </form>
           <div className="mt-4 text-center text-sm">
             Remember your password?{" "}
-            <Link href="/" className="underline">
+            <Link href="/login" className="underline">
               Login
             </Link>
           </div>

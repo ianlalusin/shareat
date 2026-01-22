@@ -22,7 +22,7 @@ export default function SupportPage() {
               For technical issues, please email our support team at <a href="mailto:support@shareathub.com" className="text-primary underline">support@shareathub.com</a>.
             </p>
             <Button asChild className="w-full">
-                <Link href="/">Back to Login</Link>
+                <Link href="/login">Back to Login</Link>
             </Button>
           </div>
         </CardContent>

@@ -13,7 +13,7 @@ export default function PendingPage() {
 
   async function handleLogout() {
     await signOut(auth);
-    router.replace("/");
+    router.replace("/login");
   }
 
   return (

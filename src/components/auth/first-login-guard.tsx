@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthContext } from "@/context/auth-context";
 import { BrandLoader } from "@/components/ui/BrandLoader";
@@ -24,7 +24,7 @@ function roleHome(role?: string) {
   }
 }
 
-const PUBLIC = ["/", "/signup", "/forgot-password", "/support"];
+const PUBLIC = ["/login", "/signup", "/forgot-password", "/support"];
 const PENDING_ALLOWED = ["/pending", "/support"];
 const NEEDS_PROFILE_ALLOWED = ["/signup", "/support"];
 
@@ -49,11 +49,11 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
 
   // Case 1: No user logged in
   if (!user) {
-    if (PUBLIC.includes(pathname)) {
-      return <>{children}</>; // Allow access to public pages
+    if (PUBLIC.includes(pathname) || pathname === '/') {
+      return <>{children}</>; // Allow access to public pages & the root redirector
     }
     // Not a public page, redirect to login
-    router.replace("/");
+    router.replace("/login");
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <BrandLoader />
@@ -63,7 +63,7 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
 
   // From here, `user` is guaranteed to exist. Now check `appUser` status.
   
-  // Case 2: User exists, but appUser profile is still loading (should be covered by main `loading` but as a safeguard)
+  // Case 2: User exists, but appUser profile is still loading
   if (!appUser) {
      return (
        <div className="min-h-screen flex items-center justify-center bg-background">
@@ -99,8 +99,8 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   }
   
   // Case 5: User is active and authenticated.
-  // If they are trying to access a public/pending page, redirect them to their home page.
-  if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname) || NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+  // If they are on a public, pending, or root page, redirect them to their home page.
+  if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname) || NEEDS_PROFILE_ALLOWED.includes(pathname) || pathname === '/') {
       router.replace(roleHome(appUser.role));
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
