@@ -45,7 +45,7 @@ service cloud.firestore {
     // These check the user's single, global role from their /staff document.
     
     function isManager() {
-      return isPlatformAdmin() || isRole('admin') || isRole('manager');
+      return isPlatformAdmin() || isRole('manager');
     }
     
     function isCashier() {
