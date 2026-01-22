@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -8,22 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { User, Users, Check, Clock, PlusCircle, History, Minus, Plus } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { QuantityInput } from "../cashier/quantity-input";
 import { toJsDate } from "@/lib/utils/date";
 import type { PendingSession } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-
-interface PendingTablesProps {
-    sessions: PendingSession[];
-    onVerify: (session: PendingSession, serverCount: number) => void;
-    onRequestChange: (session: PendingSession) => void;
-    onViewTimeline: (sessionId: string) => void;
-    onAddRefill: (session: PendingSession) => void;
-    onAddAddon: (session: PendingSession) => void;
-}
-
-const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
+export const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
     const [elapsed, setElapsed] = useState("...");
     const jsDate = startTimeMs ? new Date(startTimeMs) : toJsDate(startTime);
 
@@ -66,8 +55,7 @@ const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: 
     );
 };
 
-
-function SessionCard({ session, onVerify, onRequestChange, onViewTimeline, onAddRefill, onAddAddon, guestCounts, handleCountChange }: {
+export function SessionCard({ session, onVerify, onRequestChange, onViewTimeline, onAddRefill, onAddAddon, guestCounts, handleCountChange }: {
     session: PendingSession;
     onVerify: (session: PendingSession, serverCount: number) => void;
     onRequestChange: (session: PendingSession) => void;
@@ -170,112 +158,4 @@ function SessionCard({ session, onVerify, onRequestChange, onViewTimeline, onAdd
             </CardFooter>
           </Card>
     )
-}
-
-export function PendingTables({ sessions, onVerify, onRequestChange, onViewTimeline, onAddRefill, onAddAddon }: PendingTablesProps) {
-  const [guestCounts, setGuestCounts] = useState<Record<string, number | string>>({});
-
-  const pendingVerificationSessions = sessions.filter(s => s.status === 'pending_verification');
-  const activeSessions = sessions.filter(s => s.status === 'active');
-
-  // Effect to initialize counts when sessions load or change
-  useEffect(() => {
-    const initialCounts: Record<string, number | string> = {};
-    sessions.forEach(session => {
-        // Only initialize if not already set by the user
-        const cashierCount = Number(session.guestCountCashierInitial ?? 0);
-        if (session.status === 'pending_verification' && guestCounts[session.id] === undefined) {
-            initialCounts[session.id] = cashierCount;
-        }
-    });
-    // Merge initial counts without overwriting existing (edited) counts
-    if (Object.keys(initialCounts).length > 0) {
-        setGuestCounts(prev => ({...initialCounts, ...prev}));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions]);
-
-
-  const handleCountChange = (sessionId: string, value: string | number) => {
-    setGuestCounts(prev => ({
-      ...prev,
-      [sessionId]: value
-    }));
-  };
-  
-  return (
-    <div className="space-y-4">
-       {pendingVerificationSessions.length > 0 ? (
-        <Accordion type="single" collapsible defaultValue="pending" className="w-full">
-            <AccordionItem value="pending">
-                 <Card>
-                    <CardHeader className="p-0">
-                         <AccordionTrigger className="flex items-center gap-4 p-6">
-                            <div className="text-left">
-                                <CardTitle>Pending Verification</CardTitle>
-                                <CardDescription>Sessions waiting for server confirmation.</CardDescription>
-                            </div>
-                            <Badge variant="destructive">{pendingVerificationSessions.length}</Badge>
-                         </AccordionTrigger>
-                    </CardHeader>
-                    <AccordionContent>
-                        <CardContent className="grid sm:grid-cols-2 gap-4 pt-4">
-                            {pendingVerificationSessions.map(session => (
-                                <SessionCard
-                                    key={session.id}
-                                    session={session}
-                                    onVerify={onVerify}
-                                    onRequestChange={onRequestChange}
-                                    onViewTimeline={onViewTimeline}
-                                    onAddRefill={onAddRefill}
-                                    onAddAddon={onAddAddon}
-                                    guestCounts={guestCounts}
-                                    handleCountChange={handleCountChange}
-                                />
-                            ))}
-                        </CardContent>
-                    </AccordionContent>
-                 </Card>
-            </AccordionItem>
-        </Accordion>
-       ) : (
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between p-6">
-                    <div className="text-left">
-                        <CardTitle>Pending Verification</CardTitle>
-                        <CardDescription>Sessions waiting for server confirmation.</CardDescription>
-                    </div>
-                    <Badge variant="secondary">0</Badge>
-                </CardHeader>
-            </Card>
-       )}
-
-
-        <Card>
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <CardTitle>Active Sessions</CardTitle>
-                    <Badge variant="secondary">{activeSessions.length}</Badge>
-                </div>
-                <CardDescription>Verified sessions that are currently ongoing.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid sm:grid-cols-2 gap-4">
-                {activeSessions.length === 0 ? <p className="text-muted-foreground text-center py-4 sm:col-span-2">No active sessions.</p> : null}
-                {activeSessions.map(session => (
-                     <SessionCard
-                        key={session.id}
-                        session={session}
-                        onVerify={onVerify}
-                        onRequestChange={onRequestChange}
-                        onViewTimeline={onViewTimeline}
-                        onAddRefill={onAddRefill}
-                        onAddAddon={onAddAddon}
-                        guestCounts={guestCounts}
-                        handleCountChange={handleCountChange}
-                    />
-                ))}
-            </CardContent>
-        </Card>
-    </div>
-  );
 }

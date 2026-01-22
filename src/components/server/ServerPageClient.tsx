@@ -4,7 +4,6 @@
 import { useState, useEffect } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
-import { PendingTables } from "@/components/server/pending-tables";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
@@ -17,6 +16,8 @@ import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { toJsDate } from "@/lib/utils/date";
+import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
+import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
 
 type GCC = PendingSession["guestCountChange"];
 
@@ -176,22 +177,29 @@ export function ServerPageClient() {
       )
   }
 
+  const sharedProps = {
+      onVerify: handleVerify,
+      onRequestChange: handleOpenRequestDialog,
+      onViewTimeline: (sid: string) => setTimelineSessionId(sid),
+      onAddRefill: handleOpenRefillDialog,
+      onAddAddon: handleOpenAddonDialog,
+  };
+
   return (
     <RoleGuard allow={["admin", "manager", "server"]}>
       <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2">
-            <PendingTables
-                sessions={[...pendingSessions, ...activeSessions]}
-                onVerify={handleVerify}
-                onRequestChange={handleOpenRequestDialog}
-                onViewTimeline={(sid) => setTimelineSessionId(sid)}
-                onAddRefill={handleOpenRefillDialog}
-                onAddAddon={handleOpenAddonDialog}
+            <ActiveSessionsGrid
+                sessions={activeSessions}
+                {...sharedProps}
             />
         </div>
         <div className="lg:col-span-1 space-y-6">
-           {/* Placeholder for other components if needed */}
+           <PendingVerificationCard 
+                sessions={pendingSessions}
+                {...sharedProps}
+           />
         </div>
       </div>
        {timelineSessionId && activeStore && (
