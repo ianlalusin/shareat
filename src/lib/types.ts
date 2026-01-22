@@ -58,6 +58,7 @@ export type InventoryItem = {
   subCategory?: string;
   uom: string;
   barcode?: string | null;
+  imageUrl?: string | null;
   cost: number;
   sellingPrice: number;
   taxId?: string;
@@ -383,7 +384,6 @@ export type DailyMetric = {
         packageSalesAmountByName: Record<string, number>;
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
-        addonSalesQtyByCategory?: Record<string, number>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
     };

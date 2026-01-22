@@ -140,6 +140,8 @@ export default function InventoryManagementPage() {
         category: product.category || "",
         subCategory: product.subCategory || "",
         uom: normalizeUom(product.uom),
+        barcode: product.barcode || null,
+        imageUrl: product.imageUrl || null,
         cost: 0,
         sellingPrice: 0,
         isActive: true,
