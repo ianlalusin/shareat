@@ -52,7 +52,7 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     document.body.style.pointerEvents = "auto";
     document.documentElement.style.pointerEvents = "auto";
   }, [pathname]);
-
+  
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     if (loading) {
@@ -63,41 +63,6 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     };
   }, [loading]);
 
-  useEffect(() => {
-    if (loading) return;
-
-    if (!user) {
-      if (!PUBLIC.includes(pathname)) {
-        router.replace("/");
-      }
-      return;
-    }
-
-    if (!appUser) {
-      // Still waiting for appUser, do nothing yet
-      return;
-    }
-
-    if (appUser.status === "needs_profile") {
-      if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) {
-        router.replace("/signup");
-      }
-      return;
-    }
-
-    if (appUser.status !== "active") {
-      if (!PENDING_ALLOWED.includes(pathname)) {
-        router.replace("/pending");
-      }
-      return;
-    }
-    
-    // User is active and fully authenticated
-    if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname)) {
-      router.replace(roleHome(appUser.role));
-    }
-  }, [loading, user, appUser, pathname, router]);
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -105,39 +70,48 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
-  // Determine if the current page is the correct one, if not, show loader while redirecting
-  let shouldRenderChildren = false;
 
+  // Case 1: No user logged in
   if (!user) {
     if (PUBLIC.includes(pathname)) {
-      shouldRenderChildren = true;
-    }
-  } else if (appUser) {
-    if (appUser.status === "needs_profile") {
-      if (NEEDS_PROFILE_ALLOWED.includes(pathname)) {
-        shouldRenderChildren = true;
-      }
-    } else if (appUser.status !== 'active') {
-       if (PENDING_ALLOWED.includes(pathname)) {
-        shouldRenderChildren = true;
-      }
-    } else { // Active user
-        if (!PUBLIC.includes(pathname) && !PENDING_ALLOWED.includes(pathname)) {
-            shouldRenderChildren = true;
-        }
+      return <>{children}</>; // Allow access to public pages
+    } else {
+      router.replace("/"); // Redirect other routes to login
+      return <div className="min-h-screen flex items-center justify-center bg-background"><BrandLoader /></div>;
     }
   }
 
-
-  if (shouldRenderChildren) {
-    return <>{children}</>;
+  // Case 2: User logged in, but appUser profile is still loading
+  if (!appUser) {
+     return <div className="min-h-screen flex items-center justify-center bg-background"><BrandLoader /></div>;
+  }
+  
+  // Case 3: User needs to create their profile
+  if (appUser.status === "needs_profile") {
+    if (NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+      return <>{children}</>;
+    } else {
+      router.replace("/signup");
+      return <div className="min-h-screen flex items-center justify-center bg-background"><BrandLoader /></div>;
+    }
+  }
+  
+  // Case 4: User is pending approval or disabled
+  if (appUser.status !== "active") {
+    if (PENDING_ALLOWED.includes(pathname)) {
+      return <>{children}</>;
+    } else {
+      router.replace("/pending");
+      return <div className="min-h-screen flex items-center justify-center bg-background"><BrandLoader /></div>;
+    }
+  }
+  
+  // Case 5: User is active and authenticated
+  if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname) || NEEDS_PROFILE_ALLOWED.includes(pathname)) {
+      router.replace(roleHome(appUser.role));
+      return <div className="min-h-screen flex items-center justify-center bg-background"><BrandLoader /></div>;
   }
 
-  // Fallback to loader while redirect effect runs
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <BrandLoader />
-    </div>
-  );
+  // If we get here, user is authenticated, active, and on a protected page.
+  return <>{children}</>;
 }
