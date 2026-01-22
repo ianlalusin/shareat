@@ -5,6 +5,7 @@ import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Providers } from './providers';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 
 // Define fonts
 const fontSans = Poppins({
@@ -78,9 +79,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={cn(fontSans.variable, fontSerif.variable)}>
       <body>
         <Providers>
-          <AppLayout>
-            {children}
-          </AppLayout>
+          <FirstLoginGuard>
+            <AppLayout>
+              {children}
+            </AppLayout>
+          </FirstLoginGuard>
         </Providers>
         <Toaster />
       </body>

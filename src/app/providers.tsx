@@ -2,7 +2,6 @@
 "use client";
 
 import { AuthContextProvider } from '@/context/auth-context';
-import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { StoreContextProvider } from '@/context/store-context';
 import dynamic from 'next/dynamic';
 import { BrandLoader } from '@/components/ui/BrandLoader';
@@ -25,9 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <NoSsrFirebaseProvider>
             <AuthContextProvider>
                 <StoreContextProvider>
-                    <FirstLoginGuard>
-                        {children}
-                    </FirstLoginGuard>
+                    {children}
                 </StoreContextProvider>
             </AuthContextProvider>
         </NoSsrFirebaseProvider>
