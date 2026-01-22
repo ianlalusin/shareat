@@ -415,8 +415,7 @@
         "address": { "type": "string" },
         "contactNumber": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "active", "disabled", "needs_profile"] },
-        "assignedStoreIds": { "type": "array", "items": { "type": "string" } },
-        "storeId": { "type": "string", "description": "The user's currently active store." }
+        "assignedStoreIds": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["staffId", "email", "status"]
     },

@@ -61,7 +61,6 @@ export function MigrateUsersToStaff() {
           role: userData.role || 'server',
           staffId: userId, // Ensure staffId is the user's UID
           status: userData.status || 'pending',
-          storeId: userData.storeId || null,
           updatedAt: userData.updatedAt || serverTimestamp(),
           photoURL: userData.photoURL || null,
         };
