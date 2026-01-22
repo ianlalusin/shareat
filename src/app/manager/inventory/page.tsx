@@ -11,7 +11,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Trash2, Search } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -23,6 +23,7 @@ import { getDisplayName } from "@/lib/products/variants";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
+import { Label } from "@/components/ui/label";
 
 export default function InventoryManagementPage() {
   const { appUser } = useAuthContext();
@@ -42,6 +43,7 @@ export default function InventoryManagementPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     if (!activeStore) {
@@ -52,7 +54,10 @@ export default function InventoryManagementPage() {
     setIsLoading(true);
     
     const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
-    const q = query(inventoryRef, where("isArchived", "!=", true));
+    const q = showArchived
+      ? query(inventoryRef, where("isArchived", "==", true))
+      : query(inventoryRef, where("isArchived", "!=", true));
+
     const unsubInv = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(items);
@@ -74,7 +79,7 @@ export default function InventoryManagementPage() {
         unsubInv();
         unsubKitchen();
     };
-  }, [activeStore, toast]);
+  }, [activeStore, toast, showArchived]);
 
   const filteredInventory = useMemo(() => {
     if (!debouncedSearchTerm) {
@@ -238,6 +243,30 @@ export default function InventoryManagementPage() {
         toast({ variant: "destructive", title: "Archive Failed", description: error.message });
     }
   };
+  
+  const handleRestoreItem = async (item: InventoryItem) => {
+    if (!activeStore || !appUser?.isPlatformAdmin) {
+        toast({ variant: "destructive", title: "Permission Denied", description: "Only admins can restore items." });
+        return;
+    };
+    
+    const confirmed = await confirm({
+        title: `Restore ${getDisplayName(item)}?`,
+        description: "This will un-archive the item. It will be inactive by default.",
+        confirmText: "Yes, Restore",
+        destructive: false,
+    });
+
+    if (!confirmed) return;
+    
+    const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
+    try {
+        await updateDoc(itemDocRef, { isArchived: false, isActive: false, updatedAt: serverTimestamp() });
+        toast({ title: "Inventory Item Restored" });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Restore Failed", description: error.message });
+    }
+  };
 
   if (!activeStore) {
     return (
@@ -268,17 +297,25 @@ export default function InventoryManagementPage() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle>Current Stock</CardTitle>
-              <CardDescription>All products currently tracked in this store's inventory.</CardDescription>
+              <CardTitle>{showArchived ? "Archived Stock" : "Current Stock"}</CardTitle>
+              <CardDescription>{showArchived ? "Archived products. These are hidden from all parts of the app." : "All products currently tracked in this store's inventory."}</CardDescription>
             </div>
-            <div className="relative w-full max-w-sm">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                placeholder="Search by name or barcode..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8"
-                />
+             <div className="flex items-center gap-4">
+                <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                    placeholder="Search by name or barcode..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                    />
+                </div>
+                 {appUser?.isPlatformAdmin && (
+                    <div className="flex items-center space-x-2">
+                        <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+                        <Label htmlFor="show-archived">Show Archived</Label>
+                    </div>
+                )}
             </div>
           </div>
         </CardHeader>
@@ -314,6 +351,7 @@ export default function InventoryManagementPage() {
                           <Switch
                             checked={!!item.isAddon}
                             onCheckedChange={() => handleToggle(item, 'isAddon')}
+                            disabled={showArchived}
                           />
                         </TableCell>
                         <TableCell className="py-1">
@@ -322,17 +360,25 @@ export default function InventoryManagementPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right py-1">
-                          <Button variant="outline" size="sm" onClick={() => { setSelectedItem(item); setIsEditOpen(true); }} className="mr-2">
-                            <Pencil />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleToggle(item, 'isActive')}>
-                            {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
-                          </Button>
-                          {appUser?.isPlatformAdmin && (
-                             <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteItem(item)}>
-                                <Trash2 />
-                            </Button>
-                          )}
+                            {showArchived ? (
+                                <Button variant="outline" size="sm" onClick={() => handleRestoreItem(item)} disabled={!appUser?.isPlatformAdmin}>
+                                    <RefreshCw className="mr-2" /> Restore
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button variant="outline" size="sm" onClick={() => { setSelectedItem(item); setIsEditOpen(true); }} className="mr-2">
+                                        <Pencil />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => handleToggle(item, 'isActive')}>
+                                        {item.isActive ? <PowerOff className="text-destructive"/> : <Power />}
+                                    </Button>
+                                    {appUser?.isPlatformAdmin && (
+                                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteItem(item)}>
+                                            <Archive />
+                                        </Button>
+                                    )}
+                                </>
+                            )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -350,7 +396,7 @@ export default function InventoryManagementPage() {
               )}
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground py-8">No inventory items found. Click "Add Products" to get started.</p>
+            <p className="text-center text-muted-foreground py-8">{showArchived ? 'No archived items found.' : 'No inventory items found. Click "Add Products" to get started.'}</p>
           )}
         </CardContent>
       </Card>
