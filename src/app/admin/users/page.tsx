@@ -124,6 +124,7 @@ export default function UserManagementPage() {
                 role: roleToAssign,
                 assignedStoreIds: storesToAssign,
                 storeId: storesToAssign[0] || null, // Set initial active store
+                staffId: user.uid, // ensure staffId is set
                 updatedAt: serverTimestamp(),
             });
             

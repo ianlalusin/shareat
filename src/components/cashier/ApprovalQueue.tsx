@@ -54,8 +54,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
       if (userIds.size > 0) {
         const idChunks: string[][] = [];
         const userIdsArray = Array.from(userIds);
-        for (let i = 0; i < userIdsArray.length; i += 30) {
-          idChunks.push(userIdsArray.slice(i, i + 30));
+        for (let i = 0; i < userIdsArray.length; i += 10) {
+          idChunks.push(userIdsArray.slice(i, i + 10));
         }
 
         for (const chunk of idChunks) {

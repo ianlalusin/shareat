@@ -29,7 +29,7 @@ type TimelineEvent = {
   actorName?: string;
 };
 
-// Hook to fetch user profiles for actors
+// Hook to fetch user profiles for actors, now with chunking
 const useUserProfiles = (uids: string[]) => {
     const [profiles, setProfiles] = useState<Record<string, AppUser>>({});
     
@@ -40,15 +40,28 @@ const useUserProfiles = (uids: string[]) => {
         if (profilesToFetch.length === 0) return;
 
         const staffRef = collection(db, "staff");
-        const q = query(staffRef, where(documentId(), "in", profilesToFetch));
+        
+        // Chunking logic
+        const fetchInChunks = async () => {
+            const idChunks: string[][] = [];
+            for (let i = 0; i < profilesToFetch.length; i += 10) {
+                idChunks.push(profilesToFetch.slice(i, i + 10));
+            }
 
-        getDocs(q).then(snapshot => {
             const newProfiles: Record<string, AppUser> = {};
-            snapshot.forEach(doc => {
-                newProfiles[doc.id] = doc.data() as AppUser;
-            });
+            for (const chunk of idChunks) {
+                if (chunk.length > 0) {
+                    const q = query(staffRef, where(documentId(), "in", chunk));
+                    const snapshot = await getDocs(q);
+                    snapshot.forEach(doc => {
+                        newProfiles[doc.id] = doc.data() as AppUser;
+                    });
+                }
+            }
             setProfiles(prev => ({ ...prev, ...newProfiles }));
-        });
+        };
+
+        fetchInChunks();
 
     }, [uids, profiles]);
 
