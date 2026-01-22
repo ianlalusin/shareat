@@ -341,6 +341,7 @@ export type PendingSession = {
   packageSnapshot?: { id?: string; name?: string; pricePerHead?: number } | null;
   initialFlavorIds?: string[];
   startedAt: Timestamp;
+  startedAtClientMs?: number | null;
   // Guest Count Model
   guestCountCashierInitial: number;
   guestCountServerVerified: number | null;

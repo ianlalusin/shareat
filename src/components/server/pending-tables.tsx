@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -22,9 +23,9 @@ interface PendingTablesProps {
     onAddAddon: (session: PendingSession) => void;
 }
 
-const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
+const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
     const [elapsed, setElapsed] = useState("...");
-    const jsDate = toJsDate(startTime);
+    const jsDate = startTimeMs ? new Date(startTimeMs) : toJsDate(startTime);
 
     useEffect(() => {
         if (!jsDate) {
@@ -47,7 +48,7 @@ const TimeElapsed = ({ startTime }: { startTime: Timestamp | undefined }) => {
                 const hours = Math.floor(totalMinutes / 60);
                 const minutes = totalMinutes % 60;
                 const paddedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-                setElapsed(`${hours}:${paddedMinutes}`);
+                setElapsed(`${hours}h ${paddedMinutes}m`);
             }
         };
 
@@ -95,7 +96,7 @@ function SessionCard({ session, onVerify, onRequestChange, onViewTimeline, onAdd
            if (session.packageChange?.status === 'pending') {
               return <Badge variant="destructive" className="ml-auto">Package Change Pending</Badge>
           }
-          return <TimeElapsed startTime={session.startedAt} />;
+          return <TimeElapsed startTime={session.startedAt} startTimeMs={session.startedAtClientMs ?? null} />;
       }
       return <Badge variant="secondary" className="ml-auto">Pending</Badge>
     }
