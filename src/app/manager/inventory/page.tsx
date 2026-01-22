@@ -53,7 +53,7 @@ export default function InventoryManagementPage() {
     setIsLoading(true);
     
     const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
-    const q = query(inventoryRef, where("isArchived", "==", false));
+    const q = query(inventoryRef, where("isArchived", "!=", true));
     const unsubInv = onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
       setInventory(items);
