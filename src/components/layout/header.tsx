@@ -1,4 +1,6 @@
 
+'use client'
+
 import Link from 'next/link'
 import { MainNav } from './main-nav'
 import { UserNav } from './user-nav'
