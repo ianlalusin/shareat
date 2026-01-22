@@ -5,19 +5,24 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // =====================================================================
-    // Helper Functions (NEW MODEL)
+    // Helper Functions
     // =====================================================================
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Global super-admin (ONLY via custom claim)
+    // --- User & Role Helpers ---
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Check for the platformAdmin custom claim. This is the global override.
     function isPlatformAdmin() {
       return isSignedIn() && request.auth.token.platformAdmin == true;
     }
 
-    // Path to the user's single source of truth document.
     function staffDocPath() {
       return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
@@ -27,30 +32,18 @@ service cloud.firestore {
       return get(staffDocPath()).data;
     }
 
-    // Checks if the user has a staff document and its status is "active".
     function isActiveStaff() {
       return exists(staffDocPath()) && staffData().status == 'active';
     }
-
-    // Checks if the user is assigned to a specific store.
-    function isAssignedToStore(storeId) {
-       return (staffData().assignedStoreIds is list) && (storeId in staffData().assignedStoreIds);
-    }
-
-    // Gatekeeper function for all store-level data access.
-    function hasStoreAccess(storeId) {
-      return isPlatformAdmin() || (isActiveStaff() && isAssignedToStore(storeId));
-    }
-
-    // --- Role-Based Helpers ---
-    // These check the user's role from their /staff document.
     
     function isRole(role) {
       // Must be an active staff member to have any role.
       return isActiveStaff() && staffData().role == role;
     }
     
-    // Hierarchical roles: Manager can do everything a Cashier can, etc.
+    // --- Hierarchical Role Helpers ---
+    // These check the user's single, global role from their /staff document.
+    
     function isManager() {
       return isPlatformAdmin() || isRole('admin') || isRole('manager');
     }
@@ -66,31 +59,32 @@ service cloud.firestore {
     function isKitchen() {
       return isManager() || isRole('kitchen');
     }
+
+    // --- Access Control Helpers ---
+
+    function hasStoreAccess(storeId) {
+      return isPlatformAdmin() || (isActiveStaff() && storeId in staffData().assignedStoreIds);
+    }
     
     function isStoreManager(storeId) {
-      // Checks if the user has access to the store AND has the manager role.
+      // Checks if the user has access to the store AND has a manager-level role.
       return hasStoreAccess(storeId) && isManager();
     }
-
+    
     // --- Data Validation Helpers ---
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    // Enforces immutability for specific fields during an update.
-    function isUpdatingOwnProfile(staffId) {
-      // List of fields a user CANNOT change for themselves.
-      let protectedFields = ['role', 'status', 'assignedStoreIds', 'staffId', 'isPlatformAdmin'];
-      
-      return isOwner(staffId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(protectedFields) == false
-        && request.resource.data.staffId == resource.data.staffId; // staffId is immutable
-    }
     
     function isCreatingOwnValidStaffDoc(staffId) {
         return isOwner(staffId)
             && request.resource.data.staffId == staffId;
+    }
+
+    // Ensures a user updating their own profile does not change protected fields.
+    function isUpdatingOwnProfile(staffId) {
+      return isOwner(staffId)
+        && request.resource.data.staffId == resource.data.staffId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.assignedStoreIds == resource.data.assignedStoreIds;
     }
 
     // =====================================================================
@@ -98,24 +92,24 @@ service cloud.firestore {
     // =====================================================================
 
     // -------------------------------------------------
-    // Root-level Collections
+    // Root-level (Global) Collections
     // -------------------------------------------------
 
     match /staff/{staffId} {
       allow get: if isOwner(staffId) || isPlatformAdmin();
-      allow list: if isPlatformAdmin(); // Only platform admins can list all staff.
+      allow list: if isPlatformAdmin();
       allow create: if isCreatingOwnValidStaffDoc(staffId);
       allow update: if isPlatformAdmin() || isUpdatingOwnProfile(staffId);
       allow delete: if isPlatformAdmin();
     }
 
     // Global data, readable by any active staff, writable only by platform admins.
-    match /products/{productId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
-    match /flavors/{flavorId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
-    match /refills/{refillId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
-    match /packages/{packageId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
-    match /addonCategories/{categoryId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
-    match /expenseEntries/{expenseEntryId} { allow read: if isActiveStaff(); allow write: if isPlatformAdmin(); }
+    match /products/{productId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /flavors/{flavorId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /refills/{refillId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
 
     // -------------------------------------------------
     // Store & Subcollection Rules
@@ -141,15 +135,12 @@ service cloud.firestore {
       match /storeModesOfPayment/{docId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
       match /receiptSettings/{docId} { allow read: if hasStoreAccess(storeId); allow write: if isStoreManager(storeId); }
       
-       // Allow staff management within a store by managers or platform admins.
+      // DEPRECATED: Staff assignments are now global. This rule is for safety but should not be used.
       match /staff/{staffId} {
-        allow get, list: if hasStoreAccess(storeId);
-        allow create, update: if isStoreManager(storeId);
-        allow delete: if isStoreManager(storeId);
+        allow read, write: if false;
       }
 
       // --- Operational Data (Broader Access) ---
-      // These collections are for daily operations.
       
       // Counters for receipt numbers, etc.
       match /counters/{docId} {
@@ -160,35 +151,38 @@ service cloud.firestore {
       // Finalized receipts
       match /receipts/{receiptId} {
         allow read: if hasStoreAccess(storeId);
-        // Created by cashier during payment.
         allow create: if hasStoreAccess(storeId) && isCashier();
-        // Updatable by managers/admins for corrections.
         allow update: if hasStoreAccess(storeId) && isManager();
         allow delete: if isPlatformAdmin(); // Deletions are admin-only
+        
+        // Revisions subcollection
+        match /revisions/{revisionId} {
+            allow read, write: if isStoreManager(storeId);
+        }
       }
 
       // Analytics data (written to by server functions or client-side on payment)
       match /analytics/{dayId} {
-        allow read: if hasStoreAccess(storeId) && isManager();
+        allow read: if isStoreManager(storeId);
         allow write: if hasStoreAccess(storeId) && isCashier();
         match /{subcol}/{docId} {
-            allow read: if hasStoreAccess(storeId) && isManager();
+            allow read: if isStoreManager(storeId);
             allow write: if hasStoreAccess(storeId) && isCashier();
         }
       }
        match /analyticsMonths/{monthId} {
-        allow read: if hasStoreAccess(storeId) && isManager();
+        allow read: if isStoreManager(storeId);
         allow write: if hasStoreAccess(storeId) && isCashier();
          match /{subcol}/{docId} {
-            allow read: if hasStoreAccess(storeId) && isManager();
+            allow read: if isStoreManager(storeId);
             allow write: if hasStoreAccess(storeId) && isCashier();
         }
       }
        match /analyticsYears/{yearId} {
-        allow read: if hasStoreAccess(storeId) && isManager();
+        allow read: if isStoreManager(storeId);
         allow write: if hasStoreAccess(storeId) && isCashier();
          match /{subcol}/{docId} {
-            allow read: if hasStoreAccess(storeId) && isManager();
+            allow read: if isStoreManager(storeId);
             allow write: if hasStoreAccess(storeId) && isCashier();
         }
       }
@@ -197,8 +191,8 @@ service cloud.firestore {
       match /sessions/{sessionId} {
         allow read: if hasStoreAccess(storeId);
         allow create: if hasStoreAccess(storeId) && isCashier();
-        allow update: if hasStoreAccess(storeId) && isServer(); // Broad update for servers, cashiers, managers.
-        allow delete: if isPlatformAdmin(); // Deletions are admin-only
+        allow update: if hasStoreAccess(storeId) && isServer(); 
+        allow delete: if isPlatformAdmin(); 
 
         // All users with store access can see tickets and logs.
         match /kitchentickets/{ticketId} {
@@ -220,7 +214,7 @@ service cloud.firestore {
         }
 
         match /activityLogs/{logId} {
-          allow read: if hasStoreAccess(storeId) && isManager();
+          allow read: if isStoreManager(storeId);
           allow create: if hasStoreAccess(storeId) && isServer();
           allow update, delete: if false; // Logs are immutable
         }
