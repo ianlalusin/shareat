@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -10,8 +9,6 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import dynamic from 'next/dynamic';
-
-const MigrateUsersToStaff = dynamic(() => import('@/components/admin/MigrateUsersToStaff').then(mod => mod.MigrateUsersToStaff), { ssr: false });
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
@@ -124,7 +121,6 @@ export default function AdminPage() {
                                         ))}
                                     </div>
                                     <BackfillTool />
-                                    <MigrateUsersToStaff />
                                 </AccordionContent>
                              </Card>
                         </AccordionItem>
