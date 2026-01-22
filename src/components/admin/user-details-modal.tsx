@@ -47,7 +47,6 @@ export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformA
                 contactNumber: user.contactNumber,
                 address: user.address,
                 role: user.role,
-                storeId: user.storeId,
                 assignedStoreIds: user.assignedStoreIds || [],
             });
         }
@@ -66,12 +65,6 @@ export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformA
 
     const handleSave = async () => {
         const updatedData: Partial<AppUser> = { ...editableUser };
-        const assigned = updatedData.assignedStoreIds || [];
-        
-        if ((updatedData.storeId && !assigned.includes(updatedData.storeId)) || (!updatedData.storeId && assigned.length > 0)) {
-            updatedData.storeId = assigned[0] || null;
-        }
-
         await onUpdate(user.uid, updatedData);
         setIsEditing(false);
     };
@@ -82,7 +75,6 @@ export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformA
             contactNumber: user.contactNumber,
             address: user.address,
             role: user.role,
-            storeId: user.storeId,
             assignedStoreIds: user.assignedStoreIds || [],
         });
         setIsEditing(false);

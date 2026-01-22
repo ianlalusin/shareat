@@ -45,22 +45,18 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     setLoading(true);
     try {
       let fetchedStores: Store[] = [];
+      const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
 
       if (isPlatformAdmin) {
         const q = query(collection(db, "stores"));
         const querySnapshot = await getDocs(q);
         fetchedStores = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Store));
-      } else {
-        const assigned = Array.isArray(appUser.assignedStoreIds) ? appUser.assignedStoreIds : [];
-        if (assigned.length > 0) {
-          const storePromises = assigned.map(async (storeId) => {
-            const sref = doc(db, "stores", storeId);
-            const ssnap = await getDoc(sref);
-            return ssnap.exists() ? { id: ssnap.id, ...ssnap.data() } as Store : null;
-          });
+      } else if (assigned.length > 0) {
+          const storePromises = assigned.map(storeId => getDoc(doc(db, "stores", storeId)));
           const results = await Promise.all(storePromises);
-          fetchedStores = results.filter((s): s is Store => s !== null);
-        }
+          fetchedStores = results
+              .filter(snap => snap.exists())
+              .map(snap => ({ id: snap.id, ...snap.data() } as Store));
       }
       
       const validStores = fetchedStores
@@ -69,8 +65,12 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       
       setStores(validStores);
 
-      const preferred = appUser.storeId ? validStores.find((s) => s.id === appUser.storeId) : null;
-      setActiveStore(preferred || validStores[0] || null);
+      const storedId = localStorage.getItem('activeStoreId');
+      const preferred = storedId ? validStores.find(s => s.id === storedId) : null;
+      
+      const userHasAccessToStored = preferred && (isPlatformAdmin || assigned.includes(preferred.id));
+      
+      setActiveStore(userHasAccessToStored ? preferred : validStores[0] || null);
 
     } catch (e) {
       console.error("Failed to load stores:", e);
@@ -111,8 +111,10 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
 
   useEffect(() => {
-    loadStoresOnce();
-  }, [loadStoresOnce]);
+    if(appUser) {
+        loadStoresOnce();
+    }
+  }, [appUser, loadStoresOnce]);
 
   useEffect(() => {
       const unsub = fetchStoreAddons();
@@ -123,7 +125,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     async (storeId: string) => {
       if (!appUser) return;
       
-      await updateDoc(doc(db, "staff", appUser.uid), { storeId });
+      localStorage.setItem('activeStoreId', storeId);
 
       const next = stores.find((s) => s.id === storeId) || null;
       setActiveStore(next);
