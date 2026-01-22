@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import type { InventoryItem, KitchenLocation } from "@/lib/types";
+import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
 import { getDisplayName } from "@/lib/products/variants";
 import { Switch } from "@/components/ui/switch";
@@ -35,6 +36,7 @@ export default function InventoryManagementPage() {
   const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -114,6 +116,70 @@ export default function InventoryManagementPage() {
         return acc;
     }, {} as Record<string, InventoryItem[]>);
   }, [filteredInventory]);
+
+  const handleBackfill = async () => {
+    if (!activeStore || !appUser) return;
+
+    const confirmed = await confirm({
+        title: "Backfill Inventory Data?",
+        description: "This will scan all inventory items and copy missing image URLs and barcodes from the global product catalog. This action is safe to run multiple times.",
+        confirmText: "Yes, Backfill",
+    });
+
+    if (!confirmed) return;
+
+    setIsBackfilling(true);
+    toast({ title: "Starting backfill...", description: "Fetching products and inventory." });
+
+    try {
+        const productsRef = collection(db, "products");
+        const productsSnap = await getDocs(productsRef);
+        const productsMap = new Map(productsSnap.docs.map(doc => [doc.id, doc.data() as Product]));
+
+        const inventoryRef = collection(db, "stores", activeStore.id, "inventory");
+        const inventorySnap = await getDocs(inventoryRef);
+        
+        const batch = writeBatch(db);
+        let updatedCount = 0;
+
+        inventorySnap.forEach(invDoc => {
+            const inventoryItem = invDoc.data() as InventoryItem;
+            const globalProduct = productsMap.get(inventoryItem.productId);
+
+            if (globalProduct) {
+                const updatePayload: Partial<InventoryItem> = {};
+                let needsUpdate = false;
+
+                if (globalProduct.imageUrl && !inventoryItem.imageUrl) {
+                    updatePayload.imageUrl = globalProduct.imageUrl;
+                    needsUpdate = true;
+                }
+                
+                if (globalProduct.barcode && !inventoryItem.barcode) {
+                    updatePayload.barcode = globalProduct.barcode;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    batch.update(invDoc.ref, { ...updatePayload, updatedAt: serverTimestamp() });
+                    updatedCount++;
+                }
+            }
+        });
+
+        if (updatedCount > 0) {
+            await batch.commit();
+            toast({ title: "Backfill Complete", description: `${updatedCount} inventory items were updated with missing data.` });
+        } else {
+            toast({ title: "No Updates Needed", description: "All inventory items are already up-to-date." });
+        }
+
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Backfill Failed", description: error.message });
+    } finally {
+        setIsBackfilling(false);
+    }
+  };
 
   const handleAddItems = async (productsToAdd: any[]) => {
     if (!activeStore || !appUser) return;
@@ -289,6 +355,10 @@ export default function InventoryManagementPage() {
     <RoleGuard allow={["admin", "manager"]}>
       <PageHeader title="Inventory Management" description={`Manage stock for ${activeStore.name}`}>
         <div className="flex items-center gap-2">
+            <Button onClick={handleBackfill} variant="outline" disabled={isBackfilling}>
+                {isBackfilling ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2" />}
+                Backfill Data
+            </Button>
             <Button onClick={() => setIsAddDialogOpen(true)}>
               <PlusCircle className="mr-2" />
               Add Products to Inventory

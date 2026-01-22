@@ -21,7 +21,6 @@ export interface UserDocument {
     displayName: string;
     email: string;
     role: UserRole;
-    storeId: string;
     photoURL?: string;
 }
 
@@ -64,6 +63,7 @@ export type InventoryItem = {
   taxId?: string;
   isActive: boolean;
   isAddon?: boolean;
+  isArchived?: boolean;
   kitchenLocationId?: string | null;
   kitchenLocationName?: string | null;
   createdAt: Timestamp;
