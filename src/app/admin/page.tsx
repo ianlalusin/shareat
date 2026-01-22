@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -8,7 +9,9 @@ import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { MigrateUsersToStaff } from "@/components/admin/MigrateUsersToStaff";
+import dynamic from 'next/dynamic';
+
+const MigrateUsersToStaff = dynamic(() => import('@/components/admin/MigrateUsersToStaff').then(mod => mod.MigrateUsersToStaff), { ssr: false });
 
 const adminTools = [
     { title: "User Management", description: "Manage roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },

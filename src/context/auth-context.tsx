@@ -14,7 +14,6 @@ export type AppUser = {
   role?: "admin" | "manager" | "cashier" | "kitchen" | "server";
   roles?: string[];
   status?: "active" | "pending" | "disabled" | "needs_profile";
-  storeId?: string | null;
   assignedStoreIds?: string[];
   name?: string;
   contactNumber?: string;

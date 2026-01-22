@@ -123,14 +123,11 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
   const setActiveStoreById = useCallback(
     async (storeId: string) => {
-      if (!appUser) return;
-      
       localStorage.setItem('activeStoreId', storeId);
-
       const next = stores.find((s) => s.id === storeId) || null;
       setActiveStore(next);
     },
-    [appUser, stores]
+    [stores]
   );
 
   const value = useMemo<StoreContextValue>(
