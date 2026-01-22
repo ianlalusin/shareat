@@ -19,7 +19,7 @@ import type { Flavor } from "@/lib/types";
 import { errorEmitter, FirestorePermissionError } from "@/firebase";
 
 export default function FlavorsManagementPage() {
-  const { appUser } = useAuthContext();
+  const { appUser, isSigningOut, loading: authLoading } = useAuthContext();
   const { toast } = useToast();
   const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,7 +29,10 @@ export default function FlavorsManagementPage() {
   const { confirm, Dialog } = useConfirmDialog();
 
   useEffect(() => {
-    if (!appUser) return;
+    if (authLoading || !appUser) {
+      if (!authLoading) setIsLoading(false);
+      return;
+    };
 
     const flavorsRef = collection(db, "flavors");
     const unsubscribe = onSnapshot(flavorsRef, (snapshot) => {
@@ -37,6 +40,7 @@ export default function FlavorsManagementPage() {
       setFlavors(data.sort((a, b) => a.name.localeCompare(b.name)));
       setIsLoading(false);
     }, (error) => {
+      if (isSigningOut || !appUser) return;
       console.error("Failed to fetch flavors:", error);
       const contextualError = new FirestorePermissionError({ operation: 'list', path: "flavors" });
       errorEmitter.emit("permission-error", contextualError);
@@ -45,7 +49,7 @@ export default function FlavorsManagementPage() {
     });
 
     return () => unsubscribe();
-  }, [appUser, toast]);
+  }, [appUser, authLoading, isSigningOut, toast]);
 
   const handleOpenDialog = (flavor: Flavor | null = null) => {
     setEditingFlavor(flavor);

@@ -2,18 +2,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Image from "next/image";
+import { useAuthContext } from "@/context/auth-context";
 
 export default function PendingPage() {
   const router = useRouter();
+  const { signOut } = useAuthContext();
 
   async function handleLogout() {
-    await signOut(auth);
-    router.replace("/login");
+    await signOut();
   }
 
   return (

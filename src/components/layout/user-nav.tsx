@@ -13,18 +13,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { User } from '@/lib/types'
-import { auth } from '@/lib/firebase/client'
+import { useAuthContext } from '@/context/auth-context'
 import Link from 'next/link'
 
 
 export function UserNav({ user }: { user: User & { photoURL?: string | null } }) {
+  const { signOut } = useAuthContext();
+
   const userInitials = user.displayName
     ? user.displayName.split(' ').map(n => n[0]).join('')
     : user.email ? user.email[0].toUpperCase() : 'U';
-    
-  const handleLogout = async () => {
-    await auth.signOut();
-  }
 
   return (
     <DropdownMenu>
@@ -55,7 +53,7 @@ export function UserNav({ user }: { user: User & { photoURL?: string | null } })
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout}>
+        <DropdownMenuItem onClick={signOut}>
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>

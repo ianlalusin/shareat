@@ -22,7 +22,7 @@ import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
 
 export function SessionListView() {
-    const { appUser } = useAuthContext();
+    const { appUser, isSigningOut } = useAuthContext();
     const { activeStore } = useStoreContext();
     const router = useRouter();
 
@@ -41,6 +41,10 @@ export function SessionListView() {
         setIsLoading(true);
 
         const unsubs: (() => void)[] = [];
+        const handleError = (error: any) => {
+            if (isSigningOut || !appUser) return;
+            console.error("SessionListView listener failed:", error);
+        };
 
         // Fetch Tables
         const tablesRef = collection(db, "stores", activeStore.id, "tables");
@@ -48,19 +52,19 @@ export function SessionListView() {
             setTables(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Table))
                 .sort((a,b) => (a.tableNumber || "0").localeCompare(b.tableNumber || "0", undefined, { numeric: true }))
             );
-        }));
+        }, handleError));
 
         // Fetch Flavors from store-level collection
         const flavorsRef = collection(db, "stores", activeStore.id, "storeFlavors");
         unsubs.push(onSnapshot(query(flavorsRef, where("isEnabled", "==", true), orderBy("sortOrder", "asc")), (snapshot) => {
             setFlavors(snapshot.docs.map(doc => doc.data() as StoreFlavor));
-        }));
+        }, handleError));
 
         // Fetch Packages from store-level collection
         const packagesRef = collection(db, "stores", activeStore.id, "storePackages");
         unsubs.push(onSnapshot(query(packagesRef, where("isEnabled", "==", true), orderBy("sortOrder", "asc")), (snapshot) => {
             setPackages(snapshot.docs.map(doc => ({ packageId: doc.id, ...doc.data() } as StorePackage)));
-        }));
+        }, handleError));
 
         // Fetch active schedules
         const schedulesRef = collection(db, "stores", activeStore.id, "menuSchedules");
@@ -69,7 +73,7 @@ export function SessionListView() {
             const schedulesMap = new Map<string, MenuSchedule>();
             snapshot.docs.forEach(doc => schedulesMap.set(doc.id, { id: doc.id, ...doc.data() } as MenuSchedule));
             setSchedules(schedulesMap);
-        }));
+        }, handleError));
         
         // Fetch active and pending sessions, sorted by start time
         const sessionsQuery = query(
@@ -87,7 +91,7 @@ export function SessionListView() {
                     startedAt: data.startedAt ?? null,
                 } as ActiveSession
             }));
-        }));
+        }, handleError));
         
         // All subscriptions are set, so we can stop loading.
         setIsLoading(false);
@@ -96,7 +100,7 @@ export function SessionListView() {
             unsubs.forEach(unsub => unsub());
         };
 
-    }, [activeStore]);
+    }, [activeStore, appUser, isSigningOut]);
 
     const availablePackages = useMemo(() => {
         return packages.filter(pkg => {

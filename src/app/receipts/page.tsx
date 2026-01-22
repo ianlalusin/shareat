@@ -72,7 +72,7 @@ export default function ReceiptsPageContents() {
     const searchParams = useSearchParams();
     const { toast } = useToast();
     const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
-    const { appUser } = useAuthContext();
+    const { appUser, isSigningOut } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
 
     const [receipts, setReceipts] = useState<ReceiptType[]>([]);
@@ -178,7 +178,7 @@ export default function ReceiptsPageContents() {
       }, [searchParams]);
 
     const fetchReceipts = useCallback(async (loadMore = false) => {
-        if (!activeStore) return;
+        if (!activeStore || !appUser) return;
 
         if (loadMore) setIsLoadingMore(true);
         else setIsLoadingReceipts(true);
@@ -205,13 +205,14 @@ export default function ReceiptsPageContents() {
             setReceipts(prev => loadMore ? [...prev, ...newReceipts] : newReceipts);
 
         } catch (error) {
+            if (isSigningOut) return;
             console.error("Error fetching receipts:", error);
             toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch receipts.' });
         } finally {
             setIsLoadingReceipts(false);
             setIsLoadingMore(false);
         }
-    }, [activeStore, start, end, lastDoc, toast]);
+    }, [activeStore, start, end, lastDoc, toast, appUser, isSigningOut]);
       
     // Effect for initial load and date/store changes
     useEffect(() => {
@@ -226,28 +227,38 @@ export default function ReceiptsPageContents() {
         if (!activeStore?.id) return;
         const unsubPm = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeModesOfPayment"), where("isArchived", "==", false), orderBy("sortOrder")),
-            snap => setPaymentMethods(snap.docs.map(d => ({id: d.id, ...d.data()}) as ModeOfPayment))
+            snap => setPaymentMethods(snap.docs.map(d => ({id: d.id, ...d.data()}) as ModeOfPayment)),
+            (err) => {
+                if (isSigningOut || !appUser) return;
+                console.error("MOP listener error:", err);
+            }
         );
         return () => unsubPm();
-    }, [activeStore?.id]);
+    }, [activeStore?.id, appUser, isSigningOut]);
     
     const [discounts, setDiscounts] = React.useState<Discount[]>([]);
     const [charges, setCharges] = React.useState<Charge[]>([]);
      useEffect(() => {
         if (!activeStore?.id) return;
+        const handleError = (err: any) => {
+            if(isSigningOut || !appUser) return;
+            console.error("Collections listener error:", err);
+        }
         const unsubDiscounts = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setDiscounts(snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount))
+            snap => setDiscounts(snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount)),
+            handleError
         );
          const unsubCharges = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setCharges(snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge))
+            snap => setCharges(snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge)),
+            handleError
         );
         return () => {
             unsubDiscounts();
             unsubCharges();
         };
-    }, [activeStore?.id]);
+    }, [activeStore?.id, appUser, isSigningOut]);
 
     const filteredReceipts = useMemo(() => {
         if (!debouncedSearchTerm) return receipts;
@@ -424,10 +435,13 @@ export default function ReceiptsPageContents() {
               ...doc.data(),
             });
           }
+        }, (err) => {
+            if (isSigningOut || !appUser) return;
+            console.error("Receipt settings listener error:", err);
         });
         return () => unsub();
       }
-    }, [isSettingsOpen, activeStore, form]);
+    }, [isSettingsOpen, activeStore, form, appUser, isSigningOut]);
 
     const handlePrint = async () => {
         if (!selectedReceiptData || !selectedReceiptId || !appUser || !activeStore) return;
@@ -457,34 +471,40 @@ export default function ReceiptsPageContents() {
         toast({ title: "Already voided", description: "This receipt was already voided." });
         return;
       }
-    
-      const batch = writeBatch(db);
-      const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-    
-      await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
       
-      const applyId = uuidv4();
-    
-      batch.update(receiptRef, {
-        status: "voided",
-        voidedAt: serverTimestamp(),
-        voidedByUid: appUser.uid,
-        voidedByEmail: appUser.email,
-        voidReason: reason,
-        analyticsApplied: true,
-        analyticsAppliedAt: serverTimestamp(),
-        analyticsApplyId: applyId,
-      });
-    
-      await batch.commit();
-    
-      await writeActivityLog({
-        action: "RECEIPT_VOIDED",
-        storeId: activeStore.id,
-        sessionId: receipt.sessionId,
-        user: appUser,
-        meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
-      });
+      try {
+        const batch = writeBatch(db);
+        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
+      
+        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
+        
+        const applyId = uuidv4();
+      
+        batch.update(receiptRef, {
+          status: "voided",
+          voidedAt: serverTimestamp(),
+          voidedByUid: appUser.uid,
+          voidedByEmail: appUser.email,
+          voidReason: reason,
+          analyticsApplied: true,
+          analyticsAppliedAt: serverTimestamp(),
+          analyticsApplyId: applyId,
+        });
+      
+        await batch.commit();
+      
+        await writeActivityLog({
+          action: "RECEIPT_VOIDED",
+          storeId: activeStore.id,
+          sessionId: receipt.sessionId,
+          user: appUser,
+          meta: { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, reason },
+        });
+      } catch (error) {
+          console.error("Error voiding receipt:", error);
+          // Re-throw the error so the caller can handle it (e.g., show a toast)
+          throw error;
+      }
     };
 
     const handleExport = async () => {
@@ -787,7 +807,7 @@ export default function ReceiptsPageContents() {
                 try {
                   await handleVoidReceipt(voidTarget, reason);
                   toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
-                  setReceipts(prev => prev.map(r => r.id === voidTarget.id ? { ...r, status: 'voided', voidReason: reason } : r));
+                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: reason } : r));
                 } catch (error: any) {
                     toast({ variant: 'destructive', title: 'Void Failed', description: error.message });
                 } finally {

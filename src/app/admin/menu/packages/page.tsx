@@ -18,7 +18,7 @@ import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
 import type { Refill, Package } from "@/lib/types";
 
 export default function PackagesManagementPage() {
-  const { appUser } = useAuthContext();
+  const { appUser, isSigningOut } = useAuthContext();
   const { toast } = useToast();
   const [packages, setPackages] = useState<Package[]>([]);
   const [refills, setRefills] = useState<Refill[]>([]);
@@ -29,7 +29,10 @@ export default function PackagesManagementPage() {
   const { confirm, Dialog } = useConfirmDialog();
 
   useEffect(() => {
-    if (!appUser) return;
+    if (!appUser) {
+      if (isLoading) setIsLoading(false);
+      return;
+    }
     
     const collectionsToFetch = [
       { name: "packages", setter: setPackages },
@@ -40,6 +43,7 @@ export default function PackagesManagementPage() {
       onSnapshot(collection(db, name), (snapshot) => {
         setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
       }, (error) => {
+        if (isSigningOut) return;
         console.error(`Failed to fetch ${name}:`, error);
         toast({ variant: "destructive", title: "Error", description: `Could not fetch ${name}.` });
       })
@@ -49,7 +53,7 @@ export default function PackagesManagementPage() {
     Promise.all(unsubs).then(() => setIsLoading(false));
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [appUser, toast]);
+  }, [appUser, toast, isSigningOut, isLoading]);
 
   const handleOpenDialog = (pkg: Package | null = null) => {
     setEditingPackage(pkg);

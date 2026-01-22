@@ -81,8 +81,20 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
     }
   }, [appUser, isPlatformAdmin]);
 
+  useEffect(() => {
+    if (!appUser) {
+        // Clear stores and active store immediately on logout
+        setStores([]);
+        setActiveStore(null);
+        setLoading(false);
+    } else {
+        loadStoresOnce();
+    }
+  }, [appUser, loadStoresOnce]);
+
+
   const fetchStoreAddons = useCallback(() => {
-    if (!activeStore?.id) {
+    if (!activeStore?.id || !appUser) {
         setStoreAddons([]);
         setStoreAddonsLoading(false);
         return () => {};
@@ -102,19 +114,15 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
         setStoreAddons(addonsData);
         setStoreAddonsLoading(false);
     }, (error) => {
-        console.error("Failed to fetch store addons:", error);
+        if(appUser) {
+          console.error("Failed to fetch store addons:", error);
+        }
         setStoreAddonsLoading(false);
     });
 
     return unsubscribe;
-  }, [activeStore?.id]);
+  }, [activeStore?.id, appUser]);
 
-
-  useEffect(() => {
-    if(appUser) {
-        loadStoresOnce();
-    }
-  }, [appUser, loadStoresOnce]);
 
   useEffect(() => {
       const unsub = fetchStoreAddons();

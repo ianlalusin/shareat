@@ -1,10 +1,11 @@
 
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, User as FirebaseUser, getIdTokenResult } from "firebase/auth";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { onAuthStateChanged, User as FirebaseUser, signOut as firebaseSignOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
+import { useRouter } from "next/navigation";
 
 export type AppUser = {
   uid: string;
@@ -25,26 +26,30 @@ type AuthCtx = {
   user: FirebaseUser | null;
   appUser: AppUser | null;
   loading: boolean;
+  isSigningOut: boolean;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthCtx | undefined>(undefined);
 
 export function AuthContextProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAppUser(null);
+      setLoading(true);
 
       if (!u) {
         setLoading(false);
         return;
       }
 
-      setLoading(true);
       const staffDocRef = doc(db, "staff", u.uid);
 
       const unsubUser = onSnapshot(
@@ -52,30 +57,24 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            
-            // Set isPlatformAdmin based on the role in the database document.
             const isPlatformAdmin = data.role === 'admin';
-
             const baseAppUser: AppUser = {
               uid: u.uid,
               email: u.email,
               displayName: u.displayName || data.name,
               photoURL: u.photoURL || data.photoURL,
               ...data,
-              isPlatformAdmin, // Add the flag based on DB role
+              isPlatformAdmin,
             };
-            
             setAppUser(baseAppUser);
-            
           } else {
-            // No staff doc exists, so definitely not an admin.
             setAppUser({ 
               uid: u.uid, 
               email: u.email, 
               displayName: u.displayName, 
               photoURL: u.photoURL, 
               status: "needs_profile",
-              isPlatformAdmin: false, // Set to false
+              isPlatformAdmin: false,
             });
           }
           setLoading(false);
@@ -93,7 +92,19 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return () => unsubAuth();
   }, []);
 
-  const value = useMemo(() => ({ user, appUser, loading }), [user, appUser, loading]);
+  const signOut = useCallback(async () => {
+    setIsSigningOut(true);
+    try {
+      await firebaseSignOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error("Sign out failed", error);
+      setIsSigningOut(false);
+    }
+  }, [router]);
+
+  const value = useMemo(() => ({ user, appUser, loading, isSigningOut, signOut }), [user, appUser, loading, isSigningOut, signOut]);
+  
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

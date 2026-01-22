@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
+import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, documentId } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -59,6 +60,7 @@ const presets: { label: string, value: DatePreset }[] = [
 
 
 export default function LogsPage() {
+  const { appUser, isSigningOut } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const [groupedLogs, setGroupedLogs] = useState<GroupedLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -115,7 +117,7 @@ export default function LogsPage() {
     }, [start, end]);
   
    useEffect(() => {
-    if (!activeStore?.id) {
+    if (!activeStore?.id || !appUser) {
         setIsLoading(false);
         return;
     };
@@ -187,12 +189,13 @@ export default function LogsPage() {
         setGroupedLogs(finalGroupedLogs);
         setIsLoading(false);
     }, (error) => {
+        if (isSigningOut || !appUser) return;
         console.error("Error fetching logs:", error);
         setIsLoading(false);
     });
 
     return () => unsubscribe();
-  }, [activeStore?.id, start, end]);
+  }, [activeStore?.id, start, end, appUser, isSigningOut]);
 
   const voidAndFreeLogs = useMemo(() => {
     const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE"];

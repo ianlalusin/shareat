@@ -29,7 +29,7 @@ const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
 
 export default function UserManagementPage() {
-    const { appUser } = useAuthContext();
+    const { appUser, isSigningOut } = useAuthContext();
     const { stores: availableStores, loading: storesLoading } = useStoreContext();
     const { toast } = useToast();
     const [pendingUsers, setPendingUsers] = useState<AppUser[]>([]);
@@ -46,7 +46,10 @@ export default function UserManagementPage() {
 
 
     useEffect(() => {
-        if (!appUser) return;
+        if (!appUser) {
+            if(isLoadingUsers) setIsLoadingUsers(false);
+            return;
+        }
         
         const staffRef = collection(db, "staff");
         let pendingUnsub: Function | null = null;
@@ -56,6 +59,12 @@ export default function UserManagementPage() {
         function fetchUsers() {
             setIsLoadingUsers(true);
 
+            const handleError = (error: any) => {
+                if (isSigningOut || !appUser) return;
+                console.error("Failed to fetch users:", error);
+                setIsLoadingUsers(false);
+            };
+
             const qPending = query(staffRef, where("status", "==", "pending"));
             pendingUnsub = onSnapshot(qPending, (querySnapshot) => {
                 const users: AppUser[] = [];
@@ -64,10 +73,7 @@ export default function UserManagementPage() {
                 });
                 setPendingUsers(users);
                 setIsLoadingUsers(false);
-            }, (error) => {
-                console.error("Failed to fetch pending users:", error);
-                setIsLoadingUsers(false);
-            });
+            }, handleError);
     
             const qActive = query(staffRef, where("status", "==", "active"));
             activeUnsub = onSnapshot(qActive, (querySnapshot) => {
@@ -76,9 +82,7 @@ export default function UserManagementPage() {
                     users.push({ uid: doc.id, ...doc.data() } as AppUser);
                 });
                 setActiveUsers(users);
-            }, (error) => {
-                console.error("Failed to fetch active users:", error);
-            });
+            }, handleError);
 
             const qDeactivated = query(staffRef, where("status", "==", "disabled"));
             deactivatedUnsub = onSnapshot(qDeactivated, (querySnapshot) => {
@@ -87,9 +91,7 @@ export default function UserManagementPage() {
                     users.push({ uid: doc.id, ...doc.data() } as AppUser);
                 });
                 setDeactivatedUsers(users);
-            }, (error) => {
-                console.error("Failed to fetch deactivated users:", error);
-            });
+            }, handleError);
         }
 
         fetchUsers();
@@ -99,7 +101,7 @@ export default function UserManagementPage() {
             if (activeUnsub) activeUnsub();
             if (deactivatedUnsub) deactivatedUnsub();
         };
-    }, [appUser]);
+    }, [appUser, isSigningOut]);
 
     async function handleApproveUser(user: AppUser) {
         if (!appUser?.isPlatformAdmin) return;
@@ -260,7 +262,7 @@ export default function UserManagementPage() {
         setSelectedRoles(prev => ({...prev, [uid]: role}));
     };
 
-    const handleStoreSelect = (uid: string, storeId: string) => {
+    const handleStoreAssignmentChange = (uid: string, storeId: string) => {
         setSelectedStoreAssignments(prev => {
             const current = prev[uid] || [];
             const newAssignments = current.includes(storeId)
@@ -332,7 +334,7 @@ export default function UserManagementPage() {
                                                                             <CommandItem
                                                                                 key={store.id}
                                                                                 value={store.id}
-                                                                                onSelect={() => handleStoreSelect(user.uid, store.id)}
+                                                                                onSelect={() => handleStoreAssignmentChange(user.uid, store.id)}
                                                                             >
                                                                                 <Check className={cn("mr-2 h-4 w-4", assigned.includes(store.id) ? "opacity-100" : "opacity-0")} />
                                                                                 {store.name}

@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import type { Store, ModeOfPayment } from "@/lib/types";
 
 export function ModesOfPaymentSettings({ store }: { store: Store }) {
-  const { appUser } = useAuthContext();
+  const { appUser, isSigningOut } = useAuthContext();
   const { toast } = useToast();
   const { confirm, Dialog } = useConfirmDialog();
 
@@ -50,12 +50,13 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
       setModes(data);
       setIsLoading(false);
     }, (error) => {
+      if (isSigningOut || !appUser) return;
       toast({ variant: "destructive", title: "Error", description: `Could not fetch payment modes: ${error.message}` });
       setIsLoading(false);
     });
 
     return () => unsubscribe();
-  }, [store?.id, toast]);
+  }, [store?.id, toast, isSigningOut, appUser]);
 
   const handleOpenDialog = (mode: ModeOfPayment | null = null) => {
     setEditingMode(mode);
