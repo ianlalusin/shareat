@@ -124,11 +124,11 @@ export default function LogsPage() {
     setIsLoading(true);
 
     const logsQuery = query(
-        collectionGroup(db, "activityLogs"),
-        where("storeId", "==", activeStore.id),
-        where("createdAt", ">=", Timestamp.fromDate(start)),
-        where("createdAt", "<=", Timestamp.fromDate(end)),
-        orderBy("createdAt", "desc")
+      collectionGroup(db, "activityLogs"),
+      where("storeId", "==", activeStore.id),
+      where("createdAt", ">=", Timestamp.fromDate(start)),
+      where("createdAt", "<=", Timestamp.fromDate(end)),
+      orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(logsQuery, async (snapshot) => {
