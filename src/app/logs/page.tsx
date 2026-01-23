@@ -156,7 +156,13 @@ export default function LogsPage() {
                 const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(documentId(), "in", chunk));
                 const sessionsSnap = await getDocs(sessionQuery);
                 sessionsSnap.forEach(doc => {
-                    sessionCacheRef.current.set(doc.id, { id: doc.id, ...doc.data() } as PendingSession);
+                    const d = doc.data() as any;
+
+                    sessionCacheRef.current.set(doc.id, {
+                      id: doc.id,
+                      ...d,
+                      startedAtClientMs: d.startedAtClientMs ?? undefined, // convert null -> undefined
+                    } as PendingSession);
                 });
             }
         }
