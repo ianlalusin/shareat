@@ -118,6 +118,15 @@ service cloud.firestore {
     match /packages/{packageId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
+    
+    match /{path=**}/activityLogs/{logId} {
+        // This rule is critical for the collectionGroup query on the logs page.
+        // It checks the 'storeId' field inside the document, which is required
+        // for securing collection group queries.
+        allow read: if hasStoreAccess(resource.data.storeId);
+        allow create: if hasStoreAccess(request.resource.data.storeId) && isServer();
+        allow update, delete: if false; // Logs are immutable
+    }
 
     // -------------------------------------------------
     // Store & Subcollection Rules
@@ -219,15 +228,6 @@ service cloud.firestore {
         match /payments/{paymentId} {
             allow read, create: if hasStoreAccess(storeId) && isCashier();
             allow update, delete: if isPlatformAdmin();
-        }
-
-        match /activityLogs/{logId} {
-          // This rule is critical for the collectionGroup query on the logs page.
-          // It checks the 'storeId' field inside the document, which is required
-          // for securing collection group queries.
-          allow read: if hasStoreAccess(resource.data.storeId);
-          allow create: if hasStoreAccess(storeId) && isServer();
-          allow update, delete: if false; // Logs are immutable
         }
       }
       
