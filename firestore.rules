@@ -222,7 +222,7 @@ service cloud.firestore {
         }
 
         match /activityLogs/{logId} {
-          allow read: if isStoreManager(storeId);
+          allow read: if hasStoreAccess(storeId);
           allow create: if hasStoreAccess(storeId) && isServer();
           allow update, delete: if false; // Logs are immutable
         }
