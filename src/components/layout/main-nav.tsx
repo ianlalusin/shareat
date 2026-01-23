@@ -12,8 +12,6 @@ const navLinks = [
   { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
   { href: '/server', label: 'Server', roles: ['admin', 'manager', 'server'] },
   { href: '/admin', label: 'Admin', roles: ['admin', 'manager'] },
-  { href: '/receipts', label: 'Receipts', roles: ['admin', 'manager', 'cashier'] },
-  { href: '/logs', label: 'Logs', roles: ['admin', 'manager', 'cashier'] },
 ]
 
 interface MainNavProps {

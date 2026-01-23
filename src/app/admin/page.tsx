@@ -28,6 +28,7 @@ const managerTools = [
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
+    { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
 ]
 
