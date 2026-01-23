@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -34,14 +33,9 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/";
 
   useEffect(() => {
-    // Safety reset for Radix UI dialogs/popovers on navigation
-    document.body.style.pointerEvents = "auto";
-    document.documentElement.style.pointerEvents = "auto";
+    if (loading || isSigningOut) return;
 
-    // --- REDIRECTION LOGIC ---
-    if (loading || isSigningOut) return; // Wait until auth state is resolved and not signing out
-
-    // Case 1: No user logged in
+    // Not logged in: if not on a public page, redirect to login.
     if (!user) {
       if (!PUBLIC.includes(pathname) && pathname !== '/') {
         router.replace("/login");
@@ -49,10 +43,10 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // From here, `user` is guaranteed to exist.
-    if (!appUser) return; // Wait for appUser profile
+    // Logged in, but app user profile is still loading.
+    if (!appUser) return;
 
-    // Case 3: User needs to create their profile
+    // Handle different user statuses
     if (appUser.status === "needs_profile") {
       if (!NEEDS_PROFILE_ALLOWED.includes(pathname)) {
         router.replace("/signup");
@@ -60,7 +54,6 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     
-    // Case 4: User is pending approval or disabled
     if (appUser.status !== "active") {
       if (!PENDING_ALLOWED.includes(pathname)) {
         router.replace("/pending");
@@ -68,55 +61,45 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     
-    // Case 5: User is active and on a page they shouldn't be on
+    // Active user: if on a public/pending page, redirect to their home.
     if (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname) || NEEDS_PROFILE_ALLOWED.includes(pathname) || pathname === '/') {
         router.replace(roleHome(appUser.role));
     }
   }, [loading, user, appUser, pathname, router, isSigningOut]);
 
-
   // --- RENDER LOGIC ---
 
-  if (loading || (!user && !PUBLIC.includes(pathname) && pathname !== '/')) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <BrandLoader />
-      </div>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+            <BrandLoader />
+        </div>
     );
   }
 
-  // Unauthenticated user on a public page
-  if (!user) {
+  // Allow public pages to render for unauthenticated users
+  if (!user && (PUBLIC.includes(pathname) || pathname === '/')) {
     return <>{children}</>;
   }
-  
-  // Authenticated user, but profile is still loading (or doesn't exist)
-  if (!appUser) {
-     return (
-       <div className="min-h-screen flex items-center justify-center bg-background">
-         <BrandLoader />
-       </div>
-     );
-  }
 
-  // Authenticated user on a page appropriate for their status
-  if (appUser.status === 'needs_profile') {
-      if (NEEDS_PROFILE_ALLOWED.includes(pathname)) return <>{children}</>;
-  }
-  if (appUser.status !== 'active') {
-      if (PENDING_ALLOWED.includes(pathname)) return <>{children}</>;
-  }
-  if (appUser.status === 'active') {
-      // If it's a protected page, render it
-      if (!PUBLIC.includes(pathname) && !PENDING_ALLOWED.includes(pathname) && !NEEDS_PROFILE_ALLOWED.includes(pathname) && pathname !== '/') {
+  // If user is authenticated, check their status and decide what to render
+  if (user && appUser) {
+    if (appUser.status === 'needs_profile') {
+      return NEEDS_PROFILE_ALLOWED.includes(pathname) ? <>{children}</> : <BrandLoader />;
+    }
+    if (appUser.status !== 'active') {
+      return PENDING_ALLOWED.includes(pathname) ? <>{children}</> : <BrandLoader />;
+    }
+    // Active user on a protected page
+    if (appUser.status === 'active' && !PUBLIC.includes(pathname) && !PENDING_ALLOWED.includes(pathname) && !NEEDS_PROFILE_ALLOWED.includes(pathname) && pathname !== '/') {
         return <AppLayout>{children}</AppLayout>;
-      }
+    }
   }
 
-  // For any other case (e.g., redirecting), show a loader.
+  // Fallback for all other cases (e.g., redirecting, initial load before useEffect)
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <BrandLoader />
+        <BrandLoader />
     </div>
   );
 }

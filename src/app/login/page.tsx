@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Eye, EyeOff } from "lucide-react";
-import { BrandLoader } from "@/components/ui/BrandLoader";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,7 +17,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isRedirecting, setIsRedirecting] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -26,24 +24,13 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      setIsRedirecting(true);
-      // The redirect is handled by the AuthContextProvider and FirstLoginGuard.
-      // This component's only job is to perform the sign-in.
+      // The redirect is now fully handled by the AuthContextProvider and FirstLoginGuard.
     } catch (err: any) {
       const rawError = err?.message ?? "Login failed";
       const cleanedError = rawError.replace("Firebase: ", "");
       setError(cleanedError);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only set loading to false on error
     }
-  }
-
-  if (isRedirecting) {
-    return (
-        <div className="w-full min-h-screen flex items-center justify-center bg-background">
-            <BrandLoader />
-        </div>
-    );
   }
 
   return (
@@ -109,7 +96,7 @@ export default function LoginPage() {
               <p className="text-sm text-destructive">{error}</p>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Logging in..." : "Login"}
+              {loading ? <Loader2 className="animate-spin" /> : "Login"}
             </Button>
           </form>
           <div className="mt-4 text-center text-sm">
