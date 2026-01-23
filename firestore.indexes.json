@@ -2,6 +2,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "activityLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "kitchentickets",
       "queryScope": "COLLECTION",
       "fields": [

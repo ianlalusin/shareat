@@ -124,7 +124,8 @@ export default function LogsPage() {
     setIsLoading(true);
 
     const logsQuery = query(
-        collection(db, "stores", activeStore.id, "activityLogs"),
+        collectionGroup(db, "activityLogs"),
+        where("storeId", "==", activeStore.id),
         where("createdAt", ">=", Timestamp.fromDate(start)),
         where("createdAt", "<=", Timestamp.fromDate(end)),
         orderBy("createdAt", "desc")
