@@ -222,7 +222,10 @@ service cloud.firestore {
         }
 
         match /activityLogs/{logId} {
-          allow read: if hasStoreAccess(storeId);
+          // This rule is critical for the collectionGroup query on the logs page.
+          // It checks the 'storeId' field inside the document, which is required
+          // for securing collection group queries.
+          allow read: if hasStoreAccess(resource.data.storeId);
           allow create: if hasStoreAccess(storeId) && isServer();
           allow update, delete: if false; // Logs are immutable
         }
@@ -235,3 +238,5 @@ service cloud.firestore {
     }
   }
 }
+
+    
