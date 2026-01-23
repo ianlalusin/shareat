@@ -20,7 +20,7 @@ type ActivityLogPayload = {
 };
 
 /**
- * Logs an activity to the store's top-level activityLogs collection.
+ * Logs an activity to the session's activityLogs subcollection.
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
@@ -30,14 +30,14 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
     console.warn("Activity log skipped: User is not authenticated.");
     return;
   }
-  if (!storeId) {
-    console.warn("Activity log skipped: Store ID is missing.");
+  if (!storeId || !sessionId) {
+    console.warn("Activity log skipped: Store ID or Session ID is missing.");
     return;
   }
 
   try {
-    // Write to the top-level subcollection under the store.
-    const logDocRef = doc(collection(db, `stores/${storeId}/activityLogs`));
+    // Write to the nested subcollection under the session.
+    const logDocRef = doc(collection(db, `stores/${storeId}/sessions/${sessionId}/activityLogs`));
     
     const meta = { ...rest.meta, ...(qty !== undefined && { qty }), ...(rest.reason && { reason: rest.reason }) };
 
