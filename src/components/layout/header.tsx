@@ -23,7 +23,7 @@ export default function Header({ user }: { user: User }) {
       <div className="flex items-center gap-4">
         <Link href="/dashboard" className="flex items-center gap-2 font-serif text-xl font-semibold mr-4 shrink-0">
           <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-6 w-6" />
-          <span className="hidden sm:inline-block">SharEat Hub</span>
+          <span className="hidden sm:inline-block">SharEat Hub Advanced</span>
         </Link>
         <div className="hidden md:flex md:items-center md:gap-4 lg:gap-6">
           <MainNav role={user.role} />
