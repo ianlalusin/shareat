@@ -104,7 +104,8 @@ export default function KitchenPage() {
     // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), (snapshot) => {
-        const stationsData = snapshot.docs.map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as KitchenStation));
+        const stationsData = snapshot.docs
+          .map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as any)) as KitchenStation[];
         setStations(stationsData);
         if (stationsData.length > 0 && !stationsData.some(s => s.id === activeTab)) {
             setActiveTab(stationsData[0].id);
