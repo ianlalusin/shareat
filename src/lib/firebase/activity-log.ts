@@ -1,3 +1,4 @@
+
 "use client";
 
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -29,6 +30,7 @@ export async function logActivity(
   try {
     const activityLogsRef = collection(db, "stores", storeId, "activityLogs");
     await addDoc(activityLogsRef, {
+      storeId,
       action,
       details,
       user: {
