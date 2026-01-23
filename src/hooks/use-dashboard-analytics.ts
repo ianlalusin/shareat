@@ -104,6 +104,8 @@ function groupByCategory(items: AddonAgg[]) {
 
 function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
   let netSales = 0, transactions = 0;
+  let totalDineInSales = 0;
+  let totalDineInGuests = 0;
   const mop: Record<string, number> = {};
 
   for (let i = 0; i < upToIndexExclusive; i++) {
@@ -113,10 +115,16 @@ function sumMonthsUpTo(monthDocs: any[], upToIndexExclusive: number): YtdTally {
     netSales += d?.payments?.totalGross ?? 0;
     transactions += d?.payments?.txCount ?? 0;
 
+    const packageSales = Object.values(d?.sales?.packageSalesAmountByName || {}).reduce((pkgSum, amount) => pkgSum + (amount as number), 0);
+    totalDineInSales += packageSales;
+    totalDineInGuests += d?.guests?.guestCountFinalTotal ?? 0;
+
     const byMethod = d?.payments?.byMethod ?? {};
     for (const [k, v] of Object.entries(byMethod)) mop[k] = (mop[k] || 0) + (v as number);
   }
-  return { netSales, transactions, avgBasket: transactions > 0 ? netSales / transactions : 0, mop };
+
+  const avgSpending = totalDineInGuests > 0 ? totalDineInSales / totalDineInGuests : 0;
+  return { netSales, transactions, avgBasket: avgSpending, mop };
 }
 
 function buildMonthlyTrendRows(curMonths: any[], prevMonths: any[]): TrendRow[] {
@@ -136,7 +144,14 @@ function buildMonthlyTrendRows(curMonths: any[], prevMonths: any[]): TrendRow[] 
 function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     const netSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
     const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
-    const avgBasket = transactions > 0 ? netSales / transactions : 0;
+    
+    const totalDineInSales = dailyMetrics.reduce((sum, metric) => {
+        const packageSales = Object.values(metric.sales?.packageSalesAmountByName || {}).reduce((pkgSum, amount) => pkgSum + amount, 0);
+        return sum + packageSales;
+    }, 0);
+    const totalDineInGuests = dailyMetrics.reduce((sum, metric) => sum + (metric.guests?.guestCountFinalTotal || 0), 0);
+    const avgSpending = totalDineInGuests > 0 ? totalDineInSales / totalDineInGuests : 0;
+    
     const mop: Record<string, number> = {};
     dailyMetrics.forEach(metric => {
         const methods = metric.payments?.byMethod ?? {};
@@ -144,7 +159,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
             mop[method] = (mop[method] || 0) + amount;
         }
     });
-    return { netSales, transactions, avgBasket, mop };
+    return { netSales, transactions, avgBasket: avgSpending, mop };
 }
 
 function customMerger(objValue: any, srcValue: any) {
