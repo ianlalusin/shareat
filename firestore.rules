@@ -119,38 +119,6 @@ service cloud.firestore {
     match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     
-    // =====================================================
-    // Activity Logs (collectionGroup support)
-    // Matches ANY .../activityLogs/{logId} in the DB
-    // =====================================================
-    match /{path=**}/activityLogs/{logId} {
-      allow read: if isSignedIn()
-        && (
-          isPlatformAdmin()
-          || (
-            isActiveStaff()
-            && (resource.data.storeId is string)
-            && (staffData().assignedStoreIds is list)
-            && (resource.data.storeId in staffData().assignedStoreIds)
-          )
-        );
-
-      // keep create allowed for users who can access that store
-      allow create: if isSignedIn()
-        && (
-          isPlatformAdmin()
-          || (
-            isActiveStaff()
-            && (request.resource.data.storeId is string)
-            && (staffData().assignedStoreIds is list)
-            && (request.resource.data.storeId in staffData().assignedStoreIds)
-          )
-        );
-
-      // logs should be immutable
-      allow update, delete: if isPlatformAdmin();
-    }
-
     // -------------------------------------------------
     // Store & Subcollection Rules
     // -------------------------------------------------
@@ -178,6 +146,13 @@ service cloud.firestore {
       // DEPRECATED: Staff assignments are now global. This rule is for safety but should not be used.
       match /staff/{staffId} {
         allow read, write: if false;
+      }
+      
+      // --- Activity Logs ---
+      match /activityLogs/{logId} {
+        allow read, create: if hasStoreAccess(storeId);
+        // Logs should be immutable except by admins
+        allow update, delete: if isPlatformAdmin();
       }
 
       // --- Operational Data (Broader Access) ---

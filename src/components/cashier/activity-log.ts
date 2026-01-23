@@ -20,7 +20,7 @@ type ActivityLogPayload = {
 };
 
 /**
- * Logs an activity to the session's subcollection.
+ * Logs an activity to the store's top-level activityLogs collection.
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
@@ -30,15 +30,15 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
     console.warn("Activity log skipped: User is not authenticated.");
     return;
   }
-  if (!storeId || !sessionId) {
-    console.warn("Activity log skipped: Store ID or Session ID is missing.");
+  if (!storeId) {
+    console.warn("Activity log skipped: Store ID is missing.");
     return;
   }
 
   try {
-    const logDocRef = doc(collection(db, `stores/${storeId}/sessions/${sessionId}/activityLogs`));
+    // Write to the top-level subcollection under the store.
+    const logDocRef = doc(collection(db, `stores/${storeId}/activityLogs`));
     
-    // Combine explicit meta with the qty if it exists
     const meta = { ...rest.meta, ...(qty !== undefined && { qty }), ...(rest.reason && { reason: rest.reason }) };
 
     const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
@@ -49,7 +49,7 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorRole: user.role || null,
       actorName: user.displayName || user.name || null,
       ...rest,
-      meta, // Use the combined meta object
+      meta,
     };
     
     const finalPayload = { ...logDoc, createdAt: serverTimestamp() };
