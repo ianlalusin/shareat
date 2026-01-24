@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { Separator } from "../ui/separator";
-import type { SessionBillLine, Discount, Store, Adjustment } from "@/lib/types";
+import type { SessionBillLine, Discount, Store, Adjustment, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals, type TaxAndTotals } from "@/lib/tax";
 
 interface BillTotalsProps {
@@ -92,23 +92,52 @@ export function BillTotals({
                         <span>₱{lineGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {lineSubRows}
-                    {adjs.map(adj => (
-                        <div key={adj.id} className="flex justify-between items-center pl-4 text-xs">
-                            <span className={adj.kind === 'discount' ? 'text-destructive' : 'text-green-600'}>
-                                {adj.kind === 'discount' ? '-' : '+'} {adj.qty}x {adj.note}
-                            </span>
-                            {onRemoveLineAdjustment && !isLocked && (
-                                <button
-                                    onClick={() => onRemoveLineAdjustment(line.id, adj.id)}
-                                    className="text-muted-foreground hover:text-destructive leading-none text-lg px-1 rounded"
-                                    aria-label={`Remove ${adj.note}`}
-                                    title={`Remove ${adj.note}`}
-                                >
-                                    &times;
-                                </button>
-                            )}
-                        </div>
-                    ))}
+                    {adjs.map(adj => {
+                        const billableQtyForAdj = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
+                        const taxRate = (store.taxRatePct || 0) / 100;
+                        const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
+                        const baseUnitPrice = isVatInclusive ? (unitPrice / (1 + taxRate)) : unitPrice;
+                        
+                        let adjAmount = 0;
+                        const adjQty = Math.min(adj.qty, billableQtyForAdj);
+
+                        if (adj.kind === 'discount') {
+                            if (adj.type === 'percent') {
+                                adjAmount = adjQty * baseUnitPrice * (adj.value / 100);
+                            } else { // fixed
+                                adjAmount = Math.min(baseUnitPrice, adj.value) * adjQty;
+                            }
+                        } else if (adj.kind === 'charge') {
+                            if (adj.type === 'percent') {
+                                adjAmount = adjQty * baseUnitPrice * (adj.value / 100);
+                            } else { // fixed
+                                adjAmount = adj.value * adjQty;
+                            }
+                        }
+
+                        return (
+                            <div key={adj.id} className="flex justify-between items-center pl-4 text-xs">
+                                <span className={adj.kind === 'discount' ? 'text-destructive' : 'text-green-600'}>
+                                    {adj.kind === 'discount' ? '-' : '+'} {adj.qty}x {adj.note}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                     <span className={adj.kind === 'discount' ? 'text-destructive' : 'text-green-600'}>
+                                        {adj.kind === 'discount' ? '-' : '+'}₱{adjAmount.toFixed(2)}
+                                    </span>
+                                    {onRemoveLineAdjustment && !isLocked && (
+                                        <button
+                                            onClick={() => onRemoveLineAdjustment(line.id, adj.id)}
+                                            className="text-muted-foreground hover:text-destructive leading-none text-lg px-1 rounded"
+                                            aria-label={`Remove ${adj.note}`}
+                                            title={`Remove ${adj.note}`}
+                                        >
+                                            &times;
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )
         })}
