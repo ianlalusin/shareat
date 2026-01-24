@@ -33,11 +33,11 @@ export type DashboardStats = {
 
 interface StatCardsProps {
     stats: DashboardStats;
-    activeSessions?: number;
+    activeSessions?: { count: number; guests: number };
     isLoading: boolean;
 }
 
-function StatCard({ title, value, icon, isLoading, format = "number" }: { title: string, value: string | number, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) {
+function StatCard({ title, value, description, icon, isLoading, format = "number" }: { title: string, value: string | number, description?: string, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) {
     
     const formattedValue = () => {
         if (isLoading) return "—";
@@ -61,7 +61,10 @@ function StatCard({ title, value, icon, isLoading, format = "number" }: { title:
                 {isLoading ? (
                     <Skeleton className="h-8 w-3/4" />
                 ) : (
-                    <div className="text-2xl font-bold">{formattedValue()}</div>
+                    <>
+                        <div className="text-2xl font-bold">{formattedValue()}</div>
+                        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+                    </>
                 )}
             </CardContent>
         </Card>
@@ -73,7 +76,7 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
         <>
             <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
-            {activeSessions !== undefined && <StatCard title="Active Sessions" value={activeSessions} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
+            {activeSessions !== undefined && <StatCard title="Active Sessions" value={activeSessions.count} description={`${activeSessions.guests} guests`} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
             <StatCard title="Avg Spending" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
         </>
     );

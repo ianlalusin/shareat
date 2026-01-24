@@ -186,7 +186,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
     const [isLoading, setIsLoading] = useState(true);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [topCategories, setTopCategories] = useState<ReturnType<typeof groupByCategory>>([]);
-    const [activeSessions, setActiveSessions] = useState(0);
+    const [activeSessions, setActiveSessions] = useState({ count: 0, guests: 0 });
     const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
     const [ytdData, setYtdData] = useState<{ cur: YtdTally, prev: YtdTally, range: {start: Date, end: Date} }>({ cur: NULL_YTD_TALLY, prev: NULL_YTD_TALLY, range: {start: new Date(), end: new Date()} });
     
@@ -223,7 +223,16 @@ export function useDashboardAnalytics({ storeId, preset, customRange, ytdMode }:
         const activeSessionsQuery = query(sessionsRef, where("status", "in", ["active", "pending_verification"]));
         const unsubSessions = onSnapshot(activeSessionsQuery, (snapshot) => {
             if (!cancelled) {
-                setActiveSessions(snapshot.size);
+                let totalGuests = 0;
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const finalCount = data.guestCountFinal ?? data.guestCountServerVerified ?? data.guestCountCashierInitial ?? 0;
+                    totalGuests += Number(finalCount);
+                });
+                setActiveSessions({
+                    count: snapshot.size,
+                    guests: totalGuests,
+                });
             }
         });
 
