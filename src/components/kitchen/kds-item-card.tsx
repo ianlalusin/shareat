@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -135,16 +136,19 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
         <>
             <Card className={cn("flex flex-col", ticket.status === 'served' && 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800')}>
                 <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                         <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
+                    <div className="flex items-start justify-between">
+                         <div>
+                            <p className="text-2xl font-bold text-destructive">{identifier}</p>
+                            <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
+                         </div>
                          {ticket.status === 'served' ? (
                             <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Served</Badge>
                         ) : (
                             <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
                         )}
                     </div>
-                     <CardDescription className="flex items-center justify-between">
-                        <span>{identifier} {isPackage && `(${ticket.guestCount} guests)`}</span>
+                     <CardDescription className="flex items-center justify-between pt-2">
+                        <span>{isPackage && `(${ticket.guestCount} guests)`}</span>
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </CardDescription>
                 </CardHeader>
