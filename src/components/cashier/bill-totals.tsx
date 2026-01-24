@@ -46,11 +46,16 @@ export function BillTotals({
   return (
     <div className="p-3 bg-background space-y-2 text-sm">
         {activeLines.map(line => {
-            const billableQty = line.qtyOrdered - (line.voidedQty || 0);
+            const orderedQty = line.qtyOrdered - (line.voidedQty || 0);
+            const freeQty = line.freeQty || 0;
+            const billableQty = Math.max(0, orderedQty - freeQty);
+
             const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
             const lineGross = billableQty * unitPrice;
-            const hasDiscount = line.discountValue && line.discountValue > 0 && line.discountQty > 0;
-            const hasFree = line.freeQty > 0;
+            
+            const hasAdjDiscount = Object.values(line.lineAdjustments ?? {}).some((a: any) => a.kind === "discount");
+            const hasDiscount = !hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0;
+            const hasFree = freeQty > 0;
             
             const lineSubRows: React.ReactNode[] = [];
             
@@ -77,7 +82,7 @@ export function BillTotals({
              if (hasFree) {
                 lineSubRows.push(
                     <div key={`${line.id}-free`} className="flex justify-between pl-4 text-destructive">
-                        <span>{` - ${line.freeQty}x Free`}</span>
+                        <span>{` - ${freeQty}x Free`}</span>
                         <span className="text-muted-foreground">FREE</span>
                     </div>
                 );
