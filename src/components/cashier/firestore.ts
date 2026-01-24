@@ -28,6 +28,7 @@ import type {
   ReceiptAnalyticsV2,
   Receipt,
   KitchenTicket,
+  LineAdjustment,
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
@@ -426,19 +427,43 @@ export async function completePaymentFromUnits(
         if (netQty <= 0) return acc;
 
         const grossAmount = netQty * line.unitPrice;
-        const discountQty = Math.min(line.discountQty || 0, netQty);
+        
+        const discountBaseUnit =
+          store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0
+            ? line.unitPrice / (1 + store.taxRatePct / 100)
+            : line.unitPrice;
+
+        const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+        const discountAdjs = adjs
+          .filter(a => a.kind === "discount")
+          .sort((a, b) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0));
+
+        const hasAdjDiscount = discountAdjs.length > 0;
 
         let discountAmount = 0;
-        if (discountQty > 0) {
-          const discountBaseUnit =
-            store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0
-              ? line.unitPrice / (1 + store.taxRatePct / 100)
-              : line.unitPrice;
+        if (hasAdjDiscount) {
+          let remaining = netQty;
+          for (const a of discountAdjs) {
+            const q = Math.min(Number(a.qty || 0), remaining);
+            if (q <= 0) continue;
 
-          if (line.discountType === 'percent') {
-            discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
-          } else {
-            discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
+            if (a.type === "percent") {
+              discountAmount += q * discountBaseUnit * ((Number(a.value || 0)) / 100);
+            } else {
+              discountAmount += Math.min(discountBaseUnit, Number(a.value || 0)) * q;
+            }
+            remaining -= q;
+            if (remaining <= 0) break;
+          }
+        } else {
+          // legacy fallback
+          const discountQty = Math.min(line.discountQty || 0, netQty);
+          if (discountQty > 0) {
+            if (line.discountType === 'percent') {
+              discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
+            } else {
+              discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
+            }
           }
         }
 
