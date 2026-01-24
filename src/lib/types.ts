@@ -230,6 +230,11 @@ export type SessionBillLine = {
   discountQty: number;
   freeQty: number;
   voidedQty: number;
+  /**
+   * Multiple line-level discounts/charges stored on the bill line (source of truth).
+   * Map keyed by adjustment id for easy removal.
+   */
+  lineAdjustments?: Record<string, LineAdjustment>;
   qtyOverrideActive?: boolean;
   qtyOverrideAt?: any;
   qtyLastSyncedApprovedAt?: string | null;
@@ -237,6 +242,22 @@ export type SessionBillLine = {
   updatedAt: any;
   updatedByUid?: string | null;
   updatedByName?: string | null;
+};
+
+export type LineAdjustmentKind = "discount" | "charge";
+
+export type LineAdjustment = {
+  id: string;
+  kind: LineAdjustmentKind;      // discount | charge
+  note: string;                 // label shown in UI
+  type: "fixed" | "percent";    // fixed amount or percent
+  value: number;                // amount or percent value
+  qty: number;                  // apply to how many items in the line
+  refId?: string | null;        // preset id if any
+  stackable?: boolean;          // snapshot at time of apply
+  createdAtClientMs: number;
+  createdByUid: string;
+  createdByName?: string;
 };
 
 export type Payment = {
