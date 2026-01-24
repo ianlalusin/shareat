@@ -195,6 +195,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             free: (after.freeQty ?? 0) - (before.freeQty ?? 0),
             void: (after.voidedQty ?? 0) - (before.voidedQty ?? 0),
         };
+        
+        const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
 
         if (line.type === 'package' && diff.qtyOrdered > 0) {
             await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser });
@@ -206,15 +208,63 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         }
 
         if (diff.free > 0) {
-            await writeActivityLog({ action: "MARK_FREE", qty: diff.free, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+          await writeActivityLog({
+            action: "MARK_FREE",
+            qty: diff.free,
+            note: "Marked item free",
+            meta: {
+              itemId: line.itemId,
+              itemName: line.itemName,
+              qty: Math.abs(diff.free),
+              unitPriceAfter: unitPrice,
+              amount: Math.abs(diff.free) * unitPrice,
+            },
+            storeId, sessionId, user: appUser
+          });
         } else if (diff.free < 0) {
-            await writeActivityLog({ action: "UNMARK_FREE", qty: -diff.free, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+          await writeActivityLog({
+            action: "UNMARK_FREE",
+            qty: -diff.free,
+            note: "Removed free tag",
+            meta: {
+              itemId: line.itemId,
+              itemName: line.itemName,
+              qty: Math.abs(diff.free),
+              unitPriceAfter: unitPrice,
+              amount: Math.abs(diff.free) * unitPrice,
+            },
+            storeId, sessionId, user: appUser
+          });
         }
         
         if (diff.void > 0) {
-            await writeActivityLog({ action: "VOID_TICKETS", qty: diff.void, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+          await writeActivityLog({
+            action: "VOID_TICKETS",
+            qty: diff.void,
+            note: "Voided item",
+            meta: {
+              itemId: line.itemId,
+              itemName: line.itemName,
+              qty: Math.abs(diff.void),
+              unitPriceAfter: unitPrice,
+              amount: Math.abs(diff.void) * unitPrice,
+            },
+            storeId, sessionId, user: appUser
+          });
         } else if (diff.void < 0) {
-            await writeActivityLog({ action: "UNVOID", qty: -diff.void, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+          await writeActivityLog({
+            action: "UNVOID",
+            qty: -diff.void,
+            note: "Unvoided item",
+            meta: {
+              itemId: line.itemId,
+              itemName: line.itemName,
+              qty: Math.abs(diff.void),
+              unitPriceAfter: unitPrice,
+              amount: Math.abs(diff.void) * unitPrice,
+            },
+            storeId, sessionId, user: appUser
+          });
         }
 
         toast({ title: "Line Item Updated"});
