@@ -1,5 +1,5 @@
 
-import type { SessionBillLine, Charge, Discount, Store, Adjustment } from "@/lib/types";
+import type { SessionBillLine, Charge, Discount, Store, Adjustment, LineAdjustment } from "@/lib/types";
 
 export interface TaxAndTotals {
   subtotal: number;
@@ -48,6 +48,7 @@ export function calculateBillTotals(
 
   let grossSubtotal = 0;
   let lineDiscountsTotal = 0;
+  let lineChargesTotal = 0;
   let vatableSales = 0;
   let vatExemptSales = 0;
   let taxTotal = 0;
@@ -56,27 +57,50 @@ export function calculateBillTotals(
 
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
+    if (billableQty <= 0) return;
+
     const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
     
     grossSubtotal += billableQty * unitPrice;
     
-    if (line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
+    const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
+    const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+    const hasAdjDiscount = adjs.some(a => a.kind === "discount");
+    
+    adjs.forEach(a => {
+        const adjQty = Math.min(Number(a.qty || 0), billableQty);
+        if (adjQty <= 0) return;
+
+        if (a.kind === "discount") {
+          if (a.type === "percent") {
+             lineDiscountsTotal += (adjQty * baseUnitPrice) * ((Number(a.value || 0)) / 100);
+          } else { // fixed
+             lineDiscountsTotal += Math.min(baseUnitPrice, Number(a.value || 0)) * adjQty;
+          }
+        } else if (a.kind === "charge") {
+          if (a.type === "percent") {
+             lineChargesTotal += (adjQty * baseUnitPrice) * ((Number(a.value || 0)) / 100);
+          } else { // fixed
+             lineChargesTotal += Number(a.value || 0) * adjQty;
+          }
+        }
+    });
+
+    // Legacy fallback:
+    if (!hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
       const discountedQty = Math.min(line.discountQty, billableQty);
       
-      const discountBaseUnit = isVatInclusive && taxRate > 0
-        ? (unitPrice / (1 + taxRate))
-        : unitPrice;
-
       if (line.discountType === "percent") {
-        lineDiscountsTotal += (discountedQty * discountBaseUnit) * ((line.discountValue ?? 0) / 100);
+        lineDiscountsTotal += (discountedQty * baseUnitPrice) * ((line.discountValue ?? 0) / 100);
       } else { // fixed
-        lineDiscountsTotal += Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountedQty;
+        lineDiscountsTotal += Math.min(baseUnitPrice, (line.discountValue ?? 0)) * discountedQty;
       }
     }
   });
   
   grossSubtotal = round(grossSubtotal);
   lineDiscountsTotal = round(lineDiscountsTotal);
+  lineChargesTotal = round(lineChargesTotal);
 
   let billDiscountTotal = 0;
   if (billDiscount) {
@@ -110,7 +134,7 @@ export function calculateBillTotals(
       taxTotal = 0;
   }
   
-  const chargesTotal = round(customAdjustments.reduce((sum, charge) => sum + charge.amount, 0));
+  const chargesTotal = round(customAdjustments.reduce((sum, charge) => sum + charge.amount, 0) + lineChargesTotal);
 
   // Corrected grand total calculation
   const totalBeforeCharges = isVatExclusive
