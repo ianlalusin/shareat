@@ -12,6 +12,7 @@ import {
   runTransaction,
   query,
   where,
+  deleteField,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -659,4 +660,27 @@ export async function updateSessionBillLine(
   await updateDoc(lineRef, updatePayload);
 }
 
+export async function removeLineAdjustment(
+  storeId: string,
+  sessionId: string,
+  lineId: string,
+  adjId: string,
+  user: AppUser
+) {
+  if (!storeId || !sessionId || !lineId || !adjId) {
+    throw new Error("Missing required IDs to remove line adjustment.");
+  }
+
+  const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
+  const actor = getActorStamp(user);
+
+  const updatePayload = {
+    [`lineAdjustments.${adjId}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+    updatedByUid: actor.uid,
+    updatedByName: actor.username,
+  };
+
+  await updateDoc(lineRef, updatePayload);
+}
     
