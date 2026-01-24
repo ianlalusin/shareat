@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -9,6 +8,7 @@ import {
   type Transaction,
   type WriteBatch,
 } from "firebase/firestore";
+import type { OrderItemStatus } from "@/lib/types";
 
 type Writer =
   | { kind: "tx"; tx: Transaction }
@@ -42,7 +42,7 @@ function getDayIdManilaFromMs(ms: number) {
 }
 
 type KdsTicket = {
-  status: "preparing" | "served" | "cancelled";
+  status: OrderItemStatus;
   type: "package" | "refill" | "addon";
   itemName?: string | null;
   createdAtClientMs?: number | null;
