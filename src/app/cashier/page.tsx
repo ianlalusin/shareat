@@ -4,9 +4,25 @@
 import { Suspense } from 'react';
 import { useSearchParams } from "next/navigation";
 import { RoleGuard } from "@/components/guards/RoleGuard";
-import { SessionDetailView } from "@/components/cashier/session-detail-view";
-import { SessionListView } from "@/components/cashier/session-list-view";
 import { Loader2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+const SessionDetailView = dynamic(
+  () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
+  {
+    loading: () => <div className="flex items-center justify-center h-screen"><Loader2 className="h-10 w-10 animate-spin" /></div>,
+    ssr: false,
+  }
+);
+
+const SessionListView = dynamic(
+  () => import('@/components/cashier/session-list-view').then((mod) => mod.SessionListView),
+  {
+    loading: () => <div className="flex items-center justify-center h-screen"><Loader2 className="h-10 w-10 animate-spin" /></div>,
+    ssr: false,
+  }
+);
+
 
 function CashierPageContent() {
   const searchParams = useSearchParams();
@@ -27,4 +43,3 @@ export default function CashierPage() {
     </Suspense>
   )
 }
-

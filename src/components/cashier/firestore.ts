@@ -233,7 +233,7 @@ export async function completePaymentFromUnits(
 
   // Read active tickets OUTSIDE the transaction
   const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsQuery = query(ticketsRef, where("status", "in", ["preparing", "ready"]));
+  const activeTicketsQuery = query(ticketsRef, where("status", "==", "preparing"));
   const activeTicketsSnap = await getDocs(activeTicketsQuery);
   const activeTicketRefs = activeTicketsSnap.docs.map(doc => doc.ref);
 
@@ -710,4 +710,3 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
-    
