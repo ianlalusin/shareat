@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
@@ -49,9 +48,6 @@ const formSchema = z.object({
   voidQty: z.coerce.number().min(0),
   voidReason: z.string().optional(),
   voidNote: z.string().optional(),
-}).refine(data => data.discountQty + data.freeQty + (data.voidQty || 0) <= data.qtyOrdered, {
-    message: "Sum of discounted, free, and voided items cannot exceed total quantity.",
-    path: ["qtyOrdered"],
 }).refine(data => data.applyDiscount ? (data.discountId && data.discountType && data.discountValue > 0 && data.discountQty > 0) || (data.discountId === 'custom' && data.discountValue > 0 && data.discountQty > 0) : true, {
     message: "If discount is applied, you must select a valid preset or custom value and quantity.",
     path: ["applyDiscount"],
@@ -167,7 +163,7 @@ export function EditBillableItemDialog({
             }
 
         }
-    }, [line, isOpen, reset, discounts, activeStore]);
+    }, [line, isOpen, reset, activeStore]);
 
     const existingAdjDiscountQty = useMemo(() => {
         if (!line?.lineAdjustments) return 0;
@@ -390,7 +386,7 @@ export function EditBillableItemDialog({
                                 {/* Discount Section */}
                                 <div className="space-y-2">
                                     <FormField name="applyDiscount" control={control} render={({ field }) => (
-                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Apply Discount</FormLabel></FormItem>
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Add Discount</FormLabel></FormItem>
                                     )} />
                                     {watchedValues.applyDiscount && (
                                         <div className="p-3 border rounded-md space-y-2">
