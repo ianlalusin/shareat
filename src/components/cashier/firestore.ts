@@ -289,9 +289,11 @@ export async function completePaymentFromUnits(
     const actor = getActorStamp(user);
     const serverTs = serverTimestamp();
 
-    // --- 2. UPDATE ACTIVE KITCHEN TICKETS ---
-    for (const ticketRef of activeTicketRefs) {
-        const ticketSnap = await tx.get(ticketRef);
+    // The pre-read version is more performant in a transaction.
+    const ticketSnaps = await Promise.all(activeTicketRefs.map((ref) => tx.get(ref)));
+    for (let i = 0; i < activeTicketRefs.length; i++) {
+        const ticketRef = activeTicketRefs[i];
+        const ticketSnap = ticketSnaps[i];
         if (!ticketSnap.exists()) continue;
 
         const oldTicketState = ticketSnap.data() as KitchenTicket;
