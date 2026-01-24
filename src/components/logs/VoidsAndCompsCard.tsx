@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useMemo, useState } from "react";
@@ -19,15 +18,33 @@ interface VoidsAndCompsCardProps {
 
 function formatAmount(log: ActivityLog): string {
     const meta = log.meta || {};
-    if ('unitPrice' in meta && 'qty' in meta && typeof meta.unitPrice === 'number' && typeof meta.qty === 'number') {
-        const total = meta.unitPrice * meta.qty;
-        return `₱${total.toFixed(2)}`;
+  
+    // Check for a direct amount first (more reliable)
+    if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
+      return `₱${meta.amount.toFixed(2)}`;
     }
+    
+    // Fallback to computing from qty and price
+    if (typeof meta.qty === 'number') {
+      const price = typeof meta.unitPriceAfter === 'number' && Number.isFinite(meta.unitPriceAfter)
+        ? meta.unitPriceAfter
+        : (typeof meta.unitPriceBefore === 'number' && Number.isFinite(meta.unitPriceBefore) ? meta.unitPriceBefore : undefined);
+        
+      if (price !== undefined) {
+        const total = price * meta.qty;
+        return `₱${total.toFixed(2)}`;
+      }
+    }
+  
     return '—';
 }
 
 function getReason(log: ActivityLog): string {
     return log.reason || log.note || 'N/A';
+}
+
+function getActor(log: ActivityLog): string {
+   return log.actorName || (log.actorUid ? log.actorUid.slice(0,8) : '—')
 }
 
 export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
@@ -67,6 +84,7 @@ export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
                                     <TableHead>Item / Session</TableHead>
                                     <TableHead>Customer / Table</TableHead>
                                     <TableHead>Time</TableHead>
+                                    <TableHead>Staff</TableHead>
                                     <TableHead>Reason</TableHead>
                                     <TableHead className="text-right">Amount</TableHead>
                                 </TableRow>
@@ -75,11 +93,12 @@ export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
                                 {filteredLogs.map(log => {
                                     const meta = (log.meta || {}) as any;
                                     const sessionLabel = computeSessionLabel(log.session);
+                                    const itemName = meta.itemName || meta.itemId || 'Unknown item';
                                     let itemLabel = "SESSION VOIDED";
                                     if (log.action === "VOID_TICKETS") {
-                                        itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
+                                        itemLabel = `${itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {
-                                        itemLabel = `${meta.itemName} (FREE x${meta.qty ?? 1})`;
+                                        itemLabel = `${itemName} (FREE x${meta.qty ?? 1})`;
                                     }
 
                                     return (
@@ -87,6 +106,7 @@ export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
                                             <TableCell className="font-medium">{itemLabel}</TableCell>
                                             <TableCell>{sessionLabel}</TableCell>
                                             <TableCell>{format(toJsDate(log.createdAt)!, 'p')}</TableCell>
+                                            <TableCell>{getActor(log)}</TableCell>
                                             <TableCell>{getReason(log)}</TableCell>
                                             <TableCell className="text-right font-mono">{formatAmount(log)}</TableCell>
                                         </TableRow>
