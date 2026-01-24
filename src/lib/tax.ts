@@ -67,24 +67,28 @@ export function calculateBillTotals(
     const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
     const hasAdjDiscount = adjs.some(a => a.kind === "discount");
     
-    adjs.forEach(a => {
-        const adjQty = Math.min(Number(a.qty || 0), billableQty);
-        if (adjQty <= 0) return;
+    let remainingQtyForAdjustments = billableQty;
+    for (const adj of adjs) {
+        if (remainingQtyForAdjustments <= 0) break;
+        
+        const qtyToApply = Math.min(Number(adj.qty || 0), remainingQtyForAdjustments);
+        if (qtyToApply <= 0) continue;
 
-        if (a.kind === "discount") {
-          if (a.type === "percent") {
-             lineDiscountsTotal += (adjQty * baseUnitPrice) * ((Number(a.value || 0)) / 100);
-          } else { // fixed
-             lineDiscountsTotal += Math.min(baseUnitPrice, Number(a.value || 0)) * adjQty;
-          }
-        } else if (a.kind === "charge") {
-          if (a.type === "percent") {
-             lineChargesTotal += (adjQty * baseUnitPrice) * ((Number(a.value || 0)) / 100);
-          } else { // fixed
-             lineChargesTotal += Number(a.value || 0) * adjQty;
-          }
+        if (adj.kind === "discount") {
+            if (adj.type === "percent") {
+                lineDiscountsTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
+            } else { // fixed
+                lineDiscountsTotal += Math.min(baseUnitPrice, Number(adj.value || 0)) * qtyToApply;
+            }
+        } else if (adj.kind === "charge") {
+            if (adj.type === "percent") {
+                lineChargesTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
+            } else { // fixed
+                lineChargesTotal += Number(adj.value || 0) * qtyToApply;
+            }
         }
-    });
+        remainingQtyForAdjustments -= qtyToApply;
+    }
 
     // Legacy fallback:
     if (!hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
