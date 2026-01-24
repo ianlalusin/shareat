@@ -260,59 +260,61 @@ function POSContent({
             return;
         }
 
-        const defaultFlavorIds = session.initialFlavorIds || [];
-        const defaultFlavorNames = defaultFlavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id).join(', ');
+        const first = refillsToOrder[0];
+        if (!first.kitchenLocationId) {
+            toast({ variant: "destructive", title: "Kitchen Not Assigned", description: `The first available refill "${first.refillName}" has no kitchen location assigned.` });
+            setIsSubmitting(false);
+            return;
+        }
+
+        const flavorIds = session.initialFlavorIds || [];
+        const flavorNames = flavorIds
+          .map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id)
+          .filter(Boolean);
+        const flavorLine = flavorNames.length ? `Flavors: ${flavorNames.join(", ")}` : "";
+
+        let notes = "REFILL\nRepeat First Order";
+        if (flavorLine) notes += `\n${flavorLine}`;
+        
+        const extraNotes = (activeCartItem?.notes || "").trim();
+        if (extraNotes) notes += `\nNotes:\n${extraNotes}`;
+        
+        const guestCount = session.guestCountFinal || session.guestCountCashierInitial || 1;
+        const packageName = (currentPackage as any)?.packageName || (currentPackage as any)?.name || session.packageSnapshot?.name || "Package";
+        const itemName = `REFILL - ${packageName} (x${guestCount})`;
+        
+        const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
+
+        const payload = stripUndefined({
+          id: ticketRef.id,
+          type: "refill",
+          itemId: "REFILL_PACKAGE_FIRST_ORDER",
+          itemName,
+          qty: 1,
+          kitchenLocationId: first.kitchenLocationId,
+          kitchenLocationName: first.kitchenLocationName,
+          notes: notes || null,
+          status: "preparing",
+          createdAt: serverTimestamp(),
+          createdAtClientMs: Date.now(),
+          updatedAt: serverTimestamp(),
+          createdByUid: appUser.uid,
+          sessionId: session.id,
+          storeId,
+          tableNumber: session.tableNumber,
+          customerName: session.customer?.name || session.customerName,
+          sessionMode: session.sessionMode,
+          sessionLabel: computeSessionLabel(session),
+          guestCount: guestCount,
+        });
 
         const batch = writeBatch(db);
-        const ticketsRef = collection(db, "stores", storeId, "sessions", session.id, "kitchentickets");
-
-        for (const refill of refillsToOrder) {
-            const ticketRef = doc(ticketsRef);
-            let notes = "Repeat First Order";
-
-            const globalRefill = globalRefills.find(r => r.id === refill.refillId);
-            if (globalRefill?.requiresFlavor && defaultFlavorNames) {
-                notes += `\nFlavors: ${defaultFlavorNames}`;
-            }
-
-            const payload = {
-                id: ticketRef.id,
-                type: "refill",
-                itemId: refill.refillId,
-                itemName: refill.refillName,
-                qty: 1,
-                notes: notes,
-                status: "preparing",
-                kitchenLocationId: refill.kitchenLocationId,
-                kitchenLocationName: refill.kitchenLocationName,
-                createdAt: serverTimestamp(),
-                createdAtClientMs: Date.now(),
-                updatedAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-                sessionId: session.id,
-                storeId,
-                tableNumber: session.tableNumber,
-                customerName: session.customer?.name || session.customerName,
-                sessionMode: session.sessionMode,
-                sessionLabel: computeSessionLabel(session),
-                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-            };
-            batch.set(ticketRef, stripUndefined(payload));
-        }
-
+        batch.set(ticketRef, payload);
         await batch.commit();
-
-        const sentNames = refillsToOrder.map(r => r.refillName);
-        let summary = "";
-        if (sentNames.length <= 3) {
-            summary = sentNames.join(", ");
-        } else {
-            summary = `${sentNames.slice(0, 3).join(", ")} +${sentNames.length - 3} more`;
-        }
         
         toast({
-            title: `Sent ${refillsToOrder.length} refill tickets to kitchen.`,
-            description: `Items: ${summary}`
+            title: "Sent refill ticket to kitchen.",
+            description: itemName
         });
 
         onClose();
@@ -545,5 +547,3 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
-
-    
