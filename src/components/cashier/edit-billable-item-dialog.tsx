@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2, RefreshCw } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import type { Discount, SessionBillLine, InventoryItem } from "@/lib/types";
+import type { Discount, SessionBillLine, InventoryItem, LineAdjustment } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
 import { serverTimestamp, doc, getDoc } from "firebase/firestore";
@@ -67,6 +67,7 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     isLocked?: boolean;
     onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
+    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void;
 }
 
 function normalizeDiscountType(t: any): "fixed" | "percent" | null {
@@ -112,6 +113,7 @@ export function EditBillableItemDialog({
     discounts, 
     isLocked,
     onSave,
+    onAddLineAdjustment,
 }: EditBillableItemDialogProps) {
     const { appUser } = useAuthContext();
     const { activeStore } = useStoreContext();
@@ -132,21 +134,21 @@ export function EditBillableItemDialog({
 
      useEffect(() => {
         if (line && isOpen) {
-            const isDiscounted = (line.discountValue ?? 0) > 0;
-            const savedDiscount = isDiscounted ? discounts.find(d => d.type === line.discountType && d.value === line.discountValue) : undefined;
-            
             reset({
                 qtyOrdered: line.qtyOrdered,
                 unitPrice: line.unitPrice ?? 0,
-                applyDiscount: isDiscounted,
-                discountId: savedDiscount?.id || 'custom',
-                discountType: normalizeDiscountType(line.discountType),
-                discountValue: line.discountValue || 0,
-                discountQty: line.discountQty || 0,
                 applyFree: (line.freeQty || 0) > 0,
                 freeQty: line.freeQty || 0,
                 applyVoid: (line.voidedQty || 0) > 0,
                 voidQty: line.voidedQty || 0,
+    
+                // ALWAYS reset discount fields to a clean state
+                applyDiscount: false,
+                discountId: 'custom',
+                discountType: 'fixed',
+                discountValue: 0,
+                discountQty: 0,
+                
                 voidReason: undefined,
                 voidNote: '',
             });
@@ -166,13 +168,28 @@ export function EditBillableItemDialog({
 
         }
     }, [line, isOpen, reset, discounts, activeStore]);
+
+    const existingAdjDiscountQty = useMemo(() => {
+        if (!line?.lineAdjustments) return 0;
+        return Object.values(line.lineAdjustments)
+            .filter(adj => adj.kind === 'discount')
+            .reduce((sum, adj) => sum + adj.qty, 0);
+    }, [line?.lineAdjustments]);
     
     const handleQtyChange = (field: 'discountQty' | 'freeQty' | 'voidQty', newValue: number) => {
-        const { qtyOrdered, discountQty, freeQty, voidQty } = getValues();
-        let currentTotal = (discountQty || 0) + (freeQty || 0) + (voidQty || 0);
+        const { qtyOrdered, freeQty, voidQty } = getValues();
+        let otherTotal = (freeQty || 0) + (voidQty || 0) + existingAdjDiscountQty;
         
-        const otherTotal = currentTotal - (getValues(field) || 0);
-        
+        // This is tricky. When changing, for example, `freeQty`, we don't want to include
+        // its own current value in `otherTotal`.
+        if (field === 'freeQty') {
+            otherTotal = (voidQty || 0) + existingAdjDiscountQty;
+        } else if (field === 'voidQty') {
+             otherTotal = (freeQty || 0) + existingAdjDiscountQty;
+        } else if (field === 'discountQty') {
+             otherTotal = (freeQty || 0) + (voidQty || 0) + existingAdjDiscountQty;
+        }
+
         const maxAllowedForThisField = qtyOrdered - otherTotal;
 
         // Special rule for voiding packages
@@ -196,7 +213,7 @@ export function EditBillableItemDialog({
 
     const handleQtyOrderedChange = (newQty: number) => {
         const { voidQty = 0, freeQty = 0, discountQty = 0 } = getValues();
-        const totalAllocated = voidQty + freeQty + discountQty;
+        const totalAllocated = voidQty + freeQty + discountQty + existingAdjDiscountQty;
         
         if (newQty < totalAllocated) {
             toast({ variant: 'destructive', title: 'Counts Adjusted', description: 'Allocations reduced to match new total quantity.'});
@@ -234,7 +251,7 @@ export function EditBillableItemDialog({
     };
 
     const handleSave = async (data: FormValues) => {
-        if (!line) return;
+        if (!line || !appUser) return;
 
         if ((isPackage || isAddon) && data.applyVoid && data.voidQty > 0 && !data.voidReason) {
             toast({
@@ -266,54 +283,56 @@ export function EditBillableItemDialog({
         }
 
         setIsSubmitting(true);
-        const { applyDiscount, applyFree, applyVoid, ...payload } = data;
-
-        if (!applyDiscount) {
-            payload.discountQty = 0;
-            payload.discountType = null;
-            payload.discountValue = 0;
-        }
-        if (!applyFree) {
-            payload.freeQty = 0;
-        }
-        if (!applyVoid) {
-            payload.voidQty = 0;
-        }
-
-        const before: Partial<SessionBillLine> = {
-            qtyOrdered: line.qtyOrdered,
-            discountQty: line.discountQty,
-            discountType: line.discountType,
-            discountValue: line.discountValue,
-            freeQty: line.freeQty,
-            voidedQty: line.voidedQty,
-            unitPrice: line.unitPrice
-        };
-
-        const after: Partial<SessionBillLine> = {
-            qtyOrdered: payload.qtyOrdered,
-            discountQty: payload.discountQty,
-            discountType: payload.discountType,
-            discountValue: payload.discountValue,
-            freeQty: payload.freeQty,
-            voidedQty: payload.voidQty,
-            unitPrice: payload.unitPrice,
-        };
-        
-        if (isPackage && isIncreasingQty) {
-            (after as any).qtyOverrideActive = true;
-            (after as any).qtyOverrideAt = new Date();
-        }
 
         try {
+            // Part 1: Save core line changes (qty, price, void, free)
+            const before: Partial<SessionBillLine> = {
+                qtyOrdered: line.qtyOrdered,
+                unitPrice: line.unitPrice,
+                freeQty: line.freeQty,
+                voidedQty: line.voidedQty
+            };
+    
+            const after: Partial<SessionBillLine> = {
+                qtyOrdered: data.qtyOrdered,
+                unitPrice: data.unitPrice,
+                freeQty: data.applyFree ? data.freeQty : 0,
+                voidedQty: data.applyVoid ? data.voidQty : 0,
+            };
+            
+            if (isPackage && isIncreasingQty) {
+                (after as any).qtyOverrideActive = true;
+                (after as any).qtyOverrideAt = new Date();
+            }
+
             onSave(line.id, before, after);
+
+            // Part 2: Add new discount adjustment if applicable
+            if (data.applyDiscount && data.discountQty > 0 && data.discountValue > 0) {
+                const selectedDiscount = discounts.find(d => d.id === data.discountId);
+                const adj: LineAdjustment = {
+                    id: `adj_${Date.now()}`,
+                    kind: "discount",
+                    note: selectedDiscount?.name || "Custom Discount",
+                    type: data.discountType!,
+                    value: data.discountValue,
+                    qty: data.discountQty,
+                    refId: data.discountId !== 'custom' ? data.discountId : null,
+                    stackable: selectedDiscount?.stackable ?? true,
+                    createdAtClientMs: Date.now(),
+                    createdByUid: appUser.uid,
+                    createdByName: appUser.displayName || appUser.name || undefined,
+                };
+                onAddLineAdjustment(line.id, adj);
+            }
+
             onClose();
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const remainingQty = watchedValues.qtyOrdered - ((watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0));
+    const remainingQty = watchedValues.qtyOrdered - (existingAdjDiscountQty + (watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0));
     
     const showSyncPrice = inventoryItem && inventoryItem.sellingPrice !== watchedValues.unitPrice;
     const allowDecimal = inventoryItem ? allowsDecimalQty(inventoryItem.uom) : false;
