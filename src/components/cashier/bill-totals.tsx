@@ -78,7 +78,7 @@ export function BillTotals({
                 lineSubRows.push(
                     <div key={`${line.id}-free`} className="flex justify-between pl-4 text-destructive">
                         <span>{` - ${line.freeQty}x Free`}</span>
-                        <span>-₱{(line.freeQty * unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-muted-foreground">FREE</span>
                     </div>
                 );
             }
@@ -99,19 +99,19 @@ export function BillTotals({
                         const baseUnitPrice = isVatInclusive ? (unitPrice / (1 + taxRate)) : unitPrice;
                         
                         let adjAmount = 0;
-                        const adjQty = Math.min(adj.qty, billableQtyForAdj);
+                        const qtyToApply = Math.min(adj.qty, billableQtyForAdj);
 
                         if (adj.kind === 'discount') {
                             if (adj.type === 'percent') {
-                                adjAmount = adjQty * baseUnitPrice * (adj.value / 100);
+                                adjAmount = qtyToApply * baseUnitPrice * (adj.value / 100);
                             } else { // fixed
-                                adjAmount = Math.min(baseUnitPrice, adj.value) * adjQty;
+                                adjAmount = Math.min(baseUnitPrice, adj.value) * qtyToApply;
                             }
                         } else if (adj.kind === 'charge') {
                             if (adj.type === 'percent') {
-                                adjAmount = adjQty * baseUnitPrice * (adj.value / 100);
+                                adjAmount = qtyToApply * baseUnitPrice * (adj.value / 100);
                             } else { // fixed
-                                adjAmount = adj.value * adjQty;
+                                adjAmount = adj.value * qtyToApply;
                             }
                         }
 
