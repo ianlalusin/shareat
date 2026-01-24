@@ -9,7 +9,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, updateSessionBillLine, voidSession } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, updateSessionBillLine, voidSession, removeLineAdjustment } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,7 +21,7 @@ import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment } from "@/lib/types";
+import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
@@ -223,6 +223,25 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const handleAddLineAdjustment = async (lineId: string, adj: LineAdjustment) => {
+    if (!appUser || !storeId || !sessionId) return;
+    try {
+        const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
+        await updateDoc(lineRef, {
+            [`lineAdjustments.${adj.id}`]: adj,
+        });
+        toast({ title: 'Adjustment Added'});
+    } catch(e: any) {
+        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+    }
+  }
+
+  const handleRemoveLineAdjustment = async (lineId: string, adjId: string) => {
+    if (!activeStore?.id || !sessionId || !appUser) return;
+    await removeLineAdjustment(activeStore.id, sessionId, lineId, adjId, appUser);
+  };
+
+
   const handleCompletePayment = async () => {
     if (isCompletingPayment || isBillingLocked) return;
 
@@ -300,6 +319,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         customAdjustments={customAdjustments}
                         totalPaid={totalPaid} 
                         isLocked={isBillingLocked} 
+                        onRemoveLineAdjustment={handleRemoveLineAdjustment}
                     />
                 </div>
                 <BillAdjustments
@@ -346,6 +366,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             discounts={itemDiscounts}
             isLocked={isBillingLocked}
             onSave={handleUpdateLine}
+            onAddLineAdjustment={handleAddLineAdjustment}
         />
       )}
       {Dialog}
