@@ -13,6 +13,7 @@ interface BillTotalsProps {
   customAdjustments: Adjustment[];
   totalPaid: number;
   isLocked?: boolean;
+  onRemoveLineAdjustment?: (lineId: string, adjId: string) => void;
 }
 
 export function BillTotals({
@@ -22,6 +23,7 @@ export function BillTotals({
   customAdjustments,
   totalPaid,
   isLocked,
+  onRemoveLineAdjustment,
 }: BillTotalsProps) {
     
     const totals = useMemo(() => {
@@ -39,12 +41,12 @@ export function BillTotals({
     const remainingBalance = grandTotal - totalPaidNum;
     const change = totalPaidNum > grandTotal ? totalPaidNum - grandTotal : 0;
     
-    const activeLines = useMemo(() => lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0), [lines]);
+    const activeLines = useMemo(() => lines.filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0), [lines]);
 
   return (
     <div className="p-3 bg-background space-y-2 text-sm">
         {activeLines.map(line => {
-            const billableQty = line.qtyOrdered - line.voidedQty;
+            const billableQty = line.qtyOrdered - (line.voidedQty || 0);
             const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
             const lineGross = billableQty * unitPrice;
             const hasDiscount = line.discountValue && line.discountValue > 0 && line.discountQty > 0;
@@ -81,6 +83,8 @@ export function BillTotals({
                 );
             }
 
+            const adjs = Object.values(line.lineAdjustments ?? {}).sort((a,b)=>a.createdAtClientMs - b.createdAtClientMs);
+
             return (
                 <div key={line.id} className="space-y-1">
                     <div className="flex justify-between">
@@ -88,6 +92,23 @@ export function BillTotals({
                         <span>₱{lineGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {lineSubRows}
+                    {adjs.map(adj => (
+                        <div key={adj.id} className="flex justify-between items-center pl-4 text-xs">
+                            <span className={adj.kind === 'discount' ? 'text-destructive' : 'text-green-600'}>
+                                {adj.kind === 'discount' ? '-' : '+'} {adj.qty}x {adj.note}
+                            </span>
+                            {onRemoveLineAdjustment && !isLocked && (
+                                <button
+                                    onClick={() => onRemoveLineAdjustment(line.id, adj.id)}
+                                    className="text-muted-foreground hover:text-destructive leading-none text-lg px-1 rounded"
+                                    aria-label={`Remove ${adj.note}`}
+                                    title={`Remove ${adj.note}`}
+                                >
+                                    &times;
+                                </button>
+                            )}
+                        </div>
+                    ))}
                 </div>
             )
         })}
