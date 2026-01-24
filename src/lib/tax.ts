@@ -64,30 +64,34 @@ export function calculateBillTotals(
     grossSubtotal += billableQty * unitPrice;
     
     const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
-    const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+    const adjs = Object.values((line as any).lineAdjustments ?? {}).sort((a: any, b: any) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0)) as LineAdjustment[];
     const hasAdjDiscount = adjs.some(a => a.kind === "discount");
     
-    let remainingQtyForAdjustments = billableQty;
-    for (const adj of adjs) {
-        if (remainingQtyForAdjustments <= 0) break;
-        
-        const qtyToApply = Math.min(Number(adj.qty || 0), remainingQtyForAdjustments);
-        if (qtyToApply <= 0) continue;
+    let remainingQtyForDiscounts = billableQty;
 
+    for (const adj of adjs) {
         if (adj.kind === "discount") {
+            if (remainingQtyForDiscounts <= 0) continue;
+            const qtyToApply = Math.min(Number(adj.qty || 0), remainingQtyForDiscounts);
+            if (qtyToApply <= 0) continue;
+
             if (adj.type === "percent") {
                 lineDiscountsTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
             } else { // fixed
                 lineDiscountsTotal += Math.min(baseUnitPrice, Number(adj.value || 0)) * qtyToApply;
             }
+            remainingQtyForDiscounts -= qtyToApply;
+
         } else if (adj.kind === "charge") {
+            const qtyToApply = Math.min(Number(adj.qty || 0), billableQty);
+            if (qtyToApply <= 0) continue;
+
             if (adj.type === "percent") {
                 lineChargesTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
             } else { // fixed
                 lineChargesTotal += Number(adj.value || 0) * qtyToApply;
             }
         }
-        remainingQtyForAdjustments -= qtyToApply;
     }
 
     // Legacy fallback:
