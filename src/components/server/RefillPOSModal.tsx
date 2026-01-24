@@ -271,17 +271,15 @@ function POSContent({
         const flavorNames = flavorIds
           .map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id)
           .filter(Boolean);
-        const flavorLine = flavorNames.length ? `Flavors: ${flavorNames.join(", ")}` : "";
-
-        let notes = "REFILL\nRepeat First Order";
-        if (flavorLine) notes += `\n${flavorLine}`;
         
+        let notes = "";
+        if (flavorNames.length) notes = `Flavors: ${flavorNames.join(", ")}`;
         const extraNotes = (activeCartItem?.notes || "").trim();
-        if (extraNotes) notes += `\nNotes:\n${extraNotes}`;
+        if (extraNotes) notes = notes ? `${notes}\n${extraNotes}` : extraNotes;
         
         const guestCount = session.guestCountFinal || session.guestCountCashierInitial || 1;
         const packageName = (currentPackage as any)?.packageName || (currentPackage as any)?.name || session.packageSnapshot?.name || "Package";
-        const itemName = `REFILL - ${packageName} (x${guestCount})`;
+        const itemName = `REFILL - ${packageName}`;
         
         const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
 
