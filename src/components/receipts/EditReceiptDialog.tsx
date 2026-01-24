@@ -12,7 +12,7 @@ import { BillTotals } from "../cashier/bill-totals";
 import { BillAdjustments } from "../cashier/bill-adjustments";
 import { PaymentSection } from "../cashier/payment-section";
 import { EditBillableItemDialog } from "../cashier/edit-billable-item-dialog";
-import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession, ReceiptAnalyticsV2 } from "@/lib/types";
+import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession, ReceiptAnalyticsV2, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { Loader2 } from "lucide-react";
 import { Input } from "../ui/input";
@@ -60,6 +60,29 @@ function EditReceiptContent({
 
   const [editingLine, setEditingLine] = useState<SessionBillLine | null>(null);
   
+  const handleAddLineAdjustment = (lineId: string, adj: LineAdjustment) => {
+    setLines(cur => cur.map(l => {
+      if (l.id !== lineId) return l;
+      const next = { ...(l as any) };
+      const map = { ...(next.lineAdjustments ?? {}) };
+      map[adj.id] = adj;
+      next.lineAdjustments = map;
+      return next;
+    }));
+    setEditingLine(null);
+  };
+  
+  const handleRemoveLineAdjustment = (lineId: string, adjId: string) => {
+    setLines(cur => cur.map(l => {
+      if (l.id !== lineId) return l;
+      const next = { ...(l as any) };
+      const map = { ...(next.lineAdjustments ?? {}) };
+      delete map[adjId];
+      next.lineAdjustments = map;
+      return next;
+    }));
+  };
+
   const billTotals = useMemo(() => {
     return calculateBillTotals(lines, store, billDiscount, customAdjustments);
   }, [lines, store, billDiscount, customAdjustments]);
@@ -96,20 +119,46 @@ function EditReceiptContent({
             if (netQty <= 0) return acc;
 
             const grossAmount = netQty * line.unitPrice;
-            const discountQty = Math.min(line.discountQty || 0, netQty);
             
-            let discountAmount = 0;
-            if (discountQty > 0) {
-                const discountBaseUnit = (store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0)
-                    ? (line.unitPrice / (1 + (store.taxRatePct / 100)))
-                    : line.unitPrice;
+            const discountBaseUnit =
+              store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0
+                ? line.unitPrice / (1 + store.taxRatePct / 100)
+                : line.unitPrice;
 
-                if (line.discountType === 'percent') {
-                    discountAmount = (discountQty * discountBaseUnit) * ((line.discountValue || 0) / 100);
-                } else { // fixed
-                    discountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountQty;
+            const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+            const discountAdjs = adjs
+              .filter(a => a.kind === "discount")
+              .sort((a, b) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0));
+
+            const hasAdjDiscount = discountAdjs.length > 0;
+
+            let discountAmount = 0;
+            if (hasAdjDiscount) {
+              let remaining = netQty;
+              for (const a of discountAdjs) {
+                const q = Math.min(Number(a.qty || 0), remaining);
+                if (q <= 0) continue;
+
+                if (a.type === "percent") {
+                  discountAmount += q * discountBaseUnit * ((Number(a.value || 0)) / 100);
+                } else {
+                  discountAmount += Math.min(discountBaseUnit, Number(a.value || 0)) * q;
                 }
+                remaining -= q;
+                if (remaining <= 0) break;
+              }
+            } else {
+              // legacy fallback
+              const discountQty = Math.min(line.discountQty || 0, netQty);
+              if (discountQty > 0) {
+                if (line.discountType === 'percent') {
+                  discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
+                } else {
+                  discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
+                }
+              }
             }
+            
             const netAmount = grossAmount - discountAmount;
             
             const categoryName = line.category || 'Uncategorized';
@@ -237,6 +286,7 @@ function EditReceiptContent({
             billDiscount={billDiscount}
             customAdjustments={customAdjustments}
             totalPaid={totalPaid}
+            onRemoveLineAdjustment={handleRemoveLineAdjustment}
           />
           <div className="p-4 border rounded-md">
             <h3 className="font-semibold mb-2">Customer Details (for BIR)</h3>
@@ -283,6 +333,7 @@ function EditReceiptContent({
           line={editingLine}
           discounts={itemDiscounts}
           onSave={handleUpdateLine}
+          onAddLineAdjustment={handleAddLineAdjustment}
         />
       )}
     </>
