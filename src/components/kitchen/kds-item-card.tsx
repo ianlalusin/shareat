@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -72,7 +71,7 @@ function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAt
 
   if (!Number.isFinite(startMs as number)) {
     return (
-      <div className="flex items-center gap-1.5 text-sm font-mono text-amber-600">
+      <div className="flex items-center gap-1.5 text-base font-mono text-amber-600">
         <Clock size={14} />
         <span>00:00:00</span>
       </div>
@@ -84,7 +83,7 @@ function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAt
   const totalMinutes = Math.floor(elapsedMs / 60000);
 
   return (
-    <div className={cn("flex items-center gap-1.5 text-sm font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
+    <div className={cn("flex items-center gap-1.5 text-base font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
       <Clock size={14} />
       <span>{elapsedFormatted}</span>
     </div>
@@ -142,11 +141,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                             <p className="text-2xl font-bold text-destructive">{identifier}</p>
                             {guestCountLabel && <span className="text-lg font-medium text-muted-foreground">{guestCountLabel}</span>}
                         </div>
-                        {ticket.status === 'served' ? (
-                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-sm"><CheckCircle className="mr-1" />Served</Badge>
-                        ) : (
-                            <Badge variant="outline" className="capitalize text-sm">{ticket.status}</Badge>
-                        )}
+                        <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
                     <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
                 </CardHeader>
@@ -165,7 +160,13 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                     )}
                 </CardContent>
                 <CardFooter className="flex justify-between items-center gap-2 p-3 pt-2">
-                     <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
+                     <div>
+                        {ticket.status === 'served' ? (
+                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-sm"><CheckCircle className="mr-1" />Served</Badge>
+                        ) : (
+                            <Badge variant="outline" className="capitalize text-sm">{ticket.status}</Badge>
+                        )}
+                     </div>
                      <div className="flex items-center gap-2">
                         
                         {ticket.status === 'preparing' && (
