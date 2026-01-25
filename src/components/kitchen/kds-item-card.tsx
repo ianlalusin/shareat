@@ -135,7 +135,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
     return (
         <>
             <Card className={cn("flex flex-col", ticket.status === 'served' && 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800')}>
-                <CardHeader className="pb-2">
+                <CardHeader className="p-3">
                     <div className="flex items-start justify-between">
                          <div>
                             <div className="flex items-baseline gap-2">
@@ -150,11 +150,8 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                             <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
                         )}
                     </div>
-                     <CardDescription className="flex items-center justify-end pt-2">
-                        <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
-                    </CardDescription>
                 </CardHeader>
-                <CardContent className="flex-grow space-y-2">
+                <CardContent className="flex-grow space-y-2 p-3 pt-0">
                     {ticket.initialFlavorNames && ticket.initialFlavorNames.length > 0 && (
                         <div className="text-sm">
                             <p className="font-semibold">Flavors:</p>
@@ -170,29 +167,33 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                         </div>
                     )}
                 </CardContent>
-                <CardFooter className="flex justify-end gap-2">
-                     {ticket.status === 'preparing' && (
-                        <>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="destructive" size="sm">
-                                        <XCircle className="mr-2" /> Cancel
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent>
-                                    {CANCELLATION_REASONS.map(reason => (
-                                        <DropdownMenuItem key={reason} onSelect={() => handleCancel(reason)}>
-                                            {reason}
-                                        </DropdownMenuItem>
-                                    ))}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                <CardFooter className="flex justify-between items-center gap-2 p-3 pt-2">
+                    <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
+                    
+                    <div className="flex gap-2">
+                        {ticket.status === 'preparing' && (
+                            <>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="destructive" size="sm">
+                                            <XCircle className="mr-2" /> Cancel
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent>
+                                        {CANCELLATION_REASONS.map(reason => (
+                                            <DropdownMenuItem key={reason} onSelect={() => handleCancel(reason)}>
+                                                {reason}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
 
-                            <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
-                               <Send className="mr-2" /> Mark as Served
-                            </Button>
-                        </>
-                    )}
+                                <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                                <Send className="mr-2" /> Mark as Served
+                                </Button>
+                            </>
+                        )}
+                    </div>
                 </CardFooter>
             </Card>
             {Dialog}
