@@ -163,7 +163,7 @@ export default function KitchenPage() {
     }, (error) => {
         if (isSigningOut || !appUser) return;
         console.error("Error fetching kitchen tickets:", error);
-        toast({ variant: "destructive", title: "Error", description: "Could not fetch kitchen tickets." });
+        toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch kitchen tickets." });
         setIsLoading(false);
     }));
 
