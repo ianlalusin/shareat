@@ -144,11 +144,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                             </div>
                             <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
                          </div>
-                         {ticket.status === 'served' ? (
-                            <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Served</Badge>
-                        ) : (
-                            <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
-                        )}
+                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2 p-3 pt-0">
@@ -168,7 +164,11 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                     )}
                 </CardContent>
                 <CardFooter className="flex justify-between items-center gap-2 p-3 pt-2">
-                    <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
+                     {ticket.status === 'served' ? (
+                        <Badge variant="default" className="bg-green-600 whitespace-nowrap"><CheckCircle className="mr-1" />Served</Badge>
+                    ) : (
+                        <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
+                    )}
                     
                     <div className="flex gap-2">
                         {ticket.status === 'preparing' && (
