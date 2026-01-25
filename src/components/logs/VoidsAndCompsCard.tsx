@@ -13,11 +13,18 @@ import { ScrollArea } from "../ui/scroll-area";
 
 interface VoidsAndCompsCardProps {
     logs: (ActivityLog & { session: PendingSession })[];
+    discountLogs: (ActivityLog & { session: PendingSession })[];
     isLoading: boolean;
 }
 
 function formatAmount(log: ActivityLog): string {
     const meta = log.meta || {};
+    
+    if (log.action === "DISCOUNT_APPLIED") {
+        if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
+            return `- ₱${meta.amount.toFixed(2)}`;
+        }
+    }
   
     // Check for a direct amount first (more reliable)
     if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
@@ -40,6 +47,10 @@ function formatAmount(log: ActivityLog): string {
 }
 
 function getReason(log: ActivityLog): string {
+    const meta = (log.meta || {}) as any;
+    if (log.action === "DISCOUNT_APPLIED") {
+        return meta.note || meta.discountName || "Discount Applied";
+    }
     return log.reason || log.note || 'N/A';
 }
 
@@ -47,21 +58,22 @@ function getActor(log: ActivityLog): string {
    return log.actorName || (log.actorUid ? log.actorUid.slice(0,8) : '—')
 }
 
-export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
-    const [filter, setFilter] = useState<'all' | 'voids' | 'free'>('all');
+export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCompsCardProps) {
+    const [filter, setFilter] = useState<'all' | 'voids' | 'free' | 'discounted'>('all');
 
     const filteredLogs = useMemo(() => {
-        if (filter === 'all') return logs;
+        if (filter === 'all') return [...logs, ...discountLogs].sort((a,b) => (toJsDate(b.createdAt)?.getTime() ?? 0) - (toJsDate(a.createdAt)?.getTime() ?? 0));
         if (filter === 'voids') return logs.filter(log => log.action === 'VOID_TICKETS' || log.action === 'SESSION_VOIDED');
         if (filter === 'free') return logs.filter(log => log.action === 'MARK_FREE');
+        if (filter === 'discounted') return discountLogs;
         return [];
-    }, [logs, filter]);
+    }, [logs, discountLogs, filter]);
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Voids & Comps</CardTitle>
-                <CardDescription>A summary of all voided and free items.</CardDescription>
+                <CardTitle>Voids, Comps &amp; Discounts</CardTitle>
+                <CardDescription>A summary of all voided, free, and discounted items.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Tabs value={filter} onValueChange={(v) => setFilter(v as any)} className="mb-4">
@@ -69,6 +81,7 @@ export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
                         <TabsTrigger value="all">All</TabsTrigger>
                         <TabsTrigger value="voids">Voids</TabsTrigger>
                         <TabsTrigger value="free">Free</TabsTrigger>
+                        <TabsTrigger value="discounted">Discounts</TabsTrigger>
                     </TabsList>
                 </Tabs>
 
@@ -93,12 +106,13 @@ export function VoidsAndCompsCard({ logs, isLoading }: VoidsAndCompsCardProps) {
                                 {filteredLogs.map(log => {
                                     const meta = (log.meta || {}) as any;
                                     const sessionLabel = computeSessionLabel(log.session);
-                                    const itemName = meta.itemName || meta.itemId || 'Unknown item';
                                     let itemLabel = "SESSION VOIDED";
                                     if (log.action === "VOID_TICKETS") {
-                                        itemLabel = `${itemName} (VOID x${meta.qty ?? 1})`;
+                                        itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {
-                                        itemLabel = `${itemName} (FREE x${meta.qty ?? 1})`;
+                                        itemLabel = `${meta.itemName} (FREE x${meta.qty ?? 1})`;
+                                    } else if (log.action === "DISCOUNT_APPLIED") {
+                                        itemLabel = `${meta.itemName || 'Bill'} (DISCOUNT x${meta.qty ?? 1})`;
                                     }
 
                                     return (

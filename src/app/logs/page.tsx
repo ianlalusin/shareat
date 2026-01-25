@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -217,6 +216,21 @@ export default function LogsPage() {
             return timeB - timeA;
         });
   }, [groupedLogs]);
+  
+  const discountLogs = useMemo(() => {
+    const relevantActions: ActivityLog['action'][] = ["DISCOUNT_APPLIED", "DISCOUNT_REMOVED"];
+    return groupedLogs
+        .flatMap(({ session, logs }) => 
+            logs
+                .filter(log => relevantActions.includes(log.action))
+                .map(log => ({ ...log, session })) // Attach session to each log
+        )
+        .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            return timeB - timeA;
+        });
+  }, [groupedLogs]);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -314,7 +328,7 @@ export default function LogsPage() {
             </Card>
         </div>
         <div>
-            <VoidsAndCompsCard logs={voidAndFreeLogs} isLoading={isLoading} />
+            <VoidsAndCompsCard logs={voidAndFreeLogs} discountLogs={discountLogs} isLoading={isLoading} />
         </div>
       </div>
     </RoleGuard>
