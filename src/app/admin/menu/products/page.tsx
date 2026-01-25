@@ -1,7 +1,9 @@
+
 "use client";
 
 import * as React from "react";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs, deleteDoc, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
@@ -11,7 +13,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
@@ -29,6 +31,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 
 export default function ProductManagementPage() {
+  const router = useRouter();
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
@@ -366,7 +369,10 @@ export default function ProductManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
             <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>
             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".xlsx, .xls, .csv" />

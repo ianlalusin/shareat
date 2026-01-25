@@ -11,14 +11,16 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Sparkles, Trash2 } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Sparkles, Trash2, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { FlavorEditDialog } from "@/components/admin/menu/flavor-edit-dialog";
 import type { Flavor } from "@/lib/types";
 import { errorEmitter, FirestorePermissionError } from "@/firebase";
+import { useRouter } from "next/navigation";
 
 export default function FlavorsManagementPage() {
+  const router = useRouter();
   const { appUser, isSigningOut, loading: authLoading } = useAuthContext();
   const { toast } = useToast();
   const [flavors, setFlavors] = useState<Flavor[]>([]);
@@ -145,9 +147,14 @@ export default function FlavorsManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Flavors" description="Manage global flavor options.">
-        <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" /> New Flavor
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            <Button onClick={() => handleOpenDialog()}>
+            <PlusCircle className="mr-2" /> New Flavor
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader>

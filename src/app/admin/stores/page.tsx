@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp, addDoc, writeBatch, Timestamp, getDocs, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
@@ -11,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Download, ImageIcon } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Download, ImageIcon, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StoreEditDialog } from "@/components/admin/store-edit-dialog";
@@ -71,6 +72,7 @@ async function getCollectionData(collectionRef: any) {
 
 
 export default function StoreManagementPage() {
+  const router = useRouter();
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const { stores, loading: isLoading } = useStoreContext();
@@ -246,10 +248,15 @@ export default function StoreManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Store Management" description="Create, edit, and manage all store locations.">
-        <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" />
-          Create Store
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            <Button onClick={() => handleOpenDialog()}>
+            <PlusCircle className="mr-2" />
+            Create Store
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader>

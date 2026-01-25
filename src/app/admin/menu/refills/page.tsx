@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, query, where, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
@@ -11,13 +12,14 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, UtensilsCrossed, Trash2 } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, UtensilsCrossed, Trash2, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
 import type { Flavor, Refill } from "@/lib/types";
 
 export default function RefillsManagementPage() {
+  const router = useRouter();
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const [refills, setRefills] = useState<Refill[]>([]);
@@ -119,9 +121,14 @@ export default function RefillsManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Refills" description="Manage global refillable items.">
-        <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" /> New Refill
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            <Button onClick={() => handleOpenDialog()}>
+            <PlusCircle className="mr-2" /> New Refill
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader><CardTitle>All Refills</CardTitle></CardHeader>

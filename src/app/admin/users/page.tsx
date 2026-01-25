@@ -2,12 +2,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc, writeBatch, getDoc } from "firebase/firestore";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, ChevronsUpDown, Loader } from "lucide-react";
+import { Check, ChevronsUpDown, Loader, ArrowLeft } from "lucide-react";
 import { db, auth } from "@/lib/firebase/client";
 import { Separator } from "@/components/ui/separator";
 import { AppUser, useAuthContext } from "@/context/auth-context";
@@ -29,6 +30,7 @@ const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
 
 export default function UserManagementPage() {
+    const router = useRouter();
     const { appUser, isSigningOut } = useAuthContext();
     const { stores: availableStores, loading: storesLoading } = useStoreContext();
     const { toast } = useToast();
@@ -274,7 +276,11 @@ export default function UserManagementPage() {
 
     return (
         <RoleGuard allow={["admin"]}>
-            <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts." />
+            <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts.">
+                <Button variant="outline" onClick={() => router.back()}>
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                </Button>
+            </PageHeader>
              <div className="grid gap-6">
                 <Card>
                     <CardHeader>

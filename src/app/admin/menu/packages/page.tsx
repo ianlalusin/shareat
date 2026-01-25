@@ -11,13 +11,15 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Box, Trash2 } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Box, Trash2, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
 import type { Refill, Package } from "@/lib/types";
+import { useRouter } from "next/navigation";
 
 export default function PackagesManagementPage() {
+  const router = useRouter();
   const { appUser, isSigningOut } = useAuthContext();
   const { toast } = useToast();
   const [packages, setPackages] = useState<Package[]>([]);
@@ -131,9 +133,14 @@ export default function PackagesManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Packages" description="Manage global product packages and bundles.">
-        <Button onClick={() => handleOpenDialog()}>
-          <PlusCircle className="mr-2" /> New Package
-        </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            <Button onClick={() => handleOpenDialog()}>
+            <PlusCircle className="mr-2" /> New Package
+            </Button>
+        </div>
       </PageHeader>
       <Card>
         <CardHeader><CardTitle>All Packages</CardTitle></CardHeader>
