@@ -619,44 +619,54 @@ export async function voidSession({
     throw new Error('Session is already finalized and cannot be voided.');
   }
 
-  const batch = writeBatch(db);
-
-  // 1. Update session doc
-  batch.update(sessionRef, {
-    status: 'voided',
-    voidedAt: serverTimestamp(),
-    voidedByUid: actor.uid,
-    voidedByUsername: getActorStamp(actor).username,
-    voidReason: reason,
-    updatedAt: serverTimestamp(),
-  });
-
-  // 2. Free up table if applicable
-  if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
-    const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
-    batch.update(tableRef, {
-      status: 'available',
-      currentSessionId: null,
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  // 3. Cancel outstanding kitchen tickets
   const ticketsRef = collection(db, 'stores', storeId, 'sessions', sessionId, 'kitchentickets');
   const ticketsQuery = query(ticketsRef, where('status', 'in', ['preparing', 'ready']));
   const ticketsSnap = await getDocs(ticketsQuery);
+  const ticketRefs = ticketsSnap.docs.map(d => d.ref);
 
-  ticketsSnap.forEach((ticketDoc) => {
-    batch.update(ticketDoc.ref, {
-      status: 'cancelled',
-      cancelReason: 'SESSION_VOIDED',
-      cancelledAt: serverTimestamp(),
-      cancelledByUid: actor.uid,
+  await runTransaction(db, async (tx) => {
+    tx.update(sessionRef, {
+      status: 'voided',
+      voidedAt: serverTimestamp(),
+      voidedByUid: actor.uid,
+      voidedByUsername: getActorStamp(actor).username,
+      voidReason: reason,
       updatedAt: serverTimestamp(),
     });
-  });
 
-  await batch.commit();
+    if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
+      const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
+      tx.update(tableRef, {
+        status: 'available',
+        currentSessionId: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    for (const ticketRef of ticketRefs) {
+      const ticketDoc = await tx.get(ticketRef);
+      if (!ticketDoc.exists()) continue;
+
+      const oldTicket = ticketDoc.data() as KitchenTicket;
+      if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') {
+        continue;
+      }
+      
+      const updatePayload = {
+        status: 'cancelled' as const,
+        cancelReason: 'SESSION_VOIDED',
+        cancelledAt: serverTimestamp(),
+        cancelledByUid: actor.uid,
+        updatedAt: serverTimestamp(),
+      };
+      
+      const newTicket = { ...oldTicket, ...updatePayload };
+      
+      await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
+
+      tx.update(ticketRef, updatePayload);
+    }
+  });
 }
 
 /**
