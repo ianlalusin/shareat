@@ -189,7 +189,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                                 </DropdownMenu>
 
                                 <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
-                                <Send className="mr-2" /> Mark as Served
+                                <Send className="mr-2" /> Served
                                 </Button>
                             </>
                         )}
