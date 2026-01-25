@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -103,11 +102,6 @@ service cloud.firestore {
     // =====================================================================
     // Collection Rules
     // =====================================================================
-
-    // Rule to allow collectionGroup query on kitchentickets for KDS page.
-    match /{path=**}/kitchentickets/{ticketId} {
-      allow read: if hasStoreAccess(resource.data.storeId);
-    }
 
     // -------------------------------------------------
     // Root-level (Global) Collections
