@@ -198,13 +198,17 @@ export async function startSession(storeId: string, payload: StartSessionPayload
 
   await batch.commit();
 
-  await writeActivityLog({
-    storeId,
-    sessionId: newSessionRef.id,
-    user,
-    action: 'SESSION_STARTED',
-    note: 'Session started',
-  });
+  // For package dine-in, this is the definitive start log.
+  // For ala carte, another process seems to be logging the start, so we skip this one to avoid duplicates.
+  if (payload.sessionMode !== 'alacarte') {
+    await writeActivityLog({
+      storeId,
+      sessionId: newSessionRef.id,
+      user,
+      action: 'SESSION_STARTED',
+      note: 'Session started',
+    });
+  }
 
   return newSessionRef.id;
 }
@@ -233,7 +237,7 @@ export async function completePaymentFromUnits(
 
   // Read active tickets OUTSIDE the transaction
   const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsQuery = query(ticketsRef, where("status", "==", "preparing"));
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
   const activeTicketsSnap = await getDocs(activeTicketsQuery);
   const activeTicketRefs = activeTicketsSnap.docs.map(doc => doc.ref);
 
@@ -619,10 +623,12 @@ export async function voidSession({
     throw new Error('Session is already finalized and cannot be voided.');
   }
 
-  const ticketsRef = collection(db, 'stores', storeId, 'sessions', sessionId, 'kitchentickets');
-  const ticketsQuery = query(ticketsRef, where('status', 'in', ['preparing', 'ready']));
-  const ticketsSnap = await getDocs(ticketsQuery);
-  const ticketRefs = ticketsSnap.docs.map(d => d.ref);
+  // BEFORE runTransaction:
+  // Query outstanding tickets
+  const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
+  const ticketSnap = await getDocs(activeTicketsQuery);
+  const ticketRefs = ticketSnap.docs.map(d=>d.ref);
 
   await runTransaction(db, async (tx) => {
     tx.update(sessionRef, {
