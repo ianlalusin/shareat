@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStoreContext } from "@/context/store-context";
-import { Loader } from "lucide-react";
+import { Loader, ArrowLeft } from "lucide-react";
 import { StorePackagesSettings } from "@/components/manager/store-settings/store-packages-settings";
 import { SchedulesSettings } from "@/components/manager/store-settings/schedules-settings";
 import { StoreFlavorsSettings } from "@/components/manager/store-settings/store-flavors-settings";
@@ -16,6 +16,8 @@ import { StoreRefillsSettings } from "@/components/manager/store-settings/store-
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
 
 const TABS = [
@@ -28,6 +30,7 @@ const TABS = [
 ]
 
 export default function StoreSettingsPage() {
+    const router = useRouter();
     const { activeStore, loading } = useStoreContext();
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState("store_packages");
@@ -50,7 +53,11 @@ export default function StoreSettingsPage() {
     
     return (
         <RoleGuard allow={["admin", "manager"]}>
-            <PageHeader title="Store Settings" description={`Manage settings for ${activeStore.name}`} />
+            <PageHeader title="Store Settings" description={`Manage settings for ${activeStore.name}`}>
+                <Button variant="outline" onClick={() => router.back()}>
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                </Button>
+            </PageHeader>
             <Tabs defaultValue={activeTab} value={activeTab} onValueChange={setActiveTab} className="w-full">
                 {isMobile ? (
                     <Select value={activeTab} onValueChange={setActiveTab}>

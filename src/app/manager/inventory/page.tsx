@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { collection, onSnapshot, query, doc, writeBatch, serverTimestamp, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
@@ -12,7 +13,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, MoreHorizontal, Package } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, MoreHorizontal, Package, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
@@ -29,6 +30,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import Image from "next/image";
 
 export default function InventoryManagementPage() {
+  const router = useRouter();
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
@@ -357,6 +359,9 @@ export default function InventoryManagementPage() {
     <RoleGuard allow={["admin", "manager"]}>
       <PageHeader title="Inventory Management" description={`Manage stock for ${activeStore.name}`}>
         <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
             <Button onClick={handleBackfill} variant="outline" disabled={isBackfilling}>
                 {isBackfilling ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2" />}
                 Backfill Data
@@ -523,5 +528,3 @@ export default function InventoryManagementPage() {
     </RoleGuard>
   );
 }
-
-    

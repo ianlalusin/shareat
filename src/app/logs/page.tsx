@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useAuthContext } from "@/context/auth-context";
@@ -61,6 +62,7 @@ const ITEMS_PER_PAGE = 10;
 
 
 export default function LogsPage() {
+  const router = useRouter();
   const { appUser, isSigningOut } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const [groupedLogs, setGroupedLogs] = useState<GroupedLog[]>([]);
@@ -303,6 +305,9 @@ export default function LogsPage() {
       >
         <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => router.back()} size="sm">
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                </Button>
                  <Button onClick={handleExport} disabled={isExporting || isLoading || groupedLogs.length === 0} variant="outline" size="sm">
                     {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
                     Export
