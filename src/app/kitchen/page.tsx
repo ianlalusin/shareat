@@ -307,18 +307,29 @@ export default function KitchenPage() {
     }, {} as Record<string, number>);
   }, [preparingItems]);
   
-  const historyItems = useMemo(() => ticketsWithData
-    .filter(t => t.status === 'served' || t.status === 'cancelled' || t.status === 'void')
-    .sort((a, b) => {
-        const getTime = (date: any): number => {
-            if (!date) return 0;
-            return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
-        };
-        const aTime = getTime(a.cancelledAt || a.servedAt || a.createdAt);
-        const bTime = getTime(b.cancelledAt || b.servedAt || b.createdAt);
-        return bTime - aTime;
-    })
-    .slice(0, 50), [ticketsWithData]);
+  const historyItems = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    return ticketsWithData
+      .filter(t => {
+        if (t.status !== 'served' && t.status !== 'cancelled' && t.status !== 'void') {
+          return false;
+        }
+        const eventTime = toJsDate(t.servedAt || t.cancelledAt || t.createdAt);
+        return eventTime ? eventTime >= startOfToday : false;
+      })
+      .sort((a, b) => {
+          const getTime = (date: any): number => {
+              if (!date) return 0;
+              return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
+          };
+          const aTime = getTime(a.cancelledAt || a.servedAt || a.createdAt);
+          const bTime = getTime(b.cancelledAt || b.servedAt || b.createdAt);
+          return bTime - aTime;
+      })
+      .slice(0, 50)
+  }, [ticketsWithData]);
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
