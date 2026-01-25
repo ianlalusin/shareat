@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -12,7 +11,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
@@ -26,6 +25,8 @@ import { read, utils } from "xlsx";
 import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
 import { normalizeUom } from "@/lib/uom";
 import Image from "next/image";
+import { useDebounce } from "@/hooks/use-debounce";
+import { Input } from "@/components/ui/input";
 
 export default function ProductManagementPage() {
   const { appUser } = useAuthContext();
@@ -41,6 +42,9 @@ export default function ProductManagementPage() {
   
   const [parsedImportData, setParsedImportData] = useState<any[]>([]);
   const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   useEffect(() => {
     if (!appUser) return;
@@ -60,7 +64,14 @@ export default function ProductManagementPage() {
   }, [appUser, toast]);
 
   const groupedAndSortedProducts = useMemo(() => {
-    const grouped = products.reduce((acc, product) => {
+    const filteredProducts = debouncedSearchTerm
+      ? products.filter(p =>
+          getDisplayName(p).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+          p.barcode?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+        )
+      : products;
+
+    const grouped = filteredProducts.reduce((acc, product) => {
       const subCategory = product.subCategory || 'Uncategorized';
 
       if (!acc[subCategory]) {
@@ -81,7 +92,7 @@ export default function ProductManagementPage() {
         return acc;
     }, {} as Record<string, Product[]>);
 
-  }, [products]);
+  }, [products, debouncedSearchTerm]);
 
 
   const handleOpenDialog = (product: Product | null = null) => {
@@ -208,7 +219,7 @@ export default function ProductManagementPage() {
             description: error.message || "Could not update the product status.",
         });
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
   
@@ -366,15 +377,28 @@ export default function ProductManagementPage() {
       </PageHeader>
       <Card>
         <CardHeader>
-          <CardTitle>All Products</CardTitle>
-          <CardDescription>A list of all centrally-managed products, grouped by sub-category.</CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle>All Products</CardTitle>
+              <CardDescription>A list of all centrally-managed products, grouped by sub-category.</CardDescription>
+            </div>
+            <div className="relative w-full max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search by name or barcode..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center items-center h-40">
               <Loader className="animate-spin" />
             </div>
-          ) : products.length > 0 ? (
+          ) : Object.keys(groupedAndSortedProducts).length > 0 ? (
             <Table>
                 {Object.entries(groupedAndSortedProducts).map(([subCategory, items]) => (
                     <React.Fragment key={subCategory}>
@@ -434,7 +458,7 @@ export default function ProductManagementPage() {
                 ))}
             </Table>
           ) : (
-            <p className="text-center text-muted-foreground py-8">No products found. Click "New Product" to add one.</p>
+            <p className="text-center text-muted-foreground py-8">{searchTerm ? `No products found for "${searchTerm}".` : 'No products found. Click "New Product" to add one.'}</p>
           )}
         </CardContent>
       </Card>
