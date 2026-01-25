@@ -8,8 +8,8 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs, collectionGroup, documentId } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { Loader2, Download } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Download, ArrowLeft, ArrowRight } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLogCard";
 import { VoidsAndCompsCard } from "@/components/logs/VoidsAndCompsCard";
@@ -57,6 +57,8 @@ const presets: { label: string, value: DatePreset }[] = [
     { label: "This Month", value: "month" },
 ];
 
+const ITEMS_PER_PAGE = 10;
+
 
 export default function LogsPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -64,6 +66,7 @@ export default function LogsPage() {
   const [groupedLogs, setGroupedLogs] = useState<GroupedLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -121,6 +124,7 @@ export default function LogsPage() {
         return;
     };
     setIsLoading(true);
+    setCurrentPage(0);
 
     const logsQuery = query(
       collectionGroup(db, "activityLogs"),
@@ -232,6 +236,21 @@ export default function LogsPage() {
         });
   }, [groupedLogs]);
 
+  const totalPages = Math.ceil(groupedLogs.length / ITEMS_PER_PAGE);
+  const paginatedLogs = useMemo(() => {
+      const startIndex = currentPage * ITEMS_PER_PAGE;
+      const endIndex = startIndex + ITEMS_PER_PAGE;
+      return groupedLogs.slice(startIndex, endIndex);
+  }, [groupedLogs, currentPage]);
+
+  const goToNextPage = () => {
+      setCurrentPage((prev) => Math.min(prev + 1, totalPages - 1));
+  };
+
+  const goToPreviousPage = () => {
+      setCurrentPage((prev) => Math.max(prev - 1, 0));
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
     const allLogs = groupedLogs.flatMap(g => g.logs);
@@ -315,7 +334,7 @@ export default function LogsPage() {
                         <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin" /></div>
                     ) : groupedLogs.length > 0 ? (
                         <Accordion type="single" collapsible className="w-full space-y-4">
-                            {groupedLogs.map(({ session, logs }) => (
+                            {paginatedLogs.map(({ session, logs }) => (
                                 <SessionLogCard key={session.id} session={session} initialLogs={logs} />
                             ))}
                         </Accordion>
@@ -325,6 +344,19 @@ export default function LogsPage() {
                         </p>
                     )}
                 </CardContent>
+                {totalPages > 1 && (
+                    <CardFooter className="flex justify-between items-center">
+                        <Button variant="outline" onClick={goToPreviousPage} disabled={currentPage === 0}>
+                             <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                            Page {currentPage + 1} of {totalPages}
+                        </span>
+                        <Button variant="outline" onClick={goToNextPage} disabled={currentPage >= totalPages - 1}>
+                            Next <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                    </CardFooter>
+                )}
             </Card>
         </div>
         <div>
