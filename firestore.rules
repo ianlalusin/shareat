@@ -66,8 +66,13 @@ service cloud.firestore {
     // --- Access Control Helpers ---
 
     function hasStoreAccess(storeId) {
-      // Platform admins have access to everything. Otherwise, check staff doc.
-      return isPlatformAdmin() || (isActiveStaff() && storeId in staffData().assignedStoreIds);
+      // Platform admins have access to everything. Otherwise, check staff doc safely.
+      return isPlatformAdmin()
+        || (
+          isActiveStaff()
+          && (staffData().assignedStoreIds is list)
+          && (storeId in staffData().assignedStoreIds)
+        );
     }
     
     function isStoreManager(storeId) {
