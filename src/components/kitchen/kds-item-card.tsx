@@ -138,7 +138,10 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                 <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                          <div>
-                            <p className="text-2xl font-bold text-destructive">{identifier}</p>
+                            <div className="flex items-baseline gap-2">
+                                <p className="text-2xl font-bold text-destructive">{identifier}</p>
+                                {isPackage && <span className="text-lg font-medium text-muted-foreground">({ticket.guestCount} guests)</span>}
+                            </div>
                             <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
                          </div>
                          {ticket.status === 'served' ? (
@@ -147,8 +150,7 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                             <Badge variant="outline" className="capitalize">{ticket.status}</Badge>
                         )}
                     </div>
-                     <CardDescription className="flex items-center justify-between pt-2">
-                        <span>{isPackage && `(${ticket.guestCount} guests)`}</span>
+                     <CardDescription className="flex items-center justify-end pt-2">
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </CardDescription>
                 </CardHeader>
