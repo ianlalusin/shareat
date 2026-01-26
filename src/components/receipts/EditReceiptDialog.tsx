@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -18,6 +17,8 @@ import { Loader2 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
+import { useAuthContext } from "@/context/auth-context";
+import { writeActivityLog } from "../cashier/activity-log";
 
 interface EditReceiptDialogProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ function EditReceiptContent({
   onSave,
   onClose,
 }: EditReceiptDialogProps) {
+  const { appUser } = useAuthContext();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editReason, setEditReason] = useState("");
@@ -222,8 +224,35 @@ function EditReceiptContent({
       },
     };
 
-    await onSave(updatedReceiptData, editReason);
-    setIsSubmitting(false);
+    try {
+        await onSave(updatedReceiptData, editReason);
+        
+        const oldDiscountTotal = receipt.analytics?.discountsTotal ?? 0;
+        const newDiscountTotal = billTotals.totalDiscounts;
+        const discountDelta = newDiscountTotal - oldDiscountTotal;
+        
+        if (Math.abs(discountDelta) > 0.01 && appUser) { // Use a small tolerance
+          await writeActivityLog({
+            action: "DISCOUNT_EDITED",
+            storeId: store.id,
+            sessionId: receipt.sessionId,
+            user: appUser,
+            note: editReason,
+            meta: {
+                receiptNumber: receipt.receiptNumber,
+                scope: 'bill',
+                oldDiscountTotal: oldDiscountTotal,
+                newDiscountTotal: newDiscountTotal,
+                delta: discountDelta,
+                discountName: "Discount Correction"
+            },
+          });
+        }
+    } catch (error) {
+        // onSave will show its own toast
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const itemDiscounts = useMemo(() => discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item")), [discounts]);

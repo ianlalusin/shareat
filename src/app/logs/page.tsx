@@ -209,7 +209,7 @@ export default function LogsPage() {
   }, [activeStore?.id, start, end, appUser, isSigningOut]);
 
   const voidAndFreeLogs = useMemo(() => {
-    const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE"];
+    const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE", "RECEIPT_VOIDED"];
     return groupedLogs
         .flatMap(({ session, logs }) => 
             logs
@@ -224,7 +224,7 @@ export default function LogsPage() {
   }, [groupedLogs]);
   
   const discountLogs = useMemo(() => {
-    const relevantActions: ActivityLog['action'][] = ["DISCOUNT_APPLIED", "DISCOUNT_REMOVED"];
+    const relevantActions: ActivityLog['action'][] = ["DISCOUNT_APPLIED", "DISCOUNT_REMOVED", "DISCOUNT_EDITED"];
     return groupedLogs
         .flatMap(({ session, logs }) => 
             logs

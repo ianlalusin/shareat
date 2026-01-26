@@ -21,11 +21,19 @@ interface VoidsAndCompsCardProps {
 function formatAmount(log: ActivityLog): string {
     const meta = log.meta || {};
     
-    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_REMOVED" || log.action === "DISCOUNT_EDITED") {
-        const delta = meta.delta ?? meta.amount;
+    if (log.action === "DISCOUNT_EDITED") {
+        const delta = meta.delta;
         if (typeof delta === 'number' && Number.isFinite(delta)) {
             const sign = delta >= 0 ? '+' : '-';
             return `${sign} ₱${Math.abs(delta).toFixed(2)}`;
+        }
+    }
+    
+    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_REMOVED") {
+        const amount = meta.amount;
+        if (typeof amount === 'number' && Number.isFinite(amount)) {
+            const sign = log.action === "DISCOUNT_APPLIED" ? '-' : '+';
+             return `${sign} ₱${Math.abs(amount).toFixed(2)}`;
         }
     }
   
@@ -51,8 +59,8 @@ function formatAmount(log: ActivityLog): string {
 
 function getReason(log: ActivityLog): string {
     const meta = (log.meta || {}) as any;
-    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_EDITED") {
-        return meta.discountName || meta.note || "Discount event";
+    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_EDITED" || log.action === "DISCOUNT_REMOVED") {
+        return meta.discountName || log.note || "Discount event";
     }
     return log.reason || log.note || 'N/A';
 }
@@ -114,8 +122,12 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                         itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {
                                         itemLabel = `${meta.itemName} (FREE x${meta.qty ?? 1})`;
-                                    } else if (log.action.startsWith("DISCOUNT")) {
-                                        itemLabel = `${meta.itemName || 'Bill'} (DISCOUNT)`;
+                                    } else if (log.action === "DISCOUNT_APPLIED") {
+                                        itemLabel = `${meta.itemName || 'Bill Discount'}`;
+                                    } else if (log.action === "DISCOUNT_EDITED") {
+                                        itemLabel = `${meta.itemName || 'Bill Discount'} (Edited)`;
+                                    } else if (log.action === "DISCOUNT_REMOVED") {
+                                        itemLabel = `${meta.itemName || 'Bill Discount'} (Removed)`;
                                     }
 
                                     return (

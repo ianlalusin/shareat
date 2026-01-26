@@ -135,7 +135,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       // No current approval. If no override is active, ensure qty matches final count.
       // This handles initial load and any other state corrections.
       if (!packageLine.qtyOverrideActive && session.guestCountFinal !== null && packageLine.qtyOrdered !== session.guestCountFinal) {
-        console.log(`No override active. Aligning package qty to ${session.guestCountFinal}.`);
+        console.log(`No override active. Aligning package quantity to ${session.guestCountFinal}.`);
         updateSessionBillLine(storeId, sessionId, packageLine.id, {
           qtyOrdered: session.guestCountFinal
         }, appUser).catch(err => console.error("Failed to align package quantity:", err));
@@ -274,13 +274,49 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }
 
   const handleAddLineAdjustment = async (lineId: string, adj: LineAdjustment) => {
-    if (!appUser || !storeId || !sessionId) return;
+    if (!appUser || !storeId || !sessionId || !activeStore) return;
     try {
         const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
         await updateDoc(lineRef, {
             [`lineAdjustments.${adj.id}`]: adj,
         });
         toast({ title: 'Adjustment Added'});
+        
+        if (adj.kind === 'discount') {
+            const line = billLines.find(l => l.id === lineId);
+            if(line) {
+                const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
+                const qtyToApply = Math.min(adj.qty, billableQty);
+                const unitPrice = line.unitPrice || 0;
+                const taxRate = (activeStore.taxRatePct || 0) / 100;
+                const isVatInclusive = activeStore.taxType === 'VAT_INCLUSIVE';
+                const baseUnitPrice = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
+
+                let calculatedAmount = 0;
+                if (adj.type === 'percent') {
+                    calculatedAmount = (qtyToApply * baseUnitPrice) * (adj.value / 100);
+                } else {
+                    calculatedAmount = Math.min(baseUnitPrice, adj.value) * qtyToApply;
+                }
+
+                await writeActivityLog({
+                    action: "DISCOUNT_APPLIED",
+                    storeId,
+                    sessionId,
+                    user: appUser,
+                    note: `Applied to ${line.itemName}`,
+                    meta: {
+                        lineId: line.id,
+                        itemName: line.itemName,
+                        discountName: adj.note,
+                        scope: "item",
+                        qty: adj.qty,
+                        discountType: adj.type,
+                        amount: calculatedAmount,
+                    }
+                });
+            }
+        }
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
     }
