@@ -20,6 +20,8 @@ import { format as formatDate, addDays } from "date-fns";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { toJsDate } from "@/lib/utils/date";
 
 // Helper functions for date manipulation
 function startOfDay(d: Date) {
@@ -74,9 +76,6 @@ export default function LogsPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
 
-  const sessionCacheRef = useRef(new Map<string, PendingSession>());
-  const reqIdRef = useRef(0);
-
   const { start, end } = useMemo(() => {
     const now = new Date();
     let s = new Date();
@@ -125,87 +124,86 @@ export default function LogsPage() {
         setIsLoading(false);
         return;
     };
+    
     setIsLoading(true);
     setCurrentPage(0);
 
-    const logsQuery = query(
-      collectionGroup(db, "activityLogs"),
-      where("storeId", "==", activeStore.id),
-      where("createdAt", ">=", Timestamp.fromDate(start)),
-      where("createdAt", "<=", Timestamp.fromDate(end)),
-      orderBy("createdAt", "desc")
-    );
+    const fetchLogs = async () => {
+        const dayIds: string[] = [];
+        let currentDate = new Date(start);
+        while (currentDate <= end) {
+            dayIds.push(getDayIdFromTimestamp(currentDate));
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
 
-    const unsubscribe = onSnapshot(logsQuery, async (snapshot) => {
-        const currentReqId = ++reqIdRef.current;
-        const logsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
-        const uniqueLogs = Array.from(new Map(logsData.map(l => [l.id, l])).values());
-
-        const sessionIds = [...new Set(uniqueLogs.map(log => log.sessionId))];
-        if (sessionIds.length === 0) {
+        if (dayIds.length === 0) {
             setGroupedLogs([]);
             setIsLoading(false);
             return;
         }
 
-        const missingSessionIds = sessionIds.filter(id => !sessionCacheRef.current.has(id));
-        
-        if (missingSessionIds.length > 0) {
-            const idChunks: string[][] = [];
-            for (let i = 0; i < missingSessionIds.length; i += 30) { // Firestore 'in' query limit is 30
-                idChunks.push(missingSessionIds.slice(i, i + 30));
-            }
-            
-            for (const chunk of idChunks) {
-                if (chunk.length === 0) continue;
-                const sessionQuery = query(collection(db, "stores", activeStore.id, "sessions"), where(documentId(), "in", chunk));
-                const sessionsSnap = await getDocs(sessionQuery);
-                sessionsSnap.forEach(doc => {
-                    const d = doc.data() as any;
-
-                    sessionCacheRef.current.set(doc.id, {
-                      id: doc.id,
-                      ...d,
-                      startedAtClientMs: d.startedAtClientMs ?? undefined, // convert null -> undefined
-                    } as PendingSession);
-                });
-            }
-        }
-        
-        if (reqIdRef.current !== currentReqId) return; // Stale request
-
-        const logsBySessionId = new Map<string, ActivityLog[]>();
-        for (const log of uniqueLogs) {
-            if (!logsBySessionId.has(log.sessionId)) {
-                logsBySessionId.set(log.sessionId, []);
-            }
-            logsBySessionId.get(log.sessionId)!.push(log);
-        }
-        
-        const finalGroupedLogs: GroupedLog[] = [];
-        for (const [sessionId, logs] of logsBySessionId.entries()) {
-            const session = sessionCacheRef.current.get(sessionId);
-            if (session) {
-                logs.sort((a,b)=> ((b.createdAt?.toMillis && b.createdAt.toMillis()) ?? 0) - ((a.createdAt?.toMillis && a.createdAt.toMillis()) ?? 0))
-                finalGroupedLogs.push({ session, logs });
-            }
-        }
-        
-        finalGroupedLogs.sort((a, b) => {
-            const lastLogA = a.logs[0]?.createdAt.toMillis() || 0;
-            const lastLogB = b.logs[0]?.createdAt.toMillis() || 0;
-            return lastLogB - lastLogA;
+        const logPromises = dayIds.map(dayId => {
+            const logsQuery = query(
+                collection(db, "stores", activeStore.id, "activityLogsByDay", dayId, "logs"),
+                orderBy("createdAt", "desc")
+            );
+            return getDocs(logsQuery);
         });
 
-        setGroupedLogs(finalGroupedLogs);
-        setIsLoading(false);
-    }, (error) => {
-        if (isSigningOut || !appUser) return;
-        console.error("Error fetching logs:", error);
-        setIsLoading(false);
-    });
+        try {
+            const snapshots = await Promise.all(logPromises);
+            const allLogs = snapshots.flatMap(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog)));
 
-    return () => unsubscribe();
+            // Group logs by session ID on the client
+            const logsBySessionId = new Map<string, ActivityLog[]>();
+            allLogs.forEach(log => {
+                if (!logsBySessionId.has(log.sessionId)) {
+                    logsBySessionId.set(log.sessionId, []);
+                }
+                logsBySessionId.get(log.sessionId)!.push(log);
+            });
+
+            // Create pseudo-session objects for the UI
+            const finalGroupedLogs: GroupedLog[] = Array.from(logsBySessionId.entries()).map(([sessionId, logs]) => {
+                const newestLog = logs.sort((a,b) => (toJsDate(b.createdAt)?.getTime() ?? 0) - (toJsDate(a.createdAt)?.getTime() ?? 0))[0];
+                
+                const pseudoSession: PendingSession = {
+                    id: sessionId,
+                    storeId: newestLog.storeId,
+                    status: newestLog.sessionStatus ?? 'unknown',
+                    startedAt: newestLog.sessionStartedAt,
+                    tableNumber: newestLog.tableNumber || '',
+                    sessionMode: newestLog.sessionMode || 'package_dinein',
+                    customerName: newestLog.customerName,
+                    // Dummy data to satisfy the PendingSession type for the card
+                    packageName: '',
+                    guestCountCashierInitial: 0,
+                    guestCountFinal: 0,
+                    guestCountServerVerified: 0,
+                    guestCountVerifyLocked: false,
+                    packageOfferingId: '',
+                };
+                return { session: pseudoSession, logs };
+            });
+
+            // Sort groups by the newest log in each group
+            finalGroupedLogs.sort((a, b) => {
+                const timeA = toJsDate(a.logs[0]?.createdAt)?.getTime() ?? 0;
+                const timeB = toJsDate(b.logs[0]?.createdAt)?.getTime() ?? 0;
+                return timeB - timeA;
+            });
+            
+            setGroupedLogs(finalGroupedLogs);
+        } catch (error) {
+            if (isSigningOut || !appUser) return;
+            console.error("Error fetching logs:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    fetchLogs();
+
   }, [activeStore?.id, start, end, appUser, isSigningOut]);
 
   const voidAndFreeLogs = useMemo(() => {

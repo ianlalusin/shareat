@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -559,6 +558,14 @@ export type ActivityLog = {
 
   reason?: string | null;
   note?: string | null;
+
+  // Denormalized session context for performant log reading
+  sessionLabel?: string;
+  sessionStatus?: 'pending_verification' | 'active' | 'closed' | 'voided';
+  sessionStartedAt?: any;
+  sessionMode?: 'package_dinein' | 'alacarte';
+  customerName?: string | null;
+  tableNumber?: string | null;
 
   meta?: {
     itemId?: string;
