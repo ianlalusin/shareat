@@ -13,7 +13,6 @@ export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "l
 export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
-type AddonAgg = { itemName: string; categoryName: string; qty: number; amount: number };
 
 const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
 
@@ -23,47 +22,38 @@ function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999);
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 
-// --- Data Fetching Helpers ---
-async function fetchTopAddonsForRollupDocs(
-  rollupDocRefs: DocumentReference[],
-  topN = 10
-): Promise<AddonAgg[]> {
-  const merged = new Map<string, AddonAgg>();
+// --- Data Aggregation Helpers ---
 
-  await Promise.all(
-    rollupDocRefs.map(async (ref) => {
-      const itemsRef = collection(ref, "addonItems");
-      const q = query(itemsRef, orderBy("amount", "desc"), limit(topN));
-      const snap = await getDocs(q);
-      snap.forEach((d) => mergeAddonAgg(merged, d.data()));
-    })
-  );
+/**
+ * Aggregates and sorts addon categories from a list of daily metric documents.
+ * @param metrics An array of DailyMetric documents.
+ * @returns A sorted array of categories with their total quantity and amount.
+ */
+function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {
+  const categoryMap: Record<string, { qty: number; amount: number }> = {};
 
-  return Array.from(merged.values())
-    .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
-    .slice(0, topN);
+  metrics.forEach(metric => {
+    const amounts = metric.sales?.addonSalesAmountByCategory || {};
+    const quantities = metric.sales?.addonSalesQtyByCategory || {};
+    
+    const allCategoryNames = new Set([...Object.keys(amounts), ...Object.keys(quantities)]);
+
+    allCategoryNames.forEach(categoryName => {
+      if (!categoryMap[categoryName]) {
+        categoryMap[categoryName] = { qty: 0, amount: 0 };
+      }
+      categoryMap[categoryName].amount += amounts[categoryName] || 0;
+      categoryMap[categoryName].qty += quantities[categoryName] || 0;
+    });
+  });
+
+  return Object.entries(categoryMap)
+    .map(([categoryName, data]) => ({
+      categoryName,
+      ...data,
+    }))
+    .sort((a, b) => b.amount - a.amount);
 }
-
-function groupByCategory(items: AddonAgg[]) {
-  const byCat: Record<string, { categoryName: string; qty: number; amount: number }> = {};
-  for (const it of items) {
-    const k = it.categoryName || "Uncategorized";
-    byCat[k] = byCat[k] || { categoryName: k, qty: 0, amount: 0 };
-    byCat[k].qty += it.qty;
-    byCat[k].amount += it.amount;
-  }
-  return Object.values(byCat).sort((a, b) => b.amount - a.amount);
-}
-
-function mergeAddonAgg(target: Map<string, AddonAgg>, row: any) {
-  const key = row.itemName;
-  const cur = target.get(key) ?? { itemName: row.itemName, categoryName: row.categoryName ?? "Uncategorized", qty: 0, amount: 0 };
-  cur.qty += row.qty ?? 0;
-  cur.amount += row.amount ?? 0;
-  if (!cur.categoryName && row.categoryName) cur.categoryName = row.categoryName;
-  target.set(key, cur);
-}
-
 
 function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     const netSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
@@ -112,7 +102,7 @@ const MAX_DAYS_RANGE = 90;
 export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashboardAnalyticsProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
-    const [topCategories, setTopCategories] = useState<ReturnType<typeof groupByCategory>>([]);
+    const [topCategories, setTopCategories] = useState<ReturnType<typeof aggregateAddonCategories>>([]);
     const [activeSessions, setActiveSessions] = useState({ count: 0, guests: 0 });
     
     const dateRange = useMemo(() => {
@@ -166,9 +156,8 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                 if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
                     console.log(`[useDashboardAnalytics] Using CACHED preset for: ${presetId}`);
                     const presetData = cached.data;
-                    setDailyMetrics([]); // Clear daily metrics to disable dependent cards
-                    const categories = groupByCategory(Object.values(presetData.sales?.addonSalesByItem || {}));
-                    setTopCategories(categories);
+                    setDailyMetrics([presetData]);
+                    setTopCategories(aggregateAddonCategories([presetData]));
                     setIsLoading(false);
                     return;
                 }
@@ -178,9 +167,8 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                 if (presetSnap.exists()) {
                     console.log(`[useDashboardAnalytics] Using PRESET DOC for: ${presetId}`);
                     const presetData = presetSnap.data() as DailyMetric;
-                    setDailyMetrics([presetData]); // Set as single aggregated doc
-                    const categories = groupByCategory(Object.values(presetData.sales?.addonSalesByItem || {}));
-                    setTopCategories(categories);
+                    setDailyMetrics([presetData]);
+                    setTopCategories(aggregateAddonCategories([presetData]));
                     presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
                     setIsLoading(false);
                     return;
@@ -206,15 +194,7 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
 
                 const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
                 setDailyMetrics(metrics);
-
-                if (metrics.length > 0) {
-                    const dayRefs = metrics.map(m => doc(db, 'stores', storeId, 'analytics', m.meta.dayId));
-                    const topAddons = await fetchTopAddonsForRollupDocs(dayRefs, 20);
-                    if(cancelled) return;
-                    setTopCategories(groupByCategory(topAddons));
-                } else {
-                    setTopCategories([]);
-                }
+                setTopCategories(aggregateAddonCategories(metrics));
             }
         }
         
