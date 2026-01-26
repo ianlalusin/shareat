@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore, serverTimestamp, type DocumentData } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, type DocumentData } from 'firebase-admin/firestore';
 
 // In the Studio environment, service account credentials are automatically provided.
 initializeApp();
@@ -77,7 +77,7 @@ async function main() {
         const newConfigData = {
             meta: {
                 version: nextVersion,
-                updatedAt: serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
                 source: 'build-store-config-v1'
             },
             tables,
