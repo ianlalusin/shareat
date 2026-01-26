@@ -314,66 +314,15 @@ export async function applyAnalyticsDeltaV2(
       ...Object.keys(dayOld.refill?.servedRefillsByName || {}),
       ...Object.keys(dayNew.refill?.servedRefillsByName || {}),
     ]);
-    
-    // --- Subcollection Updates ---
-    allAddonItems.forEach((itemName) => {
-        const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
-        const newItem = dayNew.sales.addonSalesByItem?.[itemName];
-  
-        const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
-        const amountDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
-        if (qtyDelta === 0 && amountDelta === 0) return;
-  
-        const categoryName = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
-        const itemId = toSafeDocId(itemName);
-  
-        const writeToSubcollection = (parent: any) => {
-          const itemRef = doc(parent, "addonItems", itemId);
-          writerSet(w, itemRef, {
-            itemName,
-            categoryName,
-            qty: increment(qtyDelta),
-            amount: increment(amountDelta),
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        };
-  
-        writeToSubcollection(dayRef);
-        applicablePresets.forEach(presetId => {
-            const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
-            writeToSubcollection(presetRef);
-        });
-      });
-      
-      allRefillNames.forEach((refillName) => {
+    allRefillNames.forEach((refillName) => {
         const oldQty = (dayOld.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
         const newQty = (dayNew.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
       
         const qtyDelta = newQty - oldQty;
         if (qtyDelta === 0) return;
-      
-        const refillId = toSafeDocId(refillName);
-      
-        const writeToSubcollection = (parent: any) => {
-          const rRef = doc(parent, "refillItems", refillId);
-          writerSet(
-              w,
-              rRef,
-              {
-              refillName,
-              qty: increment(qtyDelta),
-              updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-          );
-        };
-      
-        writeToSubcollection(dayRef);
-        applicablePresets.forEach(presetId => {
-            const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
-            writeToSubcollection(presetRef);
-        });
-      });
+
+        payload[`refills.servedRefillsByName.${safeKey(refillName)}`] = increment(qtyDelta);
+    });
     
     // --- Apply final updates to rollup docs ---
     writerUpdate(w, dayRef, payload);
