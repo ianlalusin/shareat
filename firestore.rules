@@ -17,6 +17,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
     
+    function hasStaffDoc() {
+      return exists(staffDocPath());
+    }
+
     function staffDocPath() {
       return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
@@ -123,6 +127,16 @@ service cloud.firestore {
     match /addonCategories/{categoryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     match /expenseEntries/{expenseEntryId} { allow read: if isSignedIn(); allow write: if isPlatformAdmin(); }
     
+    // Store-level partitioned logs (new)
+    match /stores/{storeId}/activityLogsByDay/{dayId}/logs/{logId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create: if hasStoreAccess(storeId)
+        && hasStaffDoc()
+        && (request.resource.data.storeId is string)
+        && request.resource.data.storeId == storeId;
+      allow update, delete: if isPlatformAdmin();
+    }
+    
     // -------------------------------------------------
     // Store & Subcollection Rules
     // -------------------------------------------------
@@ -210,7 +224,12 @@ service cloud.firestore {
       match /sessions/{sessionId} {
         allow read: if hasStoreAccess(storeId);
         allow create: if hasStoreAccess(storeId) && isCashier();
-        allow update: if hasStoreAccess(storeId) && isServer(); 
+        allow update: if hasStoreAccess(storeId) && (
+            isServer() ||
+            (isKitchen() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'serveCountByType', 'serveTimeMsTotalByType', 'servedRefillsTotal'
+            ]))
+        ); 
         allow delete: if isPlatformAdmin(); 
 
         // All users with store access can see tickets and logs.
