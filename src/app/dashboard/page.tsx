@@ -58,13 +58,15 @@ export default function DashboardPage() {
     const {
         isLoading,
         dateRangeLabel,
-        dateRange,
         stats,
         activeSessions,
         paymentMix,
         dailyMetrics,
         topCategories,
-        warnings
+        warnings,
+        topRefills,
+        topAddonItems,
+        hasTopAddonItems,
     } = useDashboardAnalytics({
         storeId: activeStore?.id,
         preset: datePreset,
@@ -155,11 +157,20 @@ export default function DashboardPage() {
                     {/* Row 2 */}
                     <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
-                    <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                    <TopAddonItemsCard 
+                        dailyMetrics={dailyMetrics} 
+                        isLoading={isLoading} 
+                        topAddonItems={topAddonItems} 
+                        hasTopAddonItems={hasTopAddonItems}
+                    />
                     
                     {/* Row 3 */}
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
+                    <TopRefillsCard 
+                        dailyMetrics={dailyMetrics} 
+                        isLoading={isLoading} 
+                        topRefills={topRefills} 
+                    />
                     <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
             </div>

@@ -374,6 +374,9 @@ export type PendingSession = {
   customer?: { name?: string | null, tin?: string | null, address?: string | null };
 };
 
+export type TopRefillRow = { name: string; qty: number };
+export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
+
 export type DailyMetric = {
     meta: {
         dayId: string;
@@ -406,9 +409,10 @@ export type DailyMetric = {
         packageSalesAmountByName: Record<string, number>;
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
+        addonSalesQtyByCategory: Record<string, number>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
-        addonSalesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
+        topAddonsByQty?: TopAddonRow[];
     };
     kitchen?: {
         servedCountByType: Record<string, number>;
@@ -424,6 +428,7 @@ export type DailyMetric = {
         servedRefillsTotal: number;
         servedRefillsByName: Record<string, number>;
         packageSessionsCount: number;
+        topRefillsByQty?: TopRefillRow[];
     };
 }
 

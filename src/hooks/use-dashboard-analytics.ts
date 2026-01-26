@@ -13,6 +13,8 @@ export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "l
 export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
+export type TopRefillRow = { name: string; qty: number };
+export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
 
 const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
 
@@ -23,18 +25,12 @@ function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear(
 function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 
 // --- Data Aggregation Helpers ---
-
-/**
- * Aggregates and sorts addon categories from a list of daily metric documents.
- * @param metrics An array of DailyMetric documents.
- * @returns A sorted array of categories with their total quantity and amount.
- */
 function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {
   const categoryMap: Record<string, { qty: number; amount: number }> = {};
 
   metrics.forEach(metric => {
     const amounts = metric.sales?.addonSalesAmountByCategory || {};
-    const quantities = metric.sales?.addonSalesQtyByCategory || {};
+    const quantities = (metric.sales as any)?.addonSalesQtyByCategory || {}; // Use as any for compatibility if not typed yet
     
     const allCategoryNames = new Set([...Object.keys(amounts), ...Object.keys(quantities)]);
 
@@ -76,6 +72,20 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     return { netSales, transactions, avgBasket: avgSpending, mop };
 }
 
+function aggregateRefills(metrics: DailyMetric[], topN: number = 5): TopRefillRow[] {
+  const tally: Record<string, number> = {};
+  metrics.forEach(metric => {
+    const refillsByName = metric.refills?.servedRefillsByName || {};
+    for (const [name, qty] of Object.entries(refillsByName)) {
+      tally[name] = (tally[name] || 0) + qty;
+    }
+  });
+  return Object.entries(tally)
+    .map(([name, qty]) => ({ name, qty }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, topN);
+}
+
 const presetIdMap: Partial<Record<DatePreset, string>> = {
     today: "today",
     yesterday: "yesterday",
@@ -104,6 +114,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
     const [topCategories, setTopCategories] = useState<ReturnType<typeof aggregateAddonCategories>>([]);
     const [activeSessions, setActiveSessions] = useState({ count: 0, guests: 0 });
+    const [topRefills, setTopRefills] = useState<TopRefillRow[]>([]);
+    const [topAddonItems, setTopAddonItems] = useState<TopAddonRow[]>([]);
+    const [hasTopAddonItems, setHasTopAddonItems] = useState(false);
     
     const dateRange = useMemo(() => {
         const now = new Date();
@@ -129,6 +142,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         if (!storeId) {
             setIsLoading(false);
             setDailyMetrics([]);
+            setTopCategories([]);
+            setTopRefills([]);
+            setTopAddonItems([]);
             return;
         }
 
@@ -158,6 +174,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     const presetData = cached.data;
                     setDailyMetrics([presetData]);
                     setTopCategories(aggregateAddonCategories([presetData]));
+                    setTopRefills((presetData as any).refills?.topRefillsByQty ?? aggregateRefills([presetData]));
+                    setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
+                    setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
                     setIsLoading(false);
                     return;
                 }
@@ -170,6 +189,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     setDailyMetrics([presetData]);
                     setTopCategories(aggregateAddonCategories([presetData]));
                     presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
+                    setTopRefills((presetData as any).refills?.topRefillsByQty ?? aggregateRefills([presetData]));
+                    setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
+                    setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
                     setIsLoading(false);
                     return;
                 } else {
@@ -181,6 +203,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
             if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
                  setDailyMetrics([]);
                  setTopCategories([]);
+                 setTopRefills([]);
+                 setTopAddonItems([]);
+                 setHasTopAddonItems(false);
             } else {
                 const tomorrow = addDays(dateRange.end, 1);
                 const q = query(
@@ -195,6 +220,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                 const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
                 setDailyMetrics(metrics);
                 setTopCategories(aggregateAddonCategories(metrics));
+                setTopRefills(aggregateRefills(metrics));
+                setTopAddonItems([]); // No subcollection reads in fallback
+                setHasTopAddonItems(false);
             }
         }
         
@@ -235,6 +263,9 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         paymentMix,
         dailyMetrics,
         topCategories,
-        warnings
+        warnings,
+        topRefills,
+        topAddonItems,
+        hasTopAddonItems
     };
 }
