@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -25,6 +26,7 @@ function writerUpdate(w: Writer, ref: any, data: any) {
 }
 
 function toSafeDocId(raw: string) {
+  // stable + Firestore-safe (avoid / and weird chars)
   return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
 }
 
@@ -51,6 +53,14 @@ type KdsTicket = {
   refillName?: string | null; // Legacy, but keep for fallback
   qty?: number | null;        // optional, default 1
 };
+
+function safeKey(s: string) {
+  return (s || "Uncategorized")
+    .trim()
+    .replace(/\./g, "·")     // dot is not allowed in field path
+    .replace(/\//g, "∕");    // avoid slash confusion
+}
+
 
 export async function applyKdsTicketDelta(
   db: Firestore,
@@ -108,31 +118,13 @@ export async function applyKdsTicketDelta(
     [`kitchen.durationMsSumByType.${typeKey}`]: increment(sign * dur),
   };
   
-  // Refill totals + refillItems subcollection
+  // Refill totals + refillItems map update
   if (typeKey === "refill") {
     payload["refills.servedRefillsTotal"] = increment(sign * qty);
 
     const refillName = (ticket.refillName ?? ticket.itemName ?? "Unknown").trim();
     if (refillName) {
-        const refillId = toSafeDocId(refillName);
-
-        const writeRefillItem = (parent: any) => {
-        const rRef = doc(parent, "refillItems", refillId);
-        writerSet(
-            w,
-            rRef,
-            {
-            refillName,
-            qty: increment(sign * qty),
-            updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-        );
-        };
-
-        writeRefillItem(dayRef);
-        writeRefillItem(monthRef);
-        writeRefillItem(yearRef);
+        payload[`refills.servedRefillsByName.${safeKey(refillName)}`] = increment(sign * qty);
     }
   }
 
