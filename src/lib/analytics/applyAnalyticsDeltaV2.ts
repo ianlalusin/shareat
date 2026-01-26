@@ -220,10 +220,10 @@ export async function applyAnalyticsDeltaV2(
     if (paymentDelta.discountsTotal !== 0) payload['payments.discountsTotal'] = increment(paymentDelta.discountsTotal);
     if (paymentDelta.chargesTotal !== 0) payload['payments.chargesTotal'] = increment(paymentDelta.chargesTotal);
     
-    const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(newContrib.payment.byMethod)]);
+    const allPaymentMethods = new Set([...Object.keys(dayOld.payment.byMethod), ...Object.keys(dayNew.payment.byMethod)]);
     allPaymentMethods.forEach(method => {
       const delta = (dayNew.payment.byMethod[method] || 0) - (dayOld.payment.byMethod[method] || 0);
-      if (delta !== 0) payload[`payments.byMethod.${method}`] = increment(delta);
+      if (delta !== 0) payload[`payments.byMethod.${safeKey(method)}`] = increment(delta);
     });
 
     // --- Guests Delta ---
@@ -237,13 +237,13 @@ export async function applyAnalyticsDeltaV2(
     const allGuestPkgNames = new Set([...Object.keys(dayOld.guest.guestCountFinalByPackageName), ...Object.keys(dayNew.guest.guestCountFinalByPackageName)]);
     allGuestPkgNames.forEach(name => {
         const delta = (dayNew.guest.guestCountFinalByPackageName[name] || 0) - (dayOld.guest.guestCountFinalByPackageName[name] || 0);
-        if (delta !== 0) payload[`guests.guestCountFinalByPackageName.${name}`] = increment(delta);
+        if (delta !== 0) payload[`guests.guestCountFinalByPackageName.${safeKey(name)}`] = increment(delta);
     });
 
     const allBilledPkgNames = new Set([...Object.keys(dayOld.guest.packageCoversBilledByPackageName), ...Object.keys(dayNew.guest.packageCoversBilledByPackageName)]);
     allBilledPkgNames.forEach(name => {
         const delta = (dayNew.guest.packageCoversBilledByPackageName[name] || 0) - (dayOld.guest.packageCoversBilledByPackageName[name] || 0);
-        if (delta !== 0) payload[`guests.packageCoversBilledByPackageName.${name}`] = increment(delta);
+        if (delta !== 0) payload[`guests.packageCoversBilledByPackageName.${safeKey(name)}`] = increment(delta);
     });
 
     // --- Sales Delta ---
@@ -254,8 +254,8 @@ export async function applyAnalyticsDeltaV2(
     allSalesPkgNames.forEach(name => {
         const amountDelta = (dayNew.sales.packageSalesAmountByName[name] || 0) - (dayOld.sales.packageSalesAmountByName[name] || 0);
         const qtyDelta = (dayNew.sales.packageSalesQtyByName[name] || 0) - (dayOld.sales.packageSalesQtyByName[name] || 0);
-        if(amountDelta !== 0) payload[`sales.packageSalesAmountByName.${name}`] = increment(amountDelta);
-        if(qtyDelta !== 0) payload[`sales.packageSalesQtyByName.${name}`] = increment(qtyDelta);
+        if(amountDelta !== 0) payload[`sales.packageSalesAmountByName.${safeKey(name)}`] = increment(amountDelta);
+        if(qtyDelta !== 0) payload[`sales.packageSalesQtyByName.${safeKey(name)}`] = increment(qtyDelta);
     });
 
     const catQtyDelta: Record<string, number> = {};
@@ -280,10 +280,10 @@ export async function applyAnalyticsDeltaV2(
     });
 
     for (const [cat, qd] of Object.entries(catQtyDelta)) {
-      if (qd !== 0) payload[`sales.addonSalesQtyByCategory.${cat}`] = increment(qd);
+      if (qd !== 0) payload[`sales.addonSalesQtyByCategory.${safeKey(cat)}`] = increment(qd);
     }
     for (const [cat, ad] of Object.entries(catAmtDelta)) {
-      if (ad !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(ad);
+      if (ad !== 0) payload[`sales.addonSalesAmountByCategory.${safeKey(cat)}`] = increment(ad);
     }
     
     // --- Peak Hour Delta ---

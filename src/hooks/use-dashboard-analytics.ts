@@ -174,7 +174,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     const presetData = cached.data;
                     setDailyMetrics([presetData]);
                     setTopCategories(aggregateAddonCategories([presetData]));
-                    setTopRefills((presetData as any).refills?.topRefillsByQty ?? aggregateRefills([presetData]));
+                    
+                    const servedRefillsExist = presetData.refills?.servedRefillsByName && Object.keys(presetData.refills.servedRefillsByName).length > 0;
+                    const newTopRefills = servedRefillsExist
+                        ? aggregateRefills([presetData])
+                        : (presetData as any).refills?.topRefillsByQty ?? [];
+                    setTopRefills(newTopRefills);
+
                     setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
                     setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
                     setIsLoading(false);
@@ -189,7 +195,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     setDailyMetrics([presetData]);
                     setTopCategories(aggregateAddonCategories([presetData]));
                     presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
-                    setTopRefills((presetData as any).refills?.topRefillsByQty ?? aggregateRefills([presetData]));
+
+                    const servedRefillsExist = presetData.refills?.servedRefillsByName && Object.keys(presetData.refills.servedRefillsByName).length > 0;
+                    const newTopRefills = servedRefillsExist
+                        ? aggregateRefills([presetData])
+                        : (presetData as any).refills?.topRefillsByQty ?? [];
+                    setTopRefills(newTopRefills);
+                    
                     setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
                     setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
                     setIsLoading(false);
