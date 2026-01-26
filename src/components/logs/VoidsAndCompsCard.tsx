@@ -20,43 +20,44 @@ interface VoidsAndCompsCardProps {
 }
 
 function formatAmount(log: ActivityLog): string {
-    const meta = log.meta || {};
+    const meta = (log.meta || {}) as any;
+
+    if (log.action === "RECEIPT_VOIDED") {
+        const total = meta.total ?? meta.snapshot?.total ?? meta.snapshot?.analytics?.grandTotal ?? 0;
+        return total > 0 ? `- ₱${total.toFixed(2)}` : "—";
+    }
+
+    if (log.action === "SESSION_VOIDED") {
+        return '—'; // Sessions are voided pre-payment, so no amount.
+    }
     
+    // Handle line item voids and free items
+    if (log.action === "VOID_TICKETS" || log.action === "MARK_FREE") {
+        if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
+            return `- ₱${Math.abs(meta.amount).toFixed(2)}`;
+        }
+        return '—';
+    }
+
+    // Handle discount deltas for edits
     if (log.action === "DISCOUNT_EDITED") {
-        const delta = meta.delta;
-        if (typeof delta === 'number' && Number.isFinite(delta)) {
-            const sign = delta >= 0 ? '+' : '-';
-            return `${sign} ₱${Math.abs(delta).toFixed(2)}`;
+        if (typeof meta.delta === 'number' && Number.isFinite(meta.delta)) {
+            const sign = meta.delta >= 0 ? '+' : '-';
+            return `${sign} ₱${Math.abs(meta.delta).toFixed(2)}`;
         }
     }
     
+    // Handle simple discount applications/removals
     if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_REMOVED") {
-        const amount = meta.amount;
-        if (typeof amount === 'number' && Number.isFinite(amount)) {
+        if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
             const sign = log.action === "DISCOUNT_APPLIED" ? '-' : '+';
-             return `${sign} ₱${Math.abs(amount).toFixed(2)}`;
+             return `${sign} ₱${Math.abs(meta.amount).toFixed(2)}`;
         }
     }
-  
-    // Check for a direct amount first (more reliable)
-    if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
-      return `₱${meta.amount.toFixed(2)}`;
-    }
-    
-    // Fallback to computing from qty and price
-    if (typeof meta.qty === 'number') {
-      const price = typeof meta.unitPriceAfter === 'number' && Number.isFinite(meta.unitPriceAfter)
-        ? meta.unitPriceAfter
-        : (typeof meta.unitPriceBefore === 'number' && Number.isFinite(meta.unitPriceBefore) ? meta.unitPriceBefore : undefined);
-        
-      if (price !== undefined) {
-        const total = price * meta.qty;
-        return `₱${total.toFixed(2)}`;
-      }
-    }
-  
-    return '—';
+
+    return "—";
 }
+
 
 function getReason(log: ActivityLog): string {
     const meta = (log.meta || {}) as any;
@@ -119,7 +120,9 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                     const meta = (log.meta || {}) as any;
                                     const sessionLabel = computeSessionLabel(log.session);
                                     let itemLabel = "SESSION VOIDED";
-                                    if (log.action === "VOID_TICKETS") {
+                                    if (log.action === "RECEIPT_VOIDED") {
+                                        itemLabel = `Receipt ${meta.receiptNumber} VOIDED`;
+                                    } else if (log.action === "VOID_TICKETS") {
                                         itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {
                                         itemLabel = `${meta.itemName} (FREE x${meta.qty ?? 1})`;

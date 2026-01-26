@@ -25,6 +25,7 @@ function actionLabel(a: ActivityLog['action']) {
     case "PAYMENT_COMPLETED": return "Payment";
     case "DISCOUNT_APPLIED": return "Discount Applied";
     case "DISCOUNT_REMOVED": return "Discount Removed";
+    case "DISCOUNT_EDITED": return "Discount Edited";
     case "MARK_FREE": return "Marked Free";
     case "UNMARK_FREE": return "Unmarked Free";
     case "VOID_TICKETS": return "Void";
@@ -36,13 +37,28 @@ function actionLabel(a: ActivityLog['action']) {
 }
 
 function formatAmount(log: ActivityLog): string {
-    const meta = log.meta || {};
-    const amount = 'amount' in meta && typeof meta.amount === 'number' ? meta.amount : 'paymentTotal' in meta && typeof meta.paymentTotal === 'number' ? meta.paymentTotal : 'discountValue' in meta && typeof meta.discountValue === 'number' ? meta.discountValue : undefined;
-
-    if (typeof amount === 'number') {
-        const sign = log.action === 'DISCOUNT_REMOVED' || log.action === 'UNMARK_FREE' ? '+' : (amount < 0 ? '' : (log.action === 'PAYMENT_COMPLETED' ? '' : '-'));
-        return `${sign} ₱${Math.abs(amount).toFixed(2)}`;
+    const meta = (log.meta || {}) as any;
+    
+    // Check for a specific 'delta' first for discount edits
+    if (typeof meta.delta === 'number' && Number.isFinite(meta.delta)) {
+        const sign = meta.delta >= 0 ? '+' : '-';
+        return `${sign} ₱${Math.abs(meta.delta).toFixed(2)}`;
     }
+    
+    // Then check for a general 'amount' or 'total'
+    const amount = meta.amount ?? meta.paymentTotal ?? meta.discountValue ?? meta.total ?? undefined;
+
+    if (typeof amount === 'number' && Number.isFinite(amount)) {
+        let sign = '';
+        if (log.action.includes('VOID') || log.action === 'MARK_FREE' || log.action === 'DISCOUNT_APPLIED') {
+            sign = '- ';
+        } else if (log.action === 'DISCOUNT_REMOVED' || log.action === 'UNMARK_FREE') {
+            sign = '+ ';
+        }
+        // No sign for payment completed or other neutral amounts
+        return `${sign}₱${Math.abs(amount).toFixed(2)}`;
+    }
+
     return "—";
 }
 
@@ -56,7 +72,7 @@ function formatDescription(log: ActivityLog): string {
     if (log.action === "SESSION_STARTED") {
         return "Session created by cashier.";
     }
-    if (log.action === "SESSION_VOIDED") {
+    if (log.action === "SESSION_VOIDED" || log.action === "RECEIPT_VOIDED") {
         const reason = log.reason || meta.reason || "N/A";
         return `Session voided. Reason: ${reason}`;
     }
