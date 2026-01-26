@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -22,7 +23,7 @@ import {
   getKitchenTicketContribution,
 } from './daily';
 import { rebuildDailyAnalyticsFromReceipts } from './backfill';
-import { toJsDate } from '../utils/date';
+import { toJsDate } from '@/lib/utils/date';
 
 type ContributionSet = {
   payment: ReturnType<typeof getPaymentContribution>;

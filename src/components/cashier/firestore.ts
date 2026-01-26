@@ -238,6 +238,7 @@ export async function completePaymentFromUnits(
 ) {
   let finalReceipt: Receipt | null = null;
   let receiptId = '';
+  let sessionContextForLog: any = null;
 
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
@@ -265,6 +266,14 @@ export async function completePaymentFromUnits(
 
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
+
+    sessionContextForLog = {
+      sessionStatus: 'closed',
+      sessionStartedAt: sessionData.startedAt,
+      sessionMode: sessionData.sessionMode,
+      customerName: sessionData.customer?.name ?? sessionData.customerName,
+      tableNumber: sessionData.tableNumber,
+    };
 
     // Idempotency Guard
     if (receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) {
@@ -593,20 +602,13 @@ export async function completePaymentFromUnits(
   });
 
   if (receiptId) {
-    const sessionData = await getDoc(doc(db, "stores", storeId, "sessions", sessionId)).then(s => s.data());
     await writeActivityLog({
       storeId,
       sessionId,
       user,
       action: 'PAYMENT_COMPLETED',
       note: 'Payment completed',
-      sessionContext: {
-        sessionStatus: 'closed',
-        sessionStartedAt: sessionData?.startedAt,
-        sessionMode: sessionData?.sessionMode,
-        customerName: sessionData?.customer?.name ?? sessionData?.customerName,
-        tableNumber: sessionData?.tableNumber,
-      },
+      sessionContext: sessionContextForLog,
       meta: {
         receiptId,
         receiptNumber: finalReceipt?.receiptNumber ?? null,
