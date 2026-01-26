@@ -408,6 +408,7 @@ export type DailyMetric = {
         addonSalesAmountByCategory: Record<string, number>;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
+        addonSalesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
     };
     kitchen?: {
         servedCountByType: Record<string, number>;
@@ -523,9 +524,9 @@ export type DiscountEvent = {
     itemId?: string;
     itemName: string;
     qtyAffected?: number;
-    discountType: "fixed" | "percent";
+    discountType: "percent" | "fixed";
     percent?: number | null;
-    amount: number;
+    amount: number;          // absolute currency amount for this event
   } | null;
   reason?: string | null;
   createdAt: any;
@@ -581,6 +582,8 @@ export type ActivityLog = {
     editVersion?: number;
     diffSummary?: string;
     reason?: string;
+    total?: number;
+    snapshot?: Receipt;
 
     // For discount auditing
     scope?: "bill" | "item";

@@ -42,8 +42,10 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
 const presets: { label: string, value: DatePreset }[] = [
     { label: "Today", value: "today" },
     { label: "Yesterday", value: "yesterday" },
-    { label: "This Week", value: "week" },
+    { label: "Last 7 Days", value: "last7" },
     { label: "This Month", value: "month" },
+    { label: "Last Month", value: "lastMonth" },
+    { label: "YTD", value: "ytd" },
 ];
 
 
@@ -52,7 +54,6 @@ export default function DashboardPage() {
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
-    const [showYtd, setShowYtd] = useState(false);
 
     const {
         isLoading,
@@ -63,19 +64,23 @@ export default function DashboardPage() {
         paymentMix,
         dailyMetrics,
         topCategories,
-        ytdData,
-        trendRows,
         warnings
     } = useDashboardAnalytics({
         storeId: activeStore?.id,
         preset: datePreset,
         customRange,
-        ytdMode: showYtd,
     });
     
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
-          today: "today", yesterday: "yesterday", lastWeek: "week", lastMonth: "month",
+          today: "today", 
+          yesterday: "yesterday", 
+          lastWeek: "week", 
+          lastMonth: "lastMonth",
+          last7: "last7",
+          last30: "last30",
+          month: "month",
+          ytd: "ytd"
         };
         if (preset && preset !== "custom" && presetMap[preset]) {
           setDatePreset(presetMap[preset]);
@@ -103,10 +108,6 @@ export default function DashboardPage() {
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`} className="mb-4">
                  <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-4">
-                        <div className="flex items-center space-x-2">
-                            <Switch id="ytd-toggle" checked={showYtd} onCheckedChange={setShowYtd} />
-                            <Label htmlFor="ytd-toggle">YTD Compare</Label>
-                        </div>
                         <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
                             {presets.map(p => (
                                 <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
@@ -138,52 +139,29 @@ export default function DashboardPage() {
                     </RoleGuard>
                 )}
 
-                {showYtd ? (
-                    <>
-                        <MonthlySalesTrendChart data={trendRows} isLoading={isLoading} />
-                        <Card>
-                            <CardHeader><CardTitle>YTD Performance vs. Previous Year</CardTitle></CardHeader>
-                            <CardContent className="grid gap-6 md:grid-cols-2">
-                                <div className="space-y-4">
-                                    <h3 className="font-semibold text-lg text-center">This Year</h3>
-                                    <StatCards stats={ytdData.cur} activeSessions={activeSessions} isLoading={isLoading} />
-                                    <PaymentMix data={ytdData.cur.mop} isLoading={isLoading} />
-                                </div>
-                                <div className="space-y-4">
-                                     <h3 className="font-semibold text-lg text-center">Last Year</h3>
-                                     <StatCards stats={ytdData.prev} isLoading={isLoading} />
-                                     <PaymentMix data={ytdData.prev.mop} isLoading={isLoading} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </>
-                ) : (
-                    <>
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                            <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                            {/* Row 1 */}
-                            <Card>
-                                <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
-                                <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                            </Card>
-                            <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            
-                            {/* Row 2 */}
-                            <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
-                            <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
-                            
-                            {/* Row 3 */}
-                            <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                            <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
-                            <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                        </div>
-                    </>
-                )}
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                    <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+                    {/* Row 1 */}
+                    <Card>
+                        <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
+                        <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
+                    </Card>
+                    <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    
+                    {/* Row 2 */}
+                    <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
+                    <TopAddonItemsCard storeId={activeStore.id} dailyMetrics={dailyMetrics} isLoading={isLoading} topN={5} />
+                    
+                    {/* Row 3 */}
+                    <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <TopRefillsCard storeId={activeStore.id} dateRange={dateRange} isLoading={isLoading} topN={5} />
+                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                </div>
             </div>
         </RoleGuard>
     );
