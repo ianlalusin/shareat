@@ -106,7 +106,7 @@ export default function DashboardPage() {
     }
     
     return (
-        <RoleGuard allow={["admin", "manager", "cashier", "server"]}>
+        <RoleGuard allow={["admin", "manager", "cashier"]}>
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`} className="mb-4">
                  <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-4">

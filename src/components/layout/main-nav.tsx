@@ -7,7 +7,7 @@ import type { UserRole } from '@/lib/types'
 import { SheetClose } from '../ui/sheet'
 
 const navLinks = [
-  { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier', 'server'] },
+  { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier'] },
   { href: '/cashier', label: 'Cashier', roles: ['admin', 'manager', 'cashier'] },
   { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
   { href: '/server', label: 'Server', roles: ['admin', 'manager', 'server'] },
