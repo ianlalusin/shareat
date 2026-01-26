@@ -6,9 +6,10 @@ import { StoreContextProvider } from '@/context/store-context';
 import dynamic from 'next/dynamic';
 import { BrandLoader } from '@/components/ui/BrandLoader';
 
-const NoSsrFirebaseProvider = dynamic(
-    () => import('@/firebase/client-provider').then(mod => mod.FirebaseClientProvider),
-    { 
+// Dynamically import the provider that initializes Firebase to ensure it only runs on the client.
+const FirebaseClientProvider = dynamic(
+    () => import('@/firebase/client-provider').then(m => m.FirebaseClientProvider),
+    {
         ssr: false,
         loading: () => (
             <div className="flex items-center justify-center h-screen">
@@ -18,15 +19,14 @@ const NoSsrFirebaseProvider = dynamic(
     }
 );
 
-
 export function Providers({ children }: { children: React.ReactNode }) {
     return (
-        <NoSsrFirebaseProvider>
+        <FirebaseClientProvider>
             <AuthContextProvider>
                 <StoreContextProvider>
                     {children}
                 </StoreContextProvider>
             </AuthContextProvider>
-        </NoSsrFirebaseProvider>
+        </FirebaseClientProvider>
     );
 }

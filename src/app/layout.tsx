@@ -3,9 +3,8 @@ import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
-import { Providers } from './providers';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
-import { AppLayout } from '@/components/layout/AppLayout';
+import { Providers } from './providers';
 
 // Define fonts
 const fontSans = Poppins({
