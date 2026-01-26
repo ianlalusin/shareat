@@ -57,7 +57,8 @@ function formatDescription(log: ActivityLog): string {
         return "Session created by cashier.";
     }
     if (log.action === "SESSION_VOIDED") {
-        return `Session voided. Reason: ${log.reason || "N/A"}`;
+        const reason = log.reason || meta.reason || "N/A";
+        return `Session voided. Reason: ${reason}`;
     }
 
     const qtyNum =

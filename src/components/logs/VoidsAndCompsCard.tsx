@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -62,7 +63,7 @@ function getReason(log: ActivityLog): string {
     if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_EDITED" || log.action === "DISCOUNT_REMOVED") {
         return meta.discountName || log.note || "Discount event";
     }
-    return log.reason || log.note || 'N/A';
+    return log.reason || meta.reason || log.note || 'N/A';
 }
 
 function getActor(log: ActivityLog): string {

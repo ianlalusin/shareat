@@ -673,6 +673,17 @@ export async function voidSession({
       tx.update(ticketRef, updatePayload);
     }
   });
+
+  await writeActivityLog({
+    storeId,
+    sessionId,
+    user: actor,
+    action: "SESSION_VOIDED",
+    reason: reason,
+    meta: {
+      sessionLabel: computeSessionLabel(sessionData)
+    }
+  });
 }
 
 /**
