@@ -3,77 +3,43 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
-import { RoleGuard } from "@/components/guards/RoleGuard";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
-import { collection, onSnapshot, query, where, Timestamp, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useRouter } from "next/navigation";
-import { Loader2, Receipt } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { ActiveSessionsGrid, type ActiveSession } from "@/components/cashier/active-sessions-grid";
 import { PastSessionsCard } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
-
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
+import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
     const { activeStore } = useStoreContext();
     const router = useRouter();
 
-    const [tables, setTables] = useState<Table[]>([]);
-    const [packages, setPackages] = useState<StorePackage[]>([]);
-    const [flavors, setFlavors] = useState<StoreFlavor[]>([]);
-    const [schedules, setSchedules] = useState<Map<string, MenuSchedule>>(new Map());
-    const [isLoading, setIsLoading] = useState(true);
+    const { config: storeConfig, isLoading: isConfigLoading, error: configError } = useStoreConfigDoc(activeStore?.id);
+
+    const [isLoadingSessions, setIsLoadingSessions] = useState(true);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
 
     useEffect(() => {
         if (!activeStore) {
-            setIsLoading(false);
+            setIsLoadingSessions(false);
             return;
         };
-        setIsLoading(true);
+        setIsLoadingSessions(true);
 
-        const unsubs: (() => void)[] = [];
         const handleError = (error: any) => {
             if (isSigningOut || !appUser) return;
-            console.error("SessionListView listener failed:", error);
+            console.error("Session listener failed:", error);
         };
-
-        // Fetch Tables
-        const tablesRef = collection(db, "stores", activeStore.id, "tables");
-        unsubs.push(onSnapshot(query(tablesRef, where("isActive", "==", true)), (snapshot) => {
-            setTables(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Table))
-                .sort((a,b) => (a.tableNumber || "0").localeCompare(b.tableNumber || "0", undefined, { numeric: true }))
-            );
-        }, handleError));
-
-        // Fetch Flavors from store-level collection
-        const flavorsRef = collection(db, "stores", activeStore.id, "storeFlavors");
-        unsubs.push(onSnapshot(query(flavorsRef, where("isEnabled", "==", true), orderBy("sortOrder", "asc")), (snapshot) => {
-            setFlavors(snapshot.docs.map(doc => doc.data() as StoreFlavor));
-        }, handleError));
-
-        // Fetch Packages from store-level collection
-        const packagesRef = collection(db, "stores", activeStore.id, "storePackages");
-        unsubs.push(onSnapshot(query(packagesRef, where("isEnabled", "==", true), orderBy("sortOrder", "asc")), (snapshot) => {
-            setPackages(snapshot.docs.map(doc => ({ packageId: doc.id, ...doc.data() } as StorePackage)));
-        }, handleError));
-
-        // Fetch active schedules
-        const schedulesRef = collection(db, "stores", activeStore.id, "menuSchedules");
-        const schedulesQuery = query(schedulesRef, where("isActive", "==", true));
-        unsubs.push(onSnapshot(schedulesQuery, (snapshot) => {
-            const schedulesMap = new Map<string, MenuSchedule>();
-            snapshot.docs.forEach(doc => schedulesMap.set(doc.id, { id: doc.id, ...doc.data() } as MenuSchedule));
-            setSchedules(schedulesMap);
-        }, handleError));
         
         // Fetch active and pending sessions, sorted by start time
         const sessionsQuery = query(
@@ -81,7 +47,7 @@ export function SessionListView() {
             where("status", "in", ["active", "pending_verification"]),
             orderBy("startedAtClientMs", "asc")
         );
-        unsubs.push(onSnapshot(sessionsQuery, (snapshot) => {
+        const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
             setSessions(snapshot.docs.map(d => {
                 const data = d.data();
                 return { 
@@ -91,27 +57,30 @@ export function SessionListView() {
                     startedAt: data.startedAt ?? null,
                 } as ActiveSession
             }));
-        }, handleError));
-        
-        // All subscriptions are set, so we can stop loading.
-        setIsLoading(false);
+            setIsLoadingSessions(false);
+        }, handleError);
 
-        return () => {
-            unsubs.forEach(unsub => unsub());
-        };
+        return () => unsubscribe();
 
     }, [activeStore, appUser, isSigningOut]);
 
+    const schedulesMap = useMemo(() => {
+        if (!storeConfig?.schedules) return new Map<string, MenuSchedule>();
+        return new Map(storeConfig.schedules.map(s => [s.id, s]));
+    }, [storeConfig?.schedules]);
+
     const availablePackages = useMemo(() => {
-        return packages.filter(pkg => {
+        if (!storeConfig?.packages) return [];
+        return storeConfig.packages.filter(pkg => {
             if (!pkg.isEnabled) return false;
             if (!pkg.menuScheduleId) return true; // Always available if no schedule
-            const schedule = schedules.get(pkg.menuScheduleId);
+            const schedule = schedulesMap.get(pkg.menuScheduleId);
             if (!schedule) return true; // Fail open if schedule not found
             return isScheduleActiveNow(schedule);
         });
-    }, [packages, schedules]);
+    }, [storeConfig?.packages, schedulesMap]);
 
+    const isLoading = isConfigLoading || isLoadingSessions;
 
     if (!activeStore) {
       return (
@@ -128,12 +97,23 @@ export function SessionListView() {
             {isLoading ? <Loader2 className="animate-spin" /> : (
                 <div className="space-y-8">
                     <ApprovalQueue storeId={activeStore.id} />
+                    
+                    {!isConfigLoading && !storeConfig && (
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Configuration Missing</AlertTitle>
+                            <AlertDescription>
+                                This store's configuration document could not be loaded. Some features like starting new sessions may be unavailable.
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                         <div className="lg:col-span-1 space-y-8">
                             <StartSessionForm
-                                tables={tables.filter(t => t.status === 'available')}
+                                tables={(storeConfig?.tables || []).filter(t => t.status === 'available')}
                                 packages={availablePackages}
-                                flavors={flavors}
+                                flavors={storeConfig?.flavors || []}
                                 user={appUser}
                                 storeId={activeStore.id}
                             />
