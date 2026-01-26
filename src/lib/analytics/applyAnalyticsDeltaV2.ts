@@ -10,7 +10,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
-import type { Receipt } from '@/lib/types';
+import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, LineAdjustment } from '@/lib/types';
 import {
   dailyAnalyticsDocRef,
   getPaymentContribution,
@@ -19,8 +19,10 @@ import {
   getPeakHourContribution,
   getRefillContribution,
   getClosedSessionsContribution,
+  getKitchenTicketContribution,
 } from './daily';
 import { rebuildDailyAnalyticsFromReceipts } from './backfill';
+import { toJsDate } from '../utils/date';
 
 type ContributionSet = {
   payment: ReturnType<typeof getPaymentContribution>;
@@ -30,6 +32,66 @@ type ContributionSet = {
   closed: ReturnType<typeof getClosedSessionsContribution>;
   refill: ReturnType<typeof getRefillContribution>;
 };
+
+// --- Date Helpers for Presets ---
+function atStartOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function addDays(d: Date, days: number): Date {
+  const date = new Date(d.valueOf());
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+/**
+ * Determines which dashboard presets are affected by a given event date.
+ * @param eventDate The date of the receipt/event.
+ * @returns An array of preset ID strings (e.g., ["today", "last7"]).
+ */
+function getApplicablePresets(eventDate: Date): string[] {
+  const applicable: string[] = [];
+  const now = new Date();
+
+  const today = atStartOfDay(now);
+  const yesterday = addDays(today, -1);
+  const sevenDaysAgo = addDays(today, -6);
+  const thirtyDaysAgo = addDays(today, -29);
+  const startOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+  const startOfYear = new Date(today.getFullYear(), 0, 1);
+
+  const eventDay = atStartOfDay(eventDate);
+  const eventTime = eventDay.getTime();
+
+  if (eventTime === today.getTime()) {
+    applicable.push("today");
+  }
+  if (eventTime === yesterday.getTime()) {
+    applicable.push("yesterday");
+  }
+  if (eventTime >= sevenDaysAgo.getTime() && eventTime <= today.getTime()) {
+    applicable.push("last7");
+  }
+  if (eventTime >= thirtyDaysAgo.getTime() && eventTime <= today.getTime()) {
+    applicable.push("last30");
+  }
+  if (eventTime >= startOfThisMonth.getTime() && eventTime <= today.getTime()) {
+    applicable.push("thisMonth");
+  }
+  if (eventTime >= startOfLastMonth.getTime() && eventTime <= endOfLastMonth.getTime()) {
+    applicable.push("lastMonth");
+  }
+  if (eventTime >= startOfYear.getTime() && eventTime <= today.getTime()) {
+    applicable.push("ytd");
+  }
+
+  return applicable;
+}
+
 
 function getContributions(receipt: Receipt | null): ContributionSet {
   return {
@@ -78,7 +140,7 @@ function writerUpdate(w: Writer, ref: any, data: any) {
 
 /**
  * Calculates and applies the change (delta) between an old and a new receipt
- * to the daily analytics documents. This can be part of a larger batch.
+ * to the daily, monthly, yearly, AND preset analytics documents. This can be part of a larger batch.
  *
  * @param db The Firestore instance.
  * @param storeId The ID of the store to backfill.
@@ -115,28 +177,33 @@ export async function applyAnalyticsDeltaV2(
     const dayOld = pickDayContribution(oldContrib, dayId);
     const dayNew = pickDayContribution(newContrib, dayId);
 
+    const dayStartMs = dayNew.payment.dayStartMs > 0 
+      ? dayNew.payment.dayStartMs 
+      : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
+
     const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
     const monthId = dayId.slice(0, 6);
     const yearId = dayId.slice(0, 4);
     const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
     const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
 
-    // --- Step 2: Ensure Docs Exist ---
-    const dayStartMs = dayNew.payment.dayStartMs > 0 
-      ? dayNew.payment.dayStartMs 
-      : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
-
-    // Ensure docs exist by setting meta field. This is a safe "upsert" that won't overwrite existing data maps.
-    if (dayStartMs > 0) {
-        writerSet(w, dayRef, { meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
-    } else {
-        writerSet(w, dayRef, { meta: { dayId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
+    // --- 1. Get Applicable Presets ---
+    const eventDate = toJsDate(dayStartMs);
+    const applicablePresets = eventDate ? getApplicablePresets(eventDate) : [];
+    
+    // --- 2. Ensure Docs Exist ---
+    const metaPayload = { meta: { storeId, updatedAt: serverTimestamp() }};
+    writerSet(w, dayRef, { meta: { ...metaPayload.meta, dayId, dayStartMs } }, { merge: true });
+    writerSet(w, monthRef, { meta: { ...metaPayload.meta, monthId } }, { merge: true });
+    writerSet(w, yearRef, { meta: { ...metaPayload.meta, yearId } }, { merge: true });
+    
+    // Ensure preset docs exist
+    for (const presetId of applicablePresets) {
+        const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
+        writerSet(w, presetRef, { meta: { presetId, storeId, source: "delta-v2", updatedAt: serverTimestamp() } }, { merge: true });
     }
-    writerSet(w, monthRef, { meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
-    writerSet(w, yearRef, { meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
 
-
-    // --- Step 3: Prepare and apply increments ---
+    // --- 3. Prepare and apply increments ---
     const payload: Record<string, any> = {
       "meta.updatedAt": serverTimestamp(),
     };
@@ -219,33 +286,6 @@ export async function applyAnalyticsDeltaV2(
       if (ad !== 0) payload[`sales.addonSalesAmountByCategory.${cat}`] = increment(ad);
     }
     
-    allAddonItems.forEach((itemName) => {
-      const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
-      const newItem = dayNew.sales.addonSalesByItem?.[itemName];
-
-      const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
-      const amountDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
-      if (qtyDelta === 0 && amountDelta === 0) return;
-
-      const categoryName = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
-      const itemId = toSafeDocId(itemName);
-
-      const writeToSubcollection = (parent: any) => {
-        const itemRef = doc(parent, "addonItems", itemId);
-        writerSet(w, itemRef, {
-          itemName,
-          categoryName,
-          qty: increment(qtyDelta),
-          amount: increment(amountDelta),
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      };
-
-      writeToSubcollection(dayRef);
-      writeToSubcollection(monthRef);
-      writeToSubcollection(yearRef);
-    });
-
     // --- Peak Hour Delta ---
     if (dayOld.peak.hourKey !== dayNew.peak.hourKey) {
         if(dayOld.peak.hourKey && dayOld.peak.count > 0) {
@@ -275,33 +315,76 @@ export async function applyAnalyticsDeltaV2(
       ...Object.keys(dayNew.refill?.servedRefillsByName || {}),
     ]);
     
-    allRefillNames.forEach((refillName) => {
-      const oldQty = (dayOld.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
-      const newQty = (dayNew.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
+    // --- Subcollection Updates ---
+    allAddonItems.forEach((itemName) => {
+        const oldItem = dayOld.sales.addonSalesByItem?.[itemName];
+        const newItem = dayNew.sales.addonSalesByItem?.[itemName];
+  
+        const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
+        const amountDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
+        if (qtyDelta === 0 && amountDelta === 0) return;
+  
+        const categoryName = newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized";
+        const itemId = toSafeDocId(itemName);
+  
+        const writeToSubcollection = (parent: any) => {
+          const itemRef = doc(parent, "addonItems", itemId);
+          writerSet(w, itemRef, {
+            itemName,
+            categoryName,
+            qty: increment(qtyDelta),
+            amount: increment(amountDelta),
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        };
+  
+        writeToSubcollection(dayRef);
+        applicablePresets.forEach(presetId => {
+            const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
+            writeToSubcollection(presetRef);
+        });
+      });
+      
+      allRefillNames.forEach((refillName) => {
+        const oldQty = (dayOld.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
+        const newQty = (dayNew.refill?.servedRefillsByName?.[refillName] ?? 0) as number;
+      
+        const qtyDelta = newQty - oldQty;
+        if (qtyDelta === 0) return;
+      
+        const refillId = toSafeDocId(refillName);
+      
+        const writeToSubcollection = (parent: any) => {
+          const rRef = doc(parent, "refillItems", refillId);
+          writerSet(
+              w,
+              rRef,
+              {
+              refillName,
+              qty: increment(qtyDelta),
+              updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+          );
+        };
+      
+        writeToSubcollection(dayRef);
+        applicablePresets.forEach(presetId => {
+            const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
+            writeToSubcollection(presetRef);
+        });
+      });
     
-      const qtyDelta = newQty - oldQty;
-      if (qtyDelta === 0) return;
-    
-      const refillId = toSafeDocId(refillName);
-    
-      const writeToSubcollection = (parent: any) => {
-        const rRef = doc(parent, "refillItems", refillId);
-        writerSet(w, rRef, {
-          refillName,
-          qty: increment(qtyDelta),
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      };
-    
-      writeToSubcollection(dayRef);
-      writeToSubcollection(monthRef);
-      writeToSubcollection(yearRef);
-    });
-    
-    // Apply the increments using update
+    // --- Apply final updates to rollup docs ---
     writerUpdate(w, dayRef, payload);
     writerUpdate(w, monthRef, payload);
     writerUpdate(w, yearRef, payload);
+
+    // --- Apply final updates to PRESET docs ---
+    for (const presetId of applicablePresets) {
+        const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
+        writerUpdate(w, presetRef, payload);
+    }
   }
 
   // If the caller is not providing a transaction or batch, we create our own and commit it.
