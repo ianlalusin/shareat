@@ -2,7 +2,7 @@
 
 "use client";
 
-import { collection, doc, setDoc, serverTimestamp, writeBatch, getDoc } from "firebase/firestore";
+import { collection, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import type { ActivityLog } from "@/lib/types";
