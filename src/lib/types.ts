@@ -490,6 +490,13 @@ export type Receipt = {
     editedByEmail?: string | null;
     editReason?: string;
     lastDiffSummary?: string;
+    // New fields for explicit discount auditing
+    discounts?: {
+        bill?: any;
+        items?: any[];
+    };
+    discountsTotal?: number;
+    discountEventIds?: string[];
     // Fields for voiding
     voidedAt?: any;
     voidedByUid?: string;
@@ -497,12 +504,43 @@ export type Receipt = {
     voidReason?: string;
 }
 
+export type DiscountEvent = {
+  id: string;
+  storeId: string;
+  receiptId: string;
+  receiptNumber: string;
+  sessionId: string;
+  scope: "bill" | "item";
+  actionType: "DISCOUNT_APPLIED" | "DISCOUNT_EDITED" | "DISCOUNT_REMOVED";
+  billDiscount: {
+    discountType: "fixed" | "percent";
+    discountName: string;
+    percent?: number | null;
+    amount: number;
+  } | null;
+  itemDiscount: {
+    lineId: string;
+    itemId?: string;
+    itemName: string;
+    qtyAffected?: number;
+    discountType: "fixed" | "percent";
+    percent?: number | null;
+    amount: number;
+  } | null;
+  reason?: string | null;
+  createdAt: any;
+  createdByUid: string;
+  createdByName: string;
+  createdByRole: string;
+};
+
+
 export type ActivityLog = {
   id: string;
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED" | "RECEIPT_VOIDED";
+  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_EDITED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED" | "RECEIPT_VOIDED";
 
   actorUid: string;
   actorRole?: string | null;
@@ -543,6 +581,14 @@ export type ActivityLog = {
     editVersion?: number;
     diffSummary?: string;
     reason?: string;
+
+    // For discount auditing
+    scope?: "bill" | "item";
+    oldDiscountTotal?: number;
+    newDiscountTotal?: number;
+    delta?: number;
+    discountName?: string;
+    percent?: number;
   };
 
   createdAt: any; // serverTimestamp()

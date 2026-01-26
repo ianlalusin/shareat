@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -20,9 +21,11 @@ interface VoidsAndCompsCardProps {
 function formatAmount(log: ActivityLog): string {
     const meta = log.meta || {};
     
-    if (log.action === "DISCOUNT_APPLIED") {
-        if (typeof meta.amount === 'number' && Number.isFinite(meta.amount)) {
-            return `- ₱${meta.amount.toFixed(2)}`;
+    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_REMOVED" || log.action === "DISCOUNT_EDITED") {
+        const delta = meta.delta ?? meta.amount;
+        if (typeof delta === 'number' && Number.isFinite(delta)) {
+            const sign = delta >= 0 ? '+' : '-';
+            return `${sign} ₱${Math.abs(delta).toFixed(2)}`;
         }
     }
   
@@ -48,8 +51,8 @@ function formatAmount(log: ActivityLog): string {
 
 function getReason(log: ActivityLog): string {
     const meta = (log.meta || {}) as any;
-    if (log.action === "DISCOUNT_APPLIED") {
-        return meta.note || meta.discountName || "Discount Applied";
+    if (log.action === "DISCOUNT_APPLIED" || log.action === "DISCOUNT_EDITED") {
+        return meta.discountName || meta.note || "Discount event";
     }
     return log.reason || log.note || 'N/A';
 }
@@ -63,7 +66,7 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
 
     const filteredLogs = useMemo(() => {
         if (filter === 'all') return [...logs, ...discountLogs].sort((a,b) => (toJsDate(b.createdAt)?.getTime() ?? 0) - (toJsDate(a.createdAt)?.getTime() ?? 0));
-        if (filter === 'voids') return logs.filter(log => log.action === 'VOID_TICKETS' || log.action === 'SESSION_VOIDED');
+        if (filter === 'voids') return logs.filter(log => log.action === 'VOID_TICKETS' || log.action === 'SESSION_VOIDED' || log.action === "RECEIPT_VOIDED");
         if (filter === 'free') return logs.filter(log => log.action === 'MARK_FREE');
         if (filter === 'discounted') return discountLogs;
         return [];
@@ -99,7 +102,7 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                     <TableHead>Time</TableHead>
                                     <TableHead>Staff</TableHead>
                                     <TableHead>Reason</TableHead>
-                                    <TableHead className="text-right">Amount</TableHead>
+                                    <TableHead className="text-right">Amount/Delta</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -111,8 +114,8 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                         itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {
                                         itemLabel = `${meta.itemName} (FREE x${meta.qty ?? 1})`;
-                                    } else if (log.action === "DISCOUNT_APPLIED") {
-                                        itemLabel = `${meta.itemName || 'Bill'} (DISCOUNT x${meta.qty ?? 1})`;
+                                    } else if (log.action.startsWith("DISCOUNT")) {
+                                        itemLabel = `${meta.itemName || 'Bill'} (DISCOUNT)`;
                                     }
 
                                     return (
