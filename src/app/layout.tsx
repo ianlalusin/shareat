@@ -26,7 +26,7 @@ const APP_TITLE_TEMPLATE = "%s - SharEat Hub";
 const APP_DESCRIPTION = "A complete POS, KDS, and ERP solution for restaurants.";
 
 export const metadata: Metadata = {
-  manifest: '/manifest.webmanifest',
+  // manifest is manually linked in RootLayout head to add crossOrigin attribute
   icons: {
     icon: '/icons/icon-192.png',
     apple: '/icons/apple-touch-icon.png',
@@ -76,6 +76,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={cn(fontSans.variable, fontSerif.variable)}>
+       <head>
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
+      </head>
       <body>
         <Providers>
           <FirstLoginGuard>
