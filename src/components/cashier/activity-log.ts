@@ -9,11 +9,20 @@ import type { ActivityLog } from "@/lib/types";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { computeSessionLabel } from "@/lib/utils/session";
 
+type SessionContext = {
+    sessionStatus?: 'pending_verification' | 'active' | 'closed' | 'voided';
+    sessionStartedAt?: any;
+    sessionMode?: 'package_dinein' | 'alacarte' | null;
+    customerName?: string | null;
+    tableNumber?: string | null;
+};
+
 type ActivityLogPayload = {
     storeId: string;
     sessionId: string;
     user: AppUser | null;
     action: ActivityLog['action'];
+    sessionContext?: SessionContext;
     lineId?: string;
     qty?: number;
     reason?: string | null;
@@ -27,7 +36,7 @@ type ActivityLogPayload = {
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
-  const { storeId, sessionId, user, action, qty, ...rest } = payload;
+  const { storeId, sessionId, user, action, qty, sessionContext, ...rest } = payload;
 
   if (!user) {
     console.warn("Activity log skipped: User is not authenticated.");
@@ -39,11 +48,6 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
   }
 
   try {
-    // Fetch session doc to get denormalized data
-    const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
-    const sessionSnap = await getDoc(sessionRef);
-    const sessionData = sessionSnap.exists() ? sessionSnap.data() : {};
-    
     const now = new Date();
     const serverTs = serverTimestamp();
     const dayId = getDayIdFromTimestamp(now);
@@ -59,15 +63,15 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorName: user.displayName || user.name || null,
       
       // Denormalized session context
-      sessionStatus: sessionData.status,
-      sessionStartedAt: sessionData.startedAt,
-      sessionMode: sessionData.sessionMode,
-      customerName: sessionData.customer?.name ?? sessionData.customerName,
-      tableNumber: sessionData.tableNumber,
+      sessionStatus: sessionContext?.sessionStatus,
+      sessionStartedAt: sessionContext?.sessionStartedAt,
+      sessionMode: sessionContext?.sessionMode,
+      customerName: sessionContext?.customerName,
+      tableNumber: sessionContext?.tableNumber,
       sessionLabel: computeSessionLabel({
-        sessionMode: sessionData.sessionMode,
-        customerName: sessionData.customer?.name ?? sessionData.customerName,
-        tableNumber: sessionData.tableNumber,
+        sessionMode: sessionContext?.sessionMode,
+        customerName: sessionContext?.customerName,
+        tableNumber: sessionContext?.tableNumber,
       }),
 
       ...rest,

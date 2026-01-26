@@ -170,18 +170,18 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const { grandTotal } = billTotals;
   
+  const totalPaid = useMemo(() => payments.reduce((sum, p) => sum + p.amount, 0), [payments]);
   const grandTotalCents = Math.round(grandTotal * 100);
-  const totalPaidCents = payments.reduce((sum, p) => sum + Math.round(Number(p.amount || 0) * 100), 0);
+  const totalPaidCents = Math.round(totalPaid * 100);
   const remainingCents = grandTotalCents - totalPaidCents;
   
-  const totalPaid = totalPaidCents / 100;
   const remainingBalance = remainingCents / 100;
   const change = Math.max(0, -remainingCents) / 100;
   
   const canCompletePayment = grandTotalCents > 0 && remainingCents <= 1; // Allow for 1 cent rounding diff
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
-    if (!appUser || !storeId || !sessionId) return;
+    if (!appUser || !storeId || !sessionId || !session) return;
     try {
         await updateSessionBillLine(storeId, sessionId, lineId, after, appUser);
 
@@ -197,14 +197,21 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         };
         
         const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+        const sessionContext = {
+            sessionStatus: session.status,
+            sessionStartedAt: session.startedAt,
+            sessionMode: session.sessionMode,
+            customerName: session.customer?.name ?? session.customerName,
+            tableNumber: session.tableNumber,
+        };
 
         if (line.type === 'package' && diff.qtyOrdered > 0) {
-            await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser });
+            await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser, sessionContext });
         }
         if (diff.discount > 0) {
-            await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+            await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
         } else if (diff.discount < 0) {
-            await writeActivityLog({ action: "DISCOUNT_REMOVED", qty: -diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser });
+            await writeActivityLog({ action: "DISCOUNT_REMOVED", qty: -diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
         }
 
         if (diff.free > 0) {
@@ -219,7 +226,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               unitPriceAfter: unitPrice,
               amount: Math.abs(diff.free) * unitPrice,
             },
-            storeId, sessionId, user: appUser
+            storeId, sessionId, user: appUser, sessionContext
           });
         } else if (diff.free < 0) {
           await writeActivityLog({
@@ -233,7 +240,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               unitPriceAfter: unitPrice,
               amount: Math.abs(diff.free) * unitPrice,
             },
-            storeId, sessionId, user: appUser
+            storeId, sessionId, user: appUser, sessionContext
           });
         }
         
@@ -249,7 +256,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               unitPriceAfter: unitPrice,
               amount: Math.abs(diff.void) * unitPrice,
             },
-            storeId, sessionId, user: appUser
+            storeId, sessionId, user: appUser, sessionContext
           });
         } else if (diff.void < 0) {
           await writeActivityLog({
@@ -263,7 +270,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               unitPriceAfter: unitPrice,
               amount: Math.abs(diff.void) * unitPrice,
             },
-            storeId, sessionId, user: appUser
+            storeId, sessionId, user: appUser, sessionContext
           });
         }
 
@@ -274,7 +281,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }
 
   const handleAddLineAdjustment = async (lineId: string, adj: LineAdjustment) => {
-    if (!appUser || !storeId || !sessionId || !activeStore) return;
+    if (!appUser || !storeId || !sessionId || !activeStore || !session) return;
     try {
         const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
         await updateDoc(lineRef, {
@@ -305,6 +312,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     sessionId,
                     user: appUser,
                     note: `Applied to ${line.itemName}`,
+                    sessionContext: {
+                        sessionStatus: session.status,
+                        sessionStartedAt: session.startedAt,
+                        sessionMode: session.sessionMode,
+                        customerName: session.customer?.name ?? session.customerName,
+                        tableNumber: session.tableNumber,
+                    },
                     meta: {
                         lineId: line.id,
                         itemName: line.itemName,

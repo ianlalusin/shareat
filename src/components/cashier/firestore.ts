@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -207,6 +208,13 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       user,
       action: 'SESSION_STARTED',
       note: 'Session started',
+      sessionContext: {
+        sessionStatus: sessionPayload.status,
+        sessionStartedAt: sessionPayload.startedAt,
+        sessionMode: sessionPayload.sessionMode,
+        customerName: sessionPayload.customerName,
+        tableNumber: sessionPayload.tableNumber,
+      }
     });
   }
 
@@ -585,12 +593,20 @@ export async function completePaymentFromUnits(
   });
 
   if (receiptId) {
+    const sessionData = await getDoc(doc(db, "stores", storeId, "sessions", sessionId)).then(s => s.data());
     await writeActivityLog({
       storeId,
       sessionId,
       user,
       action: 'PAYMENT_COMPLETED',
       note: 'Payment completed',
+      sessionContext: {
+        sessionStatus: 'closed',
+        sessionStartedAt: sessionData?.startedAt,
+        sessionMode: sessionData?.sessionMode,
+        customerName: sessionData?.customer?.name ?? sessionData?.customerName,
+        tableNumber: sessionData?.tableNumber,
+      },
       meta: {
         receiptId,
         receiptNumber: finalReceipt?.receiptNumber ?? null,
@@ -680,6 +696,13 @@ export async function voidSession({
     user: actor,
     action: "SESSION_VOIDED",
     reason: reason,
+    sessionContext: {
+        sessionStatus: 'voided',
+        sessionStartedAt: sessionData.startedAt,
+        sessionMode: sessionData.sessionMode,
+        customerName: sessionData.customer?.name ?? sessionData.customerName,
+        tableNumber: sessionData.tableNumber,
+    },
     meta: {
       sessionLabel: computeSessionLabel(sessionData)
     }
