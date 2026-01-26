@@ -25,11 +25,6 @@ function writerUpdate(w: Writer, ref: any, data: any) {
   return w.batch.update(ref, data);
 }
 
-function toSafeDocId(raw: string) {
-  // stable + Firestore-safe (avoid / and weird chars)
-  return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
-}
-
 function getDayIdManilaFromMs(ms: number) {
   // YYYYMMDD in Asia/Manila using Intl (no deps)
   const parts = new Intl.DateTimeFormat("en-CA", {

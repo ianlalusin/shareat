@@ -112,11 +112,6 @@ function pickDayContribution(contrib: ContributionSet, dayId: string): Contribut
     return contrib;
 }
 
-function toSafeDocId(raw: string) {
-  // stable + Firestore-safe (avoid / and weird chars)
-  return encodeURIComponent(raw).replace(/%/g, "_").slice(0, 500);
-}
-
 function safeKey(s: string) {
   return (s || "Uncategorized")
     .trim()
