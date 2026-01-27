@@ -66,11 +66,28 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       setStores(validStores);
 
       const storedId = localStorage.getItem('activeStoreId');
-      const preferred = storedId ? validStores.find(s => s.id === storedId) : null;
-      
-      const userHasAccessToStored = preferred && (isPlatformAdmin || assigned.includes(preferred.id));
-      
-      setActiveStore(userHasAccessToStored ? preferred : validStores[0] || null);
+      let activeStoreCandidate: Store | null = null;
+
+      // 1. Try from localStorage if it's a valid store the user can access.
+      if (storedId) {
+          const fromStorage = validStores.find(s => s.id === storedId);
+          if (fromStorage) {
+              activeStoreCandidate = fromStorage;
+          }
+      }
+
+      // 2. If not found in storage, try the user's first assigned store.
+      if (!activeStoreCandidate && assigned.length > 0) {
+          const firstAssignedId = assigned[0];
+          activeStoreCandidate = validStores.find(s => s.id === firstAssignedId) || null;
+      }
+
+      // 3. If still no candidate, fall back to the first store in the sorted list.
+      if (!activeStoreCandidate && validStores.length > 0) {
+          activeStoreCandidate = validStores[0];
+      }
+
+      setActiveStore(activeStoreCandidate);
 
     } catch (e) {
       console.error("Failed to load stores:", e);
