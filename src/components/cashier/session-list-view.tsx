@@ -79,6 +79,18 @@ export function SessionListView() {
             return isScheduleActiveNow(schedule);
         });
     }, [storeConfig?.packages, schedulesMap]);
+    
+    const sortedTables = useMemo(() => {
+        if (!storeConfig?.tables) return [];
+        return [...storeConfig.tables].sort((a, b) => {
+            const numA = parseInt(a.tableNumber, 10);
+            const numB = parseInt(b.tableNumber, 10);
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return numA - numB;
+            }
+            return a.tableNumber.localeCompare(b.tableNumber);
+        });
+    }, [storeConfig?.tables]);
 
     const isLoading = isConfigLoading || isLoadingSessions;
 
@@ -111,7 +123,7 @@ export function SessionListView() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                         <div className="lg:col-span-1 space-y-8">
                             <StartSessionForm
-                                tables={(storeConfig?.tables || []).filter(t => t.status === 'available')}
+                                tables={sortedTables.filter(t => t.status === 'available')}
                                 packages={availablePackages}
                                 flavors={storeConfig?.flavors || []}
                                 user={appUser}
