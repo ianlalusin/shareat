@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { onAuthStateChanged, User as FirebaseUser, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, FirestoreError } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
 
@@ -26,6 +26,9 @@ type AuthCtx = {
   user: FirebaseUser | null;
   appUser: AppUser | null;
   loading: boolean;
+  authLoading: boolean;
+  staffLoading: boolean;
+  staffError: Error | null;
   isSigningOut: boolean;
   signOut: () => Promise<void>;
 };
@@ -36,22 +39,28 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  const [authLoading, setAuthLoading] = useState(true);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffError, setStaffError] = useState<Error | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAppUser(null);
-      setLoading(true);
-
+      setAuthLoading(false); // Firebase auth state is now resolved.
+      setStaffError(null);
+      
       if (!u) {
-        setLoading(false);
+        setStaffLoading(false); // No user, so no staff profile to load.
         return;
       }
+      
+      // User is authenticated, now fetch their staff profile.
+      setStaffLoading(true);
 
       const staffDocRef = doc(db, "staff", u.uid);
-
       const unsubUser = onSnapshot(
         staffDocRef,
         (snap) => {
@@ -68,6 +77,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             };
             setAppUser(baseAppUser);
           } else {
+            // User exists in Firebase Auth, but no staff doc found.
+            // This is the "needs_profile" state for new sign-ups.
             setAppUser({ 
               uid: u.uid, 
               email: u.email, 
@@ -77,18 +88,22 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
               isPlatformAdmin: false,
             });
           }
-          setLoading(false);
+          setStaffLoading(false); // Staff profile loaded successfully.
+          setStaffError(null);
         },
-        (error) => {
+        (error: FirestoreError) => {
           console.error("AuthContext: Error listening to staff document:", error);
-          setLoading(false);
-          setAppUser(null);
+          setStaffLoading(false); // Staff profile failed to load.
+          setStaffError(error); // Store the error.
+          setAppUser(null); // Ensure appUser is null on error.
         }
       );
-
+      
+      // Return the unsubscribe function for the staff listener.
       return () => unsubUser();
     });
 
+    // Return the unsubscribe function for the auth state listener.
     return () => unsubAuth();
   }, []);
 
@@ -99,11 +114,23 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       router.push('/login');
     } catch (error) {
       console.error("Sign out failed", error);
+    } finally {
       setIsSigningOut(false);
     }
   }, [router]);
 
-  const value = useMemo(() => ({ user, appUser, loading, isSigningOut, signOut }), [user, appUser, loading, isSigningOut, signOut]);
+  const loading = authLoading || (!!user && staffLoading);
+
+  const value = useMemo(() => ({ 
+    user, 
+    appUser, 
+    loading, 
+    authLoading, 
+    staffLoading, 
+    staffError, 
+    isSigningOut, 
+    signOut 
+  }), [user, appUser, loading, authLoading, staffLoading, staffError, isSigningOut, signOut]);
   
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
