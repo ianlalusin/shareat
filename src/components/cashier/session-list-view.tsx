@@ -27,7 +27,9 @@ export function SessionListView() {
     const { config: storeConfig, isLoading: isConfigLoading, error: configError } = useStoreConfigDoc(activeStore?.id);
 
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+    const [isLoadingTables, setIsLoadingTables] = useState(true);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
+    const [tables, setTables] = useState<Table[]>([]);
 
     useEffect(() => {
         if (!activeStore) {
@@ -63,6 +65,20 @@ export function SessionListView() {
         return () => unsubscribe();
 
     }, [activeStore, appUser, isSigningOut]);
+    
+    useEffect(() => {
+        if (!activeStore) {
+            setIsLoadingTables(false);
+            return;
+        }
+        setIsLoadingTables(true);
+        const tablesQuery = query(collection(db, "stores", activeStore.id, "tables"));
+        const unsubscribe = onSnapshot(tablesQuery, (snapshot) => {
+            setTables(snapshot.docs.map(d => d.data() as Table));
+            setIsLoadingTables(false);
+        });
+        return () => unsubscribe();
+    }, [activeStore]);
 
     const schedulesMap = useMemo(() => {
         if (!storeConfig?.schedules) return new Map<string, MenuSchedule>();
@@ -81,8 +97,7 @@ export function SessionListView() {
     }, [storeConfig?.packages, schedulesMap]);
     
     const sortedTables = useMemo(() => {
-        if (!storeConfig?.tables) return [];
-        return [...storeConfig.tables]
+        return [...tables]
             .filter(t => t.status === 'available')
             .sort((a, b) => {
                 const numA = parseInt(a.tableNumber, 10);
@@ -92,9 +107,9 @@ export function SessionListView() {
                 }
                 return a.tableNumber.localeCompare(b.tableNumber);
             });
-    }, [storeConfig?.tables]);
+    }, [tables]);
 
-    const isLoading = isConfigLoading || isLoadingSessions;
+    const isLoading = isConfigLoading || isLoadingSessions || isLoadingTables;
 
     if (!activeStore) {
       return (
