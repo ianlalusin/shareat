@@ -229,7 +229,7 @@ function POSContent({
             batch.set(ticketRef, ticketPayload);
 
             // KDS PROJECTION WRITE
-            const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', item.refill.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+            const projectionRef = doc(db, 'stores', storeId, 'opPages', item.refill.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
             batch.set(projectionRef, ticketPayload);
         }
 
@@ -549,3 +549,5 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
+
+    

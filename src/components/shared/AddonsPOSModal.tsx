@@ -313,7 +313,7 @@ function POSContent({
           tx.set(ticketRef, ticketPayload);
 
           // KDS PROJECTION WRITE
-          const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', selectedAddon.kitchenLocationId!, 'activeKdsTickets', ticketRef.id);
+          const projectionRef = doc(db, 'stores', storeId, 'opPages', selectedAddon.kitchenLocationId!, 'activeKdsTickets', ticketRef.id);
           tx.set(projectionRef, ticketPayload);
         }
       });

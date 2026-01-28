@@ -198,7 +198,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     batch.set(ticketRef, ticketPayload);
     
     // KDS PROJECTION WRITE
-    const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', stationKey, 'activeKdsTickets', ticketRef.id);
+    const projectionRef = doc(db, 'stores', storeId, 'opPages', stationKey, 'activeKdsTickets', ticketRef.id);
     batch.set(projectionRef, ticketPayload);
   }
 
@@ -767,3 +767,5 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
+
+    
