@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy } from "firebase/firestore";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -28,6 +28,8 @@ export type KitchenStation = {
     id: string;
     name: string;
     key: string;
+    sortOrder?: number;
+    isActive?: boolean;
 };
 
 type Session = {
@@ -83,6 +85,7 @@ export default function KitchenPage() {
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const processedStoresRef = useRef(new Set<string>());
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
@@ -103,12 +106,34 @@ export default function KitchenPage() {
 
     // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
-    unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), (snapshot) => {
+    unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), async (snapshot) => {
         const stationsData = snapshot.docs
-          .map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as any)) as KitchenStation[];
+          .map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as KitchenStation));
         setStations(stationsData);
         if (stationsData.length > 0 && !stationsData.some(s => s.id === activeTab)) {
             setActiveTab(stationsData[0].id);
+        }
+        
+        // Ensure opPages kitchen location docs exist
+        if (activeStore && !processedStoresRef.current.has(activeStore.id)) {
+            try {
+                const batch = writeBatch(db);
+                stationsData.forEach(station => {
+                    const opPageRef = doc(db, "stores", activeStore.id, "opPages/kitchenLocations", station.id);
+                    const payload = {
+                        name: station.name,
+                        sortOrder: station.sortOrder ?? 1000,
+                        isActive: station.isActive ?? true,
+                        updatedAt: serverTimestamp(),
+                        activeCount: 0,
+                    };
+                    batch.set(opPageRef, payload, { merge: true });
+                });
+                await batch.commit();
+                processedStoresRef.current.add(activeStore.id);
+            } catch (error) {
+                console.error("Failed to ensure opPages for kitchen locations:", error);
+            }
         }
     }));
     
