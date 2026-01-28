@@ -227,6 +227,10 @@ function POSContent({
                 guestCount: session.guestCountFinal || session.guestCountCashierInitial,
             });
             batch.set(ticketRef, ticketPayload);
+
+            // KDS PROJECTION WRITE
+            const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', item.refill.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+            batch.set(projectionRef, ticketPayload);
         }
 
         await batch.commit();

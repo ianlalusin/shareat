@@ -192,9 +192,14 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       sessionMode: 'package_dinein',
       customerName: payload.customer?.name,
       sessionLabel,
+      initialFlavorIds: payload.initialFlavorIds,
     });
 
     batch.set(ticketRef, ticketPayload);
+    
+    // KDS PROJECTION WRITE
+    const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', stationKey, 'activeKdsTickets', ticketRef.id);
+    batch.set(projectionRef, ticketPayload);
   }
 
   await batch.commit();

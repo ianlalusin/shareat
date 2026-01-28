@@ -304,8 +304,17 @@ function POSContent({
             createdAt: serverTimestamp(),
             createdAtClientMs: Date.now(),
             sessionLabel: computeSessionLabel(session),
+            // Denormalize session info for KDS
+            tableNumber: session.tableNumber,
+            customerName: session.customer?.name || session.customerName,
+            sessionMode: session.sessionMode,
+            guestCount: session.guestCountFinal || session.guestCountCashierInitial,
           });
           tx.set(ticketRef, ticketPayload);
+
+          // KDS PROJECTION WRITE
+          const projectionRef = doc(db, 'stores', storeId, 'opPages', 'kitchenLocations', selectedAddon.kitchenLocationId!, 'activeKdsTickets', ticketRef.id);
+          tx.set(projectionRef, ticketPayload);
         }
       });
       
