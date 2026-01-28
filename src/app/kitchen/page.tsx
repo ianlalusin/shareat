@@ -119,7 +119,7 @@ export default function KitchenPage() {
             try {
                 const batch = writeBatch(db);
                 stationsData.forEach(station => {
-                    const opPageRef = doc(db, "stores", activeStore.id, "opPages/kitchenLocations", station.id);
+                    const opPageRef = doc(db, "stores", activeStore.id, "opPages", station.id);
                     const payload = {
                         name: station.name,
                         sortOrder: station.sortOrder ?? 1000,
@@ -154,7 +154,7 @@ export default function KitchenPage() {
     
     setIsLoading(true);
     const ticketsQuery = query(
-        collection(db, 'stores', activeStore.id, 'opPages', 'kitchenLocations', activeTab, 'activeKdsTickets'),
+        collection(db, 'stores', activeStore.id, 'opPages', activeTab, 'activeKdsTickets'),
         orderBy('createdAt', 'asc')
     );
 
