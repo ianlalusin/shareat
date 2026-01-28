@@ -15,6 +15,7 @@ import {
   where,
   deleteField,
   increment,
+  type DocumentReference,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -322,6 +323,9 @@ export async function completePaymentFromUnits(
 
     // The pre-read version is more performant in a transaction.
     const ticketSnaps = await Promise.all(activeTicketRefs.map((ref) => tx.get(ref)));
+    
+    // --- 3. WRITE PHASE (existing logic) ---
+
     for (let i = 0; i < activeTicketRefs.length; i++) {
         const ticketRef = activeTicketRefs[i];
         const ticketSnap = ticketSnaps[i];
@@ -362,7 +366,6 @@ export async function completePaymentFromUnits(
         }
     }
 
-    // --- 3. WRITE PHASE (existing logic) ---
     // write payments subcollection
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, 'payments');
     payments.forEach((payment) => {
@@ -654,16 +657,15 @@ export async function voidSession({
   actor: AppUser;
 }) {
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  
+  // Get initial session data outside to find tableId and active tickets
   const sessionDoc = await getDoc(sessionRef);
-
   if (!sessionDoc.exists()) throw new Error('Session not found.');
-
-  const sessionData = sessionDoc.data() as any;
-  if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {
+  const initialSessionData = sessionDoc.data() as any;
+  if (initialSessionData.status === 'closed' || initialSessionData.status === 'voided' || initialSessionData.isPaid) {
     throw new Error('Session is already finalized and cannot be voided.');
   }
 
-  // BEFORE runTransaction:
   // Query outstanding tickets
   const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
@@ -671,6 +673,24 @@ export async function voidSession({
   const ticketRefs = ticketSnap.docs.map(d=>d.ref);
 
   await runTransaction(db, async (tx) => {
+    // --- READ PHASE ---
+    // Re-read session doc inside transaction for consistency
+    const sessionSnap = await tx.get(sessionRef);
+    if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
+    const sessionData = sessionSnap.data() as any;
+
+    // Idempotency check inside transaction
+    if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {
+      console.warn(`voidSession skipped: Session ${sessionId} was already finalized.`);
+      return;
+    }
+
+    // Read all tickets that need updating
+    const ticketSnaps = await Promise.all(ticketRefs.map(ref => tx.get(ref)));
+
+    // --- WRITE PHASE ---
+
+    // Update Session
     tx.update(sessionRef, {
       status: 'voided',
       voidedAt: serverTimestamp(),
@@ -680,6 +700,7 @@ export async function voidSession({
       updatedAt: serverTimestamp(),
     });
 
+    // Update Table
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
       tx.update(tableRef, {
@@ -689,8 +710,7 @@ export async function voidSession({
       });
     }
 
-    const ticketSnaps = await Promise.all(ticketRefs.map(ref => tx.get(ref)));
-
+    // Update Tickets and Projections
     for (let i = 0; i < ticketRefs.length; i++) {
         const ticketRef = ticketRefs[i];
         const ticketDoc = ticketSnaps[i];
@@ -715,7 +735,6 @@ export async function voidSession({
 
         tx.update(ticketRef, updatePayload);
 
-        // Move projection doc
         const kitchenLocationId = oldTicket.kitchenLocationId;
         if (kitchenLocationId) {
             const activeProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'activeKdsTickets', ticketRef.id);
@@ -737,13 +756,13 @@ export async function voidSession({
     reason: reason,
     sessionContext: {
         sessionStatus: 'voided',
-        sessionStartedAt: sessionData.startedAt,
-        sessionMode: sessionData.sessionMode,
-        customerName: sessionData.customer?.name ?? sessionData.customerName,
-        tableNumber: sessionData.tableNumber,
+        sessionStartedAt: initialSessionData.startedAt,
+        sessionMode: initialSessionData.sessionMode,
+        customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
+        tableNumber: initialSessionData.tableNumber,
     },
     meta: {
-      sessionLabel: computeSessionLabel(sessionData)
+      sessionLabel: computeSessionLabel(initialSessionData)
     }
   });
 }
