@@ -348,6 +348,18 @@ export async function completePaymentFromUnits(
         await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
         
         tx.update(ticketRef, updatePayload);
+        
+        // Move projection doc
+        const kitchenLocationId = oldTicketState.kitchenLocationId;
+        if (kitchenLocationId) {
+            const activeProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketRef.id);
+            const opPageRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId);
+
+            tx.set(closedProjectionRef, newTicketState, { merge: true });
+            tx.delete(activeProjectionRef);
+            tx.update(opPageRef, { activeCount: increment(-1) });
+        }
     }
 
     // --- 3. WRITE PHASE (existing logic) ---
@@ -677,28 +689,43 @@ export async function voidSession({
       });
     }
 
-    for (const ticketRef of ticketRefs) {
-      const ticketDoc = await tx.get(ticketRef);
-      if (!ticketDoc.exists()) continue;
+    const ticketSnaps = await Promise.all(ticketRefs.map(ref => tx.get(ref)));
 
-      const oldTicket = ticketDoc.data() as KitchenTicket;
-      if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') {
-        continue;
-      }
-      
-      const updatePayload = {
-        status: 'cancelled' as const,
-        cancelReason: 'SESSION_VOIDED',
-        cancelledAt: serverTimestamp(),
-        cancelledByUid: actor.uid,
-        updatedAt: serverTimestamp(),
-      };
-      
-      const newTicket = { ...oldTicket, ...updatePayload };
-      
-      await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
+    for (let i = 0; i < ticketRefs.length; i++) {
+        const ticketRef = ticketRefs[i];
+        const ticketDoc = ticketSnaps[i];
+        if (!ticketDoc.exists()) continue;
 
-      tx.update(ticketRef, updatePayload);
+        const oldTicket = ticketDoc.data() as KitchenTicket;
+        if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') {
+            continue;
+        }
+      
+        const updatePayload = {
+            status: 'cancelled' as const,
+            cancelReason: 'SESSION_VOIDED',
+            cancelledAt: serverTimestamp(),
+            cancelledByUid: actor.uid,
+            updatedAt: serverTimestamp(),
+        };
+        
+        const newTicket = { ...oldTicket, ...updatePayload };
+        
+        await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
+
+        tx.update(ticketRef, updatePayload);
+
+        // Move projection doc
+        const kitchenLocationId = oldTicket.kitchenLocationId;
+        if (kitchenLocationId) {
+            const activeProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketRef.id);
+            const opPageRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId);
+
+            tx.set(closedProjectionRef, newTicket, { merge: true });
+            tx.delete(activeProjectionRef);
+            tx.update(opPageRef, { activeCount: increment(-1) });
+        }
     }
   });
 
