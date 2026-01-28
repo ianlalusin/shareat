@@ -260,6 +260,9 @@ export default function KitchenPage() {
                 return;
             }
 
+            const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
+            const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
+
             const updatePayload: any = { status: newStatus };
             let newTicketState: KitchenTicket;
             
@@ -309,6 +312,10 @@ export default function KitchenPage() {
             
             // Atomically update analytics
             await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
+
+            // Move projection doc
+            transaction.set(closedProjectionRef, newTicketState, { merge: true });
+            transaction.delete(activeProjectionRef);
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
