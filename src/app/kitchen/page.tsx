@@ -94,6 +94,7 @@ export default function KitchenPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
+  const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!activeStore) {
@@ -135,6 +136,16 @@ export default function KitchenPage() {
                 console.error("Failed to ensure opPages for kitchen locations:", error);
             }
         }
+    }));
+    
+    // NEW: Listen to opPages for counts
+    const opPagesRef = collection(db, "stores", activeStore.id, "opPages");
+    unsubs.push(onSnapshot(opPagesRef, (snapshot) => {
+        const newCounts = new Map<string, number>();
+        snapshot.forEach(doc => {
+            newCounts.set(doc.id, doc.data().activeCount || 0);
+        });
+        setStationCounts(newCounts);
     }));
     
     // Fetch all global flavors once
@@ -316,6 +327,10 @@ export default function KitchenPage() {
             // Move projection doc
             transaction.set(closedProjectionRef, newTicketState, { merge: true });
             transaction.delete(activeProjectionRef);
+
+            // Update opPage counter
+            const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
+            transaction.update(opPageRef, { activeCount: increment(-1) });
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
@@ -329,16 +344,6 @@ export default function KitchenPage() {
 
 
   const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
-  
-  const preparingItemsByStation = useMemo(() => {
-    return preparingItems.reduce((acc, ticket) => {
-      const stationId = ticket.kitchenLocationId;
-      if (stationId) {
-        acc[stationId] = (acc[stationId] || 0) + 1;
-      }
-      return acc;
-    }, {} as Record<string, number>);
-  }, [preparingItems]);
   
   const historyItems = useMemo(() => {
     const startOfToday = new Date();
@@ -394,7 +399,7 @@ export default function KitchenPage() {
                             </SelectTrigger>
                             <SelectContent>
                                 {stations.map(station => {
-                                    const count = preparingItemsByStation[station.id] || 0;
+                                    const count = stationCounts.get(station.id) || 0;
                                     return (
                                         <SelectItem key={station.id} value={station.key}>
                                             {station.name} {count > 0 && `(${count})`}
@@ -406,7 +411,7 @@ export default function KitchenPage() {
                     ) : (
                         <TabsList>
                             {stations.map(station => {
-                                const count = preparingItemsByStation[station.id] || 0;
+                                const count = stationCounts.get(station.id) || 0;
                                 return (
                                     <TabsTrigger key={station.id} value={station.key} className="relative">
                                         {station.name}
