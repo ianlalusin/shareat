@@ -6,8 +6,8 @@ import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, X } from "lucide-react";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc } from "firebase/firestore";
+import { Loader2, RefreshCw, X, Increment } from "lucide-react";
+import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -231,6 +231,10 @@ function POSContent({
             // KDS PROJECTION WRITE
             const projectionRef = doc(db, 'stores', storeId, 'opPages', item.refill.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
             batch.set(projectionRef, ticketPayload);
+
+            // INCREMENT ACTIVE COUNT
+            const opPageRef = doc(db, "stores", storeId, "opPages", item.refill.kitchenLocationId);
+            batch.update(opPageRef, { activeCount: increment(1) });
         }
 
         await batch.commit();
@@ -549,5 +553,3 @@ export function RefillPOSModal(props: RefillPOSModalProps) {
     </Dialog>
   );
 }
-
-    

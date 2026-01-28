@@ -14,6 +14,7 @@ import {
   query,
   where,
   deleteField,
+  increment,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -200,6 +201,10 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     // KDS PROJECTION WRITE
     const projectionRef = doc(db, 'stores', storeId, 'opPages', stationKey, 'activeKdsTickets', ticketRef.id);
     batch.set(projectionRef, ticketPayload);
+
+    // INCREMENT ACTIVE COUNT
+    const opPageRef = doc(db, "stores", storeId, "opPages", stationKey);
+    batch.update(opPageRef, { activeCount: increment(1) });
   }
 
   await batch.commit();
@@ -767,5 +772,3 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
-
-    

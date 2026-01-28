@@ -8,7 +8,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
+import { Search, Minus, Plus, Loader2, Layers, Increment } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
@@ -316,6 +316,10 @@ function POSContent({
           const projectionRef = doc(db, 'stores', storeId, 'opPages', selectedAddon.kitchenLocationId!, 'activeKdsTickets', ticketRef.id);
           tx.set(projectionRef, ticketPayload);
         }
+
+        // 3. Increment the active count
+        const opPageRef = doc(db, 'stores', storeId, 'opPages', selectedAddon.kitchenLocationId!);
+        tx.update(opPageRef, { activeCount: increment(quantity) });
       });
       
       toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
@@ -478,5 +482,3 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
     </Dialog>
   );
 }
-
-    
