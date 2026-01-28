@@ -98,9 +98,10 @@ export default function KitchenPage() {
   useEffect(() => {
     if (!activeStore) {
         setIsLoading(false);
+        setTickets([]);
+        setStations([]);
         return;
     };
-    setIsLoading(true);
 
     const unsubs: (() => void)[] = [];
 
@@ -114,7 +115,6 @@ export default function KitchenPage() {
             setActiveTab(stationsData[0].id);
         }
         
-        // Ensure opPages kitchen location docs exist
         if (activeStore && !processedStoresRef.current.has(activeStore.id)) {
             try {
                 const batch = writeBatch(db);
@@ -145,20 +145,25 @@ export default function KitchenPage() {
         setFlavorsMap(newFlavorsMap);
     }));
 
-    // Listen to kitchen tickets for the store, ordered by creation time
+    // Listen to active kitchen tickets for the selected station
+    if (!activeTab) {
+        setTickets([]);
+        setIsLoading(false);
+        return; // Don't subscribe if no tab is selected
+    }
+    
+    setIsLoading(true);
     const ticketsQuery = query(
-        collectionGroup(db, 'kitchentickets'), 
-        where('storeId', '==', activeStore.id),
-        orderBy('createdAt', 'asc') // Order by oldest first
+        collection(db, 'stores', activeStore.id, 'opPages', 'kitchenLocations', activeTab, 'activeKdsTickets'),
+        orderBy('createdAt', 'asc')
     );
-    unsubs.push(onSnapshot(ticketsQuery, (snapshot) => {
-        const allTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
-        setTickets(allTickets);
+
+    unsubs.push(onSnapshot(ticketsQuery, async (snapshot) => {
+        const liveTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
+        setTickets(liveTickets);
         
-        // After getting tickets, get the unique session IDs and fetch their data
-        const sessionIds = [...new Set(allTickets.map(t => t.sessionId))];
+        const sessionIds = [...new Set(liveTickets.map(t => t.sessionId))];
         if (sessionIds.length > 0) {
-            // Firestore 'in' queries are limited to 30 values. We need to chunk the requests.
             const chunkArray = <T,>(arr: T[], size: number): T[][] => {
                 const chunks: T[][] = [];
                 for (let i = 0; i < arr.length; i += size) {
@@ -169,20 +174,16 @@ export default function KitchenPage() {
 
             const idChunks = chunkArray(sessionIds, 30);
             
-            const fetchSessionChunks = async () => {
-                const newSessionsMap = new Map<string, Session>();
-                for (const chunk of idChunks) {
-                    if (chunk.length === 0) continue;
-                    const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
-                    const sessionsSnap = await getDocs(sessionsQuery);
-                    sessionsSnap.forEach(doc => {
-                        newSessionsMap.set(doc.id, {id: doc.id, ...doc.data()} as Session);
-                    });
-                }
-                setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
-            };
-
-            fetchSessionChunks();
+            const newSessionsMap = new Map<string, Session>();
+            for (const chunk of idChunks) {
+                if (chunk.length === 0) continue;
+                const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
+                const sessionsSnap = await getDocs(sessionsQuery);
+                sessionsSnap.forEach(doc => {
+                    newSessionsMap.set(doc.id, {id: doc.id, ...doc.data()} as Session);
+                });
+            }
+            setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
         }
         setIsLoading(false);
     }, (error) => {
@@ -193,7 +194,7 @@ export default function KitchenPage() {
     }));
 
     return () => unsubs.forEach(unsub => unsub());
-  }, [activeStore, toast, activeTab, isSigningOut, appUser]);
+  }, [activeStore, activeTab, toast, isSigningOut, appUser]);
 
   const avgServingTime = useMemo(() => {
     const today = new Date();
@@ -412,7 +413,7 @@ export default function KitchenPage() {
                     )}
                     {stations.map(station => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems.filter(t => t.kitchenLocationId === station.id)} onUpdateStatus={updateTicketStatus} />
+                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} />
                         </TabsContent>
                     ))}
                  </Tabs>
