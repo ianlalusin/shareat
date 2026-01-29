@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2, RefreshCw } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { Separator } from "../ui/separator";
 import type { Discount, SessionBillLine, InventoryItem, LineAdjustment } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
@@ -390,14 +390,16 @@ export function EditBillableItemDialog({
                                         <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Add Discount</FormLabel></FormItem>
                                     )} />
                                     {watchedValues.applyDiscount && (
-                                        <div className="p-3 border rounded-md space-y-2">
-                                            <FormField name="discountQty" control={control} render={({ field }) => (
-                                                <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('discountQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total items`}/>
-                                            )} />
-                                            <FormField name="discountId" control={control} render={({ field }) => (
-                                                <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
-                                            )} />
-                                            <div className="grid grid-cols-2 gap-2">
+                                        <div className="p-3 border rounded-md space-y-4">
+                                            <div className="grid grid-cols-2 gap-4 items-start">
+                                                <FormField name="discountQty" control={control} render={({ field }) => (
+                                                    <QuantityStepper label="Apply to" value={field.value || 0} onChange={(v) => handleQtyChange('discountQty', v)} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total`}/>
+                                                )} />
+                                                <FormField name="discountId" control={control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleDiscountIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></FormItem>
+                                                )} />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
                                                 <FormField name="discountType" control={control} render={({ field }) => (
                                                     <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={isLocked}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
                                                 )} />
