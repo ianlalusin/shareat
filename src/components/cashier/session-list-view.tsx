@@ -15,7 +15,7 @@ import { ActiveSessionsGrid, type ActiveSession } from "@/components/cashier/act
 import { PastSessionsCard } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
-import type { StorePackage, StoreFlavor, MenuSchedule } from "@/lib/types";
+import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -29,6 +29,40 @@ export function SessionListView() {
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
     
+    const [cachedTables, setCachedTables] = useState<any[]>([]);
+    const [isLoadingTables, setIsLoadingTables] = useState(true);
+
+    useEffect(() => {
+        if (!activeStore?.id) {
+            setCachedTables([]);
+            setIsLoadingTables(false);
+            return;
+        }
+        setIsLoadingTables(true);
+        const q = query(collection(db, `stores/${activeStore.id}/storeConfig/current/tables`));
+        const unsub = onSnapshot(q, (snap) => {
+            setCachedTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setIsLoadingTables(false);
+        }, (err) => {
+            console.error("Failed to load table cache", err);
+            setIsLoadingTables(false);
+        });
+        return () => unsub();
+    }, [activeStore?.id]);
+
+    const sortedTables = useMemo(() => {
+        return [...cachedTables]
+            .filter(t => t.status === 'available')
+            .sort((a, b) => {
+                const numA = parseInt(a.tableNumber, 10);
+                const numB = parseInt(b.tableNumber, 10);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return numA - numB;
+                }
+                return (a.tableNumber || '').localeCompare(b.tableNumber || '');
+            });
+    }, [cachedTables]);
+
     useEffect(() => {
         if (!activeStore) {
             setIsLoadingSessions(false);
@@ -79,22 +113,8 @@ export function SessionListView() {
             return isScheduleActiveNow(schedule);
         });
     }, [storeConfig?.packages, schedulesMap]);
-    
-    const sortedTables = useMemo(() => {
-        const tablesFromCache = storeConfig?.tables || [];
-        return [...tablesFromCache]
-            .filter(t => t.status === 'available')
-            .sort((a, b) => {
-                const numA = parseInt(a.tableNumber, 10);
-                const numB = parseInt(b.tableNumber, 10);
-                if (!isNaN(numA) && !isNaN(numB)) {
-                    return numA - numB;
-                }
-                return a.tableNumber.localeCompare(b.tableNumber);
-            });
-    }, [storeConfig?.tables]);
 
-    const isLoading = isConfigLoading || isLoadingSessions;
+    const isLoading = isConfigLoading || isLoadingSessions || isLoadingTables;
 
     if (!activeStore) {
       return (

@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -136,17 +135,19 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         updatedAt: serverTimestamp(),
       });
       
-      const configRef = doc(db, "stores", storeId, "storeConfig", "current");
-      const configSnap = await transaction.get(configRef);
-      if (configSnap.exists()) {
-        const storeConfig = configSnap.data();
-        if (Array.isArray(storeConfig.tables)) {
-          const updatedTables = storeConfig.tables.map(t => 
-            t.id === payload.tableId ? { ...t, status: 'occupied' } : t
-          );
-          transaction.update(configRef, { tables: updatedTables });
-        }
-      }
+      const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables/${payload.tableId}`);
+      transaction.set(tableCacheRef, {
+        status: 'occupied',
+        currentSessionId: newSessionRef.id,
+        tableNumber: payload.tableNumber,
+        customerName: payload.customer?.name,
+        packageLabel: payload.package?.packageName,
+        sessionType: payload.sessionMode === 'package_dinein' ? 'unlimited' : 'alacarte',
+        guestCount: payload.guestCount,
+        itemCount: 0,
+        startedAtMs: Date.now(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     }
 
     // 3. Create package bill line and kitchen ticket if applicable
@@ -623,6 +624,20 @@ export async function completePaymentFromUnits(
           currentSessionId: null,
           updatedAt: serverTs,
         });
+
+        // Update the table cache
+        const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
+        tx.set(tableCacheRef, {
+            status: 'available',
+            currentSessionId: null,
+            packageLabel: null,
+            sessionType: null,
+            guestCount: null,
+            itemCount: null,
+            customerName: null,
+            startedAtMs: null,
+            updatedAt: serverTimestamp(),
+        }, { merge: true });
       }
     }
   });
@@ -709,6 +724,19 @@ export async function voidSession({
         currentSessionId: null,
         updatedAt: serverTimestamp(),
       });
+      
+      const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
+      tx.set(tableCacheRef, {
+          status: 'available',
+          currentSessionId: null,
+          packageLabel: null,
+          sessionType: null,
+          guestCount: null,
+          itemCount: null,
+          customerName: null,
+          startedAtMs: null,
+          updatedAt: serverTimestamp(),
+      }, { merge: true });
     }
 
     // Update Tickets and Projections

@@ -55,10 +55,9 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
   
   const newConfigData = {
     meta: {
-      source: 'manual_rebuild_v1',
+      source: 'manual_rebuild_v2_split_tables',
       updatedAt: serverTimestamp(),
     },
-    tables: tables,
     packages: storePackages,
     flavors: flavors,
     schedules: schedules,
@@ -69,7 +68,25 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
 
   // --- 3. Perform an atomic write using a batch ---
   const batch = writeBatch(db);
-  batch.set(configDocRef, newConfigData, { merge: true }); // Use merge to be safe
+  batch.set(configDocRef, newConfigData, { merge: false }); // Overwrite the main doc without tables
+
+  // --- 4. Rebuild the tables subcollection cache ---
+  tables.forEach((table: any) => {
+    const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables/${table.id}`);
+    const cachePayload = {
+        tableNumber: table.tableNumber || null,
+        customerName: null, // Cannot be known during rebuild
+        status: table.status || 'available',
+        currentSessionId: table.currentSessionId || null,
+        packageLabel: null,
+        sessionType: null,
+        guestCount: null,
+        itemCount: null,
+        startedAtMs: null,
+        updatedAt: serverTimestamp(),
+    };
+    batch.set(tableCacheRef, cachePayload);
+  });
   
   await batch.commit();
 }
