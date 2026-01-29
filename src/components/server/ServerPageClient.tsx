@@ -92,7 +92,7 @@ export function ServerPageClient() {
           const tableNumA = parseInt(a.tableNumber, 10);
           const tableNumB = parseInt(b.tableNumber, 10);
           if (!isNaN(tableNumA) && !isNaN(tableNumB)) {
-            return tableNumA - numB;
+            return tableNumA - tableNumB;
           }
           return (a.tableNumber || "").localeCompare(b.tableNumber || "");
         });
@@ -266,3 +266,5 @@ export function ServerPageClient() {
     </RoleGuard>
   );
 }
+
+    

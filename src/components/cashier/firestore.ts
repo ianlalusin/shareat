@@ -317,7 +317,7 @@ export async function completePaymentFromUnits(
       ...initialDocsToRead,
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeProjectionRefs.map(ref => tx.get(ref)))
+      Promise.all(activeKdsTicketSnaps.map(ref => tx.get(ref)))
     ]);
 
     const sessionData = sessionSnap.data();
@@ -754,5 +754,7 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
+
+    
 
     
