@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -75,12 +74,12 @@ export function SessionListView() {
             console.error("Session listener failed:", error);
         };
         
-        // Fetch active and pending sessions, sorted by start time
+        // Fetch active sessions from the real-time projection collection
         const sessionsQuery = query(
-            collection(db, "stores", activeStore.id, "sessions"), 
-            where("status", "in", ["active", "pending_verification"]),
+            collection(db, "stores", activeStore.id, "opPages", "activeSessions", "items"),
             orderBy("startedAtClientMs", "asc")
         );
+
         const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
             setSessions(snapshot.docs.map(d => {
                 const data = d.data();
