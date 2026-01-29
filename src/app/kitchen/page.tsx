@@ -157,8 +157,8 @@ export default function KitchenPage() {
 
     // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
-    unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), async (snapshot) => {
-        const stationsData = snapshot.docs.map(docSnap => ({ id: docSnap.id, key: docSnap.id, ...docSnap.data() } as KitchenStation));
+    unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), async (snapshot: QuerySnapshot<DocumentData>) => {
+        const stationsData = snapshot.docs.map((docSnap: DocumentSnapshot<DocumentData>) => ({ id: docSnap.id, key: docSnap.id, ...docSnap.data() } as KitchenStation));
         stationsData.sort((a,b) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
         setStations(stationsData);
         if (stationsData.length > 0 && !activeTab) {
@@ -168,9 +168,9 @@ export default function KitchenPage() {
     
     // Fetch all global flavors once
     const flavorsRef = collection(db, "flavors");
-    unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot) => {
+    unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
         const newFlavorsMap = new Map<string, string>();
-        snapshot.docs.forEach(docSnap => newFlavorsMap.set(docSnap.id, docSnap.data().name));
+        snapshot.docs.forEach((docSnap: DocumentSnapshot<DocumentData>) => newFlavorsMap.set(docSnap.id, docSnap.data().name));
         setFlavorsMap(newFlavorsMap);
     }));
 
@@ -210,8 +210,8 @@ export default function KitchenPage() {
         orderBy('createdAt', 'asc')
     );
 
-    const unsubscribe = onSnapshot(ticketsQuery, async (snapshot) => {
-        const liveTickets = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as KitchenTicket));
+    const unsubscribe = onSnapshot(ticketsQuery, async (snapshot: QuerySnapshot<DocumentData>) => {
+        const liveTickets = snapshot.docs.map((docSnap: DocumentSnapshot<DocumentData>) => ({ id: docSnap.id, ...docSnap.data() } as KitchenTicket));
         setTickets(liveTickets);
         
         const sessionIds = [...new Set(liveTickets.map(t => t.sessionId))];
@@ -231,7 +231,7 @@ export default function KitchenPage() {
                 if (chunk.length === 0) continue;
                 const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
                 const sessionsSnap = await getDocs(sessionsQuery);
-                sessionsSnap.forEach(docSnap => {
+                sessionsSnap.forEach((docSnap: DocumentSnapshot<DocumentData>) => {
                     newSessionsMap.set(docSnap.id, {id: docSnap.id, ...docSnap.data()} as Session);
                 });
             }
@@ -257,7 +257,7 @@ export default function KitchenPage() {
     const previewDocRef = doc(db, 'stores', activeStore.id, 'opPages', activeTab, 'historyPreview', 'current');
     
     const unsubscribe = onSnapshot(previewDocRef, (docSnap: DocumentSnapshot<DocumentData>) => {
-        setHistoryPreview(docSnap.data()?.items || []);
+        setHistoryPreview((docSnap.data() as any)?.items || []);
         setIsLoadingHistory(false);
     }, (err: any) => {
         console.error(`Error fetching history preview for ${activeTab}:`, err);
@@ -281,10 +281,10 @@ export default function KitchenPage() {
   }, [activeStationData]);
 
   const ticketsWithData = useMemo(() => {
-    return tickets.map(ticket => {
+    return tickets.map((ticket: KitchenTicket) => {
         const session = sessionsMap.get(ticket.sessionId);
         const flavorNames = ticket.type === 'package' 
-            ? session?.initialFlavorIds?.map(id => flavorsMap.get(id) || 'Unknown').filter(Boolean)
+            ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];
         const finalGuestCount = session?.guestCountFinal ?? session?.guestCountCashierInitial ?? ticket.guestCount;
         return {
@@ -481,7 +481,7 @@ export default function KitchenPage() {
                                 <SelectValue placeholder="Select a station..." />
                             </SelectTrigger>
                             <SelectContent>
-                                {stations.map(station => {
+                                {stations.map((station: KitchenStation) => {
                                     const count = stationCounts.get(station.id) || 0;
                                     return (
                                         <SelectItem key={station.id} value={station.key}>
@@ -493,7 +493,7 @@ export default function KitchenPage() {
                         </Select>
                     ) : (
                         <TabsList className="gap-2">
-                            {stations.map(station => {
+                            {stations.map((station: KitchenStation) => {
                                 const count = stationCounts.get(station.id) || 0;
                                 return (
                                     <TabsTrigger key={station.id} value={station.key} className="relative">
@@ -506,7 +506,7 @@ export default function KitchenPage() {
                             })}
                         </TabsList>
                     )}
-                    {stations.map(station => (
+                    {stations.map((station: KitchenStation) => (
                         <TabsContent key={station.id} value={station.key}>
                             <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} />
                         </TabsContent>
