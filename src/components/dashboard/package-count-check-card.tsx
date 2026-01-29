@@ -27,10 +27,8 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
         const tally: Record<string, PackageTally> = {};
         
         dailyMetrics.forEach(metric => {
-            const guestData = metric.guests ?? {};
-
             // Aggregate final guests
-            const coversByPkgName = guestData.guestCountFinalByPackageName ?? {};
+            const coversByPkgName = metric.guests?.guestCountFinalByPackageName ?? {};
             for(const [pkgName, guests] of Object.entries(coversByPkgName)) {
                 if (!tally[pkgName]) {
                     tally[pkgName] = { name: pkgName, finalGuests: 0, billedCovers: 0 };
@@ -39,7 +37,7 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
             }
 
             // Aggregate billed covers
-            const coversByPkg = guestData.packageCoversBilledByPackageName ?? {};
+            const coversByPkg = metric.guests?.packageCoversBilledByPackageName ?? {};
             for(const [pkgName, covers] of Object.entries(coversByPkg)) {
                 if (!tally[pkgName]) {
                     tally[pkgName] = { name: pkgName, finalGuests: 0, billedCovers: 0 };

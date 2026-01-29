@@ -398,12 +398,12 @@ export type DailyMetric = {
         chargesTotal?: number;
     };
     guests?: {
-        guestCountFinalTotal: number;
-        packageSessionsCount: number;
-        packageCoversBilledByPackageName: {
+        guestCountFinalTotal?: number;
+        packageSessionsCount?: number;
+        packageCoversBilledByPackageName?: {
             [packageName: string]: number;
         };
-        guestCountFinalByPackageName: {
+        guestCountFinalByPackageName?: {
             [packageName: string]: number;
         };
     };
