@@ -52,7 +52,7 @@ export function SessionListView() {
 
     const sortedTables = useMemo(() => {
         return [...cachedTables]
-            .filter(t => t.status === 'available')
+            .filter(t => t.status === 'available' && t.isActive !== false)
             .sort((a, b) => {
                 const numA = parseInt(a.tableNumber, 10);
                 const numB = parseInt(b.tableNumber, 10);
@@ -113,6 +113,12 @@ export function SessionListView() {
             return isScheduleActiveNow(schedule);
         });
     }, [storeConfig?.packages, schedulesMap]);
+    
+    const enabledFlavors = useMemo(() => {
+        if (!storeConfig?.flavors) return [];
+        return storeConfig.flavors.filter(f => f.isEnabled !== false);
+    }, [storeConfig?.flavors]);
+
 
     const isLoading = isConfigLoading || isLoadingSessions || isLoadingTables;
 
@@ -147,7 +153,7 @@ export function SessionListView() {
                             <StartSessionForm
                                 tables={sortedTables}
                                 packages={availablePackages}
-                                flavors={storeConfig?.flavors || []}
+                                flavors={enabledFlavors}
                                 user={appUser}
                                 storeId={activeStore.id}
                             />
