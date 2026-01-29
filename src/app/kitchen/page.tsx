@@ -159,7 +159,7 @@ export default function KitchenPage() {
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
         const stationsData = snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => ({ id: docSnap.id, key: docSnap.id, ...docSnap.data() } as KitchenStation));
-        stationsData.sort((a,b) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
+        stationsData.sort((a: KitchenStation, b: KitchenStation) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
         setStations(stationsData);
         if (stationsData.length > 0 && !activeTab) {
             setActiveTab(stationsData[0].id);
@@ -214,7 +214,7 @@ export default function KitchenPage() {
         const liveTickets = snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => ({ id: docSnap.id, ...docSnap.data() } as KitchenTicket));
         setTickets(liveTickets);
         
-        const sessionIds = [...new Set(liveTickets.map(t => t.sessionId))];
+        const sessionIds = [...new Set(liveTickets.map((t: KitchenTicket) => t.sessionId))];
         if (sessionIds.length > 0) {
             const chunkArray = <T,>(arr: T[], size: number): T[][] => {
                 const chunks: T[][] = [];
@@ -527,5 +527,3 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
-
-    
