@@ -1,8 +1,7 @@
-
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy } from "firebase/firestore";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -95,57 +94,48 @@ export default function KitchenPage() {
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
+  
+  const refreshStationCounts = useCallback(async () => {
+    if (!activeStore || stations.length === 0) return;
 
+    const counts = new Map<string, number>();
+    const promises = stations.map(async (station) => {
+        try {
+            const ticketsRef = collection(db, 'stores', activeStore.id, 'opPages', station.id, 'activeKdsTickets');
+            const snapshot = await getCountFromServer(query(ticketsRef));
+            counts.set(station.id, snapshot.data().count);
+        } catch (error) {
+            console.error(`Failed to get count for station ${station.name}:`, error);
+            counts.set(station.id, 0); // Default to 0 on error
+        }
+    });
+
+    await Promise.all(promises);
+    setStationCounts(counts);
+  }, [activeStore, stations]);
+
+
+  // Effect for fetching store-level data (stations, flavors)
   useEffect(() => {
     if (!activeStore) {
-        setIsLoading(false);
-        setTickets([]);
-        setStations([]);
-        return;
-    };
-
+      setIsLoading(false);
+      setTickets([]);
+      setStations([]);
+      return;
+    }
+    
+    setIsLoading(true);
     const unsubs: (() => void)[] = [];
 
     // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), async (snapshot) => {
-        const stationsData = snapshot.docs
-          .map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as KitchenStation));
+        const stationsData = snapshot.docs.map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as KitchenStation));
+        stationsData.sort((a,b) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
         setStations(stationsData);
-        if (stationsData.length > 0 && !stationsData.some(s => s.id === activeTab)) {
+        if (stationsData.length > 0 && !activeTab) {
             setActiveTab(stationsData[0].id);
         }
-        
-        if (activeStore && !processedStoresRef.current.has(activeStore.id)) {
-            try {
-                const batch = writeBatch(db);
-                stationsData.forEach(station => {
-                    const opPageRef = doc(db, "stores", activeStore.id, "opPages", station.id);
-                    const payload = {
-                        name: station.name,
-                        sortOrder: station.sortOrder ?? 1000,
-                        isActive: station.isActive ?? true,
-                        updatedAt: serverTimestamp(),
-                        activeCount: 0,
-                    };
-                    batch.set(opPageRef, payload, { merge: true });
-                });
-                await batch.commit();
-                processedStoresRef.current.add(activeStore.id);
-            } catch (error) {
-                console.error("Failed to ensure opPages for kitchen locations:", error);
-            }
-        }
-    }));
-    
-    // NEW: Listen to opPages for counts
-    const opPagesRef = collection(db, "stores", activeStore.id, "opPages");
-    unsubs.push(onSnapshot(opPagesRef, (snapshot) => {
-        const newCounts = new Map<string, number>();
-        snapshot.forEach(doc => {
-            newCounts.set(doc.id, doc.data().activeCount || 0);
-        });
-        setStationCounts(newCounts);
     }));
     
     // Fetch all global flavors once
@@ -156,11 +146,22 @@ export default function KitchenPage() {
         setFlavorsMap(newFlavorsMap);
     }));
 
-    // Listen to active kitchen tickets for the selected station
-    if (!activeTab) {
+    setIsLoading(false); // Main loader can be turned off
+
+    return () => unsubs.forEach(unsub => unsub());
+  }, [activeStore, appUser, activeTab]);
+
+  // Effect to refresh counts when the list of stations changes
+  useEffect(() => {
+    refreshStationCounts();
+  }, [stations, refreshStationCounts]);
+
+
+  // Effect for fetching live tickets for the currently active tab
+  useEffect(() => {
+    if (!activeStore || !activeTab) {
         setTickets([]);
-        setIsLoading(false);
-        return; // Don't subscribe if no tab is selected
+        return;
     }
     
     setIsLoading(true);
@@ -169,7 +170,7 @@ export default function KitchenPage() {
         orderBy('createdAt', 'asc')
     );
 
-    unsubs.push(onSnapshot(ticketsQuery, async (snapshot) => {
+    const unsubscribe = onSnapshot(ticketsQuery, async (snapshot) => {
         const liveTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
         setTickets(liveTickets);
         
@@ -202,9 +203,9 @@ export default function KitchenPage() {
         console.error("Error fetching kitchen tickets:", error);
         toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch kitchen tickets." });
         setIsLoading(false);
-    }));
+    });
 
-    return () => unsubs.forEach(unsub => unsub());
+    return () => unsubscribe();
   }, [activeStore, activeTab, toast, isSigningOut, appUser]);
 
   const avgServingTime = useMemo(() => {
@@ -335,6 +336,7 @@ export default function KitchenPage() {
 
         const ticket = tickets.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
+        refreshStationCounts(); // Refresh counts after a successful action
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
