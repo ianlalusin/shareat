@@ -248,7 +248,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       sessionContext: {
         sessionStatus: sessionPayload.status as any,
         sessionStartedAt: sessionPayload.startedAt,
-        sessionMode: sessionPayload.sessionMode,
+        sessionMode: sessionPayload.sessionMode ?? undefined,
         customerName: sessionPayload.customerName,
         tableNumber: sessionPayload.tableNumber,
       }
@@ -277,6 +277,7 @@ export async function completePaymentFromUnits(
   let finalReceipt: Receipt | null = null;
   let receiptId = '';
   let sessionContextForLog: any = null;
+  let finalReceiptNumber: string | null = null;
 
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
@@ -499,6 +500,7 @@ export async function completePaymentFromUnits(
     tx.set(counterRef, { seq: nextSeq, updatedAt: serverTs }, { merge: true });
 
     const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
+    finalReceiptNumber = receiptNumber;
 
     // ... Analytics MOP Calculation ...
     const mopCentsMap: Record<string, number> = {};
@@ -601,7 +603,8 @@ export async function completePaymentFromUnits(
       taxAmount: finalTotals.taxTotal, grandTotal: finalTotals.grandTotal, totalPaid, change, mop: mopMap,
       salesByItem: salesAnalytics.salesByItem, salesByCategory: salesAnalytics.salesByCategory,
       servedRefillsByName: sessionData.servedRefillsByName || {},
-      serveCountByType: sessionData.serveCountByType || {}, serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
+      serveCountByType: sessionData.serveCountByType || {},
+      serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
       guestCountSnapshot,
     };
     
@@ -625,7 +628,7 @@ export async function completePaymentFromUnits(
     await writeActivityLog({
       storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
       sessionContext: sessionContextForLog,
-      meta: { receiptId, receiptNumber: finalReceipt?.receiptNumber ?? null, paymentTotal: amountDue, },
+      meta: { receiptId, receiptNumber: finalReceiptNumber, paymentTotal: amountDue },
     });
   }
 
@@ -764,7 +767,7 @@ export async function voidSession({
       storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: safeReason,
       sessionContext: {
           sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
-          sessionMode: initialSessionData.sessionMode,
+          sessionMode: initialSessionData.sessionMode ?? undefined,
           customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
           tableNumber: initialSessionData.tableNumber,
       },
@@ -827,7 +830,6 @@ export async function removeLineAdjustment(
 
     
 
-    
 
 
 
