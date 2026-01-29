@@ -257,24 +257,41 @@ export async function completePaymentFromUnits(
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
 
-  // Read active tickets OUTSIDE the transaction
   const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
   const activeTicketsSnap = await getDocs(activeTicketsQuery);
-  const activeTicketRefs = activeTicketsSnap.docs.map(doc => doc.ref);
+
+  const ticketDataForTx = activeTicketsSnap.docs.map(docSnap => ({
+      ticketRef: docSnap.ref,
+      ticketId: docSnap.id,
+      kitchenLocationId: docSnap.data().kitchenLocationId,
+  }));
+  const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
 
   await runTransaction(db, async (tx) => {
-    // --- 1. READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
     const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
 
-    const [sessionSnap, receiptSnap, settingsSnap, counterSnap] = await Promise.all([
-      tx.get(sessionRef),
-      tx.get(receiptRef),
-      tx.get(settingsRef),
-      tx.get(counterRef),
+    const initialDocsToRead = [
+        tx.get(sessionRef),
+        tx.get(receiptRef),
+        tx.get(settingsRef),
+        tx.get(counterRef),
+    ];
+    
+    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
+    const activeProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+
+    const [
+      sessionSnap, receiptSnap, settingsSnap, counterSnap,
+      ticketSnaps, opPageSnaps, activeProjectionSnaps
+    ] = await Promise.all([
+      ...initialDocsToRead,
+      Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
+      Promise.all(opPageRefs.map(ref => tx.get(ref))),
+      Promise.all(activeProjectionRefs.map(ref => tx.get(ref)))
     ]);
 
     const sessionData = sessionSnap.data();
@@ -288,7 +305,6 @@ export async function completePaymentFromUnits(
       tableNumber: sessionData.tableNumber,
     };
 
-    // Idempotency Guard
     if (receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) {
       console.warn(`Payment completion skipped: Analytics for session ${sessionId} already applied.`);
       receiptId = receiptRef.id;
@@ -307,8 +323,7 @@ export async function completePaymentFromUnits(
       tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
       tableSnap = await tx.get(tableRef);
     }
-
-    // --- validation ---
+    
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
     const amountDueCents = Math.round(Number(amountDue || 0) * 100);
 
@@ -322,20 +337,16 @@ export async function completePaymentFromUnits(
 
     const actor = getActorStamp(user);
     const serverTs = serverTimestamp();
+    const stationDecrements = new Map<string, number>();
 
-    // The pre-read version is more performant in a transaction.
-    const ticketSnaps = await Promise.all(activeTicketRefs.map((ref) => tx.get(ref)));
-    
-    // --- 3. WRITE PHASE (existing logic) ---
-
-    for (let i = 0; i < activeTicketRefs.length; i++) {
-        const ticketRef = activeTicketRefs[i];
+    for (let i = 0; i < ticketSnaps.length; i++) {
+        const ticketRef = ticketDataForTx[i].ticketRef;
         const ticketSnap = ticketSnaps[i];
         if (!ticketSnap.exists()) continue;
 
         const oldTicketState = ticketSnap.data() as KitchenTicket;
         if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
-            continue; // Already finalized
+            continue;
         }
         
         const startMs = oldTicketState.createdAtClientMs || toJsDate(oldTicketState.createdAt)?.getTime();
@@ -354,20 +365,22 @@ export async function completePaymentFromUnits(
         await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
         
         tx.update(ticketRef, updatePayload);
-        
-        // Move projection doc
-        const kitchenLocationId = oldTicketState.kitchenLocationId;
-        if (kitchenLocationId) {
-            const activeProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'activeKdsTickets', ticketRef.id);
-            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketRef.id);
-            const opPageRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId);
 
+        const activeProjectionSnap = activeProjectionSnaps[i];
+        if (activeProjectionSnap.exists()) {
+            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketRef.id);
             tx.set(closedProjectionRef, newTicketState, { merge: true });
-            tx.delete(activeProjectionRef);
-            tx.update(opPageRef, { activeCount: increment(-1) });
+            tx.delete(activeProjectionSnap.ref);
+
+            const stationId = oldTicketState.kitchenLocationId;
+            if (stationId) {
+                stationDecrements.set(stationId, (stationDecrements.get(stationId) || 0) + 1);
+            }
         }
     }
-
+    
+    // ... rest of payment and receipt logic from original function ...
+    
     // write payments subcollection
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, 'payments');
     payments.forEach((payment) => {
@@ -404,257 +417,143 @@ export async function completePaymentFromUnits(
 
     const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
 
-    // --- Analytics MOP Calculation ---
-    // Sum all payments in cents into a map keyed by method name.
+    // ... Analytics MOP Calculation ...
     const mopCentsMap: Record<string, number> = {};
     for (const payment of payments) {
         const method = paymentMethods.find((m) => m.id === payment.methodId);
         const key = method?.name || payment.methodId || "unknown";
         mopCentsMap[key] = (mopCentsMap[key] || 0) + Math.round(Number(payment.amount || 0) * 100);
     }
-
     const changeCents = Math.max(0, totalPaidCents - amountDueCents);
-    
-    // If change exists, subtract it from the cash payment for accurate analytics.
     if (changeCents > 0) {
-        // Robustly find the cash payment key. Fallback to name match if type isn't set.
         const cashMethod =
           paymentMethods.find((pm: any) => String(pm.type || "").toLowerCase() === "cash") ||
           paymentMethods.find((pm: any) => String(pm.name || "").toLowerCase().includes("cash"));
-
         let cashKey = cashMethod?.name;
         if (!cashKey) cashKey = Object.keys(mopCentsMap).find((k) => k.toLowerCase().includes("cash"));
-
         if (!cashKey || mopCentsMap[cashKey] == null) {
           throw new Error("Change exists but no Cash payment was included. Add Cash payment.");
         }
-        
         if (mopCentsMap[cashKey] < changeCents) {
             throw new Error(`Invalid payment: change (₱${(changeCents / 100).toFixed(2)}) exceeds cash paid (₱${(mopCentsMap[cashKey] / 100).toFixed(2)}).`);
         }
-        
-        // Subtract change from the cash amount in the map.
         mopCentsMap[cashKey] -= changeCents;
     }
-
-    // Create the final map with dollar amounts for the receipt record.
     const mopMap: Record<string, number> = {};
     for (const [key, cents] of Object.entries(mopCentsMap)) {
         mopMap[key] = cents / 100;
     }
-    // --- End Analytics MOP Calculation ---
     
     const totalPaid = totalPaidCents / 100;
     const change = changeCents / 100;
 
     const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
-      id: sessionId,
-      storeId,
-      sessionId,
-      createdByUid: actor.uid,
-      createdByUsername: actor.username,
+      id: sessionId, storeId, sessionId, createdByUid: actor.uid, createdByUsername: actor.username,
       sessionMode: sessionData.sessionMode,
       tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
       tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
       customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-      total: amountDue,
-      totalPaid,
-      change,
-      status: 'final',
-      receiptSeq: nextSeq,
-      receiptNumber,
-      receiptNoFormatUsed: receiptNoFormat,
-      createdAtClientMs: Date.now(),
-      lines: billLines,
+      total: amountDue, totalPaid, change, status: 'final',
+      receiptSeq: nextSeq, receiptNumber, receiptNoFormatUsed: receiptNoFormat,
+      createdAtClientMs: Date.now(), lines: billLines,
     } as Omit<Receipt, 'createdAt'>);
 
-    // sales analytics by item/category (net of line discounts)
+    // ... sales analytics calculation ...
     const salesAnalytics = billLines.reduce(
-      (acc, line) => {
-        if (line.type !== 'package' && line.type !== 'addon') return acc;
-
-        const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
-        if (netQty <= 0) return acc;
-
-        const grossAmount = netQty * line.unitPrice;
-        
-        const discountBaseUnit =
-          store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0
-            ? line.unitPrice / (1 + store.taxRatePct / 100)
-            : line.unitPrice;
-
-        const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
-        const discountAdjs = adjs
-          .filter(a => a.kind === "discount")
-          .sort((a, b) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0));
-
-        const hasAdjDiscount = discountAdjs.length > 0;
-
-        let discountAmount = 0;
-        if (hasAdjDiscount) {
-          let remaining = netQty;
-          for (const a of discountAdjs) {
-            const q = Math.min(Number(a.qty || 0), remaining);
-            if (q <= 0) continue;
-
-            if (a.type === "percent") {
-              discountAmount += q * discountBaseUnit * ((Number(a.value || 0)) / 100);
+        (acc, line) => {
+            if (line.type !== 'package' && line.type !== 'addon') return acc;
+            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
+            if (netQty <= 0) return acc;
+            const grossAmount = netQty * line.unitPrice;
+            const discountBaseUnit = store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0 ? line.unitPrice / (1 + store.taxRatePct / 100) : line.unitPrice;
+            const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+            const discountAdjs = adjs.filter(a => a.kind === "discount").sort((a, b) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0));
+            let discountAmount = 0;
+            if (discountAdjs.length > 0) {
+              let remaining = netQty;
+              for (const a of discountAdjs) {
+                const q = Math.min(Number(a.qty || 0), remaining);
+                if (q <= 0) continue;
+                if (a.type === "percent") discountAmount += q * discountBaseUnit * ((Number(a.value || 0)) / 100);
+                else discountAmount += Math.min(discountBaseUnit, Number(a.value || 0)) * q;
+                remaining -= q;
+                if (remaining <= 0) break;
+              }
             } else {
-              discountAmount += Math.min(discountBaseUnit, Number(a.value || 0)) * q;
+              const discountQty = Math.min(line.discountQty || 0, netQty);
+              if (discountQty > 0) {
+                if (line.discountType === 'percent') discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
+                else discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
+              }
             }
-            remaining -= q;
-            if (remaining <= 0) break;
-          }
-        } else {
-          // legacy fallback
-          const discountQty = Math.min(line.discountQty || 0, netQty);
-          if (discountQty > 0) {
-            if (line.discountType === 'percent') {
-              discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
-            } else {
-              discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
-            }
-          }
-        }
-
-        const netAmount = grossAmount - discountAmount;
-
-        const categoryName = (line as any).category || 'Uncategorized';
-
-        acc.salesByItem ??= {};
-        acc.salesByCategory ??= {};
-
-        if (!acc.salesByItem[line.itemName]) {
-          acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
-        }
-        acc.salesByItem[line.itemName].qty += netQty;
-        acc.salesByItem[line.itemName].amount += netAmount;
-
-        if (!acc.salesByCategory[categoryName]) {
-          acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
-        }
-        acc.salesByCategory[categoryName].qty += netQty;
-        acc.salesByCategory[categoryName].amount += netAmount;
-
-        return acc;
-      },
-      {} as {
-        salesByItem?: ReceiptAnalyticsV2['salesByItem'];
-        salesByCategory?: ReceiptAnalyticsV2['salesByCategory'];
-      }
+            const netAmount = grossAmount - discountAmount;
+            const categoryName = (line as any).category || 'Uncategorized';
+            acc.salesByItem ??= {}; acc.salesByCategory ??= {};
+            if (!acc.salesByItem[line.itemName]) acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
+            acc.salesByItem[line.itemName].qty += netQty; acc.salesByItem[line.itemName].amount += netAmount;
+            if (!acc.salesByCategory[categoryName]) acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
+            acc.salesByCategory[categoryName].qty += netQty; acc.salesByCategory[categoryName].amount += netAmount;
+            return acc;
+        },
+        {} as { salesByItem?: ReceiptAnalyticsV2['salesByItem']; salesByCategory?: ReceiptAnalyticsV2['salesByCategory']; }
     );
-
-    const startedDate = new Date(sessionData.startedAtClientMs ?? Date.now());
-    const sessionStartedAtHour = startedDate.getHours();
-
-    // guest count snapshot for package mode
     let guestCountSnapshot: ReceiptAnalyticsV2['guestCountSnapshot'] | undefined = undefined;
     if (sessionData.sessionMode === 'package_dinein') {
       const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
       const serverVerified = sessionData.guestCountServerVerified ?? 0;
       const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
-
       const pkgLine = billLines.find((l) => l.type === 'package');
-      const billedPackageCovers = Math.max(
-        0,
-        (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0)
-      );
+      const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
       const discrepancy = billedPackageCovers - finalGuestCount;
-
       const packageOfferingId = sessionData.packageOfferingId ?? null;
       const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
-
-      guestCountSnapshot = {
-        packageOfferingId,
-        packageName,
-        finalGuestCount,
-        billedPackageCovers,
-        discrepancy,
-        computedAtClientMs: Date.now(),
-        rule: 'MAX',
-      };
+      guestCountSnapshot = { packageOfferingId, packageName, finalGuestCount, billedPackageCovers, discrepancy, computedAtClientMs: Date.now(), rule: 'MAX', };
     }
-
-    const applyId = uuidv4();
 
     const analyticsV2: ReceiptAnalyticsV2 = {
       v: 2,
-      sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null,
-      sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
-      sessionStartedAtHour,
-      subtotal: finalTotals.subtotal,
-      discountsTotal: finalTotals.totalDiscounts,
-      chargesTotal: finalTotals.chargesTotal,
-      taxAmount: finalTotals.taxTotal,
-      grandTotal: finalTotals.grandTotal,
-      totalPaid,
-      change,
-      mop: mopMap,
-      salesByItem: salesAnalytics.salesByItem,
-      salesByCategory: salesAnalytics.salesByCategory,
-      addonSalesByItem: {},
+      sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null, sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
+      sessionStartedAtHour: (new Date(sessionData.startedAtClientMs ?? Date.now())).getHours(),
+      subtotal: finalTotals.subtotal, discountsTotal: finalTotals.totalDiscounts, chargesTotal: finalTotals.chargesTotal,
+      taxAmount: finalTotals.taxTotal, grandTotal: finalTotals.grandTotal, totalPaid, change, mop: mopMap,
+      salesByItem: salesAnalytics.salesByItem, salesByCategory: salesAnalytics.salesByCategory,
       servedRefillsByName: sessionData.servedRefillsByName || {},
-      serveCountByType: sessionData.serveCountByType || {},
-      serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
+      serveCountByType: sessionData.serveCountByType || {}, serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
       guestCountSnapshot,
     };
-
-    finalReceipt = {
-      ...receiptPayload,
-      analytics: analyticsV2,
-      createdAt: serverTs,
-      analyticsApplied: true,
-      analyticsAppliedAt: serverTs,
-      analyticsApplyId: applyId,
-    } as Receipt;
-
-    // apply daily analytics delta inside transaction
+    
+    finalReceipt = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTs, analyticsApplied: true, analyticsAppliedAt: serverTs, analyticsApplyId: uuidv4() } as Receipt;
+    
     await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
-
     tx.set(receiptRef, finalReceipt);
-
     receiptId = receiptRef.id;
 
-    // free table
     if (tableSnap && tableRef && tableSnap.exists()) {
       const t = tableSnap.data() as any;
       if (t.currentSessionId === sessionId) {
-        tx.update(tableRef, {
-          status: 'available',
-          currentSessionId: null,
-          updatedAt: serverTs,
-        });
-
-        // Update the table cache
+        tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTs });
         const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-        tx.set(tableCacheRef, {
-            status: 'available',
-            currentSessionId: null,
-            packageLabel: null,
-            sessionType: null,
-            guestCount: null,
-            itemCount: null,
-            customerName: null,
-            startedAtMs: null,
-            updatedAt: serverTimestamp(),
-        }, { merge: true });
+        tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
       }
+    }
+    
+    // Apply clamped decrements for kitchen stations
+    for (const [stationId, decrementBy] of stationDecrements.entries()) {
+        const opPageSnap = opPageSnaps.find(snap => snap.id === stationId);
+        const opPageData = opPageSnap?.data() || {};
+        const currentCount = opPageData.activeCount || 0;
+        const newCount = Math.max(0, currentCount - decrementBy);
+        
+        const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
+        tx.update(opPageRef, { activeCount: newCount });
     }
   });
 
   if (receiptId) {
     await writeActivityLog({
-      storeId,
-      sessionId,
-      user,
-      action: 'PAYMENT_COMPLETED',
-      note: 'Payment completed',
+      storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
       sessionContext: sessionContextForLog,
-      meta: {
-        receiptId,
-        receiptNumber: finalReceipt?.receiptNumber ?? null,
-        paymentTotal: amountDue,
-      },
+      meta: { receiptId, receiptNumber: finalReceipt?.receiptNumber ?? null, paymentTotal: amountDue, },
     });
   }
 
@@ -673,8 +572,6 @@ export async function voidSession({
   actor: AppUser;
 }) {
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
-  
-  // Get initial session data outside to find tableId and active tickets
   const sessionDoc = await getDoc(sessionRef);
   if (!sessionDoc.exists()) throw new Error('Session not found.');
   const initialSessionData = sessionDoc.data() as any;
@@ -682,117 +579,89 @@ export async function voidSession({
     throw new Error('Session is already finalized and cannot be voided.');
   }
 
-  // Query outstanding tickets
   const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
   const ticketSnap = await getDocs(activeTicketsQuery);
-  const ticketRefs = ticketSnap.docs.map(d=>d.ref);
+  
+  const ticketDataForTx = ticketSnap.docs.map(docSnap => ({
+      ticketRef: docSnap.ref,
+      ticketId: docSnap.id,
+      kitchenLocationId: docSnap.data().kitchenLocationId,
+  }));
+  const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
 
   await runTransaction(db, async (tx) => {
-    // --- READ PHASE ---
-    // Re-read session doc inside transaction for consistency
-    const sessionSnap = await tx.get(sessionRef);
+    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
+    const activeProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+
+    const [sessionSnap, ticketSnaps, opPageSnaps, activeProjectionSnaps] = await Promise.all([
+      tx.get(sessionRef),
+      Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
+      Promise.all(opPageRefs.map(ref => tx.get(ref))),
+      Promise.all(activeProjectionRefs.map(ref => tx.get(ref)))
+    ]);
+
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
-
-    // Idempotency check inside transaction
     if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {
       console.warn(`voidSession skipped: Session ${sessionId} was already finalized.`);
       return;
     }
-
-    // Read all tickets that need updating
-    const ticketSnaps = await Promise.all(ticketRefs.map(ref => tx.get(ref)));
-
-    // --- WRITE PHASE ---
-
-    // Update Session
-    tx.update(sessionRef, {
-      status: 'voided',
-      voidedAt: serverTimestamp(),
-      voidedByUid: actor.uid,
-      voidedByUsername: getActorStamp(actor).username,
-      voidReason: reason,
-      updatedAt: serverTimestamp(),
-    });
-
-    // Update Table
+    
+    tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: reason, updatedAt: serverTimestamp() });
+    
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
-      tx.update(tableRef, {
-        status: 'available',
-        currentSessionId: null,
-        updatedAt: serverTimestamp(),
-      });
-      
+      tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTimestamp() });
       const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-      tx.set(tableCacheRef, {
-          status: 'available',
-          currentSessionId: null,
-          packageLabel: null,
-          sessionType: null,
-          guestCount: null,
-          itemCount: null,
-          customerName: null,
-          startedAtMs: null,
-          updatedAt: serverTimestamp(),
-      }, { merge: true });
+      tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
     }
 
-    // Update Tickets and Projections
-    for (let i = 0; i < ticketRefs.length; i++) {
-        const ticketRef = ticketRefs[i];
+    const stationDecrements = new Map<string, number>();
+
+    for (let i = 0; i < ticketSnaps.length; i++) {
         const ticketDoc = ticketSnaps[i];
         if (!ticketDoc.exists()) continue;
-
         const oldTicket = ticketDoc.data() as KitchenTicket;
-        if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') {
-            continue;
-        }
+        if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') continue;
       
-        const updatePayload = {
-            status: 'cancelled' as const,
-            cancelReason: 'SESSION_VOIDED',
-            cancelledAt: serverTimestamp(),
-            cancelledByUid: actor.uid,
-            updatedAt: serverTimestamp(),
-        };
-        
+        const updatePayload = { status: 'cancelled' as const, cancelReason: 'SESSION_VOIDED', cancelledAt: serverTimestamp(), cancelledByUid: actor.uid, updatedAt: serverTimestamp() };
         const newTicket = { ...oldTicket, ...updatePayload };
-        
         await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
+        tx.update(ticketDoc.ref, updatePayload);
 
-        tx.update(ticketRef, updatePayload);
-
-        const kitchenLocationId = oldTicket.kitchenLocationId;
-        if (kitchenLocationId) {
-            const activeProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'activeKdsTickets', ticketRef.id);
-            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketRef.id);
-            const opPageRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId);
-
-            tx.set(closedProjectionRef, newTicket, { merge: true });
-            tx.delete(activeProjectionRef);
-            tx.update(opPageRef, { activeCount: increment(-1) });
+        const activeProjectionSnap = activeProjectionSnaps[i];
+        if (activeProjectionSnap.exists()) {
+            const kitchenLocationId = oldTicket.kitchenLocationId;
+            if (kitchenLocationId) {
+                const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketDoc.id);
+                tx.set(closedProjectionRef, newTicket, { merge: true });
+                tx.delete(activeProjectionSnap.ref);
+                stationDecrements.set(kitchenLocationId, (stationDecrements.get(kitchenLocationId) || 0) + 1);
+            }
         }
+    }
+    
+    for (const [stationId, decrementBy] of stationDecrements.entries()) {
+        const opPageSnap = opPageSnaps.find(snap => snap.id === stationId);
+        const opPageData = opPageSnap?.data() || {};
+        const currentCount = opPageData.activeCount || 0;
+        const newCount = Math.max(0, currentCount - decrementBy);
+        
+        const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
+        tx.update(opPageRef, { activeCount: newCount });
     }
   });
 
   await writeActivityLog({
-    storeId,
-    sessionId,
-    user: actor,
-    action: "SESSION_VOIDED",
-    reason: reason,
+    storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: reason,
     sessionContext: {
-        sessionStatus: 'voided',
-        sessionStartedAt: initialSessionData.startedAt,
+        sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
         sessionMode: initialSessionData.sessionMode,
         customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
         tableNumber: initialSessionData.tableNumber,
     },
-    meta: {
-      sessionLabel: computeSessionLabel(initialSessionData)
-    }
+    meta: { sessionLabel: computeSessionLabel(initialSessionData) }
   });
 }
 
@@ -847,3 +716,5 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
+
+    

@@ -278,12 +278,14 @@ export default function KitchenPage() {
             }
             
             const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
-            const opPageSnap = await transaction.get(opPageRef);
-            const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
-
             const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
-            const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
 
+            const [opPageSnap, activeProjectionSnap] = await Promise.all([
+                transaction.get(opPageRef),
+                transaction.get(activeProjectionRef),
+            ]);
+
+            const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
             const updatePayload: any = { status: newStatus };
             let newTicketState: KitchenTicket;
             
@@ -310,32 +312,7 @@ export default function KitchenPage() {
                     sessionUpdate.servedRefillsTotal = increment(qty);
                 }
                 transaction.update(sessionRef, sessionUpdate);
-                
                 newTicketState = { ...oldTicketState, ...updatePayload };
-                
-                const todayDayId = getDayIdFromTimestamp(new Date());
-                let { 
-                    todayDayId: storedDayId, 
-                    todayServeMsSum = 0, 
-                    todayServeCount = 0 
-                } = opPageData;
-
-                if (storedDayId !== todayDayId) {
-                    todayServeMsSum = 0;
-                    todayServeCount = 0;
-                }
-
-                const newSum = todayServeMsSum + durationMs;
-                const newCount = todayServeCount + 1;
-
-                transaction.update(opPageRef, {
-                    'todayDayId': todayDayId,
-                    'todayServeMsSum': newSum,
-                    'todayServeCount': newCount,
-                    'todayServeAvgMs': newSum / newCount,
-                    activeCount: increment(-1)
-                });
-
 
             } else { // cancelled
                 updatePayload.cancelledAt = serverTimestamp();
@@ -351,17 +328,41 @@ export default function KitchenPage() {
                         voidedQty: increment(1)
                     });
                 }
-                transaction.update(opPageRef, { activeCount: increment(-1) });
             }
             
             transaction.update(ticketRef, updatePayload);
-            
-            // Atomically update analytics
             await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
 
-            // Move projection doc
-            transaction.set(closedProjectionRef, newTicketState, { merge: true });
-            transaction.delete(activeProjectionRef);
+            if (activeProjectionSnap.exists()) {
+                const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
+                transaction.set(closedProjectionRef, newTicketState, { merge: true });
+                transaction.delete(activeProjectionRef);
+
+                const currentCount = opPageData.activeCount || 0;
+                const opPageUpdatePayload: Record<string, any> = {
+                    activeCount: Math.max(0, currentCount - 1),
+                };
+
+                if (newStatus === 'served') {
+                    const nowMs = newTicketState.servedAtClientMs!;
+                    const durationMs = newTicketState.durationMs!;
+                    const todayDayId = getDayIdFromTimestamp(new Date());
+                    let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
+        
+                    if (storedDayId !== todayDayId) {
+                        todayServeMsSum = 0;
+                        todayServeCount = 0;
+                    }
+                    const newSum = todayServeMsSum + durationMs;
+                    const newCountServed = todayServeCount + 1;
+        
+                    opPageUpdatePayload['todayDayId'] = todayDayId;
+                    opPageUpdatePayload['todayServeMsSum'] = newSum;
+                    opPageUpdatePayload['todayServeCount'] = newCountServed;
+                    opPageUpdatePayload['todayServeAvgMs'] = newSum / newCountServed;
+                }
+                transaction.update(opPageRef, opPageUpdatePayload);
+            }
 
         });
 
@@ -473,3 +474,5 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
+
+    
