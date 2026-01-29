@@ -219,7 +219,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             qty: diff.free,
             note: "Marked item free",
             meta: {
-              itemId: line.itemId,
+              itemId: line.id,
               itemName: line.itemName,
               qty: Math.abs(diff.free),
               unitPriceAfter: unitPrice,
@@ -233,7 +233,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             qty: -diff.free,
             note: "Removed free tag",
             meta: {
-              itemId: line.itemId,
+              itemId: line.id,
               itemName: line.itemName,
               qty: Math.abs(diff.free),
               unitPriceAfter: unitPrice,
@@ -249,7 +249,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             qty: diff.void,
             note: "Voided item",
             meta: {
-              itemId: line.itemId,
+              itemId: line.id,
               itemName: line.itemName,
               qty: Math.abs(diff.void),
               unitPriceAfter: unitPrice,
@@ -263,7 +263,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             qty: -diff.void,
             note: "Unvoided item",
             meta: {
-              itemId: line.itemId,
+              itemId: line.id,
               itemName: line.itemName,
               qty: Math.abs(diff.void),
               unitPriceAfter: unitPrice,
@@ -445,7 +445,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     isLocked={isBillingLocked}
                     onUpdateLine={(line) => setEditingLineId(line.id)}
                     onAddLine={(newLine) => {
-                        setLines((currentLines) => {
+                        setBillLines((currentLines) => {
                             // Check if an identical addon line already exists
                             const existingLineIndex = currentLines.findIndex(
                                 (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
