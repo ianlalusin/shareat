@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -9,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, updateSessionBillLine, voidSession, removeLineAdjustment } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,10 +20,11 @@ import { PaymentSection } from "@/components/cashier/payment-section";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { KitchenTicket, ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import type { ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
+import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 
 // Validation logic using cents
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -57,17 +57,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { activeStore } = useStoreContext();
   const { confirm, Dialog } = useConfirmDialog();
 
+  const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
+
   const [session, setSession] = useState<PendingSession | null>(null);
   const [billLines, setBillLines] = useState<SessionBillLine[]>([]);
   
-  const [charges, setCharges] = useState<Charge[]>([]);
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   
@@ -80,6 +79,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const storeId = activeStore?.id;
 
+  const paymentMethods = useMemo(() => {
+    if (!storeConfig?.modesOfPayment) return [];
+    return storeConfig.modesOfPayment.filter(m => m.isActive && !(m as any).isArchived);
+  }, [storeConfig]);
+
+  const charges = useMemo(() => {
+    if (!storeConfig?.charges) return [];
+    return storeConfig.charges.filter(c => c.isEnabled && !(c as any).isArchived);
+  }, [storeConfig]);
+
+  const discounts = useMemo(() => {
+    if (!storeConfig?.discounts) return [];
+    return storeConfig.discounts.filter(d => d.isEnabled && !(d as any).isArchived);
+  }, [storeConfig]);
+
+
   useEffect(() => {
     if (!storeId) return;
     const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
@@ -91,12 +106,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
             router.replace('/cashier');
         }
-        setIsLoading(false);
+        setIsLoadingSession(false);
     }, (error) => {
       console.error("Error fetching session:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not load session data.' });
       router.replace('/cashier');
-      setIsLoading(false);
+      setIsLoadingSession(false);
     });
     return () => unsubscribe();
   }, [sessionId, storeId, router, toast]);
@@ -142,25 +157,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       }
     }
   }, [session, billLines, appUser, storeId, sessionId]);
-
-
-  useEffect(() => {
-    if (!storeId) return;
-    const unsubs: (() => void)[] = [];
-    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeModesOfPayment"), where("isArchived", "==", false), where("isActive", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
-        setPaymentMethods(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ModeOfPayment)));
-    }));
-    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
-        setCharges(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Charge)));
-    }));
-    unsubs.push(onSnapshot(query(collection(db, "stores", storeId, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true), orderBy("sortOrder", "asc"), orderBy("name", "asc")), (snapshot) => {
-        setDiscounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Discount)));
-    }));
-    return () => unsubs.forEach(unsub => unsub());
-  }, [storeId]);
   
-  const billableDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill")), [discounts]);
-  const itemDiscounts = useMemo(() => discounts.filter(d => d.isEnabled && !d.isArchived && (Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item")), [discounts]);
+  const billableDiscounts = useMemo(() => discounts.filter(d => Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"), [discounts]);
+  const itemDiscounts = useMemo(() => discounts.filter(d => Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item"), [discounts]);
   
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
@@ -381,6 +380,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
   
+  const isLoading = isLoadingSession || isConfigLoading;
+
   if (isLoading || !session || !storeId || !activeStore) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }

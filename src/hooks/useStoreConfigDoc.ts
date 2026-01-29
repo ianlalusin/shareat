@@ -4,13 +4,16 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, DocumentData } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import type { StoreTable, StorePackage, StoreFlavor, MenuSchedule } from '@/lib/types';
+import type { StoreTable, StorePackage, StoreFlavor, MenuSchedule, Discount, Charge, ModeOfPayment } from '@/lib/types';
 
 export interface StoreConfig {
   tables: StoreTable[];
   packages: StorePackage[];
   flavors: StoreFlavor[];
   schedules: MenuSchedule[];
+  discounts: Discount[];
+  charges: Charge[];
+  modesOfPayment: ModeOfPayment[];
   meta?: {
     updatedAt?: any;
     version?: number;
@@ -42,6 +45,9 @@ export function useStoreConfigDoc(storeId?: string | null) {
             packages: data.packages || [],
             flavors: data.flavors || [],
             schedules: data.schedules || [],
+            discounts: data.discounts || [],
+            charges: data.charges || [],
+            modesOfPayment: data.modesOfPayment || [],
             meta: data.meta || {},
           });
         } else {
