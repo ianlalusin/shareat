@@ -155,6 +155,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     // 3. Write session projection
     const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, newSessionRef.id);
     const projectionPayload = {
+      meta: { source: 'projection-v1' },
       status: isAlaCarte ? 'active' : 'pending_verification',
       sessionMode: payload.sessionMode,
       tableId: payload.tableId,
@@ -301,26 +302,22 @@ export async function completePaymentFromUnits(
     const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
 
 
-    const initialDocsToRead = [
-        tx.get(sessionRef),
-        tx.get(receiptRef),
-        tx.get(settingsRef),
-        tx.get(counterRef),
-        tx.get(activeProjectionRef),
-    ];
-    
     const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeKdsTicketSnapsRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const activeKdsTicketProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
     const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
 
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap,
       ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps
     ] = await Promise.all([
-      ...initialDocsToRead,
+      tx.get(sessionRef),
+      tx.get(receiptRef),
+      tx.get(settingsRef),
+      tx.get(counterRef),
+      tx.get(activeProjectionRef),
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsTicketSnapsRefs.map(ref => tx.get(ref))),
+      Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
       Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
     ]);
     
@@ -831,6 +828,7 @@ export async function removeLineAdjustment(
     
 
     
+
 
 
 
