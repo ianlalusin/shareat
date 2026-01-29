@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
-import { ArrowLeft, ArrowRight, Clock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, Loader2 } from "lucide-react";
 
 function formatDuration(ms: number): string {
     if (isNaN(ms) || ms <= 0) return "";
@@ -28,26 +28,12 @@ function formatDuration(ms: number): string {
 
 interface HistoryViewProps {
     items: KitchenTicket[];
+    isLoading: boolean;
+    hasMore: boolean;
+    onLoadMore: () => void;
 }
 
-const ITEMS_PER_PAGE = 10;
-
-export function HistoryView({ items }: HistoryViewProps) {
-    const [currentPage, setCurrentPage] = useState(0);
-
-    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    const startIndex = currentPage * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    const currentItems = items.slice(startIndex, endIndex);
-
-    const goToNextPage = () => {
-        setCurrentPage((prev) => Math.min(prev + 1, totalPages - 1));
-    };
-
-    const goToPreviousPage = () => {
-        setCurrentPage((prev) => Math.max(prev - 1, 0));
-    };
-
+export function HistoryView({ items, isLoading, hasMore, onLoadMore }: HistoryViewProps) {
     return (
         <Card>
             <CardHeader>
@@ -55,11 +41,15 @@ export function HistoryView({ items }: HistoryViewProps) {
                 <CardDescription>Recently completed or cancelled items.</CardDescription>
             </CardHeader>
             <CardContent>
-                {items.length === 0 ? (
+                {isLoading && items.length === 0 ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 className="animate-spin" />
+                    </div>
+                ) : items.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No items in history yet.</p>
                 ) : (
                     <div className="space-y-2">
-                        {currentItems.map(item => {
+                        {items.map(item => {
                              const isAlaCarte = item.sessionMode === 'alacarte';
                              const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
                              const hasDuration = item.status === 'served' && item.durationMs && item.durationMs > 0;
@@ -92,19 +82,19 @@ export function HistoryView({ items }: HistoryViewProps) {
                     </div>
                 )}
             </CardContent>
-             <CardFooter className="flex justify-between items-center">
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={goToPreviousPage} disabled={currentPage === 0}>
-                    <ArrowLeft className="h-4 w-4" />
-                    <span className="sr-only">Previous Page</span>
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                    Page {currentPage + 1} of {totalPages > 0 ? totalPages : 1}
-                </span>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={goToNextPage} disabled={currentPage >= totalPages - 1}>
-                    <ArrowRight className="h-4 w-4" />
-                    <span className="sr-only">Next Page</span>
-                </Button>
-            </CardFooter>
+            {hasMore && (
+                <CardFooter className="flex justify-center">
+                    <Button 
+                        variant="outline"
+                        onClick={onLoadMore}
+                        disabled={isLoading}
+                        className="w-full"
+                    >
+                        {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        Load More
+                    </Button>
+                </CardFooter>
+            )}
         </Card>
     );
 }

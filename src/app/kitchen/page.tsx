@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer, limit, startAfter, QueryDocumentSnapshot } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -97,6 +97,12 @@ export default function KitchenPage() {
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
   const [activeStationData, setActiveStationData] = useState<any | null>(null);
+  
+  // New state for paginated history
+  const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
+  const [lastHistoryDoc, setLastHistoryDoc] = useState<QueryDocumentSnapshot | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
   const refreshStationCounts = useCallback(async () => {
     if (!activeStore || stations.length === 0) return;
@@ -223,6 +229,44 @@ export default function KitchenPage() {
     return () => unsubscribe();
   }, [activeStore, activeTab, toast, isSigningOut, appUser]);
 
+  const fetchHistory = useCallback(async (loadMore = false) => {
+    if (!activeStore || !activeTab) return;
+    setIsLoadingHistory(true);
+  
+    let q = query(
+      collection(db, 'stores', activeStore.id, 'opPages', activeTab, 'closedKdsTickets'),
+      orderBy('updatedAt', 'desc'),
+      limit(10)
+    );
+  
+    if (loadMore && lastHistoryDoc) {
+      q = query(q, startAfter(lastHistoryDoc));
+    }
+  
+    try {
+      const snapshot = await getDocs(q);
+      const newTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
+      
+      setHistoryTickets(prev => loadMore ? [...prev, ...newTickets] : newTickets);
+      setLastHistoryDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+      setHasMoreHistory(snapshot.docs.length === 10);
+    } catch (error) {
+      console.error("Error fetching history tickets:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch history.' });
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [activeStore, activeTab, lastHistoryDoc, toast]);
+  
+  useEffect(() => {
+    setHistoryTickets([]);
+    setLastHistoryDoc(null);
+    setHasMoreHistory(true);
+    fetchHistory(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, activeStore?.id]);
+
+
   const avgServingTime = useMemo(() => {
     if (!activeStationData) return { avgMs: 0, count: 0 };
     
@@ -286,7 +330,7 @@ export default function KitchenPage() {
             ]);
 
             const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
-            const updatePayload: any = { status: newStatus };
+            const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
             let newTicketState: KitchenTicket;
             
             if (newStatus === 'served') {
@@ -335,7 +379,7 @@ export default function KitchenPage() {
 
             if (activeProjectionSnap.exists()) {
                 const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
-                transaction.set(closedProjectionRef, newTicketState, { merge: true });
+                transaction.set(closedProjectionRef, { ...newTicketState, updatedAt: serverTimestamp() }, { merge: true });
                 transaction.delete(activeProjectionRef);
 
                 const currentCount = opPageData.activeCount || 0;
@@ -378,30 +422,6 @@ export default function KitchenPage() {
 
 
   const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
-  
-  const historyItems = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    return ticketsWithData
-      .filter(t => {
-        if (t.status !== 'served' && t.status !== 'cancelled' && t.status !== 'void') {
-          return false;
-        }
-        const eventTime = toJsDate(t.servedAt || t.cancelledAt || t.createdAt);
-        return eventTime ? eventTime >= startOfToday : false;
-      })
-      .sort((a, b) => {
-          const getTime = (date: any): number => {
-              if (!date) return 0;
-              return typeof date.toMillis === 'function' ? date.toMillis() : new Date(date).getTime();
-          };
-          const aTime = getTime(a.cancelledAt || a.servedAt || a.createdAt);
-          const bTime = getTime(b.cancelledAt || b.servedAt || b.createdAt);
-          return bTime - aTime;
-      })
-      .slice(0, 50)
-  }, [ticketsWithData]);
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
@@ -465,7 +485,12 @@ export default function KitchenPage() {
                  </Tabs>
             </div>
             <div className="lg:col-span-1 space-y-4">
-                <HistoryView items={historyItems} />
+                <HistoryView 
+                  items={historyTickets}
+                  isLoading={isLoadingHistory}
+                  hasMore={hasMoreHistory}
+                  onLoadMore={() => fetchHistory(true)}
+                />
             </div>
         </div>
       {timelineSessionId && activeStore && (
