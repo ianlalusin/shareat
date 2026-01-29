@@ -607,6 +607,7 @@ export type ActivityLog = {
     delta?: number;
     discountName?: string;
     percent?: number;
+    sessionLabel?: string;
   };
 
   createdAt: any; // serverTimestamp()
