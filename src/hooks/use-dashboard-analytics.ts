@@ -163,6 +163,10 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         });
 
         async function fetchAndProcessData() {
+            if (!storeId) { // Redundant guard for TS narrowing inside async function
+                setIsLoading(false);
+                return;
+            }
             const presetId = presetIdMap[preset];
             
             if (presetId) {
