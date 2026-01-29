@@ -30,6 +30,7 @@ const managerTools = [
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
+    { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]
 
 const dataTools = [

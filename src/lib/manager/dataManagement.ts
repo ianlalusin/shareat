@@ -1,0 +1,75 @@
+
+"use client";
+
+import {
+  type Firestore,
+  collection,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  writeBatch,
+} from "firebase/firestore";
+
+/**
+ * Fetches all documents from a given collection path.
+ */
+async function fetchCollection(db: Firestore, collectionPath: string) {
+  const snapshot = await getDocs(collection(db, collectionPath));
+  if (snapshot.empty) return [];
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+/**
+ * Rebuilds the single `storeConfig/current` document by fetching the latest data
+ * from all source-of-truth collections.
+ * @param db Firestore instance from the client.
+ * @param storeId The ID of the store to rebuild.
+ */
+export async function rebuildStoreConfig(db: Firestore, storeId: string) {
+  if (!storeId) {
+    throw new Error("A valid store ID must be provided.");
+  }
+
+  // --- 1. Read all source collections concurrently ---
+  const [
+    tables,
+    storePackages,
+    flavors,
+    schedules,
+    discounts,
+    charges,
+    modesOfPayment,
+  ] = await Promise.all([
+    fetchCollection(db, `stores/${storeId}/tables`),
+    fetchCollection(db, `stores/${storeId}/storePackages`),
+    fetchCollection(db, `stores/${storeId}/storeFlavors`),
+    fetchCollection(db, `stores/${storeId}/menuSchedules`),
+    fetchCollection(db, `stores/${storeId}/storeDiscounts`),
+    fetchCollection(db, `stores/${storeId}/storeCharges`),
+    fetchCollection(db, `stores/${storeId}/storeModesOfPayment`),
+  ]);
+
+  // --- 2. Prepare the new config document data ---
+  const configDocRef = doc(db, `stores/${storeId}/storeConfig/current`);
+  
+  const newConfigData = {
+    meta: {
+      source: 'manual_rebuild_v1',
+      updatedAt: serverTimestamp(),
+    },
+    tables: tables,
+    packages: storePackages,
+    flavors: flavors,
+    schedules: schedules,
+    discounts: discounts,
+    charges: charges,
+    modesOfPayment: modesOfPayment,
+  };
+
+  // --- 3. Perform an atomic write using a batch ---
+  const batch = writeBatch(db);
+  batch.set(configDocRef, newConfigData, { merge: true }); // Use merge to be safe
+  
+  await batch.commit();
+}
