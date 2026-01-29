@@ -168,6 +168,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       startedAt: serverTimestamp(),
       startedAtClientMs: sessionPayload.startedAtClientMs,
       updatedAt: serverTimestamp(),
+      initialFlavorIds: payload.initialFlavorIds || [],
     };
     transaction.set(sessionProjectionRef, projectionPayload);
 
@@ -376,6 +377,7 @@ export async function completePaymentFromUnits(
         if (!ticketSnap.exists()) continue;
 
         const oldTicketState = ticketSnap.data() as KitchenTicket;
+        
         if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
             continue;
         }
@@ -400,45 +402,54 @@ export async function completePaymentFromUnits(
         const activeKdsTicketSnap = activeKdsTicketSnaps[i];
         if (activeKdsTicketSnap.exists()) {
             const closedKdsTicketRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketRef.id);
-            tx.set(closedKdsTicketRef, newTicketState, { merge: true });
+            tx.set(closedKdsTicketRef, { ...newTicketState, updatedAt: serverTimestamp() }, { merge: true });
             tx.delete(activeKdsTicketSnap.ref);
             
             const opPageSnap = opPageSnaps.find(snap => snap.id === oldTicketState.kitchenLocationId);
             const opPageData = opPageSnap?.data() || {};
-            const currentCount = opPageData.activeCount || 0;
             
-            tx.update(doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId), { 
-                activeCount: Math.max(0, currentCount - 1),
-            });
+            const nextActiveCount = Math.max(0, (opPageData.activeCount || 0) - 1);
+            
+            const opPageUpdatePayload: Record<string, any> = {
+                activeCount: nextActiveCount,
+            };
 
-            // Add to history preview entries
-            const stationId = oldTicketState.kitchenLocationId;
-            if (stationId) {
-                const entry = {
-                    id: newTicketState.id,
-                    sessionLabel: newTicketState.sessionLabel,
-                    tableNumber: newTicketState.tableNumber,
-                    customerName: newTicketState.customerName,
-                    itemName: newTicketState.itemName,
-                    qty: newTicketState.qty,
-                    status: newTicketState.status,
-                    closedAtClientMs: newTicketState.servedAtClientMs,
-                    durationMs: newTicketState.durationMs
-                };
-                if (!newHistoryEntriesByStation.has(stationId)) newHistoryEntriesByStation.set(stationId, []);
-                newHistoryEntriesByStation.get(stationId)!.push(entry);
+            const durationMs = newTicketState.durationMs!;
+            const todayDayId = getDayIdFromTimestamp(now);
+            let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
+
+            if (storedDayId !== todayDayId) {
+                todayServeMsSum = 0;
+                todayServeCount = 0;
             }
-        }
-    }
+            const newSum = todayServeMsSum + durationMs;
+            const newCountServed = todayServeCount + 1;
 
-    for (const stationId of uniqueStationIds) {
-        const newEntries = newHistoryEntriesByStation.get(stationId);
-        if (newEntries && newEntries.length > 0) {
-            const previewRef = doc(db, 'stores', storeId, 'opPages', stationId, 'historyPreview', 'current');
-            const existingItems = historyPreviewDataMap.get(stationId) || [];
-            const updatedItems = [...newEntries, ...existingItems].slice(0, 15);
-            tx.set(previewRef, { items: updatedItems }, { merge: true });
+            opPageUpdatePayload['todayDayId'] = todayDayId;
+            opPageUpdatePayload['todayServeMsSum'] = newSum;
+            opPageUpdatePayload['todayServeCount'] = newCountServed;
+            opPageUpdatePayload['todayServeAvgMs'] = newSum / newCountServed;
+                
+            tx.update(doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId), opPageUpdatePayload);
+            
+            // Update history preview
+            const newHistoryEntry = {
+                id: newTicketState.id,
+                sessionLabel: newTicketState.sessionLabel,
+                tableNumber: newTicketState.tableNumber,
+                customerName: newTicketState.customerName,
+                itemName: newTicketState.itemName,
+                qty: newTicketState.qty,
+                status: newTicketState.status,
+                closedAtClientMs: now,
+                durationMs: newTicketState.durationMs || 0
+            };
+            const existingItems = historyPreviewDataMap.get(oldTicketState.kitchenLocationId) || [];
+            const newItems = [newHistoryEntry, ...existingItems].slice(0, 15);
+            const previewRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'historyPreview', 'current');
+            tx.set(previewRef, { items: newItems }, { merge: true });
         }
+
     }
     
     // ... rest of payment and receipt logic from original function ...
@@ -720,10 +731,10 @@ export async function voidSession({
 
                 const opPageSnap = opPageSnaps.find(snap => snap.id === kitchenLocationId);
                 const opPageData = opPageSnap?.data() || {};
-                const currentCount = opPageData.activeCount || 0;
+                const nextActiveCount = Math.max(0, (opPageData.activeCount || 0) - 1);
                 
                 const opPageRef = doc(db, "stores", storeId, "opPages", kitchenLocationId);
-                tx.update(opPageRef, { activeCount: Math.max(0, currentCount - 1) });
+                tx.update(opPageRef, { activeCount: nextActiveCount });
                 
                  // Add to history preview entries
                 const entry = {
@@ -819,4 +830,5 @@ export async function removeLineAdjustment(
     
 
     
+
 
