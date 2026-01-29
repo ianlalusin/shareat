@@ -17,6 +17,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 
 type ChangeRequest = {
   sessionId: string;
+  tableId: string;
   tableNumber: string;
   type: 'guest' | 'package';
   requestedAt: any;
@@ -75,6 +76,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
         if (session.guestCountChange?.status === 'pending') {
           pendingRequests.push({
             sessionId: sessionDoc.id,
+            tableId: session.tableId,
             tableNumber: session.tableNumber,
             type: 'guest',
             requestedAt: session.guestCountChange.requestedAt?.toDate(),
@@ -86,21 +88,42 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             reasonNote: session.guestCountChange.reasonNote,
             isSessionLocked: isLocked,
             onApprove: async () => {
+              const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              await updateDoc(sessionRef, {
+              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+
+              batch.update(sessionRef, {
                 guestCountFinal: session.guestCountChange.requestedCount,
                 "guestCountChange.status": "approved",
                 "guestCountChange.approvedByUid": appUser?.uid,
                 "guestCountChange.approvedAt": serverTimestamp(),
               });
+              
+              batch.update(tableCacheRef, {
+                guestCount: session.guestCountChange.requestedCount,
+                requestStatus: 'approved', // Or null to clear immediately
+                updatedAt: serverTimestamp(),
+              });
+
+              await batch.commit();
             },
             onReject: async () => {
+              const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              await updateDoc(sessionRef, {
+              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+
+              batch.update(sessionRef, {
                 "guestCountChange.status": "rejected",
                 "guestCountChange.rejectedByUid": appUser?.uid,
                 "guestCountChange.rejectedAt": serverTimestamp(),
               });
+
+              batch.update(tableCacheRef, {
+                requestStatus: null, requestedGuestCount: null, requestedPackageLabel: null,
+                requestedAtMs: null, requestedByUid: null, updatedAt: serverTimestamp()
+              });
+
+              await batch.commit();
             },
           });
         }
@@ -109,6 +132,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
         if (session.packageChange?.status === 'pending') {
            pendingRequests.push({
             sessionId: sessionDoc.id,
+            tableId: session.tableId,
             tableNumber: session.tableNumber,
             type: 'package',
             requestedAt: session.packageChange.requestedAt?.toDate(),
@@ -120,9 +144,11 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             reasonNote: session.packageChange.reasonNote,
             isSessionLocked: isLocked,
             onApprove: async () => {
+                const batch = writeBatch(db);
                 const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
+                const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
                 
-                await updateDoc(sessionRef, {
+                batch.update(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
                     "packageChange.status": "approved",
@@ -130,16 +156,31 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     "packageChange.approvedAt": serverTimestamp(),
                 });
 
-                // Since billableLines are now canonical, we don't need to update the legacy billable item.
-                // The UI will react to the session's packageSnapshot change automatically if designed correctly.
+                batch.update(tableCacheRef, {
+                    packageLabel: session.packageChange.requestedPackageSnapshot.name,
+                    requestStatus: 'approved', // Or null to clear immediately
+                    updatedAt: serverTimestamp(),
+                });
+
+                await batch.commit();
             },
             onReject: async () => {
+              const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              await updateDoc(sessionRef, {
+              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+
+              batch.update(sessionRef, {
                 "packageChange.status": "rejected",
                 "packageChange.rejectedByUid": appUser?.uid,
                 "packageChange.rejectedAt": serverTimestamp(),
               });
+
+              batch.update(tableCacheRef, {
+                requestStatus: null, requestedGuestCount: null, requestedPackageLabel: null,
+                requestedAtMs: null, requestedByUid: null, updatedAt: serverTimestamp()
+              });
+              
+              await batch.commit();
             },
           });
         }

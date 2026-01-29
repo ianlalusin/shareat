@@ -17,7 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Minus, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase/client";
-import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp, getDoc, writeBatch } from "firebase/firestore";
 import { useAuthContext } from "@/context/auth-context";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -91,7 +91,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
         if (!pkg.isEnabled) return false;
-        if (!pkg.menuScheduleId) return true;
+        if (!pkg.menuScheduleId) return true; // Always available if no schedule
         const schedule = schedules.get(pkg.menuScheduleId);
         if (!schedule) return true; // Fail open if schedule not found
         return isScheduleActiveNow(schedule);
@@ -116,18 +116,34 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   }
 
   const handleGuestSubmit = async (data: z.infer<typeof guestCountSchema>) => {
-    if (!appUser || await checkSessionLock()) return;
+    if (!appUser || !session.tableId || await checkSessionLock()) return;
     setIsSubmitting(true);
+    const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
+    const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+    
     try {
-      await updateDoc(sessionRef, {
-        "guestCountChange.status": "pending",
-        "guestCountChange.requestedCount": data.requestedCount,
-        "guestCountChange.reason": data.reason,
-        "guestCountChange.reasonNote": data.reason === 'other' ? data.reasonNote?.trim() : (data.reasonNote?.trim() || null),
-        "guestCountChange.requestedByUid": appUser.uid,
-        "guestCountChange.requestedAt": serverTimestamp(),
-      });
+        // Update session doc (truth)
+        batch.update(sessionRef, {
+            "guestCountChange.status": "pending",
+            "guestCountChange.requestedCount": data.requestedCount,
+            "guestCountChange.reason": data.reason,
+            "guestCountChange.reasonNote": data.reason === 'other' ? data.reasonNote?.trim() : (data.reasonNote?.trim() || null),
+            "guestCountChange.requestedByUid": appUser.uid,
+            "guestCountChange.requestedAt": serverTimestamp(),
+        });
+        
+        // Update table cache doc (for UI hint)
+        batch.update(tableCacheRef, {
+            requestedGuestCount: data.requestedCount,
+            requestStatus: 'unapproved',
+            requestedAtMs: Date.now(),
+            requestedByUid: appUser.uid,
+            requestedPackageLabel: null, // Clear other request type
+            updatedAt: serverTimestamp(),
+        });
+
+      await batch.commit();
       toast({ title: "Request Sent", description: "Guest count change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
@@ -138,27 +154,41 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   };
 
   const handlePackageSubmit = async (data: z.infer<typeof packageSchema>) => {
-    if (!appUser || await checkSessionLock()) return;
+    if (!appUser || !session.tableId || await checkSessionLock()) return;
     const selectedPackage = availablePackages.find(p => p.packageId === data.requestedPackageId);
     if (!selectedPackage) {
       toast({ variant: "destructive", title: "Invalid Package" });
       return;
     }
     setIsSubmitting(true);
+    const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
+    const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+
     try {
-      await updateDoc(sessionRef, {
-        "packageChange.status": "pending",
-        "packageChange.requestedPackageId": data.requestedPackageId,
-        "packageChange.requestedPackageSnapshot": {
-          name: selectedPackage.packageName,
-          pricePerHead: selectedPackage.pricePerHead,
-        },
-        "packageChange.reason": data.reason,
-        "packageChange.reasonNote": data.reason === 'other' ? data.reasonNote?.trim() : (data.reasonNote?.trim() || null),
-        "packageChange.requestedByUid": appUser.uid,
-        "packageChange.requestedAt": serverTimestamp(),
-      });
+        batch.update(sessionRef, {
+            "packageChange.status": "pending",
+            "packageChange.requestedPackageId": data.requestedPackageId,
+            "packageChange.requestedPackageSnapshot": {
+            name: selectedPackage.packageName,
+            pricePerHead: selectedPackage.pricePerHead,
+            },
+            "packageChange.reason": data.reason,
+            "packageChange.reasonNote": data.reason === 'other' ? data.reasonNote?.trim() : (data.reasonNote?.trim() || null),
+            "packageChange.requestedByUid": appUser.uid,
+            "packageChange.requestedAt": serverTimestamp(),
+        });
+
+        batch.update(tableCacheRef, {
+            requestedPackageLabel: selectedPackage.packageName,
+            requestStatus: 'unapproved',
+            requestedAtMs: Date.now(),
+            requestedByUid: appUser.uid,
+            requestedGuestCount: null, // Clear other request type
+            updatedAt: serverTimestamp(),
+        });
+
+      await batch.commit();
       toast({ title: "Request Sent", description: "Package change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
