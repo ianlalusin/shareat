@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -338,7 +339,7 @@ export default function LogsPage() {
                     ) : groupedLogs.length > 0 ? (
                         <Accordion type="single" collapsible className="w-full space-y-4">
                             {paginatedLogs.map(({ session, logs }) => (
-                                <SessionLogCard key={session.id} session={session} initialLogs={logs} />
+                                <SessionLogCard key={session.id} session={{...session, startedAtClientMs: session.startedAtClientMs ?? undefined}} initialLogs={logs} />
                             ))}
                         </Accordion>
                     ) : (
