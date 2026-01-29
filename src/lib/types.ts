@@ -169,6 +169,7 @@ export type KitchenTicket = {
     createdByUid: string;
     createdAt: any;
     createdAtClientMs?: number;
+    updatedAt?: any;
     preparedByUid?: string | null;
     preparedAt?: any | null;
     servedByUid?: string | null;
@@ -177,6 +178,8 @@ export type KitchenTicket = {
     servedCounted?: boolean;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
+    cancelledAtClientMs?: number;
+    cancelReason?: string;
     durationMs?: number;
     initialFlavorIds?: string[];
     initialFlavorNames?: string[];
