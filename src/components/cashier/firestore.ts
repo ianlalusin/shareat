@@ -308,14 +308,18 @@ export async function completePaymentFromUnits(
     const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
 
     const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap,
-      ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps
+      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
     ] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
-      tx.get(settingsRef),
+      tx.get(settingsSnap),
       tx.get(counterRef),
       tx.get(activeProjectionSnap),
+    ]);
+    
+    const [
+      ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps
+    ] = await Promise.all([
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
       Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
@@ -416,14 +420,14 @@ export async function completePaymentFromUnits(
             const durationMs = newTicketState.durationMs!;
             const todayDayId = getDayIdFromTimestamp(new Date());
             let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
-
+        
             if (storedDayId !== todayDayId) {
                 todayServeMsSum = 0;
                 todayServeCount = 0;
             }
             const newSum = todayServeMsSum + durationMs;
             const newCountServed = todayServeCount + 1;
-
+        
             opPageUpdatePayload['todayDayId'] = todayDayId;
             opPageUpdatePayload['todayServeMsSum'] = newSum;
             opPageUpdatePayload['todayServeCount'] = newCountServed;
@@ -628,7 +632,7 @@ export async function completePaymentFromUnits(
     await writeActivityLog({
       storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
       sessionContext: sessionContextForLog,
-      meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
+      meta: { receiptId, receiptNumber: finalReceiptNumber, paymentTotal: amountDue },
     });
   }
 
@@ -669,14 +673,16 @@ export async function voidSession({
     const activeKdsProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
     const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
 
+    const [sessionSnap, activeProjectionSnap] = await Promise.all([
+        tx.get(sessionRef),
+        tx.get(activeProjectionRef),
+    ]);
 
-    const [sessionSnap, activeProjectionSnap, ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
-      tx.get(sessionRef),
-      tx.get(activeProjectionRef),
-      Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
-      Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref))),
-      Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
+    const [ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
+        Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
+        Promise.all(opPageRefs.map(ref => tx.get(ref))),
+        Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref))),
+        Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
     ]);
     
     const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
