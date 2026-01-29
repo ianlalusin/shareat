@@ -4,13 +4,7 @@ import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
-import dynamic from 'next/dynamic';
-import { BrandLoader } from '@/components/ui/BrandLoader';
-
-const Providers = dynamic(() => import('./providers').then((mod) => mod.Providers), {
-    ssr: false,
-    loading: () => <div className="flex items-center justify-center h-screen"><BrandLoader /></div>
-});
+import { Providers } from './providers';
 
 // Define fonts
 const fontSans = Poppins({
