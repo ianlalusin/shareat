@@ -42,6 +42,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { toJsDate } from '@/lib/utils/date';
+import { getDayIdFromTimestamp } from '@/lib/analytics/daily';
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -645,7 +646,7 @@ export async function voidSession({
   reason: string;
   actor: AppUser;
 }) {
-  const safeReason = (reason ?? '').toString();
+  const safeReason = (reason ?? '').toString().trim();
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   const nowMs = Date.now();
   
@@ -830,5 +831,6 @@ export async function removeLineAdjustment(
     
 
     
+
 
 
