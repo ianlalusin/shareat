@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -156,7 +155,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                                     className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={(e) => handleVoidClick(e, session)}
                                 >
-                                    <Ban className="mr-2" /> Void
+                                    not working
                                 </Button>
                             )}
                         </div>
