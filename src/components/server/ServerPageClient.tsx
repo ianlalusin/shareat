@@ -133,7 +133,7 @@ export function ServerPageClient() {
   }
   
   const handleVerify = async (session: PendingSession, serverCount: number) => {
-    if (!activeStore || !appUser) return;
+    if (!activeStore || !appUser || !session.tableId) return;
     
     const cashierInitial = session.guestCountCashierInitial ?? 0;
     const finalCount = Math.max(cashierInitial, serverCount);
@@ -266,5 +266,3 @@ export function ServerPageClient() {
     </RoleGuard>
   );
 }
-
-    

@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -354,6 +355,7 @@ export type StoreTable = {
 export type PendingSession = {
   id: string;
   storeId: string; // Added for convenience
+  tableId: string;
   tableNumber: string;
   packageName: string;
   status: 'pending_verification' | 'active' | 'closed' | 'voided';
@@ -626,5 +628,3 @@ export type PackageUnit = {
         discountValue?: number | null;
     }
 }
-
-    
