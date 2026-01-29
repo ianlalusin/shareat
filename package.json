@@ -6,14 +6,13 @@
     "dev": "rm -rf .next && next dev",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
-    "build": "next build",
+    "build": "rm -rf .next && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
-    "build:storeConfig": "tsx scripts/build-store-config.ts",
-    "prebuild": "rm -rf .next"
+    "build:storeConfig": "tsx scripts/build-store-config.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.0",
