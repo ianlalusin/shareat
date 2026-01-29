@@ -29,7 +29,8 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
   const isLocked = session.isPaid;
 
   const handleConfirm = async () => {
-    if (!reason.trim()) {
+    const safeReason = (reason ?? '').toString().trim();
+    if (!safeReason) {
       toast({ variant: 'destructive', title: 'Reason Required', description: 'Please provide a reason for voiding the session.' });
       return;
     }
@@ -38,13 +39,14 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
       await voidSession({
         storeId: storeId,
         sessionId: session.id,
-        reason: reason.trim(),
+        reason: safeReason,
         actor: user,
       });
       toast({ title: "Session Voided", description: "The session has been cancelled and the table is now free." });
       onClose();
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Action Failed', description: error.message });
+      console.error("Failed to void session:", error);
+      toast({ variant: 'destructive', title: 'Action Failed', description: error.message || String(error) });
     } finally {
       setIsSubmitting(false);
     }
