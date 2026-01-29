@@ -194,6 +194,17 @@ function POSContent({
     const batch = writeBatch(db);
     try {
         for (const item of cart.values()) {
+            const stationId = item.refill.kitchenLocationId;
+            if (!stationId) {
+              toast({
+                variant: 'destructive',
+                title: 'Action Aborted',
+                description: `Cannot process order: Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`,
+              });
+              setIsSubmitting(false);
+              return;
+            }
+
             const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
             
             const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
@@ -209,7 +220,7 @@ function POSContent({
                 itemId: item.refill.refillId,
                 itemName: item.refill.refillName,
                 qty: 1,
-                kitchenLocationId: item.refill.kitchenLocationId,
+                kitchenLocationId: stationId,
                 kitchenLocationName: item.refill.kitchenLocationName,
                 notes: finalNotes || null,
                 status: "preparing",
@@ -228,11 +239,11 @@ function POSContent({
             batch.set(ticketRef, ticketPayload);
 
             // KDS PROJECTION WRITE
-            const projectionRef = doc(db, 'stores', storeId, 'opPages', item.refill.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+            const projectionRef = doc(db, 'stores', storeId, 'opPages', stationId, 'activeKdsTickets', ticketRef.id);
             batch.set(projectionRef, ticketPayload);
 
             // INCREMENT ACTIVE COUNT
-            const opPageRef = doc(db, "stores", storeId, "opPages", item.refill.kitchenLocationId);
+            const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
             batch.update(opPageRef, { activeCount: increment(1) });
         }
 
