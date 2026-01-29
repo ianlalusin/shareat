@@ -107,6 +107,7 @@ type PaymentContribution = {
 
 export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0 };
+    if (!receipt) return defaultReturn;
     if (isVoidReceipt(receipt)) return defaultReturn;
     
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
@@ -142,6 +143,7 @@ type GuestCoversContribution = {
 
 export function getGuestCoversContribution(receipt: Receipt | null): GuestCoversContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, isPackageSession: false, guestCountFinal: 0, billedPackageCovers: 0, packageName: null, packageSessionsCount: 0, guestCountFinalByPackageName: {}, packageCoversBilledByPackageName: {} };
+    if (!receipt) return defaultReturn;
     
     if (isVoidReceipt(receipt) || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
@@ -188,6 +190,7 @@ type SalesContribution = {
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {} };
+    if (!receipt) return defaultReturn;
     if (isVoidReceipt(receipt) || receipt.analytics?.v !== 2) return defaultReturn;
     
     const analytics = receipt.analytics as ReceiptAnalyticsV2;
@@ -249,6 +252,7 @@ type PeakHourContribution = {
 
 export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
+    if (!receipt) return defaultReturn;
     if (isVoidReceipt(receipt) || receipt.analytics?.v !== 2) return defaultReturn;
     
     // Use session start time first, which is more accurate for peak hour calculation
@@ -337,6 +341,7 @@ type ClosedSessionsContribution = {
 
 export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
+    if (!receipt) return defaultReturn;
     if (isVoidReceipt(receipt)) return defaultReturn;
 
     const eventMs = receipt.createdAtClientMs || toJsDate(receipt.createdAt)?.getTime();
@@ -362,6 +367,7 @@ type RefillContribution = {
 
 export function getRefillContribution(receipt: Receipt | null): RefillContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 };
+    if (!receipt) return defaultReturn;
     if (isVoidReceipt(receipt) || receipt.sessionMode !== 'package_dinein' || receipt.analytics?.v !== 2) {
         return defaultReturn;
     }
