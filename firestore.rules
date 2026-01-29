@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -15,52 +16,52 @@ service cloud.firestore {
       return request.auth.token.platformAdmin == true;
     }
     
-    function staffDocPath(uid) {
-      return /databases/$(database)/documents/staff/$(uid);
-    }
-    
     function staffData(uid) {
-      return get(staffDocPath(uid)).data;
+      return get(/databases/$(database)/documents/staff/$(uid)).data;
     }
 
-    function isUserActive(uid) {
-      return exists(staffDocPath(uid)) && staffData(uid).status == 'active';
+    function isStaffActive(uid) {
+      return exists(/databases/$(database)/documents/staff/$(uid)) 
+             && staffData(uid).status == 'active';
     }
 
-    function isRole(uid, role) {
-      return isUserActive(uid) && staffData(uid).role == role;
+    function getStaffRole(uid) {
+      return staffData(uid).role;
     }
     
     function isManager(uid) {
-      let role = staffData(uid).role;
+      let role = getStaffRole(uid);
       return role == 'admin' || role == 'manager';
     }
     
     function isCashier(uid) {
-      return isManager(uid) || isRole(uid, 'cashier');
+      let role = getStaffRole(uid);
+      return role == 'cashier' || isManager(uid);
     }
 
     function isServer(uid) {
-        return isCashier(uid) || isRole(uid, 'server');
+      let role = getStaffRole(uid);
+      return role == 'server' || isCashier(uid);
     }
 
     function isKitchen(uid) {
-        return isManager(uid) || isRole(uid, 'kitchen');
+      let role = getStaffRole(uid);
+      return role == 'kitchen' || isManager(uid);
     }
 
     function hasStoreAccess(uid, storeId) {
-      let data = staffData(uid);
-      return isUserActive(uid) && 
-             (data.assignedStoreIds is list) && 
-             (storeId in data.assignedStoreIds);
+      // Platform admins have access to all stores.
+      if (isPlatformAdmin()) {
+        return true;
+      }
+      // For others, check if they are active and assigned to the store.
+      return isStaffActive(uid) && 
+             (staffData(uid).assignedStoreIds is list) && 
+             (storeId in staffData(uid).assignedStoreIds);
     }
 
     function isStoreManager(uid, storeId) {
       return hasStoreAccess(uid, storeId) && isManager(uid);
-    }
-
-    function isOwner(uid) {
-      return request.auth.uid == uid;
     }
 
     // =====================================================================
@@ -68,15 +69,17 @@ service cloud.firestore {
     // =====================================================================
 
     match /staff/{staffId} {
-      allow get: if isPlatformAdmin() || isOwner(staffId);
+      allow get: if isPlatformAdmin() || request.auth.uid == staffId;
       allow list: if isPlatformAdmin();
-      allow create: if isOwner(staffId); // New user creating their own doc
+      // Allow new users to create their own profile, or admins to create profiles.
+      allow create: if request.auth.uid == staffId || isPlatformAdmin();
+      // Admins can update anything. Users can only update a limited set of their own fields.
       allow update: if isPlatformAdmin() || 
-                      (isOwner(staffId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'contactNumber', 'photoURL', 'updatedAt']));
+                      (request.auth.uid == staffId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'contactNumber', 'photoURL', 'updatedAt']));
       allow delete: if isPlatformAdmin();
     }
 
-    // Global Data (Products, Flavors, etc.)
+    // Global Data (Products, Flavors, etc.) read by all, written only by platform admin.
     match /{collection}/{docId} 
         where collection in ['products', 'flavors', 'refills', 'packages', 'addonCategories'] {
       allow read: if isSignedIn();
@@ -87,80 +90,76 @@ service cloud.firestore {
         allow get, list: if isSignedIn();
         allow create, update, delete: if isPlatformAdmin();
 
-        // Store-level Configuration
+        // Store-level Configuration (inventory, tables, etc.)
         match /{collection}/{docId} 
             where collection in [
                 'inventory', 'storePackages', 'storeRefills', 'storeFlavors',
                 'menuSchedules', 'kitchenLocations', 'tables',
                 'storeCharges', 'storeDiscounts', 'storeModesOfPayment', 'receiptSettings'
             ] {
-            allow read: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-            allow write: if isPlatformAdmin() || isStoreManager(request.auth.uid, storeId);
+            allow read: if hasStoreAccess(request.auth.uid, storeId);
+            allow write: if isStoreManager(request.auth.uid, storeId);
         }
         
         // --- Store Operational Data ---
 
-        // Counters for receipt numbers, etc.
         match /counters/{counterId} {
-            allow read: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-            allow write: if isPlatformAdmin() || (hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid));
+            allow read, write: if hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid);
         }
 
-        // Sessions and their subcollections
         match /sessions/{sessionId} {
-            allow read: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-            allow create: if isPlatformAdmin() || (hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid));
-            allow update: if isPlatformAdmin() || (hasStoreAccess(request.auth.uid, storeId) && (isServer(request.auth.uid) || isKitchen(request.auth.uid)));
+            allow read: if hasStoreAccess(request.auth.uid, storeId);
+            allow create: if hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid);
+            // Allow broader updates for operational roles
+            allow update: if hasStoreAccess(request.auth.uid, storeId) && (isServer(request.auth.uid) || isKitchen(request.auth.uid));
             allow delete: if isPlatformAdmin();
 
+            // Subcollections under a session
             match /{subcollection}/{docId} 
                 where subcollection in ['kitchentickets', 'sessionBillLines', 'payments'] {
-                allow read, write: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
+                allow read, write: if hasStoreAccess(request.auth.uid, storeId);
             }
         }
         
-        // Receipts and Revisions
         match /receipts/{receiptId} {
-            allow read, create: if isPlatformAdmin() || (hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid));
-            allow update: if isPlatformAdmin() || isStoreManager(request.auth.uid, storeId);
+            allow read, create: if hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid);
+            allow update: if isStoreManager(request.auth.uid, storeId); // For corrections
             allow delete: if isPlatformAdmin();
 
             match /revisions/{revisionId} {
-                allow read, write: if isPlatformAdmin() || isStoreManager(request.auth.uid, storeId);
+                allow read, write: if isStoreManager(request.auth.uid, storeId);
             }
         }
 
         // --- Analytics & Projections ---
         
-        // Analytics Rollups
+        // Analytics Rollups (day, month, year)
         match /{collection}/{docId}
             where collection in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets'] {
-            allow read: if isPlatformAdmin() || isStoreManager(request.auth.uid, storeId);
-            allow write: if isPlatformAdmin() || (hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid));
+            allow read: if isStoreManager(request.auth.uid, storeId);
+            // Writes are handled by trusted logic (transactions), grant to operational roles.
+            allow write: if hasStoreAccess(request.auth.uid, storeId) && isCashier(request.auth.uid);
         }
         
-        // Store Config Cache (read by all, written by managers)
-        match /storeConfig/{wildcard=**} {
-            allow read: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-            allow write: if isPlatformAdmin() || isStoreManager(request.auth.uid, storeId);
+        // Store Config Cache (read by all with store access, written by managers)
+        match /storeConfig/current {
+             allow read: if hasStoreAccess(request.auth.uid, storeId);
+             allow write: if isStoreManager(request.auth.uid, storeId);
+        }
+        match /storeConfig/current/tables/{tableId} {
+             allow read: if hasStoreAccess(request.auth.uid, storeId);
+             allow write: if isStoreManager(request.auth.uid, storeId);
         }
 
-        // Operational Projections (opPages)
-        match /opPages/{wildcard=**} {
-            // Broad access for projections. UI logic controls specific actions.
-            // These are intermediate, non-critical data structures.
-            allow read, write: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-        }
-
-        // Legacy Activity Logs
-        match /activityLogs/{logId} {
-            allow read, create: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
-            allow update, delete: if isPlatformAdmin();
+        // Operational Projections (opPages) - grant broad access to authorized store staff
+        // as UI/app logic controls the specific actions.
+        match /opPages/{pageId}/{doc=**} {
+            allow read, write: if hasStoreAccess(request.auth.uid, storeId);
         }
 
         // New Partitioned Activity Logs
         match /activityLogsByDay/{dayId}/logs/{logId} {
-            allow read, create: if isPlatformAdmin() || hasStoreAccess(request.auth.uid, storeId);
+            allow read, create: if hasStoreAccess(request.auth.uid, storeId);
             allow update, delete: if isPlatformAdmin();
         }
     }
