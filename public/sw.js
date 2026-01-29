@@ -1,12 +1,19 @@
+// This is a minimal service worker file.
+// It immediately activates upon installation and takes control of the page.
+// The 'fetch' event listener is a no-op, meaning it doesn't intercept
+// any network requests. This is a safe starting point for a PWA.
+
 self.addEventListener('install', (event) => {
-  console.log('Service Worker installing.');
+  self.skipWaiting();
+  console.log('Service worker installing...');
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker activating.');
+  event.waitUntil(self.clients.claim());
+  console.log('Service worker activating...');
 });
 
 self.addEventListener('fetch', (event) => {
-  // For now, just pass through the request
-  event.respondWith(fetch(event.request));
+  // No-op. The browser will handle the request as if the service worker wasn't here.
+  return;
 });

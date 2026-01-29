@@ -78,16 +78,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={cn(fontSans.variable, fontSerif.variable)}>
        <head>
-        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="anonymous" />
       </head>
       <body>
         <Providers>
           <FirstLoginGuard>
             {children}
           </FirstLoginGuard>
+          <PwaInstaller />
         </Providers>
         <Toaster />
-        <PwaInstaller />
       </body>
     </html>
   );
