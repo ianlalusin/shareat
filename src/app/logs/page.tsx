@@ -170,7 +170,7 @@ export default function LogsPage() {
                 const pseudoSession: PendingSession = {
                     id: sessionId,
                     storeId: newestLog.storeId,
-                    status: newestLog.sessionStatus ?? 'unknown',
+                    status: newestLog.sessionStatus ?? 'closed',
                     startedAt: newestLog.sessionStartedAt,
                     tableNumber: newestLog.tableNumber || '',
                     sessionMode: newestLog.sessionMode || 'package_dinein',
