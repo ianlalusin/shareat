@@ -1,9 +1,8 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer, limit, startAfter, QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer, limit, startAfter, QueryDocumentSnapshot, DocumentSnapshot, DocumentData, Transaction } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -18,7 +17,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { KitchenTicket } from "@/lib/types";
+import type { KitchenTicket, OrderItemStatus } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +47,28 @@ type Flavor = {
     id: string;
     name: string;
 };
+
+type OpPageData = {
+    name?: string;
+    activeCount?: number;
+    todayServeCount?: number;
+    todayServeMsSum?: number;
+    todayDayId?: string;
+    todayServeAvgMs?: number;
+};
+
+type HistoryPreviewItem = {
+    id: string;
+    sessionLabel: string;
+    tableNumber?: string | null;
+    customerName?: string | null;
+    itemName: string;
+    qty: number;
+    status: OrderItemStatus;
+    closedAtClientMs: number;
+    durationMs: number;
+};
+
 
 function getStartMs(input: any): number | null {
   if (!input) return null;
@@ -97,21 +118,21 @@ export default function KitchenPage() {
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
-  const [activeStationData, setActiveStationData] = useState<any | null>(null);
+  const [activeStationData, setActiveStationData] = useState<OpPageData | null>(null);
   
-  const [historyPreview, setHistoryPreview] = useState<any[]>([]);
+  const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
   const refreshStationCounts = useCallback(async () => {
     if (!activeStore || stations.length === 0) return;
 
     const counts = new Map<string, number>();
-    const promises = stations.map(async (station) => {
+    const promises = stations.map(async (station: KitchenStation) => {
         try {
             const ticketsRef = collection(db, 'stores', activeStore.id, 'opPages', station.id, 'activeKdsTickets');
             const snapshot = await getCountFromServer(query(ticketsRef));
             counts.set(station.id, snapshot.data().count);
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Failed to get count for station ${station.name}:`, error);
             counts.set(station.id, 0); // Default to 0 on error
         }
@@ -137,7 +158,7 @@ export default function KitchenPage() {
     // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), async (snapshot) => {
-        const stationsData = snapshot.docs.map(doc => ({ id: doc.id, key: doc.id, ...doc.data() } as KitchenStation));
+        const stationsData = snapshot.docs.map(docSnap => ({ id: docSnap.id, key: docSnap.id, ...docSnap.data() } as KitchenStation));
         stationsData.sort((a,b) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
         setStations(stationsData);
         if (stationsData.length > 0 && !activeTab) {
@@ -149,7 +170,7 @@ export default function KitchenPage() {
     const flavorsRef = collection(db, "flavors");
     unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot) => {
         const newFlavorsMap = new Map<string, string>();
-        snapshot.docs.forEach(doc => newFlavorsMap.set(doc.id, doc.data().name));
+        snapshot.docs.forEach(docSnap => newFlavorsMap.set(docSnap.id, docSnap.data().name));
         setFlavorsMap(newFlavorsMap);
     }));
 
@@ -163,8 +184,8 @@ export default function KitchenPage() {
       setActiveStationData(null);
       return;
     }
-    const unsub = onSnapshot(doc(db, "stores", activeStore.id, "opPages", activeTab), (docSnap) => {
-      setActiveStationData(docSnap.exists() ? docSnap.data() : null);
+    const unsub = onSnapshot(doc(db, "stores", activeStore.id, "opPages", activeTab), (docSnap: DocumentSnapshot<DocumentData>) => {
+      setActiveStationData(docSnap.exists() ? docSnap.data() as OpPageData : null);
     });
     return () => unsub();
   }, [activeStore, activeTab]);
@@ -190,7 +211,7 @@ export default function KitchenPage() {
     );
 
     const unsubscribe = onSnapshot(ticketsQuery, async (snapshot) => {
-        const liveTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
+        const liveTickets = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as KitchenTicket));
         setTickets(liveTickets);
         
         const sessionIds = [...new Set(liveTickets.map(t => t.sessionId))];
@@ -210,14 +231,14 @@ export default function KitchenPage() {
                 if (chunk.length === 0) continue;
                 const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
                 const sessionsSnap = await getDocs(sessionsQuery);
-                sessionsSnap.forEach(doc => {
-                    newSessionsMap.set(doc.id, {id: doc.id, ...doc.data()} as Session);
+                sessionsSnap.forEach(docSnap => {
+                    newSessionsMap.set(docSnap.id, {id: docSnap.id, ...docSnap.data()} as Session);
                 });
             }
             setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
         }
         setIsLoading(false);
-    }, (error) => {
+    }, (error: any) => {
         if (isSigningOut || !appUser) return;
         console.error("Error fetching kitchen tickets:", error);
         toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch kitchen tickets." });
@@ -235,10 +256,10 @@ export default function KitchenPage() {
     setIsLoadingHistory(true);
     const previewDocRef = doc(db, 'stores', activeStore.id, 'opPages', activeTab, 'historyPreview', 'current');
     
-    const unsubscribe = onSnapshot(previewDocRef, (docSnap) => {
+    const unsubscribe = onSnapshot(previewDocRef, (docSnap: DocumentSnapshot<DocumentData>) => {
         setHistoryPreview(docSnap.data()?.items || []);
         setIsLoadingHistory(false);
-    }, (err) => {
+    }, (err: any) => {
         console.error(`Error fetching history preview for ${activeTab}:`, err);
         setIsLoadingHistory(false);
     });
@@ -288,7 +309,7 @@ export default function KitchenPage() {
     const nowMs = Date.now();
 
     try {
-        await runTransaction(db, async (transaction) => {
+        await runTransaction(db, async (transaction: Transaction) => {
             const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
             const ticketSnap = await transaction.get(ticketRef);
             
@@ -306,14 +327,23 @@ export default function KitchenPage() {
             const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
             const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
             const historyPreviewRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'historyPreview', 'current');
-
-            const [opPageSnap, activeProjectionSnap, historyPreviewSnap] = await Promise.all([
+            
+            const [
+              opPageSnap, 
+              activeProjectionSnap, 
+              historyPreviewSnap
+            ]: [
+              DocumentSnapshot<DocumentData>, 
+              DocumentSnapshot<DocumentData>, 
+              DocumentSnapshot<DocumentData>
+            ] = await Promise.all([
                 transaction.get(opPageRef),
                 transaction.get(activeProjectionRef),
                 transaction.get(historyPreviewRef),
             ]);
 
-            const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
+
+            const opPageData = opPageSnap.exists() ? opPageSnap.data() as OpPageData : {};
             const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
             let newTicketState: KitchenTicket;
             
@@ -391,9 +421,9 @@ export default function KitchenPage() {
                 transaction.update(opPageRef, opPageUpdatePayload);
                 
                 // Update history preview
-                const newHistoryEntry = {
+                const newHistoryEntry: HistoryPreviewItem = {
                     id: newTicketState.id,
-                    sessionLabel: newTicketState.sessionLabel,
+                    sessionLabel: newTicketState.sessionLabel || "",
                     tableNumber: newTicketState.tableNumber,
                     customerName: newTicketState.customerName,
                     itemName: newTicketState.itemName,
@@ -402,7 +432,7 @@ export default function KitchenPage() {
                     closedAtClientMs: nowMs,
                     durationMs: newTicketState.durationMs || 0
                 };
-                const existingItems = historyPreviewSnap.data()?.items || [];
+                const existingItems = (historyPreviewSnap.data() as any)?.items || [];
                 const newItems = [newHistoryEntry, ...existingItems].slice(0, 15);
                 transaction.set(historyPreviewRef, { items: newItems }, { merge: true });
             }
