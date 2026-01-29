@@ -3,57 +3,58 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Helper Functions ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function staffExists() {
-      return isSignedIn() && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    function staffPath() {
+      return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
 
-    function getStaffData() {
-      // This should only be called after checking staffExists() to avoid errors on non-existent docs.
-      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    function staffExists() {
+      return isSignedIn() && exists(staffPath());
+    }
+
+    function staffData() {
+      return get(staffPath()).data;
     }
 
     function isActiveStaff() {
-      return staffExists() && getStaffData().status == 'active';
+      return staffExists() && staffData().status == 'active';
     }
 
     function isAdmin() {
-      // Admins can be platform-level (via custom claim) or have the 'admin' role in their staff doc.
       return isSignedIn() && (
         request.auth.token.platformAdmin == true ||
-        (staffExists() && getStaffData().role == 'admin')
+        (staffExists() && staffData().role == 'admin')
       );
     }
-    
+
     function hasStoreAccess(storeId) {
-      // Admins have implicit access to all stores.
-      return isAdmin() || (isActiveStaff() && (storeId in getStaffData().assignedStoreIds));
+      // Admin sees all stores
+      if (isAdmin()) return true;
+
+      // Active staff must have storeId in assignedStoreIds
+      return isActiveStaff()
+        && (staffData().assignedStoreIds is list)
+        && (storeId in staffData().assignedStoreIds);
     }
-    
-    // --- Store-Scoped Rules ---
-    // This is the most specific rule set, covering all documents within any store.
-    // It will be matched before the more generic rules below.
+
+    // STORE-SCOPED
     match /stores/{storeId}/{documents=**} {
       allow read, create, update: if hasStoreAccess(storeId);
       allow delete: if isAdmin();
     }
 
-    // --- Generic Root Collection Rules ---
-    // This applies to any collection that is NOT 'stores'.
+    // ROOT (non-store) + all its subcollections
     match /{collection}/{docId} {
+      allow read, create, update: if isActiveStaff();
+      allow delete: if isAdmin();
+
+      match /{subcollection}/{subdoc=**} {
         allow read, create, update: if isActiveStaff();
         allow delete: if isAdmin();
-
-        // Recursive rule for any subcollections under a non-store root document.
-        // This won't match store subcollections because the rule above is more specific.
-        match /{subcollection}/{subdoc=**} {
-            allow read, create, update: if isActiveStaff();
-            allow delete: if isAdmin();
-        }
+      }
     }
   }
 }

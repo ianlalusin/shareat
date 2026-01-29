@@ -1,16 +1,12 @@
-// Basic service worker for PWA capabilities
-
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installing...');
-  // No caching logic for this basic setup
+  console.log('Service Worker installing.');
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating...');
+  console.log('Service Worker activating.');
 });
 
 self.addEventListener('fetch', (event) => {
-  // This basic service worker doesn't intercept fetch requests.
-  // It's here to make the app installable.
-  // More advanced caching strategies can be added later.
+  // For now, just pass through the request
+  event.respondWith(fetch(event.request));
 });
