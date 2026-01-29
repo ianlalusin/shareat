@@ -179,8 +179,8 @@ export type KitchenTicket = {
     servedCounted?: boolean;
     cancelledByUid?: string | null;
     cancelledAt?: any | null;
-    cancelledAtClientMs?: number;
     cancelReason?: string;
+    cancelledAtClientMs?: number;
     durationMs?: number;
     initialFlavorIds?: string[];
     initialFlavorNames?: string[];
