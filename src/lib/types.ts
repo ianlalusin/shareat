@@ -355,7 +355,7 @@ export type StoreTable = {
 export type PendingSession = {
   id: string;
   storeId: string; // Added for convenience
-  tableId: string;
+  tableId?: string;
   tableNumber: string;
   packageName: string;
   status: 'pending_verification' | 'active' | 'closed' | 'voided';
