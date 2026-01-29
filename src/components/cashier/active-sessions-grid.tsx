@@ -157,6 +157,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                                     onClick={(e) => handleVoidClick(e, session)}
                                 >
                                     <Ban className="h-4 w-4" />
+                                    Void
                                 </Button>
                             )}
                         </div>
