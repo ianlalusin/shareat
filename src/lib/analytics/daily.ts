@@ -182,11 +182,12 @@ type SalesContribution = {
     packageSalesAmountByName: Record<string, number>;
     packageSalesQtyByName: Record<string, number>;
     addonSalesAmountByCategory: Record<string, number>;
+    addonSalesQtyByCategory: Record<string, number>;
     addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }>;
 };
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesByItem: {} };
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {} };
     if (isVoidReceipt(receipt) || receipt.analytics?.v !== 2) return defaultReturn;
     
     const analytics = receipt.analytics as ReceiptAnalyticsV2;
@@ -197,6 +198,7 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     const packageSalesAmountByName: Record<string, number> = {};
     const packageSalesQtyByName: Record<string, number> = {};
     const addonSalesAmountByCategory: Record<string, number> = {};
+    const addonSalesQtyByCategory: Record<string, number> = {};
     const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
 
 
@@ -220,6 +222,7 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     if (analytics.salesByCategory) {
         for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
             addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + values.amount;
+            addonSalesQtyByCategory[categoryName] = (addonSalesQtyByCategory[categoryName] || 0) + values.qty;
         }
     }
 
@@ -230,6 +233,7 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
         packageSalesAmountByName,
         packageSalesQtyByName,
         addonSalesAmountByCategory,
+        addonSalesQtyByCategory,
         addonSalesByItem
     };
 }

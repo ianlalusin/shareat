@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -112,6 +113,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           packageSalesAmountByName: {},
           packageSalesQtyByName: {},
           addonSalesAmountByCategory: {},
+          addonSalesQtyByCategory: {},
           salesAmountByHour: {},
           sessionCountByHour: {},
         },
