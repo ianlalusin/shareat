@@ -1,5 +1,5 @@
 
-"use client";
+'use client';
 
 import {
   collection,
@@ -199,18 +199,18 @@ export async function rebuildDailyAnalyticsFromReceipts(
     }
 
     // guests
-    dayData.guests!.guestCountFinalTotal =
-      (dayData.guests!.guestCountFinalTotal || 0) + Number(guestContrib.guestCountFinal || 0);
-    dayData.guests!.packageSessionsCount =
-      (dayData.guests!.packageSessionsCount || 0) + Number(guestContrib.packageSessionsCount || 0);
+    dayData.guests ??= { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} };
+    dayData.guests.guestCountFinalByPackageName ??= {};
+    dayData.guests.packageCoversBilledByPackageName ??= {};
+    
+    dayData.guests.guestCountFinalTotal = (dayData.guests.guestCountFinalTotal || 0) + Number(guestContrib.guestCountFinal || 0);
+    dayData.guests.packageSessionsCount = (dayData.guests.packageSessionsCount || 0) + Number(guestContrib.packageSessionsCount || 0);
 
     for (const [pkgName, count] of Object.entries(guestContrib.guestCountFinalByPackageName || {})) {
-      dayData.guests!.guestCountFinalByPackageName[pkgName] =
-        (dayData.guests!.guestCountFinalByPackageName[pkgName] || 0) + Number(count || 0);
+        dayData.guests.guestCountFinalByPackageName[pkgName] = (dayData.guests.guestCountFinalByPackageName[pkgName] || 0) + Number(count || 0);
     }
     for (const [pkgName, count] of Object.entries(guestContrib.packageCoversBilledByPackageName || {})) {
-      dayData.guests!.packageCoversBilledByPackageName[pkgName] =
-        (dayData.guests!.packageCoversBilledByPackageName[pkgName] || 0) + Number(count || 0);
+        dayData.guests.packageCoversBilledByPackageName[pkgName] = (dayData.guests.packageCoversBilledByPackageName[pkgName] || 0) + Number(count || 0);
     }
 
     // sales
