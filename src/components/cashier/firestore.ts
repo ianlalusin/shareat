@@ -16,6 +16,8 @@ import {
   deleteField,
   increment,
   type DocumentReference,
+  type DocumentSnapshot,
+  type DocumentData,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -309,12 +311,18 @@ export async function completePaymentFromUnits(
 
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
+    ]: [
+      DocumentSnapshot<DocumentData>,
+      DocumentSnapshot<DocumentData>,
+      DocumentSnapshot<DocumentData>,
+      DocumentSnapshot<DocumentData>,
+      DocumentSnapshot<DocumentData>
     ] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
-      tx.get(settingsSnap),
+      tx.get(settingsRef),
       tx.get(counterRef),
-      tx.get(activeProjectionSnap),
+      tx.get(activeProjectionRef),
     ]);
     
     const [
@@ -632,7 +640,7 @@ export async function completePaymentFromUnits(
     await writeActivityLog({
       storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
       sessionContext: sessionContextForLog,
-      meta: { receiptId, receiptNumber: finalReceiptNumber, paymentTotal: amountDue },
+      meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
     });
   }
 
@@ -843,3 +851,4 @@ export async function removeLineAdjustment(
 
 
     
+
