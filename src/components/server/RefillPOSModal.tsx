@@ -316,6 +316,13 @@ function POSContent({
 
         const batch = writeBatch(db);
         batch.set(ticketRef, payload);
+        
+        const projectionRef = doc(db, 'stores', storeId, 'opPages', first.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+        batch.set(projectionRef, payload);
+
+        const opPageRef = doc(db, 'stores', storeId, 'opPages', first.kitchenLocationId);
+        batch.update(opPageRef, { activeCount: increment(1) });
+        
         await batch.commit();
         
         toast({
