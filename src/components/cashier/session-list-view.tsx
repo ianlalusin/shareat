@@ -27,10 +27,8 @@ export function SessionListView() {
     const { config: storeConfig, isLoading: isConfigLoading, error: configError } = useStoreConfigDoc(activeStore?.id);
 
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
-    const [isLoadingTables, setIsLoadingTables] = useState(true);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
-    const [tables, setTables] = useState<Table[]>([]);
-
+    
     useEffect(() => {
         if (!activeStore) {
             setIsLoadingSessions(false);
@@ -66,20 +64,6 @@ export function SessionListView() {
 
     }, [activeStore, appUser, isSigningOut]);
     
-    useEffect(() => {
-        if (!activeStore) {
-            setIsLoadingTables(false);
-            return;
-        }
-        setIsLoadingTables(true);
-        const tablesQuery = query(collection(db, "stores", activeStore.id, "tables"));
-        const unsubscribe = onSnapshot(tablesQuery, (snapshot) => {
-            setTables(snapshot.docs.map(d => d.data() as Table));
-            setIsLoadingTables(false);
-        });
-        return () => unsubscribe();
-    }, [activeStore]);
-
     const schedulesMap = useMemo(() => {
         if (!storeConfig?.schedules) return new Map<string, MenuSchedule>();
         return new Map(storeConfig.schedules.map(s => [s.id, s]));
@@ -97,7 +81,8 @@ export function SessionListView() {
     }, [storeConfig?.packages, schedulesMap]);
     
     const sortedTables = useMemo(() => {
-        return [...tables]
+        const tablesFromCache = storeConfig?.tables || [];
+        return [...tablesFromCache]
             .filter(t => t.status === 'available')
             .sort((a, b) => {
                 const numA = parseInt(a.tableNumber, 10);
@@ -107,9 +92,9 @@ export function SessionListView() {
                 }
                 return a.tableNumber.localeCompare(b.tableNumber);
             });
-    }, [tables]);
+    }, [storeConfig?.tables]);
 
-    const isLoading = isConfigLoading || isLoadingSessions || isLoadingTables;
+    const isLoading = isConfigLoading || isLoadingSessions;
 
     if (!activeStore) {
       return (

@@ -86,9 +86,6 @@ function formatReceiptNumber(fmt: string, seq: number): string {
  * Creates session doc, table update, and initial kitchen/billing units.
  */
 export async function startSession(storeId: string, payload: StartSessionPayload, user: AppUser) {
-  const batch = writeBatch(db);
-
-  // 1. Create a new session document
   const newSessionRef = doc(collection(db, `stores/${storeId}/sessions`));
 
   const isAlaCarte = payload.sessionMode === 'alacarte';
@@ -108,23 +105,17 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     isPaid: false,
     startedAt: serverTimestamp(),
     startedAtClientMs: Date.now(),
-
     startedByUid: user.uid,
-
-    // Guest Count Model
     guestCountCashierInitial: payload.guestCount,
     guestCountServerVerified: null,
     guestCountFinal: isAlaCarte ? null : payload.guestCount,
     guestCountVerifyLocked: isAlaCarte,
-
     verifiedAt: null,
     verifiedByUid: null,
-
     packageOfferingId: payload.package?.packageId || null,
     packageSnapshot: payload.package
       ? { name: payload.package.packageName, pricePerHead: payload.package.pricePerHead }
       : null,
-
     initialFlavorIds: payload.initialFlavorIds || [],
     customer: payload.customer,
     notes: payload.notes || '',
@@ -132,83 +123,92 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     updatedAt: serverTimestamp(),
   });
 
-  batch.set(newSessionRef, sessionPayload);
+  await runTransaction(db, async (transaction) => {
+    // 1. Create the new session document
+    transaction.set(newSessionRef, sessionPayload);
 
-  // 2. Update the existing table document if it's not an ala carte session
-  if (!isAlaCarte) {
-    const tableRef = doc(db, `stores/${storeId}/tables`, payload.tableId);
-    batch.update(tableRef, {
-      status: 'occupied',
-      currentSessionId: newSessionRef.id,
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  // 3. For package dine-in, create a sessionBillLine for the package + one kitchen ticket
-  if (payload.sessionMode === 'package_dinein' && payload.package) {
-    const lineId = `package_${payload.package.packageId}`;
-    const lineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, lineId);
-
-    batch.set(lineRef, {
-      id: lineId,
-      type: 'package',
-      itemId: payload.package.packageId,
-      itemName: payload.package.packageName,
-      unitPrice: payload.package.pricePerHead,
-      qtyOrdered: payload.guestCount,
-      discountType: null,
-      discountValue: 0,
-      discountQty: 0,
-      freeQty: 0,
-      voidedQty: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      updatedByUid: user.uid,
-      updatedByName: getActorStamp(user).username,
-    });
-
-    const stationKey = payload.package.kitchenLocationId;
-    if (!stationKey) {
-      throw new Error(`Package with ID ${payload.package.packageId} does not have a kitchen location assigned.`);
+    // 2. Update the table document and its cached version
+    if (!isAlaCarte) {
+      const tableRef = doc(db, `stores/${storeId}/tables`, payload.tableId);
+      transaction.update(tableRef, {
+        status: 'occupied',
+        currentSessionId: newSessionRef.id,
+        updatedAt: serverTimestamp(),
+      });
+      
+      const configRef = doc(db, "stores", storeId, "storeConfig", "current");
+      const configSnap = await transaction.get(configRef);
+      if (configSnap.exists()) {
+        const storeConfig = configSnap.data();
+        if (Array.isArray(storeConfig.tables)) {
+          const updatedTables = storeConfig.tables.map(t => 
+            t.id === payload.tableId ? { ...t, status: 'occupied' } : t
+          );
+          transaction.update(configRef, { tables: updatedTables });
+        }
+      }
     }
 
-    const ticketRef = doc(collection(db, 'stores', storeId, 'sessions', newSessionRef.id, 'kitchentickets'));
-    const ticketPayload = stripUndefined({
-      id: ticketRef.id,
-      sessionId: newSessionRef.id,
-      storeId,
-      tableId: payload.tableId,
-      tableNumber: payload.tableNumber,
-      type: 'package',
-      itemId: payload.package.packageId,
-      itemName: payload.package.packageName,
-      guestCount: payload.guestCount,
-      status: 'preparing',
-      kitchenLocationId: stationKey,
-      kitchenLocationName: payload.package.kitchenLocationName,
-      notes: payload.notes || '',
-      qty: 1,
-      createdByUid: user.uid,
-      createdAt: serverTimestamp(),
-      createdAtClientMs: Date.now(),
-      sessionMode: 'package_dinein',
-      customerName: payload.customer?.name,
-      sessionLabel,
-      initialFlavorIds: payload.initialFlavorIds,
-    });
+    // 3. Create package bill line and kitchen ticket if applicable
+    if (payload.sessionMode === 'package_dinein' && payload.package) {
+      const lineId = `package_${payload.package.packageId}`;
+      const lineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, lineId);
+      transaction.set(lineRef, {
+        id: lineId,
+        type: 'package',
+        itemId: payload.package.packageId,
+        itemName: payload.package.packageName,
+        unitPrice: payload.package.pricePerHead,
+        qtyOrdered: payload.guestCount,
+        discountType: null,
+        discountValue: 0,
+        discountQty: 0,
+        freeQty: 0,
+        voidedQty: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: user.uid,
+        updatedByName: getActorStamp(user).username,
+      });
 
-    batch.set(ticketRef, ticketPayload);
-    
-    // KDS PROJECTION WRITE
-    const projectionRef = doc(db, 'stores', storeId, 'opPages', stationKey, 'activeKdsTickets', ticketRef.id);
-    batch.set(projectionRef, ticketPayload);
+      const stationKey = payload.package.kitchenLocationId;
+      if (!stationKey) {
+        throw new Error(`Package with ID ${payload.package.packageId} does not have a kitchen location assigned.`);
+      }
+      const ticketRef = doc(collection(db, 'stores', storeId, 'sessions', newSessionRef.id, 'kitchentickets'));
+      const ticketPayload = stripUndefined({
+        id: ticketRef.id,
+        sessionId: newSessionRef.id,
+        storeId,
+        tableId: payload.tableId,
+        tableNumber: payload.tableNumber,
+        type: 'package',
+        itemId: payload.package.packageId,
+        itemName: payload.package.packageName,
+        guestCount: payload.guestCount,
+        status: 'preparing',
+        kitchenLocationId: stationKey,
+        kitchenLocationName: payload.package.kitchenLocationName,
+        notes: payload.notes || '',
+        qty: 1,
+        createdByUid: user.uid,
+        createdAt: serverTimestamp(),
+        createdAtClientMs: Date.now(),
+        sessionMode: 'package_dinein',
+        customerName: payload.customer?.name,
+        sessionLabel,
+        initialFlavorIds: payload.initialFlavorIds,
+      });
+      transaction.set(ticketRef, ticketPayload);
+      
+      const projectionRef = doc(db, 'stores', storeId, 'opPages', stationKey, 'activeKdsTickets', ticketRef.id);
+      transaction.set(projectionRef, ticketPayload);
 
-    // INCREMENT ACTIVE COUNT
-    const opPageRef = doc(db, "stores", storeId, "opPages", stationKey);
-    batch.update(opPageRef, { activeCount: increment(1) });
-  }
+      const opPageRef = doc(db, "stores", storeId, "opPages", stationKey);
+      transaction.update(opPageRef, { activeCount: increment(1) });
+    }
+  });
 
-  await batch.commit();
 
   // For package dine-in, this is the definitive start log.
   // For ala carte, another process seems to be logging the start, so we skip this one to avoid duplicates.
@@ -220,7 +220,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       action: 'SESSION_STARTED',
       note: 'Session started',
       sessionContext: {
-        sessionStatus: sessionPayload.status,
+        sessionStatus: sessionPayload.status as any,
         sessionStartedAt: sessionPayload.startedAt,
         sessionMode: sessionPayload.sessionMode,
         customerName: sessionPayload.customerName,
@@ -231,6 +231,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
 
   return newSessionRef.id;
 }
+
 
 /**
  * Completes a payment and closes the dining session idempotently using individual billing units.
