@@ -153,6 +153,19 @@ export function ServerPageClient() {
         qtyOrdered: finalCount,
         updatedAt: serverTimestamp(),
     });
+    
+    // Update the table cache document as well
+    const tableCacheRef = doc(db, 'stores', activeStore.id, 'storeConfig', 'current', 'tables', session.tableId);
+    batch.update(tableCacheRef, {
+      guestCount: finalCount,
+      // Clear any pending request states upon verification
+      requestStatus: null,
+      requestedGuestCount: null,
+      requestedPackageLabel: null,
+      requestedAtMs: null,
+      requestedByUid: null,
+      updatedAt: serverTimestamp(),
+    });
 
     try {
       await batch.commit();
