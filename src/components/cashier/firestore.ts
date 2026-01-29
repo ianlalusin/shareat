@@ -42,7 +42,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { toJsDate } from '@/lib/utils/date';
-import { getDayIdFromTimestamp } from '@/lib/analytics/daily';
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 type ActorStamp = { uid: string; username: string; email?: string | null };
 
@@ -315,7 +315,7 @@ export async function completePaymentFromUnits(
       tx.get(receiptRef),
       tx.get(settingsRef),
       tx.get(counterRef),
-      tx.get(activeProjectionRef),
+      tx.get(activeProjectionSnap),
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
       Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
@@ -414,7 +414,7 @@ export async function completePaymentFromUnits(
             };
 
             const durationMs = newTicketState.durationMs!;
-            const todayDayId = getDayIdFromTimestamp(now);
+            const todayDayId = getDayIdFromTimestamp(new Date());
             let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
 
             if (storedDayId !== todayDayId) {
@@ -628,7 +628,7 @@ export async function completePaymentFromUnits(
     await writeActivityLog({
       storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
       sessionContext: sessionContextForLog,
-      meta: { receiptId, receiptNumber: finalReceiptNumber, paymentTotal: amountDue },
+      meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
     });
   }
 
@@ -834,3 +834,6 @@ export async function removeLineAdjustment(
 
 
 
+
+
+    
