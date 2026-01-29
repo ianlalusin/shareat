@@ -1,6 +1,6 @@
 
 
-"use client";
+'use client';
 
 import { collection, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -65,7 +65,7 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       // Denormalized session context
       sessionStatus: sessionContext?.sessionStatus,
       sessionStartedAt: sessionContext?.sessionStartedAt,
-      sessionMode: sessionContext?.sessionMode,
+      sessionMode: sessionContext?.sessionMode ?? undefined,
       customerName: sessionContext?.customerName,
       tableNumber: sessionContext?.tableNumber,
       sessionLabel: computeSessionLabel({
