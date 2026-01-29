@@ -461,7 +461,7 @@ export default function KitchenPage() {
                             </SelectContent>
                         </Select>
                     ) : (
-                        <TabsList>
+                        <TabsList className="gap-2">
                             {stations.map(station => {
                                 const count = stationCounts.get(station.id) || 0;
                                 return (
@@ -495,5 +495,3 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
-
-    
