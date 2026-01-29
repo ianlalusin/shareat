@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -414,7 +414,7 @@ function POSContent({
               value={quantity}
               onChange={setQuantity}
               disabled={!selectedAddon || isSubmitting || sessionIsLocked}
-              allowsDecimal={selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false}
+              allowDecimal={selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false}
             />
 
             <Button
