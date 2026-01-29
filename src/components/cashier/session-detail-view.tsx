@@ -319,7 +319,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         tableNumber: session.tableNumber,
                     },
                     meta: {
-                        lineId: line.id,
+                        itemId: line.id,
                         itemName: line.itemName,
                         discountName: adj.note,
                         scope: "item",
@@ -358,7 +358,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
         
-        await completePaymentFromUnits(
+        const receiptId = await completePaymentFromUnits(
             activeStore.id,
             sessionId,
             appUser,
@@ -373,7 +373,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
         toast({ title: "Payment complete", description: "Session closed successfully." });
-        router.push(`/receipt/${sessionId}${autoPrint ? "?autoprint=1" : ""}`);
+        router.push(`/receipt/${receiptId}${autoPrint ? "?autoprint=1" : ""}`);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Payment failed", description: err?.message ?? "Something went wrong." });
       setIsCompletingPayment(false);
@@ -444,6 +444,28 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     discounts={itemDiscounts}
                     isLocked={isBillingLocked}
                     onUpdateLine={(line) => setEditingLineId(line.id)}
+                    onAddLine={(newLine) => {
+                        setLines((currentLines) => {
+                            // Check if an identical addon line already exists
+                            const existingLineIndex = currentLines.findIndex(
+                                (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
+                            );
+
+                            if (existingLineIndex >= 0) {
+                                // If it exists, update the quantity
+                                const nextLines = [...currentLines];
+                                const existingLine = nextLines[existingLineIndex];
+                                nextLines[existingLineIndex] = {
+                                    ...existingLine,
+                                    qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
+                                };
+                                return nextLines;
+                            } else {
+                                // If it doesn't exist, add the new line
+                                return [...currentLines, newLine];
+                            }
+                        });
+                    }}
                 />
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
                  <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
