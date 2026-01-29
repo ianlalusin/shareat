@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { toJsDate } from "@/lib/utils/date";
 import { useAuthContext } from "@/context/auth-context";
-import { VoidSessionDialog } from "./void-session-dialog"; // New import
+import { VoidSessionDialog } from "./void-session-dialog";
 import { Button } from "../ui/button";
 
 export type ActiveSession = {
@@ -155,7 +156,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                                     className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={(e) => handleVoidClick(e, session)}
                                 >
-                                    not working
+                                    <Ban className="h-4 w-4" />
                                 </Button>
                             )}
                         </div>

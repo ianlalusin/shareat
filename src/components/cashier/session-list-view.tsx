@@ -158,7 +158,7 @@ export function SessionListView() {
                             />
                         </div>
                         <div className="lg:col-span-2 space-y-8">
-                            <ActiveSessionsGrid sessions={sessions} />
+                            <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} />
                             <PastSessionsCard />
                         </div>
                     </div>
