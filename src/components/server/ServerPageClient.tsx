@@ -60,15 +60,15 @@ export function ServerPageClient() {
     setIsLoading(true);
 
     const unsubs: (() => void)[] = [];
-    const sessionsRef = collection(db, "stores", activeStore.id, "sessions");
     
-    // Fetch both pending and active sessions, then sort and filter client-side
-    const sessionsQuery = query(sessionsRef, 
-      where("sessionMode", "==", "package_dinein"),
-      where("status", "in", ["pending_verification", "active"])
+    // NEW: Point to projection collection
+    const sessionsQuery = query(
+        collection(db, "stores", activeStore.id, "opPages", "activeSessions", "items"),
+        orderBy("startedAtClientMs", "asc")
     );
+    
     unsubs.push(onSnapshot(sessionsQuery, (snapshot) => {
-        const allSessions = snapshot.docs.map(doc => {
+        const allSessionsFromProjection = snapshot.docs.map(doc => {
             const data = doc.data();
             
             const cashierCount = Number(
@@ -83,6 +83,9 @@ export function ServerPageClient() {
             } as PendingSession
         });
         
+        // Filter for package_dinein sessions as this page is for servers managing them
+        const allSessions = allSessionsFromProjection.filter(s => s.sessionMode === 'package_dinein');
+        
         // Sort client-side
         allSessions.sort((a, b) => {
           const tableNumA = parseInt(a.tableNumber, 10);
@@ -90,7 +93,7 @@ export function ServerPageClient() {
           if (!isNaN(tableNumA) && !isNaN(tableNumB)) {
             return tableNumA - tableNumB;
           }
-          return a.tableNumber.localeCompare(b.tableNumber);
+          return (a.tableNumber || "").localeCompare(b.tableNumber || "");
         });
         
         setPendingSessions(allSessions.filter(s => s.status === 'pending_verification'));
