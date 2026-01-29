@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { ArrowLeft, ArrowRight, Clock, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 function formatDuration(ms: number): string {
     if (isNaN(ms) || ms <= 0) return "";
@@ -27,13 +28,11 @@ function formatDuration(ms: number): string {
 }
 
 interface HistoryViewProps {
-    items: KitchenTicket[];
+    items: any[];
     isLoading: boolean;
-    hasMore: boolean;
-    onLoadMore: () => void;
 }
 
-export function HistoryView({ items, isLoading, hasMore, onLoadMore }: HistoryViewProps) {
+export function HistoryView({ items, isLoading }: HistoryViewProps) {
     return (
         <Card>
             <CardHeader>
@@ -51,7 +50,7 @@ export function HistoryView({ items, isLoading, hasMore, onLoadMore }: HistoryVi
                     <div className="space-y-2">
                         {items.map(item => {
                              const isAlaCarte = item.sessionMode === 'alacarte';
-                             const displayLocation = isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`;
+                             const displayLocation = item.sessionLabel || (isAlaCarte ? item.customerName || 'Ala Carte' : `Table ${item.tableNumber}`);
                              const hasDuration = item.status === 'served' && item.durationMs && item.durationMs > 0;
                              return (
                             <div key={item.id} className="border rounded-lg p-3 text-sm">
@@ -82,19 +81,11 @@ export function HistoryView({ items, isLoading, hasMore, onLoadMore }: HistoryVi
                     </div>
                 )}
             </CardContent>
-            {hasMore && (
-                <CardFooter className="flex justify-center">
-                    <Button 
-                        variant="outline"
-                        onClick={onLoadMore}
-                        disabled={isLoading}
-                        className="w-full"
-                    >
-                        {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        Load More
-                    </Button>
-                </CardFooter>
-            )}
+            <CardFooter>
+                <Button asChild variant="outline" className="w-full">
+                    <Link href="/logs">View Full History</Link>
+                </Button>
+            </CardFooter>
         </Card>
     );
 }

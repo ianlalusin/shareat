@@ -309,16 +309,20 @@ export async function completePaymentFromUnits(
     
     const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
     const activeKdsTicketSnapsRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
 
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap,
-      ticketSnaps, opPageSnaps, activeKdsTicketSnaps
+      ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps
     ] = await Promise.all([
       ...initialDocsToRead,
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsTicketSnapsRefs.map(ref => tx.get(ref)))
+      Promise.all(activeKdsTicketSnapsRefs.map(ref => tx.get(ref))),
+      Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
     ]);
+    
+    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
 
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
@@ -363,6 +367,8 @@ export async function completePaymentFromUnits(
 
     const actor = getActorStamp(user);
     const serverTs = serverTimestamp();
+    const newHistoryEntriesByStation = new Map<string, any[]>();
+
 
     for (let i = 0; i < ticketSnaps.length; i++) {
         const ticketRef = ticketDataForTx[i].ticketRef;
@@ -404,6 +410,34 @@ export async function completePaymentFromUnits(
             tx.update(doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId), { 
                 activeCount: Math.max(0, currentCount - 1),
             });
+
+            // Add to history preview entries
+            const stationId = oldTicketState.kitchenLocationId;
+            if (stationId) {
+                const entry = {
+                    id: newTicketState.id,
+                    sessionLabel: newTicketState.sessionLabel,
+                    tableNumber: newTicketState.tableNumber,
+                    customerName: newTicketState.customerName,
+                    itemName: newTicketState.itemName,
+                    qty: newTicketState.qty,
+                    status: newTicketState.status,
+                    closedAtClientMs: newTicketState.servedAtClientMs,
+                    durationMs: newTicketState.durationMs
+                };
+                if (!newHistoryEntriesByStation.has(stationId)) newHistoryEntriesByStation.set(stationId, []);
+                newHistoryEntriesByStation.get(stationId)!.push(entry);
+            }
+        }
+    }
+
+    for (const stationId of uniqueStationIds) {
+        const newEntries = newHistoryEntriesByStation.get(stationId);
+        if (newEntries && newEntries.length > 0) {
+            const previewRef = doc(db, 'stores', storeId, 'opPages', stationId, 'historyPreview', 'current');
+            const existingItems = historyPreviewDataMap.get(stationId) || [];
+            const updatedItems = [...newEntries, ...existingItems].slice(0, 15);
+            tx.set(previewRef, { items: updatedItems }, { merge: true });
         }
     }
     
@@ -602,6 +636,7 @@ export async function voidSession({
 }) {
   const safeReason = (reason ?? '').toString();
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  const nowMs = Date.now();
   
   const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
@@ -620,14 +655,20 @@ export async function voidSession({
 
     const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
     const activeKdsProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
 
-    const [sessionSnap, activeProjectionSnap, ticketSnaps, opPageSnaps, activeKdsTicketSnaps] = await Promise.all([
+
+    const [sessionSnap, activeProjectionSnap, ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
       tx.get(sessionRef),
       tx.get(activeProjectionRef),
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref)))
+      Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref))),
+      Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
     ]);
+    
+    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
+
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
@@ -656,13 +697,15 @@ export async function voidSession({
       tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
     }
 
+    const newHistoryEntriesByStation = new Map<string, any[]>();
+
     for (let i = 0; i < ticketSnaps.length; i++) {
         const ticketDoc = ticketSnaps[i];
         if (!ticketDoc.exists()) continue;
         const oldTicket = ticketDoc.data() as KitchenTicket;
         if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') continue;
       
-        const updatePayload = { status: 'cancelled' as const, cancelReason: 'SESSION_VOIDED', cancelledAt: serverTimestamp(), cancelledByUid: actor.uid, updatedAt: serverTimestamp() };
+        const updatePayload = { status: 'cancelled' as const, cancelReason: 'SESSION_VOIDED', cancelledAt: serverTimestamp(), cancelledByUid: actor.uid, updatedAt: serverTimestamp(), cancelledAtClientMs: nowMs };
         const newTicket = { ...oldTicket, ...updatePayload };
         await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
         tx.update(ticketDoc.ref, updatePayload);
@@ -681,7 +724,25 @@ export async function voidSession({
                 
                 const opPageRef = doc(db, "stores", storeId, "opPages", kitchenLocationId);
                 tx.update(opPageRef, { activeCount: Math.max(0, currentCount - 1) });
+                
+                 // Add to history preview entries
+                const entry = {
+                    id: newTicket.id, sessionLabel: newTicket.sessionLabel, tableNumber: newTicket.tableNumber, customerName: newTicket.customerName,
+                    itemName: newTicket.itemName, qty: newTicket.qty, status: newTicket.status,
+                    closedAtClientMs: nowMs, durationMs: 0
+                };
+                if (!newHistoryEntriesByStation.has(kitchenLocationId)) newHistoryEntriesByStation.set(kitchenLocationId, []);
+                newHistoryEntriesByStation.get(kitchenLocationId)!.push(entry);
             }
+        }
+    }
+     for (const stationId of uniqueStationIds) {
+        const newEntries = newHistoryEntriesByStation.get(stationId);
+        if (newEntries && newEntries.length > 0) {
+            const previewRef = doc(db, 'stores', storeId, 'opPages', stationId, 'historyPreview', 'current');
+            const existingItems = historyPreviewDataMap.get(stationId) || [];
+            const updatedItems = [...newEntries, ...existingItems].slice(0, 15);
+            tx.set(previewRef, { items: updatedItems }, { merge: true });
         }
     }
   });
@@ -758,3 +819,4 @@ export async function removeLineAdjustment(
     
 
     
+

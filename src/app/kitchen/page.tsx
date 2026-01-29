@@ -98,10 +98,7 @@ export default function KitchenPage() {
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
   const [activeStationData, setActiveStationData] = useState<any | null>(null);
   
-  // New state for paginated history
-  const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
-  const [lastHistoryDoc, setLastHistoryDoc] = useState<QueryDocumentSnapshot | null>(null);
-  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [historyPreview, setHistoryPreview] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
   const refreshStationCounts = useCallback(async () => {
@@ -228,43 +225,25 @@ export default function KitchenPage() {
 
     return () => unsubscribe();
   }, [activeStore, activeTab, toast, isSigningOut, appUser]);
-
-  const fetchHistory = useCallback(async (loadMore = false) => {
-    if (!activeStore || !activeTab) return;
-    setIsLoadingHistory(true);
-  
-    let q = query(
-      collection(db, 'stores', activeStore.id, 'opPages', activeTab, 'closedKdsTickets'),
-      orderBy('updatedAt', 'desc'),
-      limit(10)
-    );
-  
-    if (loadMore && lastHistoryDoc) {
-      q = query(q, startAfter(lastHistoryDoc));
-    }
-  
-    try {
-      const snapshot = await getDocs(q);
-      const newTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KitchenTicket));
-      
-      setHistoryTickets(prev => loadMore ? [...prev, ...newTickets] : newTickets);
-      setLastHistoryDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-      setHasMoreHistory(snapshot.docs.length === 10);
-    } catch (error) {
-      console.error("Error fetching history tickets:", error);
-      toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch history.' });
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  }, [activeStore, activeTab, lastHistoryDoc, toast]);
   
   useEffect(() => {
-    setHistoryTickets([]);
-    setLastHistoryDoc(null);
-    setHasMoreHistory(true);
-    fetchHistory(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, activeStore?.id]);
+    if (!activeStore || !activeTab) {
+        setHistoryPreview([]);
+        return;
+    }
+    setIsLoadingHistory(true);
+    const previewDocRef = doc(db, 'stores', activeStore.id, 'opPages', activeTab, 'historyPreview', 'current');
+    
+    const unsubscribe = onSnapshot(previewDocRef, (docSnap) => {
+        setHistoryPreview(docSnap.data()?.items || []);
+        setIsLoadingHistory(false);
+    }, (err) => {
+        console.error(`Error fetching history preview for ${activeTab}:`, err);
+        setIsLoadingHistory(false);
+    });
+    
+    return () => unsubscribe();
+  }, [activeStore, activeTab]);
 
 
   const avgServingTime = useMemo(() => {
@@ -305,6 +284,8 @@ export default function KitchenPage() {
         return;
     }
 
+    const nowMs = Date.now();
+
     try {
         await runTransaction(db, async (transaction) => {
             const ticketRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "kitchentickets", ticketId);
@@ -323,10 +304,12 @@ export default function KitchenPage() {
             
             const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
             const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
+            const historyPreviewRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'historyPreview', 'current');
 
-            const [opPageSnap, activeProjectionSnap] = await Promise.all([
+            const [opPageSnap, activeProjectionSnap, historyPreviewSnap] = await Promise.all([
                 transaction.get(opPageRef),
                 transaction.get(activeProjectionRef),
+                transaction.get(historyPreviewRef),
             ]);
 
             const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
@@ -334,7 +317,6 @@ export default function KitchenPage() {
             let newTicketState: KitchenTicket;
             
             if (newStatus === 'served') {
-                const nowMs = Date.now();
                 const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
                 const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
                 
@@ -360,6 +342,7 @@ export default function KitchenPage() {
 
             } else { // cancelled
                 updatePayload.cancelledAt = serverTimestamp();
+                updatePayload.cancelledAtClientMs = nowMs;
                 updatePayload.cancelledByUid = appUser.uid;
                 updatePayload.cancelReason = reason;
 
@@ -388,7 +371,6 @@ export default function KitchenPage() {
                 };
 
                 if (newStatus === 'served') {
-                    const nowMs = newTicketState.servedAtClientMs!;
                     const durationMs = newTicketState.durationMs!;
                     const todayDayId = getDayIdFromTimestamp(new Date());
                     let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
@@ -406,6 +388,22 @@ export default function KitchenPage() {
                     opPageUpdatePayload['todayServeAvgMs'] = newSum / newCountServed;
                 }
                 transaction.update(opPageRef, opPageUpdatePayload);
+                
+                // Update history preview
+                const newHistoryEntry = {
+                    id: newTicketState.id,
+                    sessionLabel: newTicketState.sessionLabel,
+                    tableNumber: newTicketState.tableNumber,
+                    customerName: newTicketState.customerName,
+                    itemName: newTicketState.itemName,
+                    qty: newTicketState.qty,
+                    status: newTicketState.status,
+                    closedAtClientMs: nowMs,
+                    durationMs: newTicketState.durationMs || 0
+                };
+                const existingItems = historyPreviewSnap.data()?.items || [];
+                const newItems = [newHistoryEntry, ...existingItems].slice(0, 15);
+                transaction.set(historyPreviewRef, { items: newItems }, { merge: true });
             }
 
         });
@@ -486,10 +484,8 @@ export default function KitchenPage() {
             </div>
             <div className="lg:col-span-1 space-y-4">
                 <HistoryView 
-                  items={historyTickets}
+                  items={historyPreview}
                   isLoading={isLoadingHistory}
-                  hasMore={hasMoreHistory}
-                  onLoadMore={() => fetchHistory(true)}
                 />
             </div>
         </div>
