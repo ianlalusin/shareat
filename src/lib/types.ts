@@ -406,9 +406,7 @@ export type DailyMetric = {
         packageCoversBilledByPackageName?: {
             [packageName: string]: number;
         };
-        guestCountFinalByPackageName?: {
-            [packageName: string]: number;
-        };
+        guestCountFinalByPackageName?: Record<string, number>;
     };
     sales?: {
         packageSalesAmountByName: Record<string, number>;
@@ -602,6 +600,7 @@ export type ActivityLog = {
     reason?: string;
     total?: number;
     snapshot?: Receipt;
+    sessionLabel?: string;
 
     // For discount auditing
     scope?: "bill" | "item";
@@ -610,7 +609,6 @@ export type ActivityLog = {
     delta?: number;
     discountName?: string;
     percent?: number;
-    sessionLabel?: string;
   };
 
   createdAt: any; // serverTimestamp()
@@ -628,3 +626,5 @@ export type PackageUnit = {
         discountValue?: number | null;
     }
 }
+
+    
