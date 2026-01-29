@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -22,6 +23,7 @@ import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
 import { cn } from "@/lib/utils";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 export type KitchenStation = {
     id: string;
@@ -94,6 +96,7 @@ export default function KitchenPage() {
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
+  const [activeStationData, setActiveStationData] = useState<any | null>(null);
   
   const refreshStationCounts = useCallback(async () => {
     if (!activeStore || stations.length === 0) return;
@@ -150,6 +153,18 @@ export default function KitchenPage() {
 
     return () => unsubs.forEach(unsub => unsub());
   }, [activeStore, appUser, activeTab]);
+  
+  useEffect(() => {
+    if (!activeStore || !activeTab) {
+      setActiveStationData(null);
+      return;
+    }
+    const unsub = onSnapshot(doc(db, "stores", activeStore.id, "opPages", activeTab), (docSnap) => {
+      setActiveStationData(docSnap.exists() ? docSnap.data() : null);
+    });
+    return () => unsub();
+  }, [activeStore, activeTab]);
+
 
   // Effect to refresh counts when the list of stations changes
   useEffect(() => {
@@ -209,26 +224,16 @@ export default function KitchenPage() {
   }, [activeStore, activeTab, toast, isSigningOut, appUser]);
 
   const avgServingTime = useMemo(() => {
-    const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-    const servedToday = tickets.filter((t) => {
-        if (t.status !== 'served' || typeof t.durationMs !== 'number' || t.durationMs <= 0) {
-            return false;
-        }
-        const servedAtDate = toJsDate(t.servedAt);
-        return servedAtDate && servedAtDate >= startOfToday;
-    });
-
-    if (servedToday.length === 0) {
-      return { avgMs: 0, count: 0 };
-    }
-
-    const totalDuration = servedToday.reduce((sum, t) => sum + (t.durationMs || 0), 0);
-    const avgMs = totalDuration / servedToday.length;
-
-    return { avgMs, count: servedToday.length };
-  }, [tickets]);
+    if (!activeStationData) return { avgMs: 0, count: 0 };
+    
+    const { todayServeCount, todayServeMsSum } = activeStationData;
+    const count = Number(todayServeCount || 0);
+    const sum = Number(todayServeMsSum || 0);
+    
+    if (count === 0) return { avgMs: 0, count: 0 };
+    
+    return { avgMs: sum / count, count };
+  }, [activeStationData]);
 
   const ticketsWithData = useMemo(() => {
     return tickets.map(ticket => {
@@ -271,6 +276,10 @@ export default function KitchenPage() {
                 console.log(`Ticket ${ticketId} is already finalized. Skipping update.`);
                 return;
             }
+            
+            const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
+            const opPageSnap = await transaction.get(opPageRef);
+            const opPageData = opPageSnap.exists() ? opPageSnap.data() : {};
 
             const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
             const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
@@ -303,6 +312,30 @@ export default function KitchenPage() {
                 transaction.update(sessionRef, sessionUpdate);
                 
                 newTicketState = { ...oldTicketState, ...updatePayload };
+                
+                const todayDayId = getDayIdFromTimestamp(new Date());
+                let { 
+                    todayDayId: storedDayId, 
+                    todayServeMsSum = 0, 
+                    todayServeCount = 0 
+                } = opPageData;
+
+                if (storedDayId !== todayDayId) {
+                    todayServeMsSum = 0;
+                    todayServeCount = 0;
+                }
+
+                const newSum = todayServeMsSum + durationMs;
+                const newCount = todayServeCount + 1;
+
+                transaction.update(opPageRef, {
+                    'todayDayId': todayDayId,
+                    'todayServeMsSum': newSum,
+                    'todayServeCount': newCount,
+                    'todayServeAvgMs': newSum / newCount,
+                    activeCount: increment(-1)
+                });
+
 
             } else { // cancelled
                 updatePayload.cancelledAt = serverTimestamp();
@@ -318,6 +351,7 @@ export default function KitchenPage() {
                         voidedQty: increment(1)
                     });
                 }
+                transaction.update(opPageRef, { activeCount: increment(-1) });
             }
             
             transaction.update(ticketRef, updatePayload);
@@ -329,9 +363,6 @@ export default function KitchenPage() {
             transaction.set(closedProjectionRef, newTicketState, { merge: true });
             transaction.delete(activeProjectionRef);
 
-            // Update opPage counter
-            const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
-            transaction.update(opPageRef, { activeCount: increment(-1) });
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
@@ -382,7 +413,7 @@ export default function KitchenPage() {
         description="Monitor and manage all active food and beverage orders."
       >
         <div className="text-right">
-            <p className="text-sm font-medium text-muted-foreground">Today's Avg Serving Time</p>
+            <p className="text-sm font-medium text-muted-foreground">{activeStationData?.name || 'Station'} Avg Serving Time</p>
             <p className={cn(
                 "text-2xl font-bold font-mono",
                 avgServingTime.avgMs > 0 && avgServingTime.avgMs <= 300000 ? "text-green-600" : "text-destructive"
