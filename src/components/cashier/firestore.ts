@@ -308,7 +308,7 @@ export async function completePaymentFromUnits(
     ];
     
     const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const activeKdsTicketSnapsRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
 
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap,
@@ -317,7 +317,7 @@ export async function completePaymentFromUnits(
       ...initialDocsToRead,
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsTicketSnaps.map(ref => tx.get(ref)))
+      Promise.all(activeKdsTicketSnapsRefs.map(ref => tx.get(ref)))
     ]);
 
     const sessionData = sessionSnap.data();
@@ -400,10 +400,10 @@ export async function completePaymentFromUnits(
             const opPageSnap = opPageSnaps.find(snap => snap.id === oldTicketState.kitchenLocationId);
             const opPageData = opPageSnap?.data() || {};
             const currentCount = opPageData.activeCount || 0;
-            const newCount = Math.max(0, currentCount - 1);
             
-            const opPageRef = doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId);
-            tx.update(opPageRef, { activeCount: newCount });
+            tx.update(doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId), { 
+                activeCount: Math.max(0, currentCount - 1),
+            });
         }
     }
     
@@ -600,6 +600,7 @@ export async function voidSession({
   reason: string;
   actor: AppUser;
 }) {
+  const safeReason = (reason ?? '').toString();
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   
   const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
@@ -635,7 +636,7 @@ export async function voidSession({
       return;
     }
     
-    tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: reason, updatedAt: serverTimestamp() });
+    tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: safeReason, updatedAt: serverTimestamp() });
     
     if (activeProjectionSnap.exists()) {
       const projectionData = activeProjectionSnap.data();
@@ -677,10 +678,9 @@ export async function voidSession({
                 const opPageSnap = opPageSnaps.find(snap => snap.id === kitchenLocationId);
                 const opPageData = opPageSnap?.data() || {};
                 const currentCount = opPageData.activeCount || 0;
-                const newCount = Math.max(0, currentCount - 1);
                 
                 const opPageRef = doc(db, "stores", storeId, "opPages", kitchenLocationId);
-                tx.update(opPageRef, { activeCount: newCount });
+                tx.update(opPageRef, { activeCount: Math.max(0, currentCount - 1) });
             }
         }
     }
@@ -691,7 +691,7 @@ export async function voidSession({
 
   if (initialSessionData) {
     await writeActivityLog({
-      storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: reason,
+      storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: safeReason,
       sessionContext: {
           sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
           sessionMode: initialSessionData.sessionMode,

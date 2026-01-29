@@ -18,9 +18,10 @@ interface VoidSessionDialogProps {
   onClose: () => void;
   session: ActiveSession;
   user: AppUser;
+  storeId: string;
 }
 
-export function VoidSessionDialog({ isOpen, onClose, session, user }: VoidSessionDialogProps) {
+export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: VoidSessionDialogProps) {
   const { toast } = useToast();
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,7 +36,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user }: VoidSessio
     setIsSubmitting(true);
     try {
       await voidSession({
-        storeId: session.storeId,
+        storeId: storeId,
         sessionId: session.id,
         reason: reason.trim(),
         actor: user,

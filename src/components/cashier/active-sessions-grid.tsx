@@ -74,7 +74,7 @@ const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: 
     );
 };
 
-export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) {
+export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSession[], storeId: string }) {
     const router = useRouter();
     const { appUser } = useAuthContext();
     const [voidingSession, setVoidingSession] = useState<ActiveSession | null>(null);
@@ -163,12 +163,13 @@ export function ActiveSessionsGrid({ sessions }: { sessions: ActiveSession[] }) 
                     )})}
                 </CardContent>
             </Card>
-            {voidingSession && appUser && (
+            {voidingSession && appUser && storeId && (
                 <VoidSessionDialog
                     isOpen={!!voidingSession}
                     onClose={() => setVoidingSession(null)}
                     session={voidingSession}
                     user={appUser}
+                    storeId={storeId}
                 />
             )}
         </>
