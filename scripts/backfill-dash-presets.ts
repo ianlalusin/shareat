@@ -22,6 +22,7 @@ const getPresetDateRanges = () => {
     return new Map<string, { start: Date; end: Date }>([
         ["today", { start: today, end: endOfDay(today) }],
         ["yesterday", { start: yesterday, end: endOfDay(yesterday) }],
+        ["thisWeek", { start: startOfDay(addDays(now, -now.getDay())), end: endOfDay(now) }],
         ["last7", { start: startOfDay(addDays(now, -6)), end: endOfDay(now) }],
         ["last30", { start: startOfDay(addDays(now, -29)), end: endOfDay(now) }],
         ["thisMonth", { start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) }],
@@ -34,6 +35,18 @@ const getPresetDateRanges = () => {
 };
 
 // --- Aggregation Logic ---
+
+function getZeroedMetric(): Omit<DailyMetric, 'meta'> {
+    return {
+        payments: { byMethod: {}, totalGross: 0, txCount: 0, discountsTotal: 0, chargesTotal: 0 },
+        guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} },
+        sales: { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, salesAmountByHour: {}, sessionCountByHour: {}, topAddonsByQty: [] },
+        kitchen: { servedCountByType: {}, cancelledCountByType: {}, durationMsSumByType: {}, durationCountByType: {} },
+        sessions: { closedCount: 0, totalPaid: 0 },
+        refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0, topRefillsByQty: [] },
+    };
+}
+
 
 /** Custom merger function for lodash.mergeWith */
 function merger(objValue: any, srcValue: any) {
@@ -99,41 +112,56 @@ async function main() {
             .where("meta.dayStartMs", "<=", range.end.getTime());
 
         const snapshot = await q.get();
+        let finalPresetData: DailyMetric;
+
         if (snapshot.empty) {
-            console.log("No daily analytics docs found for this range. Skipping.");
-            continue;
+            console.log("No daily analytics docs found for this range. Writing zeroed preset.");
+            finalPresetData = {
+                ...getZeroedMetric(),
+                meta: {
+                    presetId,
+                    storeId,
+                    source: "backfill-script-v2-zeroed",
+                    updatedAt: FieldValue.serverTimestamp(),
+                    rangeStartMs: range.start.getTime(),
+                    rangeEndMs: range.end.getTime(),
+                } as any,
+            };
+        } else {
+            const dailyMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
+            console.log(`Found ${dailyMetrics.length} daily docs to aggregate.`);
+            
+            const aggregatedMetric = aggregateMetrics(dailyMetrics);
+            if (!aggregatedMetric) {
+                console.log("Aggregation resulted in null metric. Skipping.");
+                continue;
+            }
+
+            // Compute top lists from the aggregated data
+            const topRefills = computeTopRefills(aggregatedMetric);
+
+            // Add computed data and metadata to the final preset document
+            finalPresetData = {
+                ...aggregatedMetric,
+                meta: {
+                    ...(aggregatedMetric.meta || {}),
+                    presetId,
+                    storeId,
+                    source: "backfill-script-v2",
+                    updatedAt: FieldValue.serverTimestamp(),
+                    rangeStartMs: range.start.getTime(),
+                    rangeEndMs: range.end.getTime(),
+                },
+                refills: {
+                    ...(aggregatedMetric.refills || { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 }),
+                    topRefillsByQty: topRefills,
+                },
+                // addons sales by item is not pre-computed
+            };
         }
-
-        const dailyMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
-        console.log(`Found ${dailyMetrics.length} daily docs to aggregate.`);
-        
-        const aggregatedMetric = aggregateMetrics(dailyMetrics);
-        if (!aggregatedMetric) {
-             console.log("Aggregation resulted in null metric. Skipping.");
-             continue;
-        }
-
-        // Compute top lists from the aggregated data
-        const topRefills = computeTopRefills(aggregatedMetric);
-
-        // Add computed data and metadata to the final preset document
-        const finalPresetData: DailyMetric = {
-            ...aggregatedMetric,
-            meta: {
-                ...aggregatedMetric.meta,
-                source: "backfill-script-v1",
-                updatedAt: FieldValue.serverTimestamp(),
-            },
-            refills: {
-                ...(aggregatedMetric.refills || { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 }),
-                topRefillsByQty: topRefills,
-            },
-            // addons sales by item is not pre-computed
-        };
         
         console.log(`Aggregated Net Sales: ${finalPresetData.payments?.totalGross.toFixed(2)}`);
-        console.log(`Top Refill: ${topRefills[0]?.name || 'N/A'} (${topRefills[0]?.qty || 0})`);
-
+        
         if (!isDryRun) {
             const presetDocRef = db.doc(`stores/${storeId}/dashPresets/${presetId}`);
             try {

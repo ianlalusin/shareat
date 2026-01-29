@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -90,7 +89,7 @@ const presetIdMap: Partial<Record<DatePreset, string>> = {
     today: "today",
     yesterday: "yesterday",
     last7: "last7",
-    week: "last7", // alias 'week' to 'last7'
+    week: "thisWeek",
     last30: "last30",
     month: "thisMonth",
     lastMonth: "lastMonth",
@@ -169,43 +168,51 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
             if (presetId) {
                 const cacheKey = `${storeId}:${presetId}`;
                 const cached = presetCache.get(cacheKey);
-                if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-                    console.log(`[useDashboardAnalytics] Using CACHED preset for: ${presetId}`);
-                    const presetData = cached.data;
-                    setDailyMetrics([presetData]);
-                    setTopCategories(aggregateAddonCategories([presetData]));
+
+                const validateAndUse = (data: DailyMetric) => {
+                    const meta = data.meta as any;
+                    const isRangeValid = meta?.rangeStartMs === dateRange.start.getTime() && meta?.rangeEndMs === dateRange.end.getTime();
+
+                    if (!isRangeValid) return false;
+
+                    setDailyMetrics([data]);
+                    setTopCategories(aggregateAddonCategories([data]));
                     
-                    const servedRefillsExist = presetData.refills?.servedRefillsByName && Object.keys(presetData.refills.servedRefillsByName).length > 0;
+                    const servedRefillsExist = data.refills?.servedRefillsByName && Object.keys(data.refills.servedRefillsByName).length > 0;
                     const newTopRefills = servedRefillsExist
-                        ? aggregateRefills([presetData])
-                        : (presetData as any).refills?.topRefillsByQty ?? [];
+                        ? aggregateRefills([data])
+                        : (data as any).refills?.topRefillsByQty ?? [];
                     setTopRefills(newTopRefills);
 
-                    setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
-                    setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
-                    setIsLoading(false);
-                    return;
+                    setTopAddonItems((data as any).sales?.topAddonsByQty ?? []);
+                    setHasTopAddonItems(!!(data as any).sales?.topAddonsByQty);
+                    
+                    return true;
+                }
+
+                if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+                    if (validateAndUse(cached.data)) {
+                        console.log(`[useDashboardAnalytics] Using MEMORY CACHE for: ${presetId}`);
+                        setIsLoading(false);
+                        return;
+                    } else {
+                        console.warn(`[useDashboardAnalytics] Stale memory cache for ${presetId}. Refetching.`);
+                        presetCache.delete(cacheKey); // Evict stale cache
+                    }
                 }
 
                 const presetDocRef = doc(db, `stores/${storeId}/dashPresets`, presetId);
                 const presetSnap = await getDoc(presetDocRef);
                 if (presetSnap.exists()) {
-                    console.log(`[useDashboardAnalytics] Using PRESET DOC for: ${presetId}`);
                     const presetData = presetSnap.data() as DailyMetric;
-                    setDailyMetrics([presetData]);
-                    setTopCategories(aggregateAddonCategories([presetData]));
-                    presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
-
-                    const servedRefillsExist = presetData.refills?.servedRefillsByName && Object.keys(presetData.refills.servedRefillsByName).length > 0;
-                    const newTopRefills = servedRefillsExist
-                        ? aggregateRefills([presetData])
-                        : (presetData as any).refills?.topRefillsByQty ?? [];
-                    setTopRefills(newTopRefills);
-                    
-                    setTopAddonItems((presetData as any).sales?.topAddonsByQty ?? []);
-                    setHasTopAddonItems(!!(presetData as any).sales?.topAddonsByQty);
-                    setIsLoading(false);
-                    return;
+                    if (validateAndUse(presetData)) {
+                        console.log(`[useDashboardAnalytics] Using PRESET DOC for: ${presetId}`);
+                        presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
+                        setIsLoading(false);
+                        return;
+                    } else {
+                         console.warn(`[useDashboardAnalytics] Stale preset doc found for ${presetId}. Falling back to query.`);
+                    }
                 } else {
                     console.log(`[useDashboardAnalytics] Preset doc not found for ${presetId}, using fallback.`);
                 }
