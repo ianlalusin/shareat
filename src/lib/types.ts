@@ -405,7 +405,7 @@ export type DailyMetric = {
         };
         guestCountFinalByPackageName: {
             [packageName: string]: number;
-        }
+        };
     };
     sales?: {
         packageSalesAmountByName: Record<string, number>;
