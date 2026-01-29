@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -91,7 +92,7 @@ export function ServerPageClient() {
           const tableNumA = parseInt(a.tableNumber, 10);
           const tableNumB = parseInt(b.tableNumber, 10);
           if (!isNaN(tableNumA) && !isNaN(tableNumB)) {
-            return tableNumA - tableNumB;
+            return tableNumA - numB;
           }
           return (a.tableNumber || "").localeCompare(b.tableNumber || "");
         });
@@ -167,6 +168,14 @@ export function ServerPageClient() {
       requestedPackageLabel: null,
       requestedAtMs: null,
       requestedByUid: null,
+      updatedAt: serverTimestamp(),
+    });
+    
+    // Update session projection
+    const sessionProjectionRef = doc(db, `stores/${activeStore.id}/opPages/sessionPage/activeSessions`, session.id);
+    batch.update(sessionProjectionRef, {
+      status: "active",
+      guestCountFinal: finalCount,
       updatedAt: serverTimestamp(),
     });
 

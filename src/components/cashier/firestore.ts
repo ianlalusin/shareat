@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -150,7 +151,28 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       }, { merge: true });
     }
 
-    // 3. Create package bill line and kitchen ticket if applicable
+    // 3. Write session projection
+    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, newSessionRef.id);
+    const projectionPayload = {
+      status: isAlaCarte ? 'active' : 'pending_verification',
+      sessionMode: payload.sessionMode,
+      tableId: payload.tableId,
+      tableNumber: isAlaCarte ? null : payload.tableNumber,
+      customerName: isAlaCarte ? customerName : null,
+      packageOfferingId: payload.package?.packageId || null,
+      packageSnapshot: payload.package
+        ? { name: payload.package.packageName, pricePerHead: payload.package.pricePerHead }
+        : null,
+      guestCountCashierInitial: payload.guestCount,
+      guestCountFinal: isAlaCarte ? null : payload.guestCount,
+      startedAt: serverTimestamp(),
+      startedAtClientMs: sessionPayload.startedAtClientMs,
+      updatedAt: serverTimestamp(),
+    };
+    transaction.set(sessionProjectionRef, projectionPayload);
+
+
+    // 4. Create package bill line and kitchen ticket if applicable
     if (payload.sessionMode === 'package_dinein' && payload.package) {
       const lineId = `package_${payload.package.packageId}`;
       const lineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, lineId);
@@ -273,20 +295,24 @@ export async function completePaymentFromUnits(
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
     const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
+    const activeProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
+
 
     const initialDocsToRead = [
         tx.get(sessionRef),
         tx.get(receiptRef),
         tx.get(settingsRef),
         tx.get(counterRef),
+        tx.get(activeProjectionRef),
     ];
     
     const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
     const activeProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
 
     const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap,
-      ticketSnaps, opPageSnaps, activeProjectionSnaps
+      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap,
+      ticketSnaps, opPageSnaps, activeKdsTicketSnaps
     ] = await Promise.all([
       ...initialDocsToRead,
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
@@ -337,7 +363,6 @@ export async function completePaymentFromUnits(
 
     const actor = getActorStamp(user);
     const serverTs = serverTimestamp();
-    const stationDecrements = new Map<string, number>();
 
     for (let i = 0; i < ticketSnaps.length; i++) {
         const ticketRef = ticketDataForTx[i].ticketRef;
@@ -366,16 +391,19 @@ export async function completePaymentFromUnits(
         
         tx.update(ticketRef, updatePayload);
 
-        const activeProjectionSnap = activeProjectionSnaps[i];
-        if (activeProjectionSnap.exists()) {
-            const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketRef.id);
-            tx.set(closedProjectionRef, newTicketState, { merge: true });
-            tx.delete(activeProjectionSnap.ref);
-
-            const stationId = oldTicketState.kitchenLocationId;
-            if (stationId) {
-                stationDecrements.set(stationId, (stationDecrements.get(stationId) || 0) + 1);
-            }
+        const activeKdsTicketSnap = activeKdsTicketSnaps[i];
+        if (activeKdsTicketSnap.exists()) {
+            const closedKdsTicketRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketRef.id);
+            tx.set(closedKdsTicketRef, newTicketState, { merge: true });
+            tx.delete(activeKdsTicketSnap.ref);
+            
+            const opPageSnap = opPageSnaps.find(snap => snap.id === oldTicketState.kitchenLocationId);
+            const opPageData = opPageSnap?.data() || {};
+            const currentCount = opPageData.activeCount || 0;
+            const newCount = Math.max(0, currentCount - 1);
+            
+            const opPageRef = doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId);
+            tx.update(opPageRef, { activeCount: newCount });
         }
     }
     
@@ -404,6 +432,18 @@ export async function completePaymentFromUnits(
       closedAtClientMs: now,
       updatedAt: serverTs,
     });
+    
+    // Move session projection
+    if (activeProjectionSnap.exists()) {
+      const projectionData = activeProjectionSnap.data();
+      tx.set(closedProjectionRef, {
+        ...projectionData,
+        status: 'closed',
+        updatedAt: serverTimestamp(),
+        closedAt: serverTimestamp(),
+      });
+      tx.delete(activeProjectionRef);
+    }
 
     // receipt numbering
     const receiptNoFormat = settingsSnap.exists()
@@ -536,17 +576,6 @@ export async function completePaymentFromUnits(
         tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
       }
     }
-    
-    // Apply clamped decrements for kitchen stations
-    for (const [stationId, decrementBy] of stationDecrements.entries()) {
-        const opPageSnap = opPageSnaps.find(snap => snap.id === stationId);
-        const opPageData = opPageSnap?.data() || {};
-        const currentCount = opPageData.activeCount || 0;
-        const newCount = Math.max(0, currentCount - decrementBy);
-        
-        const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
-        tx.update(opPageRef, { activeCount: newCount });
-    }
   });
 
   if (receiptId) {
@@ -572,13 +601,7 @@ export async function voidSession({
   actor: AppUser;
 }) {
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
-  const sessionDoc = await getDoc(sessionRef);
-  if (!sessionDoc.exists()) throw new Error('Session not found.');
-  const initialSessionData = sessionDoc.data() as any;
-  if (initialSessionData.status === 'closed' || initialSessionData.status === 'voided' || initialSessionData.isPaid) {
-    throw new Error('Session is already finalized and cannot be voided.');
-  }
-
+  
   const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
   const ticketSnap = await getDocs(activeTicketsQuery);
@@ -591,14 +614,18 @@ export async function voidSession({
   const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
 
   await runTransaction(db, async (tx) => {
-    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const activeProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
 
-    const [sessionSnap, ticketSnaps, opPageSnaps, activeProjectionSnaps] = await Promise.all([
+    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
+    const activeKdsProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+
+    const [sessionSnap, activeProjectionSnap, ticketSnaps, opPageSnaps, activeKdsTicketSnaps] = await Promise.all([
       tx.get(sessionRef),
+      tx.get(activeProjectionRef),
       Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
       Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeProjectionRefs.map(ref => tx.get(ref)))
+      Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref)))
     ]);
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
@@ -610,14 +637,23 @@ export async function voidSession({
     
     tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: reason, updatedAt: serverTimestamp() });
     
+    if (activeProjectionSnap.exists()) {
+      const projectionData = activeProjectionSnap.data();
+      tx.set(closedProjectionRef, {
+        ...projectionData,
+        status: 'voided',
+        updatedAt: serverTimestamp(),
+        closedAt: serverTimestamp(), // Use closedAt for consistency
+      });
+      tx.delete(activeProjectionRef);
+    }
+    
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
       tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTimestamp() });
       const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
       tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
     }
-
-    const stationDecrements = new Map<string, number>();
 
     for (let i = 0; i < ticketSnaps.length; i++) {
         const ticketDoc = ticketSnaps[i];
@@ -630,39 +666,41 @@ export async function voidSession({
         await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
         tx.update(ticketDoc.ref, updatePayload);
 
-        const activeProjectionSnap = activeProjectionSnaps[i];
-        if (activeProjectionSnap.exists()) {
+        const activeKdsTicketSnap = activeKdsTicketSnaps[i];
+        if (activeKdsTicketSnap.exists()) {
             const kitchenLocationId = oldTicket.kitchenLocationId;
             if (kitchenLocationId) {
-                const closedProjectionRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketDoc.id);
-                tx.set(closedProjectionRef, newTicket, { merge: true });
-                tx.delete(activeProjectionSnap.ref);
-                stationDecrements.set(kitchenLocationId, (stationDecrements.get(kitchenLocationId) || 0) + 1);
+                const closedKdsTicketRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketDoc.id);
+                tx.set(closedKdsTicketRef, newTicket, { merge: true });
+                tx.delete(activeKdsTicketSnap.ref);
+
+                const opPageSnap = opPageSnaps.find(snap => snap.id === kitchenLocationId);
+                const opPageData = opPageSnap?.data() || {};
+                const currentCount = opPageData.activeCount || 0;
+                const newCount = Math.max(0, currentCount - 1);
+                
+                const opPageRef = doc(db, "stores", storeId, "opPages", kitchenLocationId);
+                tx.update(opPageRef, { activeCount: newCount });
             }
         }
     }
-    
-    for (const [stationId, decrementBy] of stationDecrements.entries()) {
-        const opPageSnap = opPageSnaps.find(snap => snap.id === stationId);
-        const opPageData = opPageSnap?.data() || {};
-        const currentCount = opPageData.activeCount || 0;
-        const newCount = Math.max(0, currentCount - decrementBy);
-        
-        const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
-        tx.update(opPageRef, { activeCount: newCount });
-    }
   });
 
-  await writeActivityLog({
-    storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: reason,
-    sessionContext: {
-        sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
-        sessionMode: initialSessionData.sessionMode,
-        customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
-        tableNumber: initialSessionData.tableNumber,
-    },
-    meta: { sessionLabel: computeSessionLabel(initialSessionData) }
-  });
+  const sessionDocAfter = await getDoc(sessionRef);
+  const initialSessionData = sessionDocAfter.data();
+
+  if (initialSessionData) {
+    await writeActivityLog({
+      storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: reason,
+      sessionContext: {
+          sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
+          sessionMode: initialSessionData.sessionMode,
+          customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
+          tableNumber: initialSessionData.tableNumber,
+      },
+      meta: { sessionLabel: computeSessionLabel(initialSessionData) }
+    });
+  }
 }
 
 /**

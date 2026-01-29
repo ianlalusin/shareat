@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -121,6 +122,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
     const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, session.id);
     
     try {
         // Update session doc (truth)
@@ -141,6 +143,14 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
             requestedByUid: appUser.uid,
             requestedPackageLabel: null, // Clear other request type
             updatedAt: serverTimestamp(),
+        });
+
+        // Update session projection for UI hint
+        batch.update(sessionProjectionRef, {
+            requestStatus: 'unapproved',
+            requestedGuestCount: data.requestedCount,
+            requestedPackageLabel: null,
+            updatedAt: serverTimestamp()
         });
 
       await batch.commit();
@@ -164,6 +174,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
     const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, session.id);
 
     try {
         batch.update(sessionRef, {
@@ -186,6 +197,13 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
             requestedByUid: appUser.uid,
             requestedGuestCount: null, // Clear other request type
             updatedAt: serverTimestamp(),
+        });
+
+        batch.update(sessionProjectionRef, {
+            requestStatus: 'unapproved',
+            requestedGuestCount: null,
+            requestedPackageLabel: selectedPackage.packageName,
+            updatedAt: serverTimestamp()
         });
 
       await batch.commit();
