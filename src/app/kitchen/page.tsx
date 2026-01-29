@@ -487,6 +487,7 @@ export default function KitchenPage() {
                 <HistoryView 
                   items={historyPreview}
                   isLoading={isLoadingHistory}
+                  activeStationId={activeTab}
                 />
             </div>
         </div>

@@ -30,9 +30,10 @@ function formatDuration(ms: number): string {
 interface HistoryViewProps {
     items: any[];
     isLoading: boolean;
+    activeStationId: string;
 }
 
-export function HistoryView({ items, isLoading }: HistoryViewProps) {
+export function HistoryView({ items, isLoading, activeStationId }: HistoryViewProps) {
     return (
         <Card>
             <CardHeader>
@@ -83,7 +84,7 @@ export function HistoryView({ items, isLoading }: HistoryViewProps) {
             </CardContent>
             <CardFooter>
                 <Button asChild variant="outline" className="w-full">
-                    <Link href="/logs">View Full History</Link>
+                    <Link href={`/kitchen/history?kitchenLocationId=${activeStationId}`}>View Full History</Link>
                 </Button>
             </CardFooter>
         </Card>
