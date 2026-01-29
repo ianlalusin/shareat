@@ -378,12 +378,15 @@ export type TopAddonRow = { name: string; qty: number; amount: number; categoryN
 
 export type DailyMetric = {
     meta: {
-        dayId: string;
+        dayId?: string;
         storeId: string;
-        dayStartMs: number;
+        dayStartMs?: number;
         updatedAt: any;
         backfilledAt?: any;
         source?: string;
+        presetId?: string;
+        rangeStartMs?: number;
+        rangeEndMs?: number;
     };
     payments?: {
         totalGross: number;

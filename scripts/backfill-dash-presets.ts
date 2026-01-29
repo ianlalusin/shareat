@@ -125,7 +125,7 @@ async function main() {
                     updatedAt: FieldValue.serverTimestamp(),
                     rangeStartMs: range.start.getTime(),
                     rangeEndMs: range.end.getTime(),
-                } as any,
+                },
             };
         } else {
             const dailyMetrics = snapshot.docs.map(doc => doc.data() as DailyMetric);
