@@ -76,7 +76,7 @@ export function SessionListView() {
         
         // Fetch active sessions from the real-time projection collection
         const sessionsQuery = query(
-            collection(db, "stores", activeStore.id, "opPages", "activeSessions", "items"),
+            collection(db, "stores", activeStore.id, "opPages", "sessionPage", "activeSessions"),
             orderBy("startedAtClientMs", "asc")
         );
 

@@ -61,9 +61,9 @@ export function ServerPageClient() {
 
     const unsubs: (() => void)[] = [];
     
-    // NEW: Point to projection collection
+    // Point to projection collection
     const sessionsQuery = query(
-        collection(db, "stores", activeStore.id, "opPages", "activeSessions", "items"),
+        collection(db, "stores", activeStore.id, "opPages", "sessionPage", "activeSessions"),
         orderBy("startedAtClientMs", "asc")
     );
     
