@@ -12,6 +12,7 @@ import {
   Timestamp,
   setDoc,
   updateDoc,
+  collectionGroup,
   type Firestore,
 } from "firebase/firestore";
 import type { KitchenTicket, PendingSession } from "@/lib/types";
@@ -34,6 +35,7 @@ export type RebuildOpPagesResult = {
 /**
  * Rebuilds the operational projections (opPages) for a given date range.
  * This tool is used to fix out-of-sync KDS counts, missing history, or stuck active session displays.
+ * Strictly store-scoped using the provided storeId.
  */
 export async function rebuildOpPagesForRange(db: Firestore, args: {
   storeId: string;
@@ -55,8 +57,13 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
 
   const { storeId, startMs, endMs } = args;
 
+  if (!storeId) {
+    result.errors.push("Store ID is required for scoped rebuild.");
+    return result;
+  }
+
   try {
-    // 1. Load active stations
+    // 1. Load active stations for this specific store
     const stationsRef = collection(db, "stores", storeId, "kitchenLocations");
     const stationsSnap = await getDocs(query(stationsRef, where("isActive", "==", true)));
     const stations = stationsSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
@@ -66,9 +73,9 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       return result;
     }
 
-    // 2. Clear existing projections
+    // 2. Clear existing projections (Store Scoped Paths)
     
-    // Clear activeKdsTickets for each station
+    // Clear activeKdsTickets for each station within the store
     for (const station of stations) {
       const activeProjRef = collection(db, "stores", storeId, "opPages", station.id, "activeKdsTickets");
       const activeProjSnap = await getDocs(activeProjRef);
@@ -88,7 +95,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       if (count > 0) await batch.commit();
     }
 
-    // Clear sessionPage/activeSessions
+    // Clear sessionPage/activeSessions for the store
     const activeSessionsProjRef = collection(db, "stores", storeId, "opPages", "sessionPage", "activeSessions");
     const activeSessionsProjSnap = await getDocs(activeSessionsProjRef);
     let sessionBatch = writeBatch(db);
@@ -105,7 +112,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     }
     if (sessionCount > 0) await sessionBatch.commit();
 
-    // 3. Scan sessions in date range
+    // 3. Scan sessions in date range for this store
     const sessionsRef = collection(db, "stores", storeId, "sessions");
     const qSessions = query(
       sessionsRef,
@@ -131,11 +138,12 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       todayServedCount: 0,
     }));
 
+    const sessionDataCache = new Map<string, PendingSession>();
     const todayDayId = getDayIdFromTimestamp(new Date());
     let totalActiveSessionCount = 0;
     let totalActiveGuestCount = 0;
 
-    // 4. Scan tickets for each session
+    // Write session projections in batches
     let globalBatch = writeBatch(db);
     let globalOpCount = 0;
 
@@ -148,6 +156,8 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         customerName: sessionData.customer?.name ?? sessionData.customerName,
         tableNumber: sessionData.tableNumber
       } as PendingSession;
+      
+      sessionDataCache.set(session.id, session);
 
       // Handle Session Projection
       if (session.status === 'active' || session.status === 'pending_verification') {
@@ -176,40 +186,6 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         result.activeSessionsProjected++;
       }
 
-      // Handle Tickets
-      const ticketsRef = collection(db, "stores", storeId, "sessions", session.id, "kitchentickets");
-      const ticketsSnap = await getDocs(ticketsRef);
-      result.scannedTickets += ticketsSnap.size;
-
-      for (const ticketDoc of ticketsSnap.docs) {
-        const ticket = { id: ticketDoc.id, ...ticketDoc.data() } as KitchenTicket;
-        const stationId = ticket.kitchenLocationId;
-        const sData = stationDataMap.get(stationId);
-        
-        if (!sData) continue;
-
-        // Build projection payload
-        const payload = {
-          ...ticket,
-          sessionLabel: computeSessionLabel(session),
-          updatedAt: serverTimestamp(),
-        };
-
-        if (ticket.status === 'preparing' || ticket.status === 'ready') {
-          sData.activeTickets.push(payload);
-        } else if (ticket.status === 'served' || ticket.status === 'cancelled') {
-          sData.closedTickets.push(payload);
-          
-          if (ticket.status === 'served') {
-            const servedAtDate = toJsDate(ticket.servedAtClientMs || ticket.servedAt);
-            if (servedAtDate && getDayIdFromTimestamp(servedAtDate) === todayDayId) {
-              sData.todayServedCount++;
-              sData.todayServedMsSum += (ticket.durationMs || 0);
-            }
-          }
-        }
-      }
-
       if (globalOpCount >= 400) {
         await globalBatch.commit();
         globalBatch = writeBatch(db);
@@ -218,7 +194,52 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     }
     if (globalOpCount > 0) await globalBatch.commit();
 
-    // 5. Write projections and update opPages summaries
+    // 4. Fetch all kitchen tickets for this store in one go (Efficient & Scoped)
+    const ticketsRefGroup = collectionGroup(db, "kitchentickets");
+    const qTickets = query(
+        ticketsRefGroup,
+        where("storeId", "==", storeId),
+        where("createdAt", ">=", Timestamp.fromMillis(startMs - 86400000)), // Buffer for long sessions
+        where("createdAt", "<=", Timestamp.fromMillis(endMs + 86400000))
+    );
+    const ticketsSnap = await getDocs(qTickets);
+    result.scannedTickets = ticketsSnap.size;
+
+    for (const ticketDoc of ticketsSnap.docs) {
+      const ticket = { id: ticketDoc.id, ...ticketDoc.data() } as KitchenTicket;
+      
+      // Skip if ticket doesn't belong to a session we just scanned (ensures range consistency)
+      const session = sessionDataCache.get(ticket.sessionId);
+      if (!session) continue;
+
+      const stationId = ticket.kitchenLocationId;
+      const sData = stationDataMap.get(stationId);
+      
+      if (!sData) continue;
+
+      // Build projection payload
+      const payload = {
+        ...ticket,
+        sessionLabel: computeSessionLabel(session),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (ticket.status === 'preparing' || ticket.status === 'ready') {
+        sData.activeTickets.push(payload);
+      } else if (ticket.status === 'served' || ticket.status === 'cancelled') {
+        sData.closedTickets.push(payload);
+        
+        if (ticket.status === 'served') {
+          const servedAtDate = toJsDate(ticket.servedAtClientMs || ticket.servedAt);
+          if (servedAtDate && getDayIdFromTimestamp(servedAtDate) === todayDayId) {
+            sData.todayServedCount++;
+            sData.todayServedMsSum += (ticket.durationMs || 0);
+          }
+        }
+      }
+    }
+
+    // 5. Write projections and update opPages summaries (All Store Scoped)
     for (const [stationId, data] of stationDataMap.entries()) {
       result.stationsUpdated++;
 
@@ -270,21 +291,12 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         updatedAt: serverTimestamp(),
       };
       
-      // Only refresh "Today" metrics if we scanned enough data to be relevant
-      if (data.todayServedCount > 0) {
-        summaryPayload.todayDayId = todayDayId;
-        summaryPayload.todayServeCount = data.todayServedCount;
-        summaryPayload.todayServeMsSum = data.todayServedMsSum;
-        summaryPayload.todayServeAvgMs = data.todayServedMsSum / data.todayServedCount;
-      } else {
-        // Reset if the scan range includes today but no tickets were found
-        const endMsDate = new Date(endMs);
-        if (getDayIdFromTimestamp(endMsDate) === todayDayId) {
-             summaryPayload.todayDayId = todayDayId;
-             summaryPayload.todayServeCount = 0;
-             summaryPayload.todayServeMsSum = 0;
-             summaryPayload.todayServeAvgMs = 0;
-        }
+      const endMsDate = new Date(endMs);
+      if (getDayIdFromTimestamp(endMsDate) === todayDayId) {
+          summaryPayload.todayDayId = todayDayId;
+          summaryPayload.todayServeCount = data.todayServedCount;
+          summaryPayload.todayServeMsSum = data.todayServedMsSum;
+          summaryPayload.todayServeAvgMs = data.todayServedCount > 0 ? data.todayServedMsSum / data.todayServedCount : 0;
       }
 
       await updateDoc(stationDocRef, summaryPayload);
