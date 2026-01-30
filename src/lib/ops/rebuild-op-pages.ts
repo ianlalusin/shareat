@@ -24,14 +24,16 @@ export type RebuildOpPagesResult = {
   scannedTickets: number;
   stationsUpdated: number;
   activeTicketsWritten: number;
+  activeSessionsProjected: number;
   closedPreviewWritten: number;
   deletedActiveTickets: number;
+  deletedActiveSessions: number;
   errors: string[];
 };
 
 /**
  * Rebuilds the operational projections (opPages) for a given date range.
- * This tool is used to fix out-of-sync KDS counts or missing history.
+ * This tool is used to fix out-of-sync KDS counts, missing history, or stuck active session displays.
  */
 export async function rebuildOpPagesForRange(db: Firestore, args: {
   storeId: string;
@@ -44,8 +46,10 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     scannedTickets: 0,
     stationsUpdated: 0,
     activeTicketsWritten: 0,
+    activeSessionsProjected: 0,
     closedPreviewWritten: 0,
     deletedActiveTickets: 0,
+    deletedActiveSessions: 0,
     errors: [],
   };
 
@@ -62,7 +66,9 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       return result;
     }
 
-    // 2. Clear existing activeKdsTickets for each station
+    // 2. Clear existing projections
+    
+    // Clear activeKdsTickets for each station
     for (const station of stations) {
       const activeProjRef = collection(db, "stores", storeId, "opPages", station.id, "activeKdsTickets");
       const activeProjSnap = await getDocs(activeProjRef);
@@ -81,6 +87,23 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       }
       if (count > 0) await batch.commit();
     }
+
+    // Clear sessionPage/activeSessions
+    const activeSessionsProjRef = collection(db, "stores", storeId, "opPages", "sessionPage", "activeSessions");
+    const activeSessionsProjSnap = await getDocs(activeSessionsProjRef);
+    let sessionBatch = writeBatch(db);
+    let sessionCount = 0;
+    for (const d of activeSessionsProjSnap.docs) {
+      sessionBatch.delete(d.ref);
+      sessionCount++;
+      result.deletedActiveSessions++;
+      if (sessionCount >= 400) {
+        await sessionBatch.commit();
+        sessionBatch = writeBatch(db);
+        sessionCount = 0;
+      }
+    }
+    if (sessionCount > 0) await sessionBatch.commit();
 
     // 3. Scan sessions in date range
     const sessionsRef = collection(db, "stores", storeId, "sessions");
@@ -109,8 +132,13 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     }));
 
     const todayDayId = getDayIdFromTimestamp(new Date());
+    let totalActiveSessionCount = 0;
+    let totalActiveGuestCount = 0;
 
     // 4. Scan tickets for each session
+    let globalBatch = writeBatch(db);
+    let globalOpCount = 0;
+
     for (const sessionDoc of sessionsSnap.docs) {
       const sessionData = sessionDoc.data();
       const session = { 
@@ -121,6 +149,34 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         tableNumber: sessionData.tableNumber
       } as PendingSession;
 
+      // Handle Session Projection
+      if (session.status === 'active' || session.status === 'pending_verification') {
+        totalActiveSessionCount++;
+        totalActiveGuestCount += (session.guestCountFinal || session.guestCountCashierInitial || 0);
+
+        const projRef = doc(db, "stores", storeId, "opPages", "sessionPage", "activeSessions", session.id);
+        const projectionPayload = {
+          meta: { source: 'rebuild-v1' },
+          status: session.status,
+          sessionMode: session.sessionMode,
+          tableId: session.tableId,
+          tableNumber: session.tableNumber,
+          customerName: session.customerName,
+          packageOfferingId: session.packageOfferingId,
+          packageSnapshot: session.packageSnapshot,
+          guestCountCashierInitial: session.guestCountCashierInitial,
+          guestCountFinal: session.guestCountFinal,
+          startedAt: session.startedAt,
+          startedAtClientMs: session.startedAtClientMs,
+          updatedAt: serverTimestamp(),
+          initialFlavorIds: (session as any).initialFlavorIds || [],
+        };
+        globalBatch.set(projRef, projectionPayload);
+        globalOpCount++;
+        result.activeSessionsProjected++;
+      }
+
+      // Handle Tickets
       const ticketsRef = collection(db, "stores", storeId, "sessions", session.id, "kitchentickets");
       const ticketsSnap = await getDocs(ticketsRef);
       result.scannedTickets += ticketsSnap.size;
@@ -153,7 +209,14 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
           }
         }
       }
+
+      if (globalOpCount >= 400) {
+        await globalBatch.commit();
+        globalBatch = writeBatch(db);
+        globalOpCount = 0;
+      }
     }
+    if (globalOpCount > 0) await globalBatch.commit();
 
     // 5. Write projections and update opPages summaries
     for (const [stationId, data] of stationDataMap.entries()) {
@@ -226,6 +289,14 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
 
       await updateDoc(stationDocRef, summaryPayload);
     }
+
+    // 6. Update sessionPage summary (Active Sessions & Guest Count)
+    const sessionOpPageRef = doc(db, `stores/${storeId}/opPages`, 'sessionPage');
+    await updateDoc(sessionOpPageRef, {
+        activeSessionCount: totalActiveSessionCount,
+        activeGuestCount: totalActiveGuestCount,
+        updatedAt: serverTimestamp(),
+    });
 
   } catch (e: any) {
     console.error("Rebuild OpPages error:", e);

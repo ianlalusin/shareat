@@ -74,7 +74,7 @@ export default function DataManagementPage() {
 
         if (!(await confirm({
             title: "Rebuild Operational Projections?",
-            description: "This will scan sessions and tickets in the selected range to fix KDS counts and history. Existing active KDS projections for these stations will be overwritten.",
+            description: "This will scan sessions and tickets in the selected range to fix KDS counts, active session displays, and history. Existing active projections for these stations will be overwritten.",
             confirmText: "Yes, Rebuild Ops"
         }))) return;
 
@@ -133,11 +133,10 @@ export default function DataManagementPage() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-destructive">
-                            <DatabaseZap className="h-5 w-5"/> Rebuild OpPages (KDS Projections)
+                            <DatabaseZap className="h-5 w-5"/> Rebuild OpPages (Projections)
                         </CardTitle>
                         <CardDescription>
-                            Fixes stuck KDS counts or missing history by rescanning session truth data. 
-                            Use this if KDS stations show incorrect "Active" counts.
+                            Rescans sessions and tickets to fix stuck counts (KDS & Active Sessions) or missing history.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -159,9 +158,10 @@ export default function DataManagementPage() {
                                 <AlertDescription className="text-xs space-y-1 mt-2">
                                     <p>• Sessions scanned: {rebuildResult.scannedSessions}</p>
                                     <p>• Tickets processed: {rebuildResult.scannedTickets}</p>
+                                    <p>• Active Sessions projected: {rebuildResult.activeSessionsProjected}</p>
+                                    <p>• Active KDS Tickets projected: {rebuildResult.activeTicketsWritten}</p>
                                     <p>• Stations updated: {rebuildResult.stationsUpdated}</p>
-                                    <p>• Active projections written: {rebuildResult.activeTicketsWritten}</p>
-                                    <p>• Deleted stale projections: {rebuildResult.deletedActiveTickets}</p>
+                                    <p>• Deleted stale projections: {rebuildResult.deletedActiveTickets + rebuildResult.deletedActiveSessions}</p>
                                     {rebuildResult.errors.map((err, i) => (
                                         <p key={i} className="text-destructive font-semibold">Error: {err}</p>
                                     ))}
@@ -176,7 +176,7 @@ export default function DataManagementPage() {
                             className="w-full"
                         >
                             {isRebuildingOps ? <Loader2 className="mr-2 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                            {isRebuildingOps ? "Rebuilding Operational Pages..." : "Rescan & Rebuild OpPages"}
+                            {isRebuildingOps ? "Rebuilding Operational Projections..." : "Rescan & Rebuild Ops Projections"}
                         </Button>
                     </CardContent>
                 </Card>
