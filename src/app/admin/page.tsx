@@ -1,10 +1,9 @@
-
 "use client";
 
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { BackfillTool } from "@/components/admin/BackfillTool";
@@ -30,6 +29,7 @@ const managerTools = [
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
+    { title: "Printer Setup", description: "Configure Bluetooth thermal printers.", href: "/admin/tools/printer-test", icon: Printer },
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]
 

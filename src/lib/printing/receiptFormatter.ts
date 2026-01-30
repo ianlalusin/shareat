@@ -1,4 +1,3 @@
-
 'use client';
 
 import { toJsDate } from "@/lib/utils/date";
@@ -7,7 +6,6 @@ import { format } from "date-fns";
 
 /**
  * Formats receipt data into plain text for thermal printing (ESC/POS).
- * This utility focuses strictly on text formatting and alignment.
  * 
  * @param data The shared ReceiptData object.
  * @param width The paper width in mm (58 or 80).
@@ -15,37 +13,20 @@ import { format } from "date-fns";
  */
 export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): string {
   const charsPerLine = width === 58 ? 32 : 48;
-  
-  let qtyWidth: number;
-  let priceWidth: number;
-  let nameWidth: number;
-
-  if (width === 58) {
-    qtyWidth = 3;     // " 1 "
-    priceWidth = 9;   // " 1234.56"
-    nameWidth = charsPerLine - qtyWidth - priceWidth; // 20
-  } else {
-    qtyWidth = 4;
-    priceWidth = 12;
-    nameWidth = charsPerLine - qtyWidth - priceWidth; // 32
-  }
+  const qtyWidth = 4;
+  const priceWidth = 10;
+  const nameWidth = charsPerLine - qtyWidth - priceWidth;
 
   const lines: string[] = [];
 
   const center = (text: string) => {
-    const safeText = text.slice(0, charsPerLine);
-    const padding = Math.max(0, Math.floor((charsPerLine - safeText.length) / 2));
-    return " ".repeat(padding) + safeText;
+    const padding = Math.max(0, Math.floor((charsPerLine - text.length) / 2));
+    return " ".repeat(padding) + text;
   };
 
   const justify = (left: string, right: string) => {
     const space = charsPerLine - left.length - right.length;
-    if (space <= 0) {
-        // Truncate left string to fit if they are too long combined
-        const availableForLeft = charsPerLine - right.length - 1;
-        return left.slice(0, availableForLeft) + " " + right;
-    }
-    return left + " ".repeat(space) + right;
+    return left + " ".repeat(Math.max(1, space)) + right;
   };
 
   const hr = () => "-".repeat(charsPerLine);
@@ -85,24 +66,13 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
     const lineTotal = (billableQty * line.unitPrice).toFixed(2);
     
-    // Wrapped name logic
-    const name = line.itemName;
-    let currentLine = 0;
-    while (currentLine * nameWidth < name.length) {
-        const namePart = name.substring(currentLine * nameWidth, (currentLine + 1) * nameWidth);
-        if (currentLine === 0) {
-            // First line of item includes Qty and Total
-            lines.push(
-                String(billableQty).padEnd(qtyWidth) + 
-                namePart.padEnd(nameWidth) + 
-                lineTotal.padStart(priceWidth)
-            );
-        } else {
-            // Subsequent lines only contain the rest of the name
-            lines.push(" ".repeat(qtyWidth) + namePart);
-        }
-        currentLine++;
-    }
+    // Simple wrap for long names
+    const name = line.itemName.substring(0, nameWidth - 1);
+    lines.push(
+      String(billableQty).padEnd(qtyWidth) + 
+      name.padEnd(nameWidth) + 
+      lineTotal.padStart(priceWidth)
+    );
   });
 
   lines.push(hr());
