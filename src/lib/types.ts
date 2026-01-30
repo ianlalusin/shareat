@@ -1,5 +1,5 @@
-
 import { Timestamp } from "firebase/firestore";
+import type { ReceiptData, ReceiptSession, ReceiptSettings } from "@/components/receipt/receipt-view";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
 
@@ -469,59 +469,6 @@ export type ReceiptAnalyticsV2 = {
   };
 };
 
-export type ReceiptSession = {
-    id: string;
-    tableNumber?: string;
-    customer?: { name?: string };
-    customerName?: string | null;
-    sessionMode: 'package_dinein' | 'alacarte';
-    guestCountFinal?: number;
-    paymentSummary: {
-        subtotal: number;
-        lineDiscountsTotal: number;
-        billDiscountAmount: number;
-        adjustmentsTotal: number;
-        grandTotal: number;
-        totalPaid: number;
-        change: number;
-        printedCount?: number;
-    };
-    closedAt: any;
-    startedByUid: string;
-    verifiedByUid?: string;
-    cashierName?: string;
-};
-
-export type ReceiptSettings = {
-    businessName?: string;
-    branchName?: string;
-    address?: string;
-    contact?: string;
-    tin?: string;
-    vatType?: "VAT" | "NON_VAT";
-    logoUrl?: string;
-    footerText?: string;
-    showCashierName?: boolean;
-    showTableOrCustomer?: boolean;
-    showItemNotes?: boolean;
-    showDiscountBreakdown?: boolean;
-    showChargeBreakdown?: boolean;
-    paperWidth?: "58mm" | "80mm" | "A4";
-    receiptNoFormat?: string;
-};
-
-export type ReceiptData = {
-    session: ReceiptSession;
-    lines?: SessionBillLine[];
-    payments: any[];
-    settings: ReceiptSettings;
-    store?: Store;
-    receiptCreatedAt?: any;
-    createdByUsername?: string;
-    receiptNumber?: string;
-    analytics?: any;
-};
-
 export type Receipt = {
     id: string;
     storeId: string;
@@ -686,3 +633,5 @@ export type PackageUnit = {
         discountValue?: number | null;
     }
 }
+
+export type { ReceiptData, ReceiptSession, ReceiptSettings };

@@ -3,10 +3,61 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store, ReceiptData, ReceiptSession, ReceiptSettings } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
-export type { ReceiptData };
+export type ReceiptSession = {
+    id: string;
+    tableNumber?: string;
+    customer?: { name?: string };
+    customerName?: string | null;
+    sessionMode: 'package_dinein' | 'alacarte';
+    guestCountFinal?: number;
+    paymentSummary: {
+        subtotal: number;
+        lineDiscountsTotal: number;
+        billDiscountAmount: number;
+        adjustmentsTotal: number;
+        grandTotal: number;
+        totalPaid: number;
+        change: number;
+        printedCount?: number;
+    };
+    closedAt: any;
+    startedByUid: string;
+    verifiedByUid?: string;
+    cashierName?: string;
+};
+
+export type ReceiptSettings = {
+    businessName?: string;
+    branchName?: string;
+    address?: string;
+    contact?: string;
+    tin?: string;
+    vatType?: "VAT" | "NON_VAT";
+    logoUrl?: string;
+    footerText?: string;
+    showCashierName?: boolean;
+    showTableOrCustomer?: boolean;
+    showItemNotes?: boolean;
+    showDiscountBreakdown?: boolean;
+    showChargeBreakdown?: boolean;
+    paperWidth?: "58mm" | "80mm" | "A4";
+    receiptNoFormat?: string;
+};
+
+export type ReceiptData = {
+    session: ReceiptSession;
+    lines?: SessionBillLine[];
+    payments: any[];
+    settings: ReceiptSettings;
+    store?: Store;
+    receiptCreatedAt?: any;
+    createdByUsername?: string;
+    receiptNumber?: string;
+    analytics?: any;
+};
 
 interface ReceiptViewProps {
     data: ReceiptData | null;
