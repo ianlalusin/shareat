@@ -21,7 +21,7 @@ import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { getActorStamp } from "../cashier/firestore";
+import { getActorStamp, createAddonKitchenTickets } from "../cashier/firestore";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -131,7 +131,6 @@ function POSContent({
   const { appUser } = useAuthContext();
   const { toast } = useToast();
 
-  // Addons now come from StoreContext cache (loaded once per activeStore).
   const { storeAddons, storeAddonsLoading, refreshStoreAddons } = useStoreContext();
   const addons = storeAddons as unknown as EnrichedStoreAddon[];
   const isLoading = storeAddonsLoading;
@@ -218,45 +217,16 @@ function POSContent({
       return;
     }
 
-    // If onAddLine is provided, we're in "edit receipt" mode.
-    if (onAddLine) {
-        const newLine: SessionBillLine = {
-            id: `addon_${selectedAddon.id}`, // Stable ID for merging quantities
-            type: "addon",
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            category: selectedAddon.subCategory ?? null,
-            barcode: selectedAddon.barcode ?? null,
-            unitPrice: safeUnitPrice,
-            qtyOrdered: quantity,
-            discountType: null,
-            discountValue: 0,
-            discountQty: 0,
-            freeQty: 0,
-            voidedQty: 0,
-            createdAt: new Date(), // Temporary, won't be saved to Firestore directly
-            updatedAt: new Date(),
-        };
-        onAddLine(newLine);
-        toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added to bill.` });
-        setSelectedAddon(null);
-        setQuantity(1);
-        onClose();
-        return;
-    }
-
-
     setIsSubmitting(true);
 
     try {
-      const lineId = `addon_${selectedAddon.id}`;
-      const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
-      const ticketsColRef = collection(db, `stores/${storeId}/sessions/${session.id}/kitchentickets`);
+      const lineId = `addon_${selectedAddon.id}_${safeUnitPrice}`;
       const actor = getActorStamp(appUser);
       
       await runTransaction(db, async (tx) => {
-        // 1. Upsert the billable line item
+        const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
         const lineSnap = await tx.get(lineRef);
+        
         if (lineSnap.exists()) {
           tx.update(lineRef, {
             qtyOrdered: increment(quantity),
@@ -265,7 +235,8 @@ function POSContent({
             updatedByName: actor.username,
           });
         } else {
-          const newLine: Omit<SessionBillLine, "id" | "createdAt"> = {
+          const newLinePayload = stripUndefined({
+            id: lineId,
             type: "addon",
             itemId: selectedAddon.id,
             itemName: selectedAddon.displayName,
@@ -278,49 +249,49 @@ function POSContent({
             discountQty: 0,
             freeQty: 0,
             voidedQty: 0,
+            createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
-          };
-          tx.set(lineRef, { ...newLine, id: lineRef.id, createdAt: serverTimestamp() });
-        }
-
-        // 2. Create kitchen tickets
-        for (let i = 0; i < quantity; i++) {
-          const ticketRef = doc(ticketsColRef);
-          const ticketPayload = stripUndefined({
-            id: ticketRef.id,
-            type: "addon",
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            qty: 1,
-            status: "preparing",
             kitchenLocationId: selectedAddon.kitchenLocationId,
             kitchenLocationName: selectedAddon.kitchenLocationName,
-            sessionId: session.id,
-            storeId,
-            createdByUid: appUser.uid,
-            createdAt: serverTimestamp(),
-            createdAtClientMs: Date.now(),
-            sessionLabel: computeSessionLabel(session),
-            // Denormalize session info for KDS
-            tableNumber: session.tableNumber,
-            customerName: session.customer?.name || session.customerName,
-            sessionMode: session.sessionMode,
-            guestCount: session.guestCountFinal || session.guestCountCashierInitial,
           });
-          tx.set(ticketRef, ticketPayload);
-
-          // KDS PROJECTION WRITE
-          const projectionRef = doc(db, 'stores', storeId, 'opPages', selectedAddon.kitchenLocationId!, 'activeKdsTickets', ticketRef.id);
-          tx.set(projectionRef, ticketPayload);
+          tx.set(lineRef, newLinePayload);
         }
 
-        // 3. Increment the active count
-        const opPageRef = doc(db, 'stores', storeId, 'opPages', selectedAddon.kitchenLocationId!);
-        tx.update(opPageRef, { activeCount: increment(quantity) });
+        // Use the helper for tickets + projections
+        await createAddonKitchenTickets(db, storeId, session.id, session, {
+            itemId: selectedAddon.id,
+            itemName: selectedAddon.displayName,
+            kitchenLocationId: selectedAddon.kitchenLocationId!,
+            kitchenLocationName: selectedAddon.kitchenLocationName,
+        }, quantity, actor, { tx });
       });
       
+      // OPTIMISTIC UI HOOK
+      if (onAddLine) {
+          const newLine: SessionBillLine = {
+              id: lineId,
+              type: "addon",
+              itemId: selectedAddon.id,
+              itemName: selectedAddon.displayName,
+              category: selectedAddon.subCategory ?? null,
+              barcode: selectedAddon.barcode ?? null,
+              unitPrice: safeUnitPrice,
+              qtyOrdered: quantity,
+              discountType: null,
+              discountValue: 0,
+              discountQty: 0,
+              freeQty: 0,
+              voidedQty: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              kitchenLocationId: selectedAddon.kitchenLocationId,
+              kitchenLocationName: selectedAddon.kitchenLocationName,
+          };
+          onAddLine(newLine);
+      }
+
       toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
       setSelectedAddon(null);
       setQuantity(1);
@@ -454,7 +425,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent>
-          <DrawerHeader>
+          <DrawerHeader className="text-left">
             <DrawerTitle>Add-ons</DrawerTitle>
             <DrawerDescription>Select add-on items to add to the order.</DrawerDescription>
           </DrawerHeader>

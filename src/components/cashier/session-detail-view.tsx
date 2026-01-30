@@ -8,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createAddonKitchenTickets } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -207,6 +207,23 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (line.type === 'package' && diff.qtyOrdered > 0) {
             await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser, sessionContext });
         }
+        
+        // Handle addon qty increases -> create kitchen tickets
+        if (line.type === 'addon' && diff.qtyOrdered > 0) {
+            const klId = line.kitchenLocationId;
+            if (klId) {
+                const actor = getActorStamp(appUser);
+                await createAddonKitchenTickets(db, storeId, sessionId, session, {
+                    itemId: line.itemId,
+                    itemName: line.itemName,
+                    kitchenLocationId: klId,
+                    kitchenLocationName: line.kitchenLocationName,
+                }, diff.qtyOrdered, actor);
+            } else {
+                toast({ variant: 'destructive', title: 'Warning', description: 'Qty increased but kitchen station unknown. Ticket not sent.' });
+            }
+        }
+
         if (diff.discount > 0) {
             await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
         } else if (diff.discount < 0) {
@@ -389,7 +406,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   return (
     <div className="h-screen flex flex-col">
       <header className="flex items-center gap-4 border-b bg-muted/40 px-6 h-[72px]">
-        <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-9 w-9">
+        <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-99 w-9">
             <ArrowLeft className="h-5 w-5" />
         </Button>
         <SessionHeader session={{

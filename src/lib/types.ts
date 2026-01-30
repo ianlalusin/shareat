@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from "firebase/firestore";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
@@ -245,6 +244,8 @@ export type SessionBillLine = {
   updatedAt: any;
   updatedByUid?: string | null;
   updatedByName?: string | null;
+  kitchenLocationId?: string | null;
+  kitchenLocationName?: string | null;
 };
 
 export type LineAdjustmentKind = "discount" | "charge";
@@ -551,7 +552,7 @@ export type ActivityLog = {
   sessionId: string;
   storeId: string;
 
-  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_EDITED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED" | "RECEIPT_VOIDED";
+  action: "SESSION_STARTED" | "SESSION_VOIDED" | "DISCOUNT_APPLIED" | "DISCOUNT_EDITED" | "DISCOUNT_REMOVED" | "MARK_FREE" | "UNMARK_FREE" | "VOID_TICKETS" | "UNVOID" | "PRICE_OVERRIDE" | "PAYMENT_COMPLETED" | "edit_line" | "PACKAGE_QTY_OVERRIDE_SET" | "PACKAGE_QTY_RESYNC_APPROVED_CHANGE" | "RECEIPT_DELETED" | "RECEIPT_EDITED" | "RECEIPT_VOIDED" | "SESSION_VERIFIED";
 
   actorUid: string;
   actorRole?: string | null;
@@ -611,6 +612,9 @@ export type ActivityLog = {
     delta?: number;
     discountName?: string;
     percent?: number;
+    
+    serverCount?: number;
+    finalCount?: number;
   };
 
   createdAt: any; // serverTimestamp()

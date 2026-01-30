@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import {
@@ -18,6 +17,8 @@ import {
   type DocumentReference,
   type DocumentSnapshot,
   type DocumentData,
+  type Firestore,
+  type Transaction,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -34,6 +35,7 @@ import type {
   Receipt,
   KitchenTicket,
   LineAdjustment,
+  PendingSession,
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
@@ -46,7 +48,7 @@ import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { toJsDate } from '@/lib/utils/date';
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
-type ActorStamp = { uid: string; username: string; email?: string | null };
+export type ActorStamp = { uid: string; username: string; email?: string | null };
 
 export function getActorStamp(user: AppUser): ActorStamp {
   const username =
@@ -463,8 +465,6 @@ export async function completePaymentFromUnits(
 
     }
     
-    // ... rest of payment and receipt logic from original function ...
-    
     // write payments subcollection
     const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, 'payments');
     payments.forEach((payment) => {
@@ -842,13 +842,67 @@ export async function removeLineAdjustment(
   await updateDoc(lineRef, updatePayload);
 }
 
-    
+/**
+ * Helper to create kitchen tickets and projections for addon items.
+ * Can be used within a transaction or standalone.
+ */
+export async function createAddonKitchenTickets(
+  db: Firestore,
+  storeId: string,
+  sessionId: string,
+  session: PendingSession,
+  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; },
+  qty: number,
+  actor: ActorStamp,
+  opts?: { tx?: Transaction }
+) {
+  const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
+  const now = Date.now();
+  const serverTs = serverTimestamp();
+  
+  const batch = !opts?.tx ? writeBatch(db) : null;
 
+  for (let i = 0; i < qty; i++) {
+    const ticketRef = doc(ticketsColRef);
+    const ticketPayload = stripUndefined({
+      id: ticketRef.id,
+      type: "addon",
+      itemId: line.itemId,
+      itemName: line.itemName,
+      qty: 1,
+      status: "preparing",
+      kitchenLocationId: line.kitchenLocationId,
+      kitchenLocationName: line.kitchenLocationName,
+      sessionId: sessionId,
+      storeId,
+      createdByUid: actor.uid,
+      createdAt: serverTs,
+      createdAtClientMs: now,
+      updatedAt: serverTs,
+      sessionLabel: computeSessionLabel(session),
+      tableNumber: session.tableNumber,
+      customerName: session.customer?.name || session.customerName,
+      sessionMode: session.sessionMode,
+      guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+    });
 
+    if (opts?.tx) {
+      opts.tx.set(ticketRef, ticketPayload);
+      const projectionRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+      opts.tx.set(projectionRef, ticketPayload);
+    } else if (batch) {
+      batch.set(ticketRef, ticketPayload);
+      const projectionRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
+      batch.set(projectionRef, ticketPayload);
+    }
+  }
 
-
-
-
-
-    
-
+  // Update opPage activeCount
+  const opPageRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId);
+  if (opts?.tx) {
+    opts.tx.update(opPageRef, { activeCount: increment(qty) });
+  } else if (batch) {
+    batch.update(opPageRef, { activeCount: increment(qty) });
+    await batch.commit();
+  }
+}
