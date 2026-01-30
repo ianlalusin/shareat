@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
+import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine, ReceiptSettings } from "@/lib/types";
 import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -400,6 +400,7 @@ export default function ReceiptsPageContents() {
                     paymentSummary: receiptDocData.analytics,
                     closedAt: receiptDocData.createdAt,
                     startedByUid: "N/A",
+                    cashierName: receiptDocData.createdByUsername,
                 };
                 
                 setSelectedReceiptData({
@@ -616,6 +617,11 @@ export default function ReceiptsPageContents() {
 
     const handleTestPrint = () => {
         if (!activeStore) return;
+        const rawSettings = form.getValues();
+        const settings: ReceiptSettings = {
+            ...rawSettings,
+            logoUrl: rawSettings.logoUrl ?? undefined,
+        };
         const testData: ReceiptData = {
             session: {
                 id: "TEST-SESSION",
@@ -636,7 +642,7 @@ export default function ReceiptsPageContents() {
                 { id: "test-1", itemName: "Test Package", qtyOrdered: 2, unitPrice: 500, voidedQty: 0, freeQty: 0, type: 'package' } as any,
                 { id: "test-2", itemName: "Test Add-on Item", qtyOrdered: 1, unitPrice: 120, voidedQty: 0, freeQty: 0, type: 'addon' } as any,
             ],
-            settings: form.getValues(),
+            settings,
             store: activeStore,
             receiptCreatedAt: new Date(),
             createdByUsername: "Test Cashier",
