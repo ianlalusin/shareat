@@ -77,7 +77,7 @@ export default function ReceiptPage() {
 
     useEffect(() => {
         const fetchData = async () => {
-            if (!sessionId || !activeStoreId || !appUser || !activeStore) {
+            if (!sessionId || !activeStoreId || !activeStore) {
                 return;
             }
 
@@ -131,12 +131,12 @@ export default function ReceiptPage() {
         };
 
         fetchData();
-    }, [sessionId, activeStoreId, activeStore, appUser, storageKey]);
+    }, [sessionId, activeStoreId, activeStore, storageKey]);
 
     const [isPrinting, setIsPrinting] = useState(false);
 
     const handlePrint = async () => {
-        if (!receiptData || !activeStoreId || !appUser || !sessionId) return;
+        if (!receiptData || !activeStoreId || !sessionId) return;
         if (isPrinting) return;
     
         setIsPrinting(true);
@@ -147,12 +147,15 @@ export default function ReceiptPage() {
     
         if (sessionId !== "PREVIEW") {
             try {
-                const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, sessionId);
+                const receiptRef = doc(db, "stores", activeStoreId, "receipts", sessionId);
+                const uid = appUser?.uid ?? null;
+                const username = appUser ? getUsername(appUser) : null;
+
                 await updateDoc(receiptRef, {
                     printedCount: increment(1),
                     lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: appUser.uid,
-                    lastPrintedByUsername: getUsername(appUser),
+                    lastPrintedByUid: uid,
+                    lastPrintedByUsername: username,
                 });
             } catch (e) {
                 console.warn("Print audit tracking failed:", e);
@@ -163,13 +166,14 @@ export default function ReceiptPage() {
     };
 
     const handleThermalPrint = async () => {
-        if (!receiptData || isThermalPrinting) return;
+        if (!receiptData || isThermalPrinting || !activeStoreId || !sessionId) return;
         
         setIsThermalPrinting(true);
         try {
             const lastAddress = localStorage.getItem('last_printer_address');
             if (!lastAddress) {
                 toast({ variant: 'destructive', title: 'No Printer', description: 'Configure thermal printer in Manager Tools.' });
+                setIsThermalPrinting(false);
                 return;
             }
 
@@ -185,12 +189,15 @@ export default function ReceiptPage() {
             });
 
             if (sessionId !== "PREVIEW") {
-                const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, sessionId);
+                const receiptRef = doc(db, "stores", activeStoreId, "receipts", sessionId);
+                const uid = appUser?.uid ?? null;
+                const username = appUser ? getUsername(appUser) : null;
+
                 await updateDoc(receiptRef, {
                     printedCount: increment(1),
                     lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: appUser.uid,
-                    lastPrintedByUsername: getUsername(appUser),
+                    lastPrintedByUid: uid,
+                    lastPrintedByUsername: username,
                 });
             }
             toast({ title: 'Success', description: 'Sent to thermal printer.' });
