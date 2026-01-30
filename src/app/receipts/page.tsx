@@ -507,7 +507,7 @@ export default function ReceiptsPageContents() {
       }
     };
 
-    const handleExport = async () => {
+    const handleExport = async (loadAll = false) => {
         if (!activeStore) return;
         setIsExporting(true);
 
@@ -643,6 +643,7 @@ export default function ReceiptsPageContents() {
                 { id: "test-2", itemName: "Test Add-on Item", qtyOrdered: 1, unitPrice: 120, voidedQty: 0, freeQty: 0, type: 'addon' } as any,
             ],
             settings,
+            payments: [{ methodId: "Cash", amount: 1200 }],
             store: activeStore,
             receiptCreatedAt: new Date(),
             createdByUsername: "Test Cashier",
@@ -689,7 +690,7 @@ export default function ReceiptsPageContents() {
                     <Button variant="outline" onClick={() => router.back()}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
-                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
+                    <Button onClick={() => handleExport()} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
                         {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
                         Export
                     </Button>
