@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useMemo } from "react";
@@ -6,6 +5,8 @@ import { format } from 'date-fns';
 import Image from "next/image";
 import type { ModeOfPayment, SessionBillLine, Store, ReceiptData, ReceiptSession, ReceiptSettings } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
+
+export type { ReceiptData };
 
 interface ReceiptViewProps {
     data: ReceiptData | null;
