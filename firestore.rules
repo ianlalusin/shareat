@@ -3,9 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // -------------------------
-    // Helpers
-    // -------------------------
     function isSignedIn() {
       return request.auth != null;
     }
@@ -34,33 +31,25 @@ service cloud.firestore {
     }
 
     function hasStoreAccess(storeId) {
-      // Admin sees all stores
-      if (isAdmin()) return true;
-
-      // Active staff must have storeId in assignedStoreIds (array/list)
-      return isActiveStaff()
+      return isAdmin() || (
+        isActiveStaff()
         && (staffData().assignedStoreIds is list)
-        && staffData().assignedStoreIds.hasAny([storeId]);
+        && staffData().assignedStoreIds.hasAny([storeId])
+      );
     }
 
-    // -------------------------
-    // Store-scoped rules
-    // -------------------------
-
-    // ✅ Projections: allow store staff to delete opPages docs (needed by KDS serve/cancel)
+    // ✅ Projections (needed for KDS serve/cancel deletes)
     match /stores/{storeId}/opPages/{docPath=**} {
       allow read, create, update, delete: if hasStoreAccess(storeId);
     }
 
-    // Everything else under a store: no deletes except admin
+    // Store scoped (everything else): no deletes except admin
     match /stores/{storeId}/{docPath=**} {
       allow read, create, update: if hasStoreAccess(storeId);
       allow delete: if isAdmin();
     }
 
-    // -------------------------
-    // Root (non-store) rules
-    // -------------------------
+    // Root (non-store)
     match /{collection}/{docId} {
       allow read, create, update: if isActiveStaff();
       allow delete: if isAdmin();

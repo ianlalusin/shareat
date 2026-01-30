@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "shareatv5"
-  }
+    "default": "shareatv5",
+    "shareat": "shareat-hub-v2"
+  },
+  "targets": {},
+  "etags": {}
 }
