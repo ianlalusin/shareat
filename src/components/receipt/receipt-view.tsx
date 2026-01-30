@@ -83,9 +83,23 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const vatableSales = grandTotal - taxAmount;
 
     return (
-        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg border-t-[5mm] border-transparent">
+        <div 
+            data-paper-width={paperWidth} 
+            className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg border-t-[5mm] border-transparent"
+            style={{ fontSize: '12px' }}
+        >
             <header className="text-center space-y-px mb-2 receipt-section">
-                {settings.logoUrl && <div className="relative w-10 h-10 mx-auto mb-1"><Image src={settings.logoUrl} alt="Logo" fill style={{objectFit: 'contain'}} /></div>}
+                {settings.logoUrl && (
+                    <div className="relative w-10 h-10 mx-auto mb-1">
+                        <Image 
+                            src={settings.logoUrl} 
+                            alt="Logo" 
+                            width={40} 
+                            height={40} 
+                            className="object-contain mx-auto" 
+                        />
+                    </div>
+                )}
                 <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>
                 <p className="text-[10px] uppercase truncate">{settings.address}</p>
                 <p className="text-[10px]">{settings.contact}</p>
@@ -109,7 +123,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
             <hr className="border-dashed border-black my-2" />
 
             <section className="mb-2 receipt-section">
-                <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 font-bold">
+                <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 font-bold mb-1">
                     <span>Qty</span>
                     <span>Item</span>
                     <span className="text-right">Total</span>
@@ -138,7 +152,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     }
 
                     return (
-                        <div key={line.id} className="receipt-item-row">
+                        <div key={line.id} className="receipt-item-row mb-1">
                              <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 items-start">
                                 <span>{billableQty}</span>
                                 <div className="min-w-0">
@@ -151,7 +165,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                                 </span>
                             </div>
                              {hasDiscount && settings.showDiscountBreakdown && (
-                                <div className="pl-4 text-xs flex justify-between">
+                                <div className="pl-4 text-[10px] flex justify-between italic">
                                     <span>Discount ({line.discountQty}x)</span>
                                     <span className="text-right whitespace-nowrap">- {lineDiscountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
@@ -175,7 +189,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
              {(taxAmount > 0) && (
                  <>
                     <hr className="border-dashed border-black my-2" />
-                    <section className="space-y-px mb-2 text-xs receipt-section">
+                    <section className="space-y-px mb-2 text-[10px] receipt-section">
                          <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
                          <ReceiptRow label="VAT Exempt Sales" value={0} isCurrency />
                          <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
@@ -202,16 +216,16 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 <>
                  <hr className="border-dashed border-black my-2" />
                  <section className="space-y-px mb-2 receipt-section">
-                    <p className="font-bold text-xs uppercase">Free Items:</p>
+                    <p className="font-bold text-[10px] uppercase">Free Items:</p>
                     {freeItems.map(([name, item]) => (
-                        <p key={name} className="text-xs">{item.qty}x {name}</p>
+                        <p key={name} className="text-[10px]">{item.qty}x {name}</p>
                     ))}
                  </section>
                 </>
              )}
 
             <footer className="text-center mt-4 space-y-2 receipt-section">
-                {settings.footerText && <p className="text-xs">{settings.footerText}</p>}
+                {settings.footerText && <p className="text-[10px]">{settings.footerText}</p>}
                 <p className="text-xs">Thank you!</p>
             </footer>
         </div>

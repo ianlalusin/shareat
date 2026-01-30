@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
+import { Loader2, Printer } from "lucide-react";
 import type { Store } from "@/lib/types";
 
 export const receiptSettingsSchema = z.object({
@@ -42,9 +42,10 @@ type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
 interface ReceiptSettingsProps {
     store: Store;
     form: UseFormReturn<ReceiptSettingsFormValues>;
+    onTestPrint?: () => void;
 }
 
-export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
+export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   
@@ -65,7 +66,14 @@ export function ReceiptSettings({ store, form }: ReceiptSettingsProps) {
     <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <div className="space-y-4 p-4 border rounded-lg">
-                <h3 className="font-semibold">Display Options</h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">Display Options</h3>
+                    {onTestPrint && (
+                        <Button type="button" variant="outline" size="sm" onClick={onTestPrint}>
+                            <Printer className="mr-2 h-4 w-4" /> Print Test Receipt
+                        </Button>
+                    )}
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <FormField control={form.control} name="showCashierName" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Cashier</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showTableOrCustomer" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Table/Customer</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />

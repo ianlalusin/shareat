@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -615,6 +614,53 @@ export default function ReceiptsPageContents() {
       setVoidOpen(true);
     };
 
+    const handleTestPrint = () => {
+        if (!activeStore) return;
+        const testData: ReceiptData = {
+            session: {
+                id: "TEST-SESSION",
+                tableNumber: "99",
+                customerName: "Test Customer",
+                sessionMode: "package_dinein",
+                closedAt: new Date(),
+                startedByUid: appUser?.uid || "SYSTEM",
+                cashierName: "Test Cashier",
+                paymentSummary: {
+                    subtotal: 1000,
+                    grandTotal: 1120,
+                    totalPaid: 1200,
+                    change: 80,
+                } as any
+            } as any,
+            lines: [
+                { id: "test-1", itemName: "Test Package", qtyOrdered: 2, unitPrice: 500, voidedQty: 0, freeQty: 0, type: 'package' } as any,
+                { id: "test-2", itemName: "Test Add-on Item", qtyOrdered: 1, unitPrice: 120, voidedQty: 0, freeQty: 0, type: 'addon' } as any,
+            ],
+            settings: form.getValues(),
+            store: activeStore,
+            receiptCreatedAt: new Date(),
+            createdByUsername: "Test Cashier",
+            receiptNumber: "TEST-000001",
+            analytics: {
+                subtotal: 1120,
+                discountsTotal: 0,
+                chargesTotal: 0,
+                taxAmount: 120,
+                grandTotal: 1120,
+                totalPaid: 1200,
+                change: 80,
+                mop: { "Cash": 1200 }
+            }
+        };
+        setSelectedReceiptData(testData);
+        setSelectedReceiptId("PREVIEW");
+        
+        // Give state time to update before triggering print
+        setTimeout(() => {
+            window.print();
+        }, 200);
+    };
+
     if (storeLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
     }
@@ -747,7 +793,21 @@ export default function ReceiptsPageContents() {
                     </CardContent>
                 </Card>
 
-                <div className="sticky top-20">
+                <div className="sticky top-20 space-y-4">
+                    <Card className="border-primary/50 bg-primary/5 shadow-md">
+                        <CardHeader className="py-3">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                                <Printer className="h-4 w-4" /> Receipt Printer Test
+                            </CardTitle>
+                            <CardDescription className="text-xs">Verify your thermal printer connection and alignment.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="py-0 pb-3">
+                            <Button variant="outline" size="sm" className="w-full bg-background" onClick={handleTestPrint}>
+                                Print Test Receipt
+                            </Button>
+                        </CardContent>
+                    </Card>
+
                      <Card>
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Preview</CardTitle>
@@ -773,7 +833,7 @@ export default function ReceiptsPageContents() {
                         <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
                     </DialogHeader>
                      <div className="overflow-y-auto px-6">
-                        <ReceiptTemplateSettings store={activeStore} form={form} />
+                        <ReceiptTemplateSettings store={activeStore} form={form} onTestPrint={handleTestPrint} />
                      </div>
                      <div className="p-6 pt-0">
                         <DialogClose asChild><Button type="button" variant="secondary">Close</Button></DialogClose>
