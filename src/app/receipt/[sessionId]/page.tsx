@@ -26,12 +26,15 @@ function getUsername(appUser: any) {
 }
 
 export default function ReceiptPage() {
-    const params = useParams();
-    const rawSessionId = params?.["sessionId"];
-    const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+    const params = useParams<{ sessionId?: string }>();
+    const sessionIdParam = params?.sessionId;
+    const sessionId = Array.isArray(sessionIdParam) ? sessionIdParam[0] : sessionIdParam;
+    
     const searchParams = useSearchParams();
     const { appUser } = useAuthContext();
-    const { activeStoreId, activeStore } = useStoreContext();
+    const { activeStore } = useStoreContext();
+    const activeStoreId = activeStore?.id ?? null;
+
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
