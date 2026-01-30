@@ -6,10 +6,11 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Printer, Bluetooth, Check, RefreshCw, XCircle } from "lucide-react";
+import { Loader2, Printer, Bluetooth, Check, RefreshCw, ShieldAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrinter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Capacitor } from '@capacitor/core';
 
 export default function PrinterTestPage() {
   const { toast } = useToast();
@@ -17,23 +18,33 @@ export default function PrinterTestPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<"58" | "80">("80");
+  const [isNative, setIsNative] = useState(true);
 
   useEffect(() => {
-    refreshDevices();
-    const stored = localStorage.getItem('last_printer_address');
-    if (stored) setConnectedAddress(stored);
+    setIsNative(Capacitor.isNativePlatform());
+    if (Capacitor.isNativePlatform()) {
+      refreshDevices();
+      const stored = localStorage.getItem('last_printer_address');
+      if (stored) setConnectedAddress(stored);
+    }
   }, []);
 
   const refreshDevices = async () => {
+    if (!Capacitor.isNativePlatform()) return;
     setIsLoading(true);
     try {
       const { devices } = await ThermalPrinter.listBluetoothPrinters();
       setDevices(devices);
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Error', description: e.message });
+      toast({ variant: 'destructive', title: 'Permissions or Bluetooth Error', description: e.message });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleRequestPermissions = async () => {
+    // Calling listBluetoothPrinters triggers the native permission flow if not granted
+    await refreshDevices();
   };
 
   const handleConnect = async (address: string) => {
@@ -74,7 +85,8 @@ abcdefghijklmnopqrstuvwxyz
         text,
         widthMm: parseInt(paperWidth) as any,
         cut: true,
-        beep: true
+        beep: true,
+        encoding: 'CP437'
       });
       toast({ title: 'Print Job Sent' });
     } catch (e: any) {
@@ -84,9 +96,31 @@ abcdefghijklmnopqrstuvwxyz
     }
   };
 
+  if (!isNative) {
+    return (
+      <RoleGuard allow={["admin", "manager"]}>
+        <PageHeader title="Thermal Printer Setup" description="Native Bluetooth printing features." />
+        <Card className="mt-6 border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <ShieldAlert /> Android App Required
+            </CardTitle>
+            <CardDescription className="text-amber-600 dark:text-amber-500">
+              Bluetooth printing requires the native Android application build. It cannot be accessed directly from a standard web browser.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </RoleGuard>
+    );
+  }
+
   return (
     <RoleGuard allow={["admin", "manager"]}>
-      <PageHeader title="Thermal Printer Setup" description="Manage Bluetooth thermal printers for your Android device." />
+      <PageHeader title="Thermal Printer Setup" description="Manage Bluetooth thermal printers for your Android device.">
+        <Button variant="outline" onClick={handleRequestPermissions} disabled={isLoading}>
+          <Bluetooth className="mr-2 h-4 w-4" /> Request Permissions
+        </Button>
+      </PageHeader>
       
       <div className="grid gap-6 md:grid-cols-2 mt-6">
         <Card>
@@ -103,7 +137,10 @@ abcdefghijklmnopqrstuvwxyz
           </CardHeader>
           <CardContent className="space-y-4">
             {devices.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No paired Bluetooth devices found.</p>
+              <div className="text-sm text-muted-foreground py-10 text-center space-y-4">
+                <p>No paired Bluetooth devices found.</p>
+                <Button variant="outline" size="sm" onClick={refreshDevices}>Refresh List</Button>
+              </div>
             ) : (
               <div className="space-y-2">
                 {devices.map(device => (
