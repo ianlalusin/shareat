@@ -92,10 +92,12 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           setStaffError(null);
         },
         (error: FirestoreError) => {
-          console.error("AuthContext: Error listening to staff document:", error);
-          setStaffLoading(false); // Staff profile failed to load.
-          setStaffError(error); // Store the error.
-          setAppUser(null); // Ensure appUser is null on error.
+          // If permission is denied, it usually means the doc is restricted 
+          // or the rules aren't quite right for the user's current state.
+          console.warn("AuthContext: Error listening to staff document:", error.code, error.message);
+          setStaffLoading(false);
+          setStaffError(error);
+          setAppUser(null);
         }
       );
       

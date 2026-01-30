@@ -38,6 +38,23 @@ service cloud.firestore {
       );
     }
 
+    // ✅ Collection Group Rules (required for collectionGroup queries)
+    match /databases/{database}/documents {
+      match /kitchentickets/{ticketId} {
+        allow read: if isActiveStaff();
+      }
+      match /activityLogs/{logId} {
+        allow read: if isActiveStaff();
+      }
+    }
+
+    // ✅ Staff Profile (Allow self-read so pending/needs_profile users can load)
+    match /staff/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isAdmin();
+    }
+
     // ✅ Projections (needed for KDS serve/cancel deletes)
     match /stores/{storeId}/opPages/{docPath=**} {
       allow read, create, update, delete: if hasStoreAccess(storeId);
