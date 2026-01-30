@@ -1,72 +1,11 @@
 
-
 "use client";
 
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import { Timestamp } from "firebase/firestore";
-import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store, ReceiptData, ReceiptSession, ReceiptSettings } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
-
-// Define types based on your Firestore structure
-export type Session = {
-    id: string;
-    tableNumber?: string;
-    customer?: { name?: string };
-    customerName?: string | null;
-    sessionMode: 'package_dinein' | 'alacarte';
-    guestCountFinal?: number; // Added to ensure it's available
-    paymentSummary: {
-        subtotal: number;
-        lineDiscountsTotal: number;
-        billDiscountAmount: number;
-        adjustmentsTotal: number;
-        grandTotal: number;
-        totalPaid: number;
-        change: number;
-        printedCount?: number;
-    };
-    closedAt: Timestamp | { toDate: () => Date } | Date | { seconds: number, nanoseconds: number };
-    startedByUid: string;
-    verifiedByUid?: string;
-    cashierName?: string;
-};
-
-export type Payment = {
-    methodId: string;
-    amount: number;
-};
-
-export type ReceiptSettings = {
-    businessName?: string;
-    branchName?: string;
-    address?: string;
-    contact?: string;
-    tin?: string;
-    vatType?: "VAT" | "NON_VAT";
-    logoUrl?: string;
-    footerText?: string;
-    showCashierName?: boolean;
-    showTableOrCustomer?: boolean;
-    showItemNotes?: boolean;
-    showDiscountBreakdown?: boolean;
-    showChargeBreakdown?: boolean;
-    paperWidth?: "58mm" | "80mm" | "A4";
-    receiptNoFormat?: string;
-};
-
-export type ReceiptData = {
-    session: Session;
-    lines?: SessionBillLine[]; // New counter model
-    payments: Payment[];
-    settings: ReceiptSettings;
-    store?: Store, // Pass the full store object for tax calculation
-    receiptCreatedAt?: any;
-    createdByUsername?: string;
-    receiptNumber?: string;
-    analytics?: any;
-};
 
 interface ReceiptViewProps {
     data: ReceiptData | null;
@@ -144,13 +83,13 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const vatableSales = grandTotal - taxAmount;
 
     return (
-        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg">
+        <div data-paper-width={paperWidth} className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg border-t-[5mm] border-transparent">
             <header className="text-center space-y-px mb-2 receipt-section">
-                {settings.logoUrl && <Image src={settings.logoUrl} alt="Logo" width={40} height={40} className="mx-auto" />}
+                {settings.logoUrl && <div className="relative w-10 h-10 mx-auto mb-1"><Image src={settings.logoUrl} alt="Logo" fill style={{objectFit: 'contain'}} /></div>}
                 <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>
-                <p>{settings.address}</p>
-                <p>{settings.contact}</p>
-                {settings.tin && <p>TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
+                <p className="text-[10px] uppercase truncate">{settings.address}</p>
+                <p className="text-[10px]">{settings.contact}</p>
+                {settings.tin && <p className="text-[10px]">TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
             </header>
 
             <hr className="border-dashed border-black my-2" />
@@ -263,7 +202,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 <>
                  <hr className="border-dashed border-black my-2" />
                  <section className="space-y-px mb-2 receipt-section">
-                    <p className="font-bold">FREE ITEMS:</p>
+                    <p className="font-bold text-xs uppercase">Free Items:</p>
                     {freeItems.map(([name, item]) => (
                         <p key={name} className="text-xs">{item.qty}x {name}</p>
                     ))}
