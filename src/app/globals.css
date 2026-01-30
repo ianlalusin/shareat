@@ -84,24 +84,40 @@
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
+    width: var(--receipt-width, 80mm) !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   body * {
     visibility: hidden !important;
   }
   
-  #print-receipt-area, #print-receipt-area * {
+  #receipt-print-root, 
+  #receipt-print-root * {
     visibility: visible !important;
   }
 
-  #print-receipt-area {
+  #receipt-print-root {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: var(--receipt-width, 80mm) !important;
+    max-width: none !important;
+    display: block !important;
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  #print-receipt-area {
+    width: var(--receipt-width, 80mm) !important;
+    max-width: none !important;
+    margin: 0 !important;
   }
 
   .no-print { display: none !important; }
@@ -118,4 +134,10 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  * { box-shadow: none !important; }
 }
+
+#receipt-print-root[data-paper="58mm"] { --receipt-width: 58mm; }
+#receipt-print-root[data-paper="80mm"] { --receipt-width: 80mm; }
+#receipt-print-root[data-paper="A4"] { --receipt-width: 210mm; }

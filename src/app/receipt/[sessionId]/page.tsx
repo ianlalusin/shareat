@@ -138,25 +138,25 @@ export default function ReceiptPage() {
     
         setIsPrinting(true);
     
-        window.requestAnimationFrame(async () => {
-            window.print();
+        // Ensure layout has applied paperWidth before printing
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        window.print();
     
-            if (sessionId !== "PREVIEW") {
-                try {
-                    const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, sessionId);
-                    await updateDoc(receiptRef, {
-                        printedCount: increment(1),
-                        lastPrintedAt: serverTimestamp(),
-                        lastPrintedByUid: appUser.uid,
-                        lastPrintedByUsername: getUsername(appUser),
-                    });
-                } catch (e) {
-                    console.warn("Print audit tracking failed:", e);
-                }
+        if (sessionId !== "PREVIEW") {
+            try {
+                const receiptRef = doc(db, `stores/${activeStoreId}/receipts`, sessionId);
+                await updateDoc(receiptRef, {
+                    printedCount: increment(1),
+                    lastPrintedAt: serverTimestamp(),
+                    lastPrintedByUid: appUser.uid,
+                    lastPrintedByUsername: getUsername(appUser),
+                });
+            } catch (e) {
+                console.warn("Print audit tracking failed:", e);
             }
+        }
     
-            setIsPrinting(false);
-        });
+        setIsPrinting(false);
     };
 
     const handleThermalPrint = async () => {
@@ -238,7 +238,7 @@ export default function ReceiptPage() {
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
-            <div className="flex flex-col items-center py-8 min-h-screen">
+            <div className="flex flex-col items-center py-8 min-h-screen print:py-0 print:items-start print:block">
                 <div className="w-full max-w-lg mb-4 space-y-4 no-print px-4">
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
                         <div className="w-full sm:w-48">
@@ -275,8 +275,14 @@ export default function ReceiptPage() {
                       </AccordionItem>
                     </Accordion>
                 </div>
-                 <div id="print-receipt-area" className={widthClass}>
-                    {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
+                <div 
+                    id="receipt-print-root" 
+                    data-paper={paperWidth}
+                    style={{ ['--receipt-width' as any]: paperWidth === '58mm' ? '58mm' : paperWidth === '80mm' ? '80mm' : '210mm' }}
+                >
+                    <div id="print-receipt-area" className={widthClass}>
+                        {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
+                    </div>
                 </div>
             </div>
         </RoleGuard>
