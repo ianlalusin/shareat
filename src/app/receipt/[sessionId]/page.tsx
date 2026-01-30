@@ -1,5 +1,3 @@
-
-
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
@@ -11,13 +9,13 @@ import ReasonModal from "@/components/shared/ReasonModal";
 import { useStoreContext } from "@/context/store-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2, Printer, Info } from "lucide-react";
-import { ReceiptView, ReceiptData } from "@/components/receipt/receipt-view";
+import { ReceiptView } from "@/components/receipt/receipt-view";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, Store } from "@/lib/types";
+import type { ModeOfPayment, Store, ReceiptData } from "@/lib/types";
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -176,6 +174,12 @@ export default function ReceiptPage() {
         localStorage.setItem(storageKey, value);
     };
 
+    const widthClass = useMemo(() => {
+        if (paperWidth === "58mm") return "receipt-58";
+        if (paperWidth === "80mm") return "receipt-80";
+        return "receipt-a4";
+    }, [paperWidth]);
+
     if (isLoading) {
         return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin h-10 w-10" /></div>;
     }
@@ -195,8 +199,8 @@ export default function ReceiptPage() {
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
-            <div className="max-w-4xl mx-auto py-8">
-                <div className="mb-4 space-y-4 no-print">
+            <div className="flex flex-col items-center py-8 min-h-screen">
+                <div className="w-full max-w-lg mb-4 space-y-4 no-print px-4">
                     <div className="flex justify-between items-center">
                         <div className="w-48">
                             <Select value={paperWidth} onValueChange={handlePaperWidthChange}>
@@ -226,11 +230,8 @@ export default function ReceiptPage() {
                       </AccordionItem>
                     </Accordion>
                 </div>
-                 <div id="print-receipt-area">
+                 <div id="print-receipt-area" className={widthClass}>
                     {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
-                </div>
-                <div className="hidden print-block">
-                    {receiptData && <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} />}
                 </div>
             </div>
         </RoleGuard>
