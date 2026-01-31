@@ -177,7 +177,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const remainingBalance = remainingCents / 100;
   const change = Math.max(0, -remainingCents) / 100;
   
-  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 1; // Allow for 1 cent rounding diff
+  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 1; // Allow for a 1 cent rounding diff
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
@@ -214,6 +214,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             if (klId) {
                 const actor = getActorStamp(appUser);
                 await createAddonKitchenTickets(db, storeId, sessionId, session, {
+                    billLineId: line.id,
                     itemId: line.itemId,
                     itemName: line.itemName,
                     kitchenLocationId: klId,
@@ -495,7 +496,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       </main>
 
        {isTimelineOpen && (
-        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={storeId} sessionId={sessionId!} />
+        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={(isOpen) => !isOpen && setTimelineSessionId(null)} storeId={storeId} sessionId={sessionId!} />
        )}
        
        {editingLine && (
