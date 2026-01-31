@@ -6,7 +6,7 @@ service firebase.storage {
     
     // -- Helper Functions --
     function getUserRole(uid) {
-      return get(/databases/(default)/documents/users/$(uid)).data.role;
+      return get(/databases/(default)/documents/staff/$(uid)).data.role;
     }
     
     function isManagerOrAdmin(uid) {

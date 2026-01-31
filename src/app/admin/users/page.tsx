@@ -3,12 +3,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc, writeBatch, getDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, deleteDoc, writeBatch, getDoc, getDocs } from "firebase/firestore";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, ChevronsUpDown, Loader, ArrowLeft } from "lucide-react";
+import { Check, ChevronsUpDown, Loader, ArrowLeft, Users } from "lucide-react";
 import { db, auth } from "@/lib/firebase/client";
 import { Separator } from "@/components/ui/separator";
 import { AppUser, useAuthContext } from "@/context/auth-context";
@@ -45,6 +45,7 @@ export default function UserManagementPage() {
     const [selectedRoles, setSelectedRoles] = useState<Record<string, AssignableRole>>({});
     const [selectedStoreAssignments, setSelectedStoreAssignments] = useState<Record<string, string[]>>({});
     const [popoverOpen, setPopoverOpen] = useState<Record<string, boolean>>({});
+    const [isMigrating, setIsMigrating] = useState(false);
 
 
     useEffect(() => {
@@ -104,6 +105,69 @@ export default function UserManagementPage() {
             if (deactivatedUnsub) deactivatedUnsub();
         };
     }, [appUser, isSigningOut]);
+
+    const handleMigrateUsers = async () => {
+        const confirmed = await confirm({
+            title: "Migrate users to staff collection?",
+            description: "This will copy users from the legacy 'users' collection to the 'staff' collection, skipping duplicates. This action is safe to run multiple times.",
+            confirmText: "Yes, Migrate",
+            destructive: false,
+        });
+
+        if (!confirmed) return;
+
+        setIsMigrating(true);
+        toast({ title: "Migration started...", description: "Fetching users and staff..." });
+
+        try {
+            const usersRef = collection(db, "users");
+            const staffRef = collection(db, "staff");
+
+            const [usersSnap, staffSnap] = await Promise.all([
+                getDocs(usersRef),
+                getDocs(staffRef)
+            ]);
+            
+            const existingStaffIds = new Set(staffSnap.docs.map(doc => doc.id));
+            let migratedCount = 0;
+            const batch = writeBatch(db);
+
+            usersSnap.forEach(userDoc => {
+                if (!existingStaffIds.has(userDoc.id)) {
+                    const userData = userDoc.data();
+                    const newStaffData = {
+                        staffId: userDoc.id,
+                        email: userData.email,
+                        name: userData.displayName || userData.name || '',
+                        address: userData.address || '',
+                        contactNumber: userData.contactNumber || '',
+                        status: userData.status || 'pending',
+                        role: userData.role || 'server',
+                        assignedStoreIds: userData.assignedStoreIds || [],
+                        createdAt: userData.createdAt || serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                        photoURL: userData.photoURL || null,
+                    };
+                    const newStaffRef = doc(db, "staff", userDoc.id);
+                    batch.set(newStaffRef, newStaffData);
+                    migratedCount++;
+                }
+            });
+            
+            if (migratedCount > 0) {
+                await batch.commit();
+                toast({ title: "Migration Complete", description: `${migratedCount} users were successfully migrated to the staff collection.` });
+            } else {
+                toast({ title: "No New Users to Migrate", description: "The staff collection is already up-to-date." });
+            }
+
+        } catch (error: any) {
+            toast({ variant: "destructive", title: "Migration Failed", description: error.message });
+            console.error("Migration error:", error);
+        } finally {
+            setIsMigrating(false);
+        }
+    };
 
     async function handleApproveUser(user: AppUser) {
         if (!appUser?.isPlatformAdmin) return;
@@ -277,9 +341,15 @@ export default function UserManagementPage() {
     return (
         <RoleGuard allow={["admin"]}>
             <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts.">
-                <Button variant="outline" onClick={() => router.back()}>
-                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => router.back()}>
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                    </Button>
+                    <Button variant="outline" onClick={handleMigrateUsers} disabled={isMigrating}>
+                        {isMigrating ? <Loader className="animate-spin mr-2"/> : <Users className="mr-2"/>}
+                        Migrate V1 Users
+                    </Button>
+                </div>
             </PageHeader>
              <div className="grid gap-6">
                 <Card>
