@@ -267,7 +267,7 @@ export default function KitchenPage() {
     const ids = stationDoc.activeIds?.length ? stationDoc.activeIds : Object.keys(map);
     
     const ticketList = ids
-      .map(id => ({ id, ...map[id] }))
+      .map(id => ({ ...(map[id] || {}), id }))
       .filter(t => t && t.sessionId); // ensure ticket data exists
 
     const sortedTickets = ticketList.sort((a,b) => {
