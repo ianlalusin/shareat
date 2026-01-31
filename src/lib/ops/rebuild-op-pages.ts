@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -132,7 +131,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       sessionsRef,
       where("startedAt", ">=", Timestamp.fromMillis(startMs)),
       where("startedAt", "<=", Timestamp.fromMillis(endMs)),
-      orderBy("startedAt", "desc")
+      orderBy("startedAt", "asc")
     );
     const sessionsSnap = await getDocs(qSessions);
     result.scannedSessions = sessionsSnap.size;
