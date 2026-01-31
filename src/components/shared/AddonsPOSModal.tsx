@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -265,6 +266,7 @@ function POSContent({
             itemName: selectedAddon.displayName,
             kitchenLocationId: selectedAddon.kitchenLocationId!,
             kitchenLocationName: selectedAddon.kitchenLocationName,
+            billLineId: lineId
         }, quantity, actor, { tx });
       });
       

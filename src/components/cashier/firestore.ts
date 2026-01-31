@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -851,7 +852,7 @@ export async function createAddonKitchenTickets(
   storeId: string,
   sessionId: string,
   session: PendingSession,
-  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; },
+  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; billLineId: string },
   qty: number,
   actor: ActorStamp,
   opts?: { tx?: Transaction }
@@ -869,6 +870,7 @@ export async function createAddonKitchenTickets(
       type: "addon",
       itemId: line.itemId,
       itemName: line.itemName,
+      billLineId: line.billLineId,
       qty: 1,
       status: "preparing",
       kitchenLocationId: line.kitchenLocationId,

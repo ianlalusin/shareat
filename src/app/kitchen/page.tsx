@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -381,9 +382,8 @@ export default function KitchenPage() {
 
                 newTicketState = { ...oldTicketState, ...updatePayload };
 
-                if (oldTicketState.type === 'addon' && oldTicketState.itemId) {
-                    const billLineId = `addon_${oldTicketState.itemId}`;
-                    const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", billLineId);
+                if (oldTicketState.type === 'addon' && oldTicketState.billLineId) {
+                    const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
                     transaction.update(billLineRef, {
                         voidedQty: increment(1)
                     });
