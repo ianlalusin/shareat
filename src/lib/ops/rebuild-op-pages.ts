@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -56,6 +57,8 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
   };
 
   const { storeId, startMs, endMs } = args;
+  console.log(`[REBUILD_OP] Starting for store ${storeId} from ${new Date(startMs).toISOString()} to ${new Date(endMs).toISOString()}`);
+
 
   if (!storeId) {
     result.errors.push("Store ID is required for scoped rebuild.");
@@ -64,9 +67,11 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
 
   try {
     // 1. Load active stations for this specific store
+    console.log("[REBUILD_OP] Step 1: Reading active kitchen stations.");
     const stationsRef = collection(db, "stores", storeId, "kitchenLocations");
     const stationsSnap = await getDocs(query(stationsRef, where("isActive", "==", true)));
     const stations = stationsSnap.docs.map(d => ({ id: d.id, name: d.data().name }));
+    console.log(`[REBUILD_OP] Found ${stations.length} active stations.`);
     
     if (stations.length === 0) {
       result.errors.push("No active kitchen stations found for this store.");
@@ -74,45 +79,54 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     }
 
     // 2. Clear existing projections (Store Scoped Paths)
-    
-    // Clear activeKdsTickets for each station within the store
-    for (const station of stations) {
-      const activeProjRef = collection(db, "stores", storeId, "opPages", station.id, "activeKdsTickets");
-      const activeProjSnap = await getDocs(activeProjRef);
-      
-      let batch = writeBatch(db);
-      let count = 0;
-      for (const d of activeProjSnap.docs) {
-        batch.delete(d.ref);
-        count++;
-        result.deletedActiveTickets++;
-        if (count >= 400) {
-          await batch.commit();
-          batch = writeBatch(db);
-          count = 0;
+    console.log("[REBUILD_OP] Step 2: Clearing stale projections.");
+    try {
+        for (const station of stations) {
+          const activeProjRef = collection(db, "stores", storeId, "opPages", station.id, "activeKdsTickets");
+          const activeProjSnap = await getDocs(activeProjRef);
+          
+          let batch = writeBatch(db);
+          let count = 0;
+          for (const d of activeProjSnap.docs) {
+            console.log(`[REBUILD_OP] Deleting stale ticket projection: ${d.ref.path}`);
+            batch.delete(d.ref);
+            count++;
+            result.deletedActiveTickets++;
+            if (count >= 400) {
+              await batch.commit();
+              batch = writeBatch(db);
+              count = 0;
+            }
+          }
+          if (count > 0) await batch.commit();
         }
-      }
-      if (count > 0) await batch.commit();
+
+        const activeSessionsProjRef = collection(db, "stores", storeId, "opPages", "sessionPage", "activeSessions");
+        const activeSessionsProjSnap = await getDocs(activeSessionsProjRef);
+        let sessionBatch = writeBatch(db);
+        let sessionCount = 0;
+        for (const d of activeSessionsProjSnap.docs) {
+          console.log(`[REBUILD_OP] Deleting stale session projection: ${d.ref.path}`);
+          sessionBatch.delete(d.ref);
+          sessionCount++;
+          result.deletedActiveSessions++;
+          if (sessionCount >= 400) {
+            await sessionBatch.commit();
+            sessionBatch = writeBatch(db);
+            sessionCount = 0;
+          }
+        }
+        if (sessionCount > 0) await sessionBatch.commit();
+        console.log("[REBUILD_OP] Finished clearing stale projections.");
+    } catch(e: any) {
+        console.error("[REBUILD_OP_ERROR] Failed during cleanup phase:", e);
+        result.errors.push(`Cleanup failed: ${e.message}. The operation was stopped to prevent further issues.`);
+        return result;
     }
 
-    // Clear sessionPage/activeSessions for the store
-    const activeSessionsProjRef = collection(db, "stores", storeId, "opPages", "sessionPage", "activeSessions");
-    const activeSessionsProjSnap = await getDocs(activeSessionsProjRef);
-    let sessionBatch = writeBatch(db);
-    let sessionCount = 0;
-    for (const d of activeSessionsProjSnap.docs) {
-      sessionBatch.delete(d.ref);
-      sessionCount++;
-      result.deletedActiveSessions++;
-      if (sessionCount >= 400) {
-        await sessionBatch.commit();
-        sessionBatch = writeBatch(db);
-        sessionCount = 0;
-      }
-    }
-    if (sessionCount > 0) await sessionBatch.commit();
 
     // 3. Scan sessions in date range for this store
+    console.log("[REBUILD_OP] Step 3: Scanning source sessions.");
     const sessionsRef = collection(db, "stores", storeId, "sessions");
     const qSessions = query(
       sessionsRef,
@@ -122,6 +136,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     );
     const sessionsSnap = await getDocs(qSessions);
     result.scannedSessions = sessionsSnap.size;
+    console.log(`[REBUILD_OP] Scanned ${result.scannedSessions} sessions.`);
 
     // Track state in memory to avoid redundant reads/writes
     const stationDataMap = new Map<string, {
@@ -181,6 +196,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
           updatedAt: serverTimestamp(),
           initialFlavorIds: (session as any).initialFlavorIds || [],
         };
+        console.log(`[REBUILD_OP] Writing session projection for ${session.id}`);
         globalBatch.set(projRef, projectionPayload);
         globalOpCount++;
         result.activeSessionsProjected++;
@@ -195,6 +211,7 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     if (globalOpCount > 0) await globalBatch.commit();
 
     // 4. Fetch all kitchen tickets for this store in one go (Efficient & Scoped)
+    console.log("[REBUILD_OP] Step 4: Scanning source kitchen tickets.");
     const ticketsRefGroup = collectionGroup(db, "kitchentickets");
     const qTickets = query(
         ticketsRefGroup,
@@ -204,11 +221,12 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     );
     const ticketsSnap = await getDocs(qTickets);
     result.scannedTickets = ticketsSnap.size;
+    console.log(`[REBUILD_OP] Scanned ${result.scannedTickets} tickets.`);
+
 
     for (const ticketDoc of ticketsSnap.docs) {
       const ticket = { id: ticketDoc.id, ...ticketDoc.data() } as KitchenTicket;
       
-      // Skip if ticket doesn't belong to a session we just scanned (ensures range consistency)
       const session = sessionDataCache.get(ticket.sessionId);
       if (!session) continue;
 
@@ -217,7 +235,6 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       
       if (!sData) continue;
 
-      // Build projection payload
       const payload = {
         ...ticket,
         sessionLabel: computeSessionLabel(session),
@@ -240,14 +257,15 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
     }
 
     // 5. Write projections and update opPages summaries (All Store Scoped)
+    console.log("[REBUILD_OP] Step 5: Writing new projections and summaries.");
     for (const [stationId, data] of stationDataMap.entries()) {
       result.stationsUpdated++;
 
-      // Write active tickets projections
       let batch = writeBatch(db);
       let count = 0;
       for (const t of data.activeTickets) {
         const ref = doc(db, "stores", storeId, "opPages", stationId, "activeKdsTickets", t.id);
+        console.log(`[REBUILD_OP] Writing active ticket projection: ${ref.path}`);
         batch.set(ref, t);
         count++;
         result.activeTicketsWritten++;
@@ -259,15 +277,14 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       }
       if (count > 0) await batch.commit();
 
-      // Sort closed tickets for history preview (top 15 newest)
       const sortedClosed = data.closedTickets.sort((a, b) => {
         const timeA = a.servedAtClientMs || a.cancelledAtClientMs || a.createdAtClientMs || 0;
         const timeB = b.servedAtClientMs || b.cancelledAtClientMs || b.createdAtClientMs || 0;
         return timeB - timeA;
       }).slice(0, 15);
 
-      // Write history preview document
       const historyRef = doc(db, "stores", storeId, "opPages", stationId, "historyPreview", "current");
+      console.log(`[REBUILD_OP] Writing history preview for station ${stationId}`);
       await setDoc(historyRef, {
         items: sortedClosed.map(t => ({
           id: t.id,
@@ -284,7 +301,6 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
       }, { merge: true });
       result.closedPreviewWritten += sortedClosed.length;
 
-      // Update the main opPage summary doc
       const stationDocRef = doc(db, "stores", storeId, "opPages", stationId);
       const summaryPayload: any = {
         activeCount: data.activeTickets.length,
@@ -299,10 +315,12 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
           summaryPayload.todayServeAvgMs = data.todayServedCount > 0 ? data.todayServedMsSum / data.todayServedCount : 0;
       }
 
+      console.log(`[REBUILD_OP] Updating summary for station ${stationId}`);
       await updateDoc(stationDocRef, summaryPayload);
     }
 
     // 6. Update sessionPage summary (Active Sessions & Guest Count)
+    console.log("[REBUILD_OP] Step 6: Updating session summary.");
     const sessionOpPageRef = doc(db, `stores/${storeId}/opPages`, 'sessionPage');
     await updateDoc(sessionOpPageRef, {
         activeSessionCount: totalActiveSessionCount,
@@ -310,8 +328,9 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         updatedAt: serverTimestamp(),
     });
 
+    console.log("[REBUILD_OP] Rebuild completed successfully.");
   } catch (e: any) {
-    console.error("Rebuild OpPages error:", e);
+    console.error("[REBUILD_OP_ERROR] A critical error occurred during the rebuild process:", e);
     result.errors.push(e.message || "Unknown error occurred.");
   }
 
