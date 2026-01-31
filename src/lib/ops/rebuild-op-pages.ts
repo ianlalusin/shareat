@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -216,7 +217,8 @@ export async function rebuildOpPagesForRange(db: Firestore, args: {
         ticketsRefGroup,
         where("storeId", "==", storeId),
         where("createdAt", ">=", Timestamp.fromMillis(startMs - 86400000)), // Buffer for long sessions
-        where("createdAt", "<=", Timestamp.fromMillis(endMs + 86400000))
+        where("createdAt", "<=", Timestamp.fromMillis(endMs + 86400000)),
+        orderBy("createdAt", "desc")
     );
     const ticketsSnap = await getDocs(qTickets);
     result.scannedTickets = ticketsSnap.size;
