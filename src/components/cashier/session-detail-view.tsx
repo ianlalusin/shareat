@@ -496,7 +496,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       </main>
 
        {isTimelineOpen && (
-        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={(isOpen) => !isOpen && setTimelineSessionId(null)} storeId={storeId} sessionId={sessionId!} />
+        <SessionTimelineDrawer open={isTimelineOpen} onOpenChange={setIsTimelineOpen} storeId={storeId} sessionId={sessionId!} />
        )}
        
        {editingLine && (
