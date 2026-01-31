@@ -48,11 +48,16 @@ service cloud.firestore {
     }
 
 
-    // ✅ Staff Profile (Allow self-read so pending/needs_profile users can load)
+    // ✅ Staff Profile (Admins can manage, users can get their own)
     match /staff/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
+      // Admins can read/write any staff profile.
+      allow read, write: if isAdmin();
+      
+      // A non-admin user can read their own profile.
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      
+      // A user can create their own profile during signup.
       allow create: if isSignedIn() && request.auth.uid == uid;
-      allow write: if isAdmin();
     }
 
     // ✅ Projections (needed for KDS serve/cancel deletes)
