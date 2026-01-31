@@ -1,3 +1,4 @@
+
 import { Timestamp } from "firebase/firestore";
 import type { ReceiptData, ReceiptSession, ReceiptSettings } from "@/components/receipt/receipt-view";
 
@@ -634,4 +635,21 @@ export type PackageUnit = {
     }
 }
 
+/**
+ * Represents the real-time KDS document for a single kitchen station.
+ * Path: /stores/{storeId}/rtKdsTickets/{kitchenLocationId}
+ */
+export type RtKdsStationDoc = {
+  meta: {
+    source: string;
+    updatedAt: Timestamp;
+  };
+  kitchenLocationId: string;
+  activeIds: string[]; // Array of active ticket IDs for sorting
+  tickets: Record<string, KitchenTicket>; // Map of ticketId to ticket data
+  sessionIndex: Record<string, string[]>; // Map of sessionId to its ticketIds
+};
+
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
+
+    
