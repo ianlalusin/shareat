@@ -1,29 +1,15 @@
 
 import { NextResponse } from 'next/server';
-import admin from 'firebase-admin';
-import { getAuth } from 'firebase-admin/auth';
+import { Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { getAdminAuth, getAdminDb } from '@/lib/firebase/admin';
 
-// Corrected absolute path imports
-import { type RebuildOpPagesResult } from '@/lib/ops/rebuild-op-pages';
-import { type KitchenTicket, type PendingSession } from '@/lib/types';
+import type { RebuildOpPagesResult } from '@/lib/ops/rebuild-op-pages';
+import type { KitchenTicket, PendingSession } from '@/lib/types';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { getDayIdFromTimestamp } from '@/lib/analytics/daily';
 import { toJsDate } from '@/lib/utils/date';
 import { stripUndefined } from '@/lib/firebase/utils';
 
-// --- Admin SDK Initialization (server-side) ---
-// This ensures the admin app is initialized only once.
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string)),
-    });
-  } catch (e) {
-    console.error('Firebase admin initialization error', e);
-  }
-}
-const adminDb = admin.firestore();
-const { Timestamp } = admin.firestore;
 
 // --- API Route Configuration ---
 export const runtime = 'nodejs'; // Must run on Node.js for Admin SDK
@@ -38,7 +24,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized: Missing Bearer token" }, { status: 401 });
     }
     const token = authHeader.split("Bearer ")[1];
-    const decoded = await getAuth().verifyIdToken(token);
+    
+    const adminAuth = getAdminAuth();
+    const decoded = await adminAuth.verifyIdToken(token);
 
     if (!decoded) {
       return NextResponse.json({ error: "Unauthorized: Invalid token" }, { status: 401 });
@@ -62,6 +50,7 @@ export async function POST(req: Request) {
     }
 
     // 3. Execute the server-side rebuild logic
+    const adminDb = getAdminDb();
     const result = await rebuildOpPagesForRangeServer(adminDb, {
         storeId,
         startMs,
@@ -72,8 +61,14 @@ export async function POST(req: Request) {
     return NextResponse.json(result);
 
   } catch (err: any) {
-    // Catch any unexpected errors and return a structured JSON response
     console.error("[rebuild-op-pages] uncaught error:", err);
+
+    if (err.code === 'auth/invalid-credential' || (err.message && (err.message.includes('Could not load the default credentials') || err.message.includes('Error getting access token')))) {
+        return NextResponse.json({
+            error: "Firebase Admin credentials missing or invalid. Ensure server environment variables are correctly set."
+        }, { status: 500 });
+    }
+
     return NextResponse.json({ error: err.message || "An internal server error occurred." }, { status: 500 });
   }
 }
@@ -84,7 +79,7 @@ export async function POST(req: Request) {
  * This function is safe to run in a Node.js environment.
  */
 async function rebuildOpPagesForRangeServer(
-    db: admin.firestore.Firestore, 
+    db: Firestore, 
     args: { storeId: string; startMs: number; endMs: number; actorUid: string; }
 ): Promise<RebuildOpPagesResult> {
   
@@ -97,7 +92,6 @@ async function rebuildOpPagesForRangeServer(
 
   const { storeId, startMs, endMs } = args;
 
-  // Initialize batching variables outside of any loops
   let batch = db.batch();
   let opCount = 0;
   const BATCH_LIMIT = 400;
