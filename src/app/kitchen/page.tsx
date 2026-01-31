@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer, limit, startAfter, type QueryDocumentSnapshot, type DocumentSnapshot, type DocumentData, type Transaction, type QuerySnapshot,
+  arrayRemove, deleteField
 } from "firebase/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
@@ -20,7 +21,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { KitchenTicket, OrderItemStatus } from "@/lib/types";
+import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +115,7 @@ export default function KitchenPage() {
   const processedStoresRef = useRef(new Set<string>());
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
+  const [stationDoc, setStationDoc] = useState<RtKdsStationDoc | null>(null);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [sessionsMap, setSessionsMap] = useState<Map<string, Session>>(new Map());
   const [flavorsMap, setFlavorsMap] = useState<Map<string, string>>(new Map());
@@ -126,27 +128,7 @@ export default function KitchenPage() {
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
-  const refreshStationCounts = useCallback(async () => {
-    if (!activeStore || stations.length === 0) return;
 
-    const counts = new Map<string, number>();
-    const promises = stations.map(async (station: KitchenStation) => {
-        try {
-            const ticketsRef = collection(db, 'stores', activeStore.id, 'opPages', station.id, 'activeKdsTickets');
-            const snapshot = await getCountFromServer(query(ticketsRef));
-            counts.set(station.id, snapshot.data().count);
-        } catch (error: any) {
-            console.error(`Failed to get count for station ${station.name}:`, error);
-            counts.set(station.id, 0); // Default to 0 on error
-        }
-    });
-
-    await Promise.all(promises);
-    setStationCounts(counts);
-  }, [activeStore, stations]);
-
-
-  // Effect for fetching store-level data (stations, flavors)
   useEffect(() => {
     if (!activeStore) {
       setIsLoading(false);
@@ -158,7 +140,6 @@ export default function KitchenPage() {
     setIsLoading(true);
     const unsubs: (() => void)[] = [];
 
-    // Fetch active kitchen stations for the store
     const stationsRef = collection(db, "stores", activeStore.id, "kitchenLocations");
     unsubs.push(onSnapshot(query(stationsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
         const stationsData = snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => ({ id: docSnap.id, key: docSnap.id, ...docSnap.data() } as KitchenStation));
@@ -169,7 +150,6 @@ export default function KitchenPage() {
         }
     }));
     
-    // Fetch all global flavors once
     const flavorsRef = collection(db, "flavors");
     unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
         const newFlavorsMap = new Map<string, string>();
@@ -177,7 +157,14 @@ export default function KitchenPage() {
         setFlavorsMap(newFlavorsMap);
     }));
 
-    setIsLoading(false); // Main loader can be turned off
+    const rtKdsTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets');
+    unsubs.push(onSnapshot(rtKdsTicketsRef, (snapshot) => {
+        const counts = new Map<string, number>();
+        snapshot.forEach(doc => {
+            counts.set(doc.id, (doc.data().activeIds || []).length);
+        });
+        setStationCounts(counts);
+    }));
 
     return () => unsubs.forEach(unsub => unsub());
   }, [activeStore, appUser, activeTab]);
@@ -194,57 +181,47 @@ export default function KitchenPage() {
   }, [activeStore, activeTab]);
 
 
-  // Effect to refresh counts when the list of stations changes
-  useEffect(() => {
-    refreshStationCounts();
-  }, [stations, refreshStationCounts]);
-
-
   // Effect for fetching live tickets for the currently active tab
   useEffect(() => {
     if (!activeStore || !activeTab) {
-        setTickets([]);
+        setStationDoc(null);
+        setIsLoading(false);
         return;
     }
     
     setIsLoading(true);
-    const ticketsQuery = query(
-        collection(db, 'stores', activeStore.id, 'opPages', activeTab, 'activeKdsTickets'),
-        orderBy('createdAt', 'asc')
-    );
-
-    const unsubscribe = onSnapshot(ticketsQuery, async (snapshot: QuerySnapshot<DocumentData>) => {
-        const liveTickets = snapshot.docs.map((docSnap: QueryDocumentSnapshot<DocumentData>) => ({ id: docSnap.id, ...docSnap.data() } as KitchenTicket));
-        setTickets(liveTickets);
+    
+    const stationDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab);
+    
+    const unsubscribe = onSnapshot(stationDocRef, async (docSnap: DocumentSnapshot<DocumentData>) => {
+        const data = docSnap.exists() ? docSnap.data() as RtKdsStationDoc : null;
+        setStationDoc(data);
         
-        const sessionIds = [...new Set(liveTickets.map((t: KitchenTicket) => t.sessionId))];
-        if (sessionIds.length > 0) {
-            const chunkArray = <T,>(arr: T[], size: number): T[][] => {
-                const chunks: T[][] = [];
-                for (let i = 0; i < arr.length; i += size) {
-                    chunks.push(arr.slice(i, i + size));
-                }
-                return chunks;
-            };
+        const currentTickets = data?.tickets || {};
+        const sessionIds = [...new Set(Object.values(currentTickets).map(t => t.sessionId))];
 
-            const idChunks = chunkArray(sessionIds, 30);
-            
+        if (sessionIds.length > 0) {
+            const idChunks: string[][] = [];
+            for (let i = 0; i < sessionIds.length; i += 30) {
+                idChunks.push(sessionIds.slice(i, i + 30));
+            }
+
             const newSessionsMap = new Map<string, Session>();
             for (const chunk of idChunks) {
                 if (chunk.length === 0) continue;
                 const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
                 const sessionsSnap = await getDocs(sessionsQuery);
-                sessionsSnap.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => {
-                    newSessionsMap.set(docSnap.id, {id: docSnap.id, ...docSnap.data()} as Session);
+                sessionsSnap.forEach((sDoc: QueryDocumentSnapshot<DocumentData>) => {
+                    newSessionsMap.set(sDoc.id, {id: sDoc.id, ...sDoc.data()} as Session);
                 });
             }
-            setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
+             setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
         }
         setIsLoading(false);
     }, (error: any) => {
         if (isSigningOut || !appUser) return;
-        console.error("Error fetching kitchen tickets:", error);
-        toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch kitchen tickets." });
+        console.error("Error fetching station doc:", error);
+        toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch station data." });
         setIsLoading(false);
     });
 
@@ -284,7 +261,22 @@ export default function KitchenPage() {
   }, [activeStationData]);
 
   const ticketsWithData = useMemo(() => {
-    return tickets.map((ticket: KitchenTicket) => {
+    if (!stationDoc) return [];
+    
+    const map = stationDoc.tickets || {};
+    const ids = stationDoc.activeIds?.length ? stationDoc.activeIds : Object.keys(map);
+    
+    const ticketList = ids
+      .map(id => ({ id, ...map[id] }))
+      .filter(t => t && t.sessionId); // ensure ticket data exists
+
+    const sortedTickets = ticketList.sort((a,b) => {
+        const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
+        const timeB = getStartMs(b.createdAtClientMs ?? b.createdAt);
+        return (timeA || 0) - (timeB || 0);
+    });
+
+    return sortedTickets.map((ticket: KitchenTicket) => {
         const session = sessionsMap.get(ticket.sessionId);
         const flavorNames = ticket.type === 'package' 
             ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
@@ -301,7 +293,7 @@ export default function KitchenPage() {
             }),
         };
     });
-  }, [tickets, sessionsMap, flavorsMap]);
+  }, [stationDoc, sessionsMap, flavorsMap]);
   
   const updateTicketStatus = async (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => {
     if (!appUser || !activeStore) {
@@ -327,26 +319,6 @@ export default function KitchenPage() {
                 return;
             }
             
-            const opPageRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId);
-            const activeProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'activeKdsTickets', ticketId);
-            const historyPreviewRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'historyPreview', 'current');
-            
-            const [
-              opPageSnap, 
-              activeProjectionSnap, 
-              historyPreviewSnap
-            ]: [
-              DocumentSnapshot<DocumentData>, 
-              DocumentSnapshot<DocumentData>, 
-              DocumentSnapshot<DocumentData>
-            ] = await Promise.all([
-                transaction.get(opPageRef),
-                transaction.get(activeProjectionRef),
-                transaction.get(historyPreviewRef),
-            ]);
-
-
-            const opPageData = opPageSnap.exists() ? opPageSnap.data() as OpPageData : {};
             const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
             let newTicketState: KitchenTicket;
             
@@ -357,7 +329,7 @@ export default function KitchenPage() {
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
-                updatePayload.preparedAt = serverTimestamp();
+                updatePayload.preparedAt = serverTimestamp(); // Note: setting prepared and served at same time
                 updatePayload.preparedByUid = appUser.uid;
                 updatePayload.durationMs = durationMs;
                 
@@ -370,6 +342,10 @@ export default function KitchenPage() {
                 if (oldTicketState.type === 'refill') {
                     const qty = oldTicketState.qty || 1;
                     sessionUpdate.servedRefillsTotal = increment(qty);
+                    const refillName = (oldTicketState as any).refillName || oldTicketState.itemName;
+                    if(refillName) {
+                        sessionUpdate[`servedRefillsByName.${refillName.replace(/\./g, '_')}`] = increment(qty);
+                    }
                 }
                 transaction.update(sessionRef, sessionUpdate);
                 newTicketState = { ...oldTicketState, ...updatePayload };
@@ -384,8 +360,9 @@ export default function KitchenPage() {
 
                 if (oldTicketState.type === 'addon' && oldTicketState.billLineId) {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
+                    const ticketQty = oldTicketState.qty || 1;
                     transaction.update(billLineRef, {
-                        voidedQty: increment(1)
+                        voidedQty: increment(ticketQty)
                     });
                 }
             }
@@ -393,57 +370,21 @@ export default function KitchenPage() {
             transaction.update(ticketRef, updatePayload);
             await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
 
-            if (activeProjectionSnap.exists()) {
-                const closedProjectionRef = doc(db, 'stores', activeStore.id, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketId);
-                transaction.set(closedProjectionRef, { ...newTicketState, updatedAt: serverTimestamp() }, { merge: true });
-                transaction.delete(activeProjectionRef);
-
-                const currentCount = opPageData.activeCount || 0;
-                const opPageUpdatePayload: Record<string, any> = {
-                    activeCount: Math.max(0, currentCount - 1),
-                };
-
-                if (newStatus === 'served') {
-                    const durationMs = newTicketState.durationMs!;
-                    const todayDayId = getDayIdFromTimestamp(new Date());
-                    let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
-        
-                    if (storedDayId !== todayDayId) {
-                        todayServeMsSum = 0;
-                        todayServeCount = 0;
-                    }
-                    const newSum = todayServeMsSum + durationMs;
-                    const newCountServed = todayServeCount + 1;
-        
-                    opPageUpdatePayload['todayDayId'] = todayDayId;
-                    opPageUpdatePayload['todayServeMsSum'] = newSum;
-                    opPageUpdatePayload['todayServeCount'] = newCountServed;
-                    opPageUpdatePayload['todayServeAvgMs'] = newSum / newCountServed;
-                }
-                transaction.update(opPageRef, opPageUpdatePayload);
-                
-                // Update history preview
-                const newHistoryEntry: HistoryPreviewItem = {
-                    id: newTicketState.id,
-                    sessionLabel: newTicketState.sessionLabel || "",
-                    tableNumber: newTicketState.tableNumber,
-                    customerName: newTicketState.customerName,
-                    itemName: newTicketState.itemName,
-                    qty: newTicketState.qty,
-                    status: newTicketState.status,
-                    closedAtClientMs: nowMs,
-                    durationMs: newTicketState.durationMs || 0
-                };
-                const existingItems = (historyPreviewSnap.data() as any)?.items || [];
-                const newItems = [newHistoryEntry, ...existingItems].slice(0, 15);
-                transaction.set(historyPreviewRef, { items: newItems }, { merge: true });
+            // Update real-time KDS document
+            const { kitchenLocationId } = oldTicketState;
+            if (kitchenLocationId) {
+                const rtKdsDocRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId);
+                transaction.update(rtKdsDocRef, {
+                    [`tickets.${ticketId}`]: deleteField(),
+                    activeIds: arrayRemove(ticketId),
+                    [`sessionIndex.${sessionId}`]: arrayRemove(ticketId),
+                    "meta.updatedAt": serverTimestamp(),
+                });
             }
-
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
-        refreshStationCounts(); // Refresh counts after a successful action
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
@@ -529,5 +470,3 @@ export default function KitchenPage() {
     </RoleGuard>
   );
 }
-
-    
