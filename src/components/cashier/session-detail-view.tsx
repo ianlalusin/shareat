@@ -8,7 +8,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createAddonKitchenTickets } from "@/components/cashier/firestore";
+import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -182,12 +182,44 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
     try {
-        await updateSessionBillLine(storeId, sessionId, lineId, after, appUser);
+        await runTransaction(db, async (tx) => {
+            const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
+            const actor = getActorStamp(appUser);
 
+            const updatePayload = {
+                ...after,
+                updatedAt: serverTimestamp(),
+                updatedByUid: actor.uid,
+                updatedByName: actor.username,
+            };
+            tx.update(lineRef, updatePayload);
+
+            const line = billLines.find(l => l.id === lineId);
+            if (!line) throw new Error("Line item not found in local state.");
+            
+            const diffQty = (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0);
+
+            if (line.type === 'addon' && diffQty > 0) {
+                const klId = line.kitchenLocationId;
+                if (klId) {
+                    await createKitchenTickets(db, storeId, sessionId, session, 'addon', {
+                        billLineId: line.id,
+                        itemId: line.itemId,
+                        itemName: line.itemName,
+                        kitchenLocationId: klId,
+                        kitchenLocationName: line.kitchenLocationName,
+                    }, diffQty, actor, { tx });
+                } else {
+                    // Cannot toast inside a transaction, but we can log a warning
+                    console.warn(`Kitchen location not set for addon ${line.itemName}. Ticket not created.`);
+                }
+            }
+        });
+
+        // Logging and UI feedback outside the transaction
         const line = billLines.find(l => l.id === lineId);
         if (!line) return;
 
-        // Determine specific action for logging
         const diff = {
             qtyOrdered: (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0),
             discount: (after.discountQty ?? 0) - (before.discountQty ?? 0),
@@ -208,23 +240,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser, sessionContext });
         }
         
-        // Handle addon qty increases -> create kitchen tickets
-        if (line.type === 'addon' && diff.qtyOrdered > 0) {
-            const klId = line.kitchenLocationId;
-            if (klId) {
-                const actor = getActorStamp(appUser);
-                await createAddonKitchenTickets(db, storeId, sessionId, session, {
-                    billLineId: line.id,
-                    itemId: line.itemId,
-                    itemName: line.itemName,
-                    kitchenLocationId: klId,
-                    kitchenLocationName: line.kitchenLocationName,
-                }, diff.qtyOrdered, actor);
-            } else {
-                toast({ variant: 'destructive', title: 'Warning', description: 'Qty increased but kitchen station unknown. Ticket not sent.' });
-            }
-        }
-
         if (diff.discount > 0) {
             await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
         } else if (diff.discount < 0) {
