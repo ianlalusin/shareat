@@ -10,6 +10,7 @@ import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } f
 import { db } from '@/lib/firebase/client';
 import { RoleGuard } from '../guards/RoleGuard';
 import { toJsDate } from '@/lib/utils/date';
+import type { PendingSession } from '@/lib/types';
 
 export function SyncSessionsTool() {
   const { appUser } = useAuthContext();
@@ -32,7 +33,7 @@ export function SyncSessionsTool() {
       // 1. Get all source-of-truth active sessions
       const q = query(sourceSessionsRef, where('status', 'in', ['active', 'pending_verification']));
       const sourceSnapshot = await getDocs(q);
-      const sourceSessions = sourceSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const sourceSessions = sourceSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as PendingSession));
 
       // 2. Get all current projections to find which ones to delete
       const targetSnapshot = await getDocs(targetSessionsRef);
