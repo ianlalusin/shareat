@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
 import { cn } from "@/lib/utils";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { SyncKdsTicketsTool } from "@/components/kitchen/SyncKdsTicketsTool";
 
 export type KitchenStation = {
     id: string;
@@ -405,14 +406,17 @@ export default function KitchenPage() {
         title="Kitchen Display System" 
         description="Monitor and manage all active food and beverage orders."
       >
-        <div className="text-right">
-            <p className="text-sm font-medium text-muted-foreground">{activeStationData?.name || 'Station'} Avg Serving Time</p>
-            <p className={cn(
-                "text-2xl font-bold font-mono",
-                avgServingTime.avgMs > 0 && avgServingTime.avgMs <= 300000 ? "text-green-600" : "text-destructive"
-            )}>
-                {formatDuration(avgServingTime.avgMs)}
-            </p>
+        <div className="flex items-center gap-2">
+            <SyncKdsTicketsTool />
+            <div className="text-right">
+                <p className="text-sm font-medium text-muted-foreground">{activeStationData?.name || 'Station'} Avg Serving Time</p>
+                <p className={cn(
+                    "text-2xl font-bold font-mono",
+                    avgServingTime.avgMs > 0 && avgServingTime.avgMs <= 300000 ? "text-green-600" : "text-destructive"
+                )}>
+                    {formatDuration(avgServingTime.avgMs)}
+                </p>
+            </div>
         </div>
       </PageHeader>
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
