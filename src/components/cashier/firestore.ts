@@ -38,6 +38,7 @@ import type {
   KitchenTicket,
   LineAdjustment,
   PendingSession,
+  OrderItemType,
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
@@ -147,6 +148,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     // 3. Write session projection to the new location
     const sessionProjectionRef = doc(db, `stores/${storeId}/activeSessions`, newSessionRef.id);
     const projectionPayload = {
+      id: newSessionRef.id,
       status: isAlaCarte ? 'active' : 'pending_verification',
       sessionMode: payload.sessionMode,
       tableId: payload.tableId,
@@ -573,6 +575,10 @@ export async function voidSession({
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   const nowMs = Date.now();
   
+  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+  const activeTicketsSnap = await getDocs(activeTicketsQuery);
+
   await runTransaction(db, async (tx: Transaction) => {
     // New projection paths
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
@@ -590,6 +596,29 @@ export async function voidSession({
       return;
     }
     
+    // Cancel any remaining active tickets
+    for (const ticketDoc of activeTicketsSnap.docs) {
+        const ticketRef = ticketDoc.ref;
+        tx.update(ticketRef, { 
+            status: 'cancelled',
+            cancelledAt: serverTimestamp(),
+            cancelledAtClientMs: nowMs,
+            cancelledByUid: actor.uid,
+            cancelReason: "Session Voided",
+        });
+        
+        const stationId = ticketDoc.data().kitchenLocationId;
+        if(stationId) {
+            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+            tx.update(rtKdsDocRef, {
+                [`tickets.${ticketRef.id}`]: deleteField(),
+                activeIds: arrayRemove(ticketRef.id),
+                [`sessionIndex.${sessionId}`]: arrayRemove(ticketRef.id),
+                "meta.updatedAt": serverTimestamp(),
+            });
+        }
+    }
+
     tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: safeReason, updatedAt: serverTimestamp() });
     
     // Move projection from active to closed
@@ -680,77 +709,64 @@ export async function removeLineAdjustment(
 }
 
 /**
- * Helper to create kitchen tickets.
+ * Helper to create kitchen tickets for addon/refill items.
  * Can be used within a transaction or standalone.
  */
-export async function createAddonKitchenTickets(
+export async function createKitchenTickets(
   db: Firestore,
   storeId: string,
   sessionId: string,
   session: PendingSession,
-  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; billLineId: string },
+  type: OrderItemType,
+  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; billLineId: string | null },
   qty: number,
   actor: ActorStamp,
-  opts?: { tx?: Transaction }
+  opts: { tx: Transaction },
+  notes?: string
 ) {
   const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
   const now = Date.now();
   const serverTs = serverTimestamp();
   
-  const w: Writer | null = opts?.tx ? { kind: "tx", tx: opts.tx } : null;
+  const w: Writer = { kind: "tx", tx: opts.tx };
   const stationId = line.kitchenLocationId;
 
   for (let i = 0; i < qty; i++) {
     const ticketRef = doc(ticketsColRef);
     const ticketPayload = stripUndefined({
       id: ticketRef.id,
-      type: "addon",
+      type: type,
       itemId: line.itemId,
       itemName: line.itemName,
       billLineId: line.billLineId,
-      qty: 1,
-      status: "preparing",
+      qty: 1, // Each ticket is for qty 1
       kitchenLocationId: line.kitchenLocationId,
       kitchenLocationName: line.kitchenLocationName,
-      sessionId: sessionId,
-      storeId,
+      notes: notes || null,
+      status: "preparing",
       createdByUid: actor.uid,
       createdAt: serverTs,
       createdAtClientMs: now,
       updatedAt: serverTs,
-      sessionLabel: computeSessionLabel(session),
+      sessionId: sessionId, 
+      storeId,
       tableNumber: session.tableNumber,
       customerName: session.customer?.name || session.customerName,
       sessionMode: session.sessionMode,
+      sessionLabel: computeSessionLabel(session),
       guestCount: session.guestCountFinal || session.guestCountCashierInitial,
     });
 
-    if (w) {
-        w.tx.set(ticketRef, ticketPayload);
-        if (stationId) {
-            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-            w.tx.set(rtKdsDocRef, { meta: { source: 'createAddonKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
-            w.tx.update(rtKdsDocRef, {
-                [`tickets.${ticketRef.id}`]: ticketPayload,
-                activeIds: arrayUnion(ticketRef.id),
-                [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
-            });
-        }
-    } else {
-        // Standalone write (less common)
-        const batch = writeBatch(db);
-        batch.set(ticketRef, ticketPayload);
-        if (stationId) {
-            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-            batch.set(rtKdsDocRef, { meta: { source: 'createAddonKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
-            batch.update(rtKdsDocRef, {
-                [`tickets.${ticketRef.id}`]: ticketPayload,
-                activeIds: arrayUnion(ticketRef.id),
-                [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
-            });
-        }
-        await batch.commit();
+    w.tx.set(ticketRef, ticketPayload);
+    
+    if (stationId) {
+        const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+        w.tx.set(rtKdsDocRef, { meta: { source: 'createKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
+        w.tx.update(rtKdsDocRef, {
+            [`tickets.${ticketRef.id}`]: ticketPayload,
+            activeIds: arrayUnion(ticketRef.id),
+            [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
+        });
     }
   }
 }
-

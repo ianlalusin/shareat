@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -6,20 +7,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { collection, onSnapshot, query, where, doc, writeBatch, serverTimestamp, getDocs, orderBy, getDoc, increment } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { ScrollArea } from "../ui/scroll-area";
-import { stripUndefined } from "@/lib/firebase/utils";
 import { Label } from "../ui/label";
 import { Checkbox } from "../ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
-import { computeSessionLabel } from "@/lib/utils/session";
 import { Separator } from "../ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { createKitchenTickets, getActorStamp } from "../cashier/firestore";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -191,65 +191,46 @@ function POSContent({
 
     setIsSubmitting(true);
     
-    const batch = writeBatch(db);
     try {
-        for (const item of cart.values()) {
-            const stationId = item.refill.kitchenLocationId;
-            if (!stationId) {
-              toast({
-                variant: 'destructive',
-                title: 'Action Aborted',
-                description: `Cannot process order: Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`,
-              });
-              setIsSubmitting(false);
-              return;
+        const actor = getActorStamp(appUser);
+        await runTransaction(db, async (tx) => {
+            for (const item of cart.values()) {
+                const stationId = item.refill.kitchenLocationId;
+                if (!stationId) {
+                    throw new Error(`Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`);
+                }
+    
+                const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
+                let finalNotes = item.notes.trim();
+                if (selectedFlavorNames.length > 0) {
+                    const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
+                    finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
+                }
+    
+                await createKitchenTickets(
+                    db,
+                    storeId,
+                    session.id,
+                    session,
+                    'refill',
+                    {
+                        itemId: item.refill.refillId,
+                        itemName: item.refill.refillName,
+                        kitchenLocationId: stationId,
+                        kitchenLocationName: item.refill.kitchenLocationName,
+                        billLineId: null,
+                    },
+                    1, // Qty for refill ticket is always 1
+                    actor,
+                    { tx },
+                    finalNotes
+                );
             }
-
-            const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-            
-            const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
-            let finalNotes = item.notes.trim();
-            if (selectedFlavorNames.length > 0) {
-                const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
-                finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
-            }
-
-            const ticketPayload = stripUndefined({
-                id: ticketRef.id,
-                type: "refill",
-                itemId: item.refill.refillId,
-                itemName: item.refill.refillName,
-                qty: 1,
-                kitchenLocationId: stationId,
-                kitchenLocationName: item.refill.kitchenLocationName,
-                notes: finalNotes || null,
-                status: "preparing",
-                createdAt: serverTimestamp(),
-                createdAtClientMs: Date.now(),
-                updatedAt: serverTimestamp(),
-                createdByUid: appUser.uid,
-                sessionId: session.id, 
-                storeId,
-                tableNumber: session.tableNumber,
-                customerName: session.customer?.name || session.customerName,
-                sessionMode: session.sessionMode,
-                sessionLabel: computeSessionLabel(session),
-                guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-            });
-            batch.set(ticketRef, ticketPayload);
-
-            // KDS PROJECTION WRITE
-            const projectionRef = doc(db, 'stores', storeId, 'opPages', stationId, 'activeKdsTickets', ticketRef.id);
-            batch.set(projectionRef, ticketPayload);
-
-            // INCREMENT ACTIVE COUNT
-            const opPageRef = doc(db, "stores", storeId, "opPages", stationId);
-            batch.update(opPageRef, { activeCount: increment(1) });
-        }
-
-        await batch.commit();
+        });
+        
         toast({ title: `Sent ${cart.size} refill(s) to the kitchen.` });
         handleReset();
+
     } catch(e: any) {
         toast({ variant: 'destructive', title: "Order Failed", description: e.message });
     } finally {
@@ -299,41 +280,27 @@ function POSContent({
         const packageName = (currentPackage as any)?.packageName || (currentPackage as any)?.name || session.packageSnapshot?.name || "Package";
         const itemName = `REFILL - ${packageName}`;
         
-        const ticketRef = doc(collection(db, "stores", storeId, "sessions", session.id, "kitchentickets"));
-
-        const payload = stripUndefined({
-          id: ticketRef.id,
-          type: "refill",
-          itemId: "REFILL_PACKAGE_FIRST_ORDER",
-          itemName,
-          qty: 1,
-          kitchenLocationId: first.kitchenLocationId,
-          kitchenLocationName: first.kitchenLocationName,
-          notes: notes || null,
-          status: "preparing",
-          createdAt: serverTimestamp(),
-          createdAtClientMs: Date.now(),
-          updatedAt: serverTimestamp(),
-          createdByUid: appUser.uid,
-          sessionId: session.id,
-          storeId,
-          tableNumber: session.tableNumber,
-          customerName: session.customer?.name || session.customerName,
-          sessionMode: session.sessionMode,
-          sessionLabel: computeSessionLabel(session),
-          guestCount: guestCount,
+        const actor = getActorStamp(appUser);
+        await runTransaction(db, async (tx) => {
+            await createKitchenTickets(
+                db,
+                storeId,
+                session.id,
+                session,
+                'refill',
+                {
+                    itemId: "REFILL_PACKAGE_FIRST_ORDER",
+                    itemName: itemName,
+                    kitchenLocationId: first.kitchenLocationId!,
+                    kitchenLocationName: first.kitchenLocationName,
+                    billLineId: null,
+                },
+                1,
+                actor,
+                { tx },
+                notes
+            );
         });
-
-        const batch = writeBatch(db);
-        batch.set(ticketRef, payload);
-        
-        const projectionRef = doc(db, 'stores', storeId, 'opPages', first.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
-        batch.set(projectionRef, payload);
-
-        const opPageRef = doc(db, 'stores', storeId, 'opPages', first.kitchenLocationId);
-        batch.update(opPageRef, { activeCount: increment(1) });
-        
-        await batch.commit();
         
         toast({
             title: "Sent refill ticket to kitchen.",

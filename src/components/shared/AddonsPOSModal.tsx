@@ -22,7 +22,7 @@ import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
-import { getActorStamp, createAddonKitchenTickets } from "../cashier/firestore";
+import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -261,7 +261,7 @@ function POSContent({
         }
 
         // Use the helper for tickets + projections
-        await createAddonKitchenTickets(db, storeId, session.id, session, {
+        await createKitchenTickets(db, storeId, session.id, session, 'addon', {
             itemId: selectedAddon.id,
             itemName: selectedAddon.displayName,
             kitchenLocationId: selectedAddon.kitchenLocationId!,

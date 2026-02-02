@@ -1,5 +1,3 @@
-
-
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -227,20 +225,37 @@ export default function KitchenPage() {
   
   useEffect(() => {
     if (!activeStore || !activeTab) {
-        setHistoryPreview([]);
-        return;
+      setHistoryPreview([]);
+      setIsLoadingHistory(false);
+      return;
     }
     setIsLoadingHistory(true);
-    const previewDocRef = doc(db, 'stores', activeStore.id, 'opPages', activeTab, 'historyPreview', 'current');
     
-    const unsubscribe = onSnapshot(previewDocRef, (docSnap: DocumentSnapshot<DocumentData>) => {
-        setHistoryPreview((docSnap.data() as any)?.items || []);
-        setIsLoadingHistory(false);
-    }, (err: any) => {
-        console.error(`Error fetching history preview for ${activeTab}:`, err);
-        setIsLoadingHistory(false);
+    const closedTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab, 'closedKdsTickets');
+    const q = query(closedTicketsRef, orderBy('updatedAt', 'desc'), limit(5));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const historyItems = snapshot.docs.map(doc => {
+        const ticket = doc.data() as KitchenTicket;
+        return {
+          id: ticket.id,
+          sessionLabel: ticket.sessionLabel || 'N/A',
+          tableNumber: ticket.tableNumber,
+          customerName: ticket.customerName,
+          itemName: ticket.itemName,
+          qty: ticket.qty,
+          status: ticket.status,
+          closedAtClientMs: ticket.servedAtClientMs || ticket.cancelledAtClientMs || Date.now(),
+          durationMs: ticket.durationMs || 0,
+        };
+      });
+      setHistoryPreview(historyItems);
+      setIsLoadingHistory(false);
+    }, (err) => {
+      console.error(`Error fetching history preview for ${activeTab}:`, err);
+      setIsLoadingHistory(false);
     });
-    
+
     return () => unsubscribe();
   }, [activeStore, activeTab]);
 
@@ -368,11 +383,11 @@ export default function KitchenPage() {
             }
             
             transaction.update(ticketRef, updatePayload);
-            await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
-
-            // Update real-time KDS document
+            
+            // --- ATOMIC KDS PROJECTION UPDATE ---
             const { kitchenLocationId } = oldTicketState;
             if (kitchenLocationId) {
+                // Remove from real-time view
                 const rtKdsDocRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId);
                 transaction.update(rtKdsDocRef, {
                     [`tickets.${ticketId}`]: deleteField(),
@@ -380,7 +395,13 @@ export default function KitchenPage() {
                     [`sessionIndex.${sessionId}`]: arrayRemove(ticketId),
                     "meta.updatedAt": serverTimestamp(),
                 });
+
+                // Add to historical view
+                const closedTicketRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketId);
+                transaction.set(closedTicketRef, newTicketState);
             }
+            
+            await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
         });
 
         const ticket = tickets.find(t => t.id === ticketId);
