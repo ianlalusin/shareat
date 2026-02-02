@@ -82,7 +82,7 @@ export async function applyKdsTicketDelta(
   else if (oldStatus === 'cancelled') eventMs = oldTicket?.cancelledAtClientMs ?? null;
 
   // Fallback to creation time if no terminal state timestamp is available
-  eventMs = eventMs || ticketData.createdAtClientMs || toJsDate(Date.now())?.getTime();
+  eventMs = eventMs || ticketData.createdAtClientMs || (toJsDate(Date.now())?.getTime() ?? null);
   if (!eventMs) return; // Cannot determine the day for the analytics update.
 
   // --- Calculate Deltas ---
