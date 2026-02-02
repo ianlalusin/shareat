@@ -1565,7 +1565,7 @@
         }
       },
        {
-        "path": "/stores/{storeId}/sessions/activeSessions/{sessionId}",
+        "path": "/stores/{storeId}/activeSessions/{sessionId}",
         "definition": {
           "entityName": "SessionProjection",
           "schema": { "$ref": "#/backend/entities/SessionProjection" },
@@ -1574,7 +1574,7 @@
         }
       },
       {
-        "path": "/stores/{storeId}/sessions/closedSessions/{sessionId}",
+        "path": "/stores/{storeId}/closedSessions/{sessionId}",
         "definition": {
           "entityName": "SessionProjection",
           "schema": { "$ref": "#/backend/entities/SessionProjection" },

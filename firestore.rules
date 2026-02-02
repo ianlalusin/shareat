@@ -45,7 +45,7 @@ service cloud.firestore {
     }
 
     match /{path=**}/activityLogs/{logId} {
-    allow read: if isActiveStaff();
+      allow read: if isActiveStaff();
     }
 
 
@@ -62,7 +62,19 @@ service cloud.firestore {
     }
 
     // ✅ Real-time KDS Projections
+    // This rule allows any authenticated staff member with access to the store
+    // to read, create, update, and delete tickets in the real-time KDS projection.
     match /stores/{storeId}/rtKdsTickets/{docPath=**} {
+      allow read, write: if hasStoreAccess(storeId);
+    }
+
+    // ✅ Real-time Session Projections
+    // This rule allows any authenticated staff member with access to the store
+    // to read, create, update, and delete documents in the session projections.
+    match /stores/{storeId}/activeSessions/{docPath=**} {
+      allow read, write: if hasStoreAccess(storeId);
+    }
+    match /stores/{storeId}/closedSessions/{docPath=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
 
@@ -84,4 +96,3 @@ service cloud.firestore {
     }
   }
 }
-
