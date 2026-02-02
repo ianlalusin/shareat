@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from "firebase/firestore";
 import type { ReceiptData, ReceiptSession, ReceiptSettings } from "@/components/receipt/receipt-view";
 

@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import {
@@ -22,8 +23,7 @@ async function fetchCollection(db: Firestore, collectionPath: string) {
 
 /**
  * Rebuilds the single `storeConfig/current` document by fetching the latest data
- * from all source-of-truth collections. It also seeds the operational pages (opPages)
- * required for KDS and session management.
+ * from all source-of-truth collections.
  * 
  * @param db Firestore instance from the client.
  * @param storeId The ID of the store to rebuild.
@@ -42,7 +42,6 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
     discounts,
     charges,
     modesOfPayment,
-    kitchenLocations,
   ] = await Promise.all([
     fetchCollection(db, `stores/${storeId}/tables`),
     fetchCollection(db, `stores/${storeId}/storePackages`),
@@ -51,7 +50,6 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
     fetchCollection(db, `stores/${storeId}/storeDiscounts`),
     fetchCollection(db, `stores/${storeId}/storeCharges`),
     fetchCollection(db, `stores/${storeId}/storeModesOfPayment`),
-    fetchCollection(db, `stores/${storeId}/kitchenLocations`),
   ]);
 
   // --- 2. Prepare the new config document data ---
@@ -93,32 +91,7 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
     };
     batch.set(tableCacheRef, cachePayload);
   });
-
-  // Seed opPages for each Kitchen Station
-  kitchenLocations.forEach((loc: any) => {
-    const opPageRef = doc(db, `stores/${storeId}/opPages`, loc.id);
-    batch.set(opPageRef, {
-        name: loc.name,
-        activeCount: 0,
-        todayServeCount: 0,
-        todayServeMsSum: 0,
-        updatedAt: serverTimestamp(),
-    }, { merge: true });
-
-    // Initialize history preview document
-    const historyRef = doc(db, `stores/${storeId}/opPages`, loc.id, 'historyPreview', 'current');
-    batch.set(historyRef, {
-        items: [],
-        updatedAt: serverTimestamp(),
-    }, { merge: true });
-  });
-
-  // Initialize session management operational page metadata
-  const sessionOpPageRef = doc(db, `stores/${storeId}/opPages`, 'sessionPage');
-  batch.set(sessionOpPageRef, {
-      updatedAt: serverTimestamp(),
-      source: 'rebuild-seed'
-  }, { merge: true });
   
   await batch.commit();
 }
+

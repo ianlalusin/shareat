@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
@@ -55,7 +56,7 @@ function HistoryPageContent() {
 
     setIsLoading(true);
 
-    const ticketsRef = collection(db, 'stores', activeStore.id, 'opPages', kitchenLocationId, 'closedKdsTickets');
+    const ticketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets', kitchenLocationId, 'closedKdsTickets');
     let q = query(
       ticketsRef,
       orderBy('updatedAt', 'desc'),
@@ -87,6 +88,7 @@ function HistoryPageContent() {
     setLastVisible(null);
     setHasMore(true);
     fetchTickets(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStore, kitchenLocationId]);
   
   useEffect(() => {
@@ -240,3 +242,4 @@ export function HistoryPageClient() {
         </Suspense>
     )
 }
+

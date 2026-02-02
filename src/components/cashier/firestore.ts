@@ -20,6 +20,7 @@ import {
   type DocumentData,
   type Firestore,
   type Transaction,
+  arrayUnion,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -217,6 +218,18 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         initialFlavorIds: payload.initialFlavorIds,
       });
       transaction.set(ticketRef, ticketPayload);
+      
+      // KDS PROJECTION WRITE
+      const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationKey);
+      transaction.set(rtKdsDocRef, {
+        meta: { source: 'startSession', updatedAt: serverTimestamp() },
+        kitchenLocationId: stationKey,
+      }, { merge: true });
+      transaction.update(rtKdsDocRef, {
+          [`tickets.${ticketRef.id}`]: ticketPayload,
+          activeIds: arrayUnion(ticketRef.id),
+          [`sessionIndex.${newSessionRef.id}`]: arrayUnion(ticketRef.id)
+      });
     }
   });
 
@@ -273,10 +286,7 @@ export async function completePaymentFromUnits(
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
     const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    
-    // NEW PROJECTION PATHS
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
     
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
@@ -287,11 +297,11 @@ export async function completePaymentFromUnits(
       tx.get(counterRef),
       tx.get(activeProjectionRef),
     ]);
-    
+
     const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
     const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-    const activeTicketsSnap = await tx.get(activeTicketsQuery);
-
+    const activeTicketsSnap = await getDocs(activeTicketsQuery);
+    
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
 
@@ -345,7 +355,7 @@ export async function completePaymentFromUnits(
           continue;
       }
       
-      const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
+      const startMs = toJsDate(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt)?.getTime();
       const durationMs = startMs ? Math.max(0, now - startMs) : 0;
       
       const updatePayload: any = {
@@ -387,6 +397,7 @@ export async function completePaymentFromUnits(
     });
     
     // Move session projection
+    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
     if (activeProjectionSnap.exists()) {
       const projectionData = activeProjectionSnap.data();
       tx.set(closedProjectionRef, {
@@ -396,6 +407,13 @@ export async function completePaymentFromUnits(
         closedAt: serverTimestamp(),
       });
       tx.delete(activeProjectionRef);
+    } else { // Fallback if projection was missing
+        tx.set(closedProjectionRef, {
+            ...sessionData,
+            status: 'closed',
+            updatedAt: serverTimestamp(),
+            closedAt: serverTimestamp(),
+        })
     }
 
     // receipt numbering
@@ -679,7 +697,8 @@ export async function createAddonKitchenTickets(
   const now = Date.now();
   const serverTs = serverTimestamp();
   
-  const batch = !opts?.tx ? writeBatch(db) : null;
+  const w: Writer | null = opts?.tx ? { kind: "tx", tx: opts.tx } : null;
+  const stationId = line.kitchenLocationId;
 
   for (let i = 0; i < qty; i++) {
     const ticketRef = doc(ticketsColRef);
@@ -706,14 +725,32 @@ export async function createAddonKitchenTickets(
       guestCount: session.guestCountFinal || session.guestCountCashierInitial,
     });
 
-    if (opts?.tx) {
-      opts.tx.set(ticketRef, ticketPayload);
-    } else if (batch) {
-      batch.set(ticketRef, ticketPayload);
+    if (w) {
+        w.tx.set(ticketRef, ticketPayload);
+        if (stationId) {
+            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+            w.tx.set(rtKdsDocRef, { meta: { source: 'createAddonKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
+            w.tx.update(rtKdsDocRef, {
+                [`tickets.${ticketRef.id}`]: ticketPayload,
+                activeIds: arrayUnion(ticketRef.id),
+                [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
+            });
+        }
+    } else {
+        // Standalone write (less common)
+        const batch = writeBatch(db);
+        batch.set(ticketRef, ticketPayload);
+        if (stationId) {
+            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+            batch.set(rtKdsDocRef, { meta: { source: 'createAddonKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
+            batch.update(rtKdsDocRef, {
+                [`tickets.${ticketRef.id}`]: ticketPayload,
+                activeIds: arrayUnion(ticketRef.id),
+                [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
+            });
+        }
+        await batch.commit();
     }
   }
-
-  if (batch) {
-    await batch.commit();
-  }
 }
+
