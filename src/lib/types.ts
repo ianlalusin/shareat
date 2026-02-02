@@ -428,6 +428,8 @@ export type DailyMetric = {
         cancelledCountByType: Record<string, number>;
         durationMsSumByType: Record<string, number>;
         durationCountByType: Record<string, number>;
+        durationMsSumByLocation?: Record<string, number>;
+        durationCountByLocation?: Record<string, number>;
     };
     sessions?: {
         closedCount: number;
