@@ -82,7 +82,7 @@ export function SessionListView() {
         
         // Fetch active sessions from the NEW projection collection
         const sessionsQuery = query(
-            collection(db, "stores", activeStore.id, "sessions", "activeSessions"),
+            collection(db, "stores", activeStore.id, "activeSessions"),
             orderBy("startedAtClientMs", "asc")
         );
 

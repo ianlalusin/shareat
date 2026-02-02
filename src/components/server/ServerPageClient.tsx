@@ -64,7 +64,7 @@ export function ServerPageClient() {
     
     // Point to the NEW projection collection
     const sessionsQuery = query(
-        collection(db, "stores", activeStore.id, "sessions", "activeSessions"),
+        collection(db, "stores", activeStore.id, "activeSessions"),
         orderBy("startedAtClientMs", "asc")
     );
     
@@ -159,7 +159,7 @@ export function ServerPageClient() {
     });
     
     // Update session projection in the NEW location
-    const sessionProjectionRef = doc(db, `stores/${activeStore.id}/sessions/activeSessions`, session.id);
+    const sessionProjectionRef = doc(db, `stores/${activeStore.id}/activeSessions`, session.id);
     batch.update(sessionProjectionRef, {
       status: "active",
       guestCountFinal: finalCount,

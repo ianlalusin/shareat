@@ -144,7 +144,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     }
 
     // 3. Write session projection to the new location
-    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, newSessionRef.id);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/activeSessions`, newSessionRef.id);
     const projectionPayload = {
       status: isAlaCarte ? 'active' : 'pending_verification',
       sessionMode: payload.sessionMode,
@@ -275,8 +275,8 @@ export async function completePaymentFromUnits(
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     
     // NEW PROJECTION PATHS
-    const activeProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/sessions/closedSessions`, sessionId);
+    const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
     
     const [
       sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
@@ -290,7 +290,7 @@ export async function completePaymentFromUnits(
     
     const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
     const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-    const activeTicketsSnap = await getDocs(activeTicketsQuery);
+    const activeTicketsSnap = await tx.get(activeTicketsQuery);
 
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
@@ -557,8 +557,8 @@ export async function voidSession({
   
   await runTransaction(db, async (tx: Transaction) => {
     // New projection paths
-    const activeProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/sessions/closedSessions`, sessionId);
+    const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
 
     const [sessionSnap, activeProjectionSnap] = await Promise.all([
         tx.get(sessionRef),
