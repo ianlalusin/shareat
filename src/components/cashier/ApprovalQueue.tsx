@@ -90,8 +90,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             onApprove: async () => {
               const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-              const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionDoc.id);
+              const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
 
               batch.update(sessionRef, {
                 guestCountFinal: session.guestCountChange.requestedCount,
@@ -100,15 +99,9 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 "guestCountChange.approvedAt": serverTimestamp(),
               });
               
-              batch.update(tableCacheRef, {
-                guestCount: session.guestCountChange.requestedCount,
-                requestStatus: 'approved', // Or null to clear immediately
-                updatedAt: serverTimestamp(),
-              });
-              
               batch.update(sessionProjectionRef, {
                 guestCountFinal: session.guestCountChange.requestedCount,
-                requestStatus: 'approved',
+                "guestCountChange.status": "approved",
                 updatedAt: serverTimestamp(),
               });
 
@@ -117,8 +110,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             onReject: async () => {
               const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-              const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionDoc.id);
+              const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
 
 
               batch.update(sessionRef, {
@@ -126,15 +118,9 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 "guestCountChange.rejectedByUid": appUser?.uid,
                 "guestCountChange.rejectedAt": serverTimestamp(),
               });
-
-              batch.update(tableCacheRef, {
-                requestStatus: null, requestedGuestCount: null, requestedPackageLabel: null,
-                requestedAtMs: null, requestedByUid: null, updatedAt: serverTimestamp()
-              });
               
               batch.update(sessionProjectionRef, {
-                requestStatus: null,
-                requestedGuestCount: null,
+                "guestCountChange.status": "rejected",
                 updatedAt: serverTimestamp(),
               });
 
@@ -161,8 +147,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             onApprove: async () => {
                 const batch = writeBatch(db);
                 const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-                const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-                const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionDoc.id);
+                const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
                 
                 batch.update(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
@@ -171,16 +156,10 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     "packageChange.approvedByUid": appUser?.uid,
                     "packageChange.approvedAt": serverTimestamp(),
                 });
-
-                batch.update(tableCacheRef, {
-                    packageLabel: session.packageChange.requestedPackageSnapshot.name,
-                    requestStatus: 'approved', // Or null to clear immediately
-                    updatedAt: serverTimestamp(),
-                });
                 
                  batch.update(sessionProjectionRef, {
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
-                    requestStatus: 'approved',
+                    "packageChange.status": 'approved',
                     updatedAt: serverTimestamp(),
                 });
 
@@ -189,8 +168,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             onReject: async () => {
               const batch = writeBatch(db);
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-              const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionDoc.id);
+              const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
 
               batch.update(sessionRef, {
                 "packageChange.status": "rejected",
@@ -198,14 +176,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 "packageChange.rejectedAt": serverTimestamp(),
               });
 
-              batch.update(tableCacheRef, {
-                requestStatus: null, requestedGuestCount: null, requestedPackageLabel: null,
-                requestedAtMs: null, requestedByUid: null, updatedAt: serverTimestamp()
-              });
-              
               batch.update(sessionProjectionRef, {
-                requestStatus: null,
-                requestedPackageLabel: null,
+                "packageChange.status": "rejected",
                 updatedAt: serverTimestamp(),
               });
               
@@ -314,5 +286,3 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
     </>
   );
 }
-
-    
