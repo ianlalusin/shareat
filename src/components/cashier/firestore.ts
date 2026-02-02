@@ -20,6 +20,7 @@ import {
   type DocumentData,
   type Firestore,
   type Transaction,
+  type WriteBatch,
   arrayUnion,
   arrayRemove,
 } from 'firebase/firestore';
