@@ -21,6 +21,7 @@ import {
   type Firestore,
   type Transaction,
   arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -707,6 +708,10 @@ export async function removeLineAdjustment(
 
   await updateDoc(lineRef, updatePayload);
 }
+
+type Writer =
+  | { kind: "tx"; tx: Transaction }
+  | { kind: "batch"; batch: WriteBatch };
 
 /**
  * Helper to create kitchen tickets for addon/refill items.
