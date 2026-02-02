@@ -1,6 +1,4 @@
-
-
-"use client";
+'use client';
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +16,7 @@ import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
 import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { SyncSessionsTool } from "./SyncSessionsTool";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -137,7 +136,9 @@ export function SessionListView() {
 
     return (
         <>
-            <PageHeader title="Cashier" description="Start a new session or manage active ones."/>
+            <PageHeader title="Cashier" description="Start a new session or manage active ones.">
+                <SyncSessionsTool />
+            </PageHeader>
             
             {isLoading ? <Loader2 className="animate-spin" /> : (
                 <div className="space-y-8">
