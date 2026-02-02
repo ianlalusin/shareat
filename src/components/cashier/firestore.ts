@@ -288,57 +288,30 @@ export async function completePaymentFromUnits(
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
 
-  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-  const activeTicketsSnap = await getDocs(activeTicketsQuery);
-
-  const ticketDataForTx = activeTicketsSnap.docs.map(docSnap => ({
-      ticketRef: docSnap.ref,
-      ticketId: docSnap.id,
-      kitchenLocationId: docSnap.data().kitchenLocationId,
-  }));
-  const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
-
   await runTransaction(db, async (tx) => {
+    // --- READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
     const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const activeProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionId);
     const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
-
-
-    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeKdsTicketProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
-    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
+    
+    // Query for active tickets INSIDE the transaction
+    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
 
     const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
-    ]: [
-      DocumentSnapshot<DocumentData>,
-      DocumentSnapshot<DocumentData>,
-      DocumentSnapshot<DocumentData>,
-      DocumentSnapshot<DocumentData>,
-      DocumentSnapshot<DocumentData>
+      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap, activeTicketsSnap
     ] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
-      tx.get(settingsRef),
+      tx.get(settingsSnap),
       tx.get(counterRef),
       tx.get(activeProjectionRef),
+      tx.get(activeTicketsQuery)
     ]);
     
-    const [
-      ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps
-    ] = await Promise.all([
-      Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
-      Promise.all(opPageRefs.map(ref => tx.get(ref))),
-      Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
-      Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
-    ]);
-    
-    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
-
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
 
@@ -360,6 +333,25 @@ export async function completePaymentFromUnits(
       receiptId = receiptSnap.exists() ? receiptSnap.id : '';
       return;
     }
+
+    const ticketDataForTx = activeTicketsSnap.docs.map(docSnap => ({
+        ticketRef: docSnap.ref,
+        ticketId: docSnap.id,
+        kitchenLocationId: docSnap.data().kitchenLocationId,
+    }));
+    const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
+
+    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
+    const activeKdsTicketProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
+    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
+
+    const [opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
+        Promise.all(opPageRefs.map(ref => tx.get(ref))),
+        Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
+        Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
+    ]);
+    
+    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
 
     let tableRef: ReturnType<typeof doc> | null = null;
     let tableSnap: Awaited<ReturnType<typeof tx.get>> | null = null;
@@ -384,19 +376,16 @@ export async function completePaymentFromUnits(
     const serverTs = serverTimestamp();
     const newHistoryEntriesByStation = new Map<string, any[]>();
 
-
-    for (let i = 0; i < ticketSnaps.length; i++) {
+    for (let i = 0; i < activeTicketsSnap.docs.length; i++) {
+        const ticketDoc = activeTicketsSnap.docs[i];
         const ticketRef = ticketDataForTx[i].ticketRef;
-        const ticketSnap = ticketSnaps[i];
-        if (!ticketSnap.exists()) continue;
-
-        const oldTicketState = ticketSnap.data() as KitchenTicket;
+        const oldTicketState = ticketDoc.data() as KitchenTicket;
         
         if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
             continue;
         }
         
-        const startMs = oldTicketState.createdAtClientMs || toJsDate(oldTicketState.createdAt)?.getTime();
+        const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
         const durationMs = startMs ? Math.max(0, now - startMs) : 0;
         
         const updatePayload: any = {
