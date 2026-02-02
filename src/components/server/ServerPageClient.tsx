@@ -62,9 +62,9 @@ export function ServerPageClient() {
 
     const unsubs: (() => void)[] = [];
     
-    // Point to projection collection
+    // Point to the NEW projection collection
     const sessionsQuery = query(
-        collection(db, "stores", activeStore.id, "opPages", "sessionPage", "activeSessions"),
+        collection(db, "stores", activeStore.id, "sessions", "activeSessions"),
         orderBy("startedAtClientMs", "asc")
     );
     
@@ -158,21 +158,8 @@ export function ServerPageClient() {
         updatedAt: serverTimestamp(),
     });
     
-    // Update the table cache document as well
-    const tableCacheRef = doc(db, 'stores', activeStore.id, 'storeConfig', 'current', 'tables', session.tableId);
-    batch.update(tableCacheRef, {
-      guestCount: finalCount,
-      // Clear any pending request states upon verification
-      requestStatus: null,
-      requestedGuestCount: null,
-      requestedPackageLabel: null,
-      requestedAtMs: null,
-      requestedByUid: null,
-      updatedAt: serverTimestamp(),
-    });
-    
-    // Update session projection
-    const sessionProjectionRef = doc(db, `stores/${activeStore.id}/opPages/sessionPage/activeSessions`, session.id);
+    // Update session projection in the NEW location
+    const sessionProjectionRef = doc(db, `stores/${activeStore.id}/sessions/activeSessions`, session.id);
     batch.update(sessionProjectionRef, {
       status: "active",
       guestCountFinal: finalCount,

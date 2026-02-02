@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -38,8 +39,12 @@ export function SessionListView() {
             return;
         }
         setIsLoadingTables(true);
-        const q = query(collection(db, `stores/${activeStore.id}/storeConfig/current/tables`));
-        const unsub = onSnapshot(q, (snap) => {
+        // This is a one-time fetch for a subcollection inside a singleton document.
+        // It's not expected to change frequently, so onSnapshot is not essential here.
+        // If it were, we would need to ensure the parent doc listener (`useStoreConfigDoc`)
+        // triggers re-subscriptions or provides the data directly.
+        const tablesCacheRef = collection(db, `stores/${activeStore.id}/storeConfig/current/tables`);
+        const unsub = onSnapshot(tablesCacheRef, (snap) => {
             setCachedTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
             setIsLoadingTables(false);
         }, (err) => {
@@ -48,6 +53,7 @@ export function SessionListView() {
         });
         return () => unsub();
     }, [activeStore?.id]);
+
 
     const sortedTables = useMemo(() => {
         return [...cachedTables]
@@ -74,9 +80,9 @@ export function SessionListView() {
             console.error("Session listener failed:", error);
         };
         
-        // Fetch active sessions from the real-time projection collection
+        // Fetch active sessions from the NEW projection collection
         const sessionsQuery = query(
-            collection(db, "stores", activeStore.id, "opPages", "sessionPage", "activeSessions"),
+            collection(db, "stores", activeStore.id, "sessions", "activeSessions"),
             orderBy("startedAtClientMs", "asc")
         );
 

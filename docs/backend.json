@@ -893,6 +893,25 @@
         "packageSnapshot"
       ]
     },
+    "SessionProjection": {
+      "title": "Session Projection",
+      "type": "object",
+      "description": "A simplified session object for real-time UI updates.",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_verification", "active", "closed", "voided"] },
+        "sessionMode": { "type": "string", "enum": ["package_dinein", "alacarte"] },
+        "customerName": { "type": ["string", "null"] },
+        "tableNumber": { "type": ["string", "null"] },
+        "guestCountFinal": { "type": ["number", "null"] },
+        "guestCountCashierInitial": { "type": "number" },
+        "packageSnapshot": { "type": "object" },
+        "initialFlavorIds": { "type": "array", "items": { "type": "string" } },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "startedAtClientMs": { "type": "number" }
+      }
+    },
     "PackageUnit": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "PackageUnit",
@@ -1545,6 +1564,24 @@
           ]
         }
       },
+       {
+        "path": "/stores/{storeId}/sessions/activeSessions/{sessionId}",
+        "definition": {
+          "entityName": "SessionProjection",
+          "schema": { "$ref": "#/backend/entities/SessionProjection" },
+          "description": "A simplified real-time projection of an active session for UI display.",
+          "params": [{"name": "storeId"}, {"name": "sessionId"}]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/sessions/closedSessions/{sessionId}",
+        "definition": {
+          "entityName": "SessionProjection",
+          "schema": { "$ref": "#/backend/entities/SessionProjection" },
+          "description": "A simplified projection of a closed session for historical views.",
+          "params": [{"name": "storeId"}, {"name": "sessionId"}]
+        }
+      },
       {
         "path": "/stores/{storeId}/sessions/{sessionId}/packageUnits/{guestId}",
         "definition": {
@@ -1821,6 +1858,6 @@
         }
       }
     ],
-    "reasoning": "The Firestore structure is designed to support CulinaryFlow's core features: store management, product and inventory, menu management, POS, KDS, and admin settings with role-based access control. The structure prioritizes authorization independence and simplifies security rules. It avoids hierarchical authorization dependencies to ensure atomic operations.\n\n**Authorization Independence and QAPs:**\n\n*   **Stores:** Store documents are located at `/stores/{storeId}`. Access control is managed through the `User.assignedStoreIds` array, with a rule function `canAccessStore(storeId)` defined in the security rules to check if a user is authorized to access a specific store. This design decouples authorization logic from the store document itself, facilitating atomic operations.\n*   **Products:** Products are global and stored in the `/products/{productId}` collection, managed exclusively by admins. This segregation ensures products can be listed securely since all documents in the collection have the same access controls (QAP).\n*   **Inventory:** Inventory documents, located at `/stores/{storeId}/inventory/{inventoryId}`, store denormalized information regarding product availability in a specific store. Authorization independence is achieved because access is controlled via the `canAccessStore(storeId)` function. Additionally, the `storeId` is included in each inventory document, eliminating the need to fetch the parent store to validate permissions.\n*   **MenuItems:** Menu items, located at `/stores/{storeId}/menuItems/{menuItemId}`, use the same access pattern as inventory. Including the `storeId` in each document enables access control via `canAccessStore(storeId)` without requiring a `get()` call, maintaining authorization independence.\n*   **Orders:** Orders are stored at `/stores/{storeId}/orders/{orderId}` and include the `storeId`. Access is granted to users through `canAccessStore(storeId)`. The `cashierId` field links to the user who created the order, but this is not used for authorization; it is for audit/reporting purposes.\n*   **OrderItems:** Order items, nested under their respective orders at `/stores/{storeId}/orders/{orderId}/orderItems/{orderItemId}`, inherit authorization context from the order. Since all docs share security needs, listing is secure (QAP).\n*   **KitchenStations:** Kitchen stations are global and located at `/kitchenStations/{kitchenStationId}`. Admin-only access is enforced, and all documents share the same security requirements, supporting QAPs for listing.\n*   **Tables:** Tables are stored at `/stores/{storeId}/tables/{tableId}`. Access is controlled through `canAccessStore(storeId)`, with the `storeId` denormalized into each document for authorization independence.\n*   **Users:** User profiles are stored at `/users/{userId}`. Access to a user profile is restricted to the user themselves or to admins. The `assignedStoreIds` array is used by security rules to determine which stores a user can manage. Existence of a document in `/roles_admin/{userId}` provides admin privileges.\n*   **Admin Roles:** Global admin roles are managed via document existence in the `/roles_admin/{userId}` collection. This Existence over Content strategy simplifies checking admin privileges in rules.\n\nThis structure adheres to the core design principles by denormalizing authorization data, segregating data based on security posture, and using consistent access modeling."
+    "reasoning": "The Firestore structure is designed to support CulinaryFlow's core features: store management, product and inventory, menu management, POS, KDS, and admin settings with role-based access control. The structure prioritizes authorization independence and simplifies security rules. It avoids hierarchical authorization dependencies to ensure atomic operations.\n\n**Authorization Independence and QAPs:**\n\n*   **Stores:** Store documents are located at `/stores/{storeId}`. Access control is managed through the `Staff.assignedStoreIds` array, with a rule function `canAccessStore(storeId)` defined in the security rules to check if a user is authorized to access a specific store. This design decouples authorization logic from the store document itself, facilitating atomic operations.\n*   **Products:** Products are global and stored in the `/products/{productId}` collection, managed exclusively by admins. This segregation ensures products can be listed securely since all documents in the collection have the same access controls (QAP).\n*   **Inventory:** Inventory documents, located at `/stores/{storeId}/inventory/{inventoryId}`, store denormalized information regarding product availability in a specific store. Authorization independence is achieved because access is controlled via the `canAccessStore(storeId)` function. Additionally, the `storeId` is included in each inventory document, eliminating the need to fetch the parent store to validate permissions.\n*   **MenuItems:** Menu items, located at `/stores/{storeId}/menuItems/{menuItemId}`, use the same access pattern as inventory. Including the `storeId` in each document enables access control via `canAccessStore(storeId)` without requiring a `get()` call, maintaining authorization independence.\n*   **Orders:** Orders are stored at `/stores/{storeId}/orders/{orderId}` and include the `storeId`. Access is granted to users through `canAccessStore(storeId)`. The `cashierId` field links to the user who created the order, but this is not used for authorization; it is for audit/reporting purposes.\n*   **OrderItems:** Order items, nested under their respective orders at `/stores/{storeId}/orders/{orderId}/orderItems/{orderItemId}`, inherit authorization context from the order. Since all docs share security needs, listing is secure (QAP).\n*   **KitchenStations:** Kitchen stations are global and located at `/kitchenStations/{kitchenStationId}`. Admin-only access is enforced, and all documents share the same security requirements, supporting QAPs for listing.\n*   **Tables:** Tables are stored at `/stores/{storeId}/tables/{tableId}`. Access is controlled through `canAccessStore(storeId)`, with the `storeId` denormalized into each document for authorization independence.\n*   **Staff:** Staff profiles are stored at `/staff/{staffId}`. Access to a user profile is restricted to the user themselves or to platform admins. The `assignedStoreIds` array is used by security rules to determine which stores a user can access.\n*   **Admin Roles:** The platform admin role is managed via the `role` field in a user's `/staff/{staffId}` document.\n\nThis structure adheres to the core design principles by denormalizing authorization data, segregating data based on security posture, and using consistent access modeling."
   }
 }

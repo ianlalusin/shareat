@@ -121,8 +121,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     setIsSubmitting(true);
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
-    const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, session.id);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, session.id);
     
     try {
         // Update session doc (truth)
@@ -135,21 +134,10 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
             "guestCountChange.requestedAt": serverTimestamp(),
         });
         
-        // Update table cache doc (for UI hint)
-        batch.update(tableCacheRef, {
-            requestedGuestCount: data.requestedCount,
-            requestStatus: 'unapproved',
-            requestedAtMs: Date.now(),
-            requestedByUid: appUser.uid,
-            requestedPackageLabel: null, // Clear other request type
-            updatedAt: serverTimestamp(),
-        });
-
         // Update session projection for UI hint
         batch.update(sessionProjectionRef, {
-            requestStatus: 'unapproved',
-            requestedGuestCount: data.requestedCount,
-            requestedPackageLabel: null,
+            "guestCountChange.status": "pending",
+            "guestCountChange.requestedCount": data.requestedCount,
             updatedAt: serverTimestamp()
         });
 
@@ -173,36 +161,27 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     setIsSubmitting(true);
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
-    const tableCacheRef = doc(db, "stores", storeId, "storeConfig", "current", "tables", session.tableId);
-    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, session.id);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, session.id);
 
     try {
+        const requestedPackageSnapshot = {
+            name: selectedPackage.packageName,
+            pricePerHead: selectedPackage.pricePerHead,
+        };
+
         batch.update(sessionRef, {
             "packageChange.status": "pending",
             "packageChange.requestedPackageId": data.requestedPackageId,
-            "packageChange.requestedPackageSnapshot": {
-            name: selectedPackage.packageName,
-            pricePerHead: selectedPackage.pricePerHead,
-            },
+            "packageChange.requestedPackageSnapshot": requestedPackageSnapshot,
             "packageChange.reason": data.reason,
             "packageChange.reasonNote": data.reason === 'other' ? data.reasonNote?.trim() : (data.reasonNote?.trim() || null),
             "packageChange.requestedByUid": appUser.uid,
             "packageChange.requestedAt": serverTimestamp(),
         });
 
-        batch.update(tableCacheRef, {
-            requestedPackageLabel: selectedPackage.packageName,
-            requestStatus: 'unapproved',
-            requestedAtMs: Date.now(),
-            requestedByUid: appUser.uid,
-            requestedGuestCount: null, // Clear other request type
-            updatedAt: serverTimestamp(),
-        });
-
         batch.update(sessionProjectionRef, {
-            requestStatus: 'unapproved',
-            requestedGuestCount: null,
-            requestedPackageLabel: selectedPackage.packageName,
+            "packageChange.status": "pending",
+            "packageChange.requestedPackageSnapshot": requestedPackageSnapshot,
             updatedAt: serverTimestamp()
         });
 
@@ -419,5 +398,3 @@ export function RequestChangeDialog(props: RequestChangeDialogProps) {
         </Dialog>
     );
 }
-
-    

@@ -133,7 +133,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     // 1. Create the new session document
     transaction.set(newSessionRef, sessionPayload);
 
-    // 2. Update the table document and its cached version
+    // 2. Update the table document if not ala carte
     if (!isAlaCarte) {
       const tableRef = doc(db, `stores/${storeId}/tables`, payload.tableId);
       transaction.update(tableRef, {
@@ -141,32 +141,18 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         currentSessionId: newSessionRef.id,
         updatedAt: serverTimestamp(),
       });
-      
-      const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables/${payload.tableId}`);
-      transaction.set(tableCacheRef, {
-        status: 'occupied',
-        currentSessionId: newSessionRef.id,
-        tableNumber: payload.tableNumber,
-        customerName: payload.customer?.name,
-        packageLabel: payload.package?.packageName,
-        sessionType: payload.sessionMode === 'package_dinein' ? 'unlimited' : 'alacarte',
-        guestCount: payload.guestCount,
-        itemCount: 0,
-        startedAtMs: Date.now(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
     }
 
-    // 3. Write session projection
-    const sessionProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, newSessionRef.id);
+    // 3. Write session projection to the new location
+    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, newSessionRef.id);
     const projectionPayload = {
-      meta: { source: 'projection-v1' },
       status: isAlaCarte ? 'active' : 'pending_verification',
       sessionMode: payload.sessionMode,
       tableId: payload.tableId,
       tableNumber: isAlaCarte ? null : payload.tableNumber,
       customerName: isAlaCarte ? customerName : null,
       packageOfferingId: payload.package?.packageId || null,
+      packageName: payload.package?.packageName || null, // Denormalize for server page
       packageSnapshot: payload.package
         ? { name: payload.package.packageName, pricePerHead: payload.package.pricePerHead }
         : null,
@@ -231,18 +217,11 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         initialFlavorIds: payload.initialFlavorIds,
       });
       transaction.set(ticketRef, ticketPayload);
-      
-      const projectionRef = doc(db, 'stores', storeId, 'opPages', stationKey, 'activeKdsTickets', ticketRef.id);
-      transaction.set(projectionRef, ticketPayload);
-
-      const opPageRef = doc(db, "stores", storeId, "opPages", stationKey);
-      transaction.update(opPageRef, { activeCount: increment(1) });
     }
   });
 
 
   // For package dine-in, this is the definitive start log.
-  // For ala carte, another process seems to be logging the start, so we skip this one to avoid duplicates.
   if (payload.sessionMode !== 'alacarte') {
     await writeActivityLog({
       storeId,
@@ -288,30 +267,31 @@ export async function completePaymentFromUnits(
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db, async (tx: Transaction) => {
     // --- READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
     const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
     const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    const activeProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
     
-    // Query for active tickets INSIDE the transaction
-    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-
+    // NEW PROJECTION PATHS
+    const activeProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/sessions/closedSessions`, sessionId);
+    
     const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap, activeTicketsSnap
+      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
     ] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
-      tx.get(settingsSnap),
+      tx.get(settingsRef),
       tx.get(counterRef),
       tx.get(activeProjectionRef),
-      tx.get(activeTicketsQuery)
     ]);
     
+    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+    const activeTicketsSnap = await getDocs(activeTicketsQuery);
+
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
 
@@ -334,27 +314,8 @@ export async function completePaymentFromUnits(
       return;
     }
 
-    const ticketDataForTx = activeTicketsSnap.docs.map(docSnap => ({
-        ticketRef: docSnap.ref,
-        ticketId: docSnap.id,
-        kitchenLocationId: docSnap.data().kitchenLocationId,
-    }));
-    const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
-
-    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeKdsTicketProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
-    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
-
-    const [opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
-        Promise.all(opPageRefs.map(ref => tx.get(ref))),
-        Promise.all(activeKdsTicketProjectionRefs.map(ref => tx.get(ref))),
-        Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
-    ]);
-    
-    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
-
-    let tableRef: ReturnType<typeof doc> | null = null;
-    let tableSnap: Awaited<ReturnType<typeof tx.get>> | null = null;
+    let tableRef: DocumentReference<DocumentData> | null = null;
+    let tableSnap: DocumentSnapshot<DocumentData> | null = null;
 
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
@@ -364,7 +325,7 @@ export async function completePaymentFromUnits(
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
     const amountDueCents = Math.round(Number(amountDue || 0) * 100);
 
-    if (totalPaidCents < amountDueCents) {
+    if (totalPaidCents < amountDueCents - 1) { // Allow 1c rounding difference
       throw new Error(
         `Cannot complete payment: balance is not zero. Paid: ₱${(totalPaidCents / 100).toFixed(
           2
@@ -374,85 +335,31 @@ export async function completePaymentFromUnits(
 
     const actor = getActorStamp(user);
     const serverTs = serverTimestamp();
-    const newHistoryEntriesByStation = new Map<string, any[]>();
 
-    for (let i = 0; i < activeTicketsSnap.docs.length; i++) {
-        const ticketDoc = activeTicketsSnap.docs[i];
-        const ticketRef = ticketDataForTx[i].ticketRef;
-        const oldTicketState = ticketDoc.data() as KitchenTicket;
-        
-        if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
-            continue;
-        }
-        
-        const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
-        const durationMs = startMs ? Math.max(0, now - startMs) : 0;
-        
-        const updatePayload: any = {
-            status: 'served',
-            servedAt: serverTs,
-            servedAtClientMs: now,
-            servedByUid: actor.uid,
-            durationMs: durationMs,
-        };
+    // Mark remaining active tickets as served
+    for (const ticketDoc of activeTicketsSnap.docs) {
+      const ticketRef = ticketDoc.ref;
+      const oldTicketState = ticketDoc.data() as KitchenTicket;
+      
+      if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
+          continue;
+      }
+      
+      const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
+      const durationMs = startMs ? Math.max(0, now - startMs) : 0;
+      
+      const updatePayload: any = {
+          status: 'served',
+          servedAt: serverTs,
+          servedAtClientMs: now,
+          servedByUid: actor.uid,
+          durationMs: durationMs,
+      };
 
-        const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
-        
-        await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
-        
-        tx.update(ticketRef, updatePayload);
-
-        const activeKdsTicketSnap = activeKdsTicketSnaps[i];
-        if (activeKdsTicketSnap.exists()) {
-            const closedKdsTicketRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'closedKdsTickets', ticketRef.id);
-            tx.set(closedKdsTicketRef, { ...newTicketState, updatedAt: serverTimestamp() }, { merge: true });
-            tx.delete(activeKdsTicketSnap.ref);
-            
-            const opPageSnap = opPageSnaps.find(snap => snap.id === oldTicketState.kitchenLocationId);
-            const opPageData = opPageSnap?.data() || {};
-            
-            const nextActiveCount = Math.max(0, (opPageData.activeCount || 0) - 1);
-            
-            const opPageUpdatePayload: Record<string, any> = {
-                activeCount: nextActiveCount,
-            };
-
-            const durationMs = newTicketState.durationMs!;
-            const todayDayId = getDayIdFromTimestamp(new Date());
-            let { todayDayId: storedDayId, todayServeMsSum = 0, todayServeCount = 0 } = opPageData;
-        
-            if (storedDayId !== todayDayId) {
-                todayServeMsSum = 0;
-                todayServeCount = 0;
-            }
-            const newSum = todayServeMsSum + durationMs;
-            const newCountServed = todayServeCount + 1;
-        
-            opPageUpdatePayload['todayDayId'] = todayDayId;
-            opPageUpdatePayload['todayServeMsSum'] = newSum;
-            opPageUpdatePayload['todayServeCount'] = newCountServed;
-            opPageUpdatePayload['todayServeAvgMs'] = newSum / newCountServed;
-                
-            tx.update(doc(db, "stores", storeId, "opPages", oldTicketState.kitchenLocationId), opPageUpdatePayload);
-            
-            // Update history preview
-            const newHistoryEntry = {
-                id: newTicketState.id,
-                sessionLabel: newTicketState.sessionLabel,
-                tableNumber: newTicketState.tableNumber,
-                customerName: newTicketState.customerName,
-                itemName: newTicketState.itemName,
-                qty: newTicketState.qty,
-                status: newTicketState.status,
-                closedAtClientMs: now,
-                durationMs: newTicketState.durationMs || 0
-            };
-            const existingItems = historyPreviewDataMap.get(oldTicketState.kitchenLocationId) || [];
-            const newItems = [newHistoryEntry, ...existingItems].slice(0, 15);
-            const previewRef = doc(db, 'stores', storeId, 'opPages', oldTicketState.kitchenLocationId, 'historyPreview', 'current');
-            tx.set(previewRef, { items: newItems }, { merge: true });
-        }
-
+      const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
+      
+      await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
+      tx.update(ticketRef, updatePayload);
     }
     
     // write payments subcollection
@@ -504,7 +411,6 @@ export async function completePaymentFromUnits(
     const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
     finalReceiptNumber = receiptNumber;
 
-    // ... Analytics MOP Calculation ...
     const mopCentsMap: Record<string, number> = {};
     for (const payment of payments) {
         const method = paymentMethods.find((m) => m.id === payment.methodId);
@@ -545,7 +451,6 @@ export async function completePaymentFromUnits(
       createdAtClientMs: Date.now(), lines: billLines,
     } as Omit<Receipt, 'createdAt'>);
 
-    // ... sales analytics calculation ...
     const salesAnalytics = billLines.reduce(
         (acc, line) => {
             if (line.type !== 'package' && line.type !== 'addon') return acc;
@@ -620,8 +525,6 @@ export async function completePaymentFromUnits(
       const t = tableSnap.data() as any;
       if (t.currentSessionId === sessionId) {
         tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTs });
-        const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-        tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
       }
     }
   });
@@ -652,39 +555,15 @@ export async function voidSession({
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   const nowMs = Date.now();
   
-  const ticketsRef = collection(db,'stores',storeId,'sessions',sessionId,'kitchentickets');
-  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing','ready']));
-  const ticketSnap = await getDocs(activeTicketsQuery);
-  
-  const ticketDataForTx = ticketSnap.docs.map(docSnap => ({
-      ticketRef: docSnap.ref,
-      ticketId: docSnap.id,
-      kitchenLocationId: docSnap.data().kitchenLocationId,
-  }));
-  const uniqueStationIds = [...new Set(ticketDataForTx.map(t => t.kitchenLocationId).filter(Boolean))];
-
-  await runTransaction(db, async (tx) => {
-    const activeProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/opPages/sessionPage/closedSessions`, sessionId);
-
-    const opPageRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id));
-    const activeKdsProjectionRefs = ticketDataForTx.map(t => doc(db, "stores", storeId, "opPages", t.kitchenLocationId, "activeKdsTickets", t.ticketId));
-    const historyPreviewRefs = uniqueStationIds.map(id => doc(db, "stores", storeId, "opPages", id, 'historyPreview', 'current'));
+  await runTransaction(db, async (tx: Transaction) => {
+    // New projection paths
+    const activeProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, sessionId);
+    const closedProjectionRef = doc(db, `stores/${storeId}/sessions/closedSessions`, sessionId);
 
     const [sessionSnap, activeProjectionSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(activeProjectionRef),
     ]);
-
-    const [ticketSnaps, opPageSnaps, activeKdsTicketSnaps, historyPreviewSnaps] = await Promise.all([
-        Promise.all(ticketDataForTx.map(t => tx.get(t.ticketRef))),
-        Promise.all(opPageRefs.map(ref => tx.get(ref))),
-        Promise.all(activeKdsProjectionRefs.map(ref => tx.get(ref))),
-        Promise.all(historyPreviewRefs.map(ref => tx.get(ref))),
-    ]);
-    
-    const historyPreviewDataMap = new Map(historyPreviewSnaps.map(snap => [snap.ref.parent.parent!.id, snap.data()?.items || []]));
-
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
@@ -695,6 +574,7 @@ export async function voidSession({
     
     tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: safeReason, updatedAt: serverTimestamp() });
     
+    // Move projection from active to closed
     if (activeProjectionSnap.exists()) {
       const projectionData = activeProjectionSnap.data();
       tx.set(closedProjectionRef, {
@@ -709,57 +589,6 @@ export async function voidSession({
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
       tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTimestamp() });
-      const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-      tx.set(tableCacheRef, { status: 'available', currentSessionId: null, packageLabel: null, sessionType: null, guestCount: null, itemCount: null, customerName: null, startedAtMs: null, updatedAt: serverTimestamp(), }, { merge: true });
-    }
-
-    const newHistoryEntriesByStation = new Map<string, any[]>();
-
-    for (let i = 0; i < ticketSnaps.length; i++) {
-        const ticketDoc = ticketSnaps[i];
-        if (!ticketDoc.exists()) continue;
-        const oldTicket = ticketDoc.data() as KitchenTicket;
-        if (oldTicket.status === 'served' || oldTicket.status === 'cancelled') continue;
-      
-        const updatePayload = { status: 'cancelled' as const, cancelReason: 'SESSION_VOIDED', cancelledAt: serverTimestamp(), cancelledByUid: actor.uid, updatedAt: serverTimestamp(), cancelledAtClientMs: nowMs };
-        const newTicket = { ...oldTicket, ...updatePayload };
-        await applyKdsTicketDelta(db, storeId, oldTicket, newTicket, { tx });
-        tx.update(ticketDoc.ref, updatePayload);
-
-        const activeKdsTicketSnap = activeKdsTicketSnaps[i];
-        if (activeKdsTicketSnap.exists()) {
-            const kitchenLocationId = oldTicket.kitchenLocationId;
-            if (kitchenLocationId) {
-                const closedKdsTicketRef = doc(db, 'stores', storeId, 'opPages', kitchenLocationId, 'closedKdsTickets', ticketDoc.id);
-                tx.set(closedKdsTicketRef, newTicket, { merge: true });
-                tx.delete(activeKdsTicketSnap.ref);
-
-                const opPageSnap = opPageSnaps.find(snap => snap.id === kitchenLocationId);
-                const opPageData = opPageSnap?.data() || {};
-                const nextActiveCount = Math.max(0, (opPageData.activeCount || 0) - 1);
-                
-                const opPageRef = doc(db, "stores", storeId, "opPages", kitchenLocationId);
-                tx.update(opPageRef, { activeCount: nextActiveCount });
-                
-                 // Add to history preview entries
-                const entry = {
-                    id: newTicket.id, sessionLabel: newTicket.sessionLabel, tableNumber: newTicket.tableNumber, customerName: newTicket.customerName,
-                    itemName: newTicket.itemName, qty: newTicket.qty, status: newTicket.status,
-                    closedAtClientMs: nowMs, durationMs: 0
-                };
-                if (!newHistoryEntriesByStation.has(kitchenLocationId)) newHistoryEntriesByStation.set(kitchenLocationId, []);
-                newHistoryEntriesByStation.get(kitchenLocationId)!.push(entry);
-            }
-        }
-    }
-     for (const stationId of uniqueStationIds) {
-        const newEntries = newHistoryEntriesByStation.get(stationId);
-        if (newEntries && newEntries.length > 0) {
-            const previewRef = doc(db, 'stores', storeId, 'opPages', stationId, 'historyPreview', 'current');
-            const existingItems = historyPreviewDataMap.get(stationId) || [];
-            const updatedItems = [...newEntries, ...existingItems].slice(0, 15);
-            tx.set(previewRef, { items: updatedItems }, { merge: true });
-        }
     }
   });
 
@@ -833,7 +662,7 @@ export async function removeLineAdjustment(
 }
 
 /**
- * Helper to create kitchen tickets and projections for addon items.
+ * Helper to create kitchen tickets.
  * Can be used within a transaction or standalone.
  */
 export async function createAddonKitchenTickets(
@@ -879,21 +708,12 @@ export async function createAddonKitchenTickets(
 
     if (opts?.tx) {
       opts.tx.set(ticketRef, ticketPayload);
-      const projectionRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
-      opts.tx.set(projectionRef, ticketPayload);
     } else if (batch) {
       batch.set(ticketRef, ticketPayload);
-      const projectionRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId, 'activeKdsTickets', ticketRef.id);
-      batch.set(projectionRef, ticketPayload);
     }
   }
 
-  // Update opPage activeCount
-  const opPageRef = doc(db, 'stores', storeId, 'opPages', line.kitchenLocationId);
-  if (opts?.tx) {
-    opts.tx.update(opPageRef, { activeCount: increment(qty) });
-  } else if (batch) {
-    batch.update(opPageRef, { activeCount: increment(qty) });
+  if (batch) {
     await batch.commit();
   }
 }
