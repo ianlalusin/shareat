@@ -122,6 +122,8 @@ export async function rebuildDailyAnalyticsFromReceipts(
           cancelledCountByType: {},
           durationMsSumByType: {},
           durationCountByType: {},
+          durationMsSumByLocation: {},
+          durationCountByLocation: {},
         },
         sessions: { closedCount: 0, totalPaid: 0 },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
@@ -275,6 +277,18 @@ export async function rebuildDailyAnalyticsFromReceipts(
       (dayData.kitchen!.durationMsSumByType[typeKey] || 0) + Number(kitchenContrib.durationMsSum || 0);
     dayData.kitchen!.durationCountByType[typeKey] =
       (dayData.kitchen!.durationCountByType[typeKey] || 0) + Number(kitchenContrib.durationCount || 0);
+      
+    // Aggregate by location
+    if (ticket.status === 'served') {
+        const locationId = ticket.kitchenLocationId;
+        if (locationId) {
+            const dur = Number(ticket.durationMs ?? 0);
+            const qty = Number(ticket.qty ?? 1);
+            
+            dayData.kitchen!.durationMsSumByLocation![locationId] = (dayData.kitchen!.durationMsSumByLocation![locationId] || 0) + (dur > 0 ? dur : 0);
+            dayData.kitchen!.durationCountByLocation![locationId] = (dayData.kitchen!.durationCountByLocation![locationId] || 0) + qty;
+        }
+    }
   }
 
   onProgress(`Aggregated into ${dailyAggregates.size} daily documents. Preparing to write...`);

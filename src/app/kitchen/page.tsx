@@ -21,7 +21,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc } from "@/lib/types";
+import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc, DailyMetric } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
@@ -51,15 +51,6 @@ type Session = {
 type Flavor = {
     id: string;
     name: string;
-};
-
-type OpPageData = {
-    name?: string;
-    activeCount?: number;
-    todayServeCount?: number;
-    todayServeMsSum?: number;
-    todayDayId?: string;
-    todayServeAvgMs?: number;
 };
 
 type HistoryPreviewItem = {
@@ -124,7 +115,7 @@ export default function KitchenPage() {
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
-  const [activeStationData, setActiveStationData] = useState<OpPageData | null>(null);
+  const [dailyAnalytics, setDailyAnalytics] = useState<DailyMetric | null>(null);
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -171,15 +162,20 @@ export default function KitchenPage() {
   }, [activeStore, appUser, activeTab]);
   
   useEffect(() => {
-    if (!activeStore || !activeTab) {
-      setActiveStationData(null);
+    if (!activeStore) {
+      setDailyAnalytics(null);
       return;
     }
-    const unsub = onSnapshot(doc(db, "stores", activeStore.id, "opPages", activeTab), (docSnap: DocumentSnapshot<DocumentData>) => {
-      setActiveStationData(docSnap.exists() ? docSnap.data() as OpPageData : null);
+    const todayDayId = getDayIdFromTimestamp(new Date());
+    const unsub = onSnapshot(doc(db, "stores", activeStore.id, "analytics", todayDayId), (docSnap) => {
+      if (docSnap.exists()) {
+        setDailyAnalytics(docSnap.data() as DailyMetric);
+      } else {
+        setDailyAnalytics(null);
+      }
     });
     return () => unsub();
-  }, [activeStore, activeTab]);
+  }, [activeStore]);
 
 
   // Effect for fetching live tickets for the currently active tab
@@ -250,16 +246,19 @@ export default function KitchenPage() {
 
 
   const avgServingTime = useMemo(() => {
-    if (!activeStationData) return { avgMs: 0, count: 0 };
+    if (!dailyAnalytics || !activeTab) return { avgMs: 0, count: 0 };
     
-    const { todayServeCount, todayServeMsSum } = activeStationData;
-    const count = Number(todayServeCount || 0);
-    const sum = Number(todayServeMsSum || 0);
+    const sum = dailyAnalytics.kitchen?.durationMsSumByLocation?.[activeTab] || 0;
+    const count = dailyAnalytics.kitchen?.durationCountByLocation?.[activeTab] || 0;
     
     if (count === 0) return { avgMs: 0, count: 0 };
     
     return { avgMs: sum / count, count };
-  }, [activeStationData]);
+  }, [dailyAnalytics, activeTab]);
+
+  const activeStationName = useMemo(() => {
+    return stations.find(s => s.id === activeTab)?.name || 'Station';
+  }, [stations, activeTab]);
 
   const ticketsWithData = useMemo(() => {
     if (!stationDoc) return [];
@@ -409,7 +408,7 @@ export default function KitchenPage() {
         <div className="flex items-center gap-2">
             <SyncKdsTicketsTool />
             <div className="text-right">
-                <p className="text-sm font-medium text-muted-foreground">{activeStationData?.name || 'Station'} Avg Serving Time</p>
+                <p className="text-sm font-medium text-muted-foreground">{activeStationName} Avg Serving Time</p>
                 <p className={cn(
                     "text-2xl font-bold font-mono",
                     avgServingTime.avgMs > 0 && avgServingTime.avgMs <= 300000 ? "text-green-600" : "text-destructive"

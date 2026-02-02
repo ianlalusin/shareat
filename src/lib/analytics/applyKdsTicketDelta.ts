@@ -10,6 +10,8 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import type { OrderItemStatus } from "@/lib/types";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { toJsDate } from "@/lib/utils/date";
 
 type Writer =
   | { kind: "tx"; tx: Transaction }
@@ -25,23 +27,11 @@ function writerUpdate(w: Writer, ref: any, data: any) {
   return w.batch.update(ref, data);
 }
 
-function getDayIdManilaFromMs(ms: number) {
-  // YYYYMMDD in Asia/Manila using Intl (no deps)
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(new Date(ms))
-    .reduce((acc: any, p) => (p.type !== "literal" ? ((acc[p.type] = p.value), acc) : acc), {});
-  return `${parts.year}${parts.month}${parts.day}`;
-}
-
 type KdsTicket = {
   status: OrderItemStatus;
   type: "package" | "refill" | "addon";
   itemName?: string | null;
+  kitchenLocationId?: string | null;
   createdAtClientMs?: number | null;
   servedAtClientMs?: number | null;
   durationMs?: number | null;
@@ -81,7 +71,7 @@ export async function applyKdsTicketDelta(
     (wasServed ? oldTicket?.createdAtClientMs : newTicket?.createdAtClientMs) ??
     Date.now();
 
-  const dayId = getDayIdManilaFromMs(ms);
+  const dayId = getDayIdFromTimestamp(ms);
   const monthId = dayId.slice(0, 6);
   const yearId = dayId.slice(0, 4);
 
@@ -96,6 +86,7 @@ export async function applyKdsTicketDelta(
   const typeKey = ticket.type;
   const dur = Number(ticket.durationMs ?? 0);
   const qty = Number(ticket.qty ?? 1);
+  const locationId = ticket.kitchenLocationId;
   
   // Ensure docs exist by setting meta field. This is a safe "upsert".
   const dayStartMs = ms;
@@ -107,11 +98,15 @@ export async function applyKdsTicketDelta(
   const payload: Record<string, any> = {
     "meta.updatedAt": serverTimestamp(),
     [`kitchen.servedCountByType.${typeKey}`]: increment(sign * qty),
-    // Always update the count of items that have a duration, even if it's 0
     [`kitchen.durationCountByType.${typeKey}`]: increment(sign * qty),
-    // Always update the sum of durations. A duration of 0 is valid for an accurate average.
     [`kitchen.durationMsSumByType.${typeKey}`]: increment(sign * dur),
   };
+  
+  // Add location-specific analytics
+  if (locationId) {
+    payload[`kitchen.durationMsSumByLocation.${locationId}`] = increment(sign * dur);
+    payload[`kitchen.durationCountByLocation.${locationId}`] = increment(sign * qty);
+  }
   
   // Refill totals + refillItems map update
   if (typeKey === "refill") {
