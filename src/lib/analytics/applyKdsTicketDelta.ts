@@ -34,9 +34,10 @@ type KdsTicket = {
   kitchenLocationId?: string | null;
   createdAtClientMs?: number | null;
   servedAtClientMs?: number | null;
+  cancelledAtClientMs?: number | null; // Added for completeness
   durationMs?: number | null;
-  refillName?: string | null; // Legacy, but keep for fallback
-  qty?: number | null;        // optional, default 1
+  refillName?: string | null;
+  qty?: number | null;
 };
 
 function safeKey(s: string) {
@@ -60,61 +61,98 @@ export async function applyKdsTicketDelta(
     null;
   if (!w) throw new Error("applyKdsTicketDelta requires tx or batch.");
 
-  // Count only SERVED tickets
-  const wasServed = oldTicket?.status === "served";
-  const isServed = newTicket?.status === "served";
-  if (wasServed === isServed) return;
+  const oldStatus = oldTicket?.status;
+  const newStatus = newTicket?.status;
 
-  // Determine the dayId based on servedAtClientMs if available, else createdAtClientMs
-  const ms =
-    (wasServed ? oldTicket?.servedAtClientMs : newTicket?.servedAtClientMs) ??
-    (wasServed ? oldTicket?.createdAtClientMs : newTicket?.createdAtClientMs) ??
-    Date.now();
+  if (oldStatus === newStatus) return; // No status change, no analytics delta.
 
-  const dayId = getDayIdFromTimestamp(ms);
+  const ticketData = (newTicket || oldTicket);
+  if (!ticketData) return; // Should not happen if status changed.
+
+  let servedCountDelta = 0;
+  let cancelledCountDelta = 0;
+  let durationMsDelta = 0;
+  let durationCountDelta = 0;
+  let eventMs: number | null = null;
+  
+  // Determine the primary timestamp for the event
+  if (newStatus === 'served') eventMs = newTicket?.servedAtClientMs ?? null;
+  else if (newStatus === 'cancelled') eventMs = newTicket?.cancelledAtClientMs ?? null;
+  else if (oldStatus === 'served') eventMs = oldTicket?.servedAtClientMs ?? null;
+  else if (oldStatus === 'cancelled') eventMs = oldTicket?.cancelledAtClientMs ?? null;
+
+  // Fallback to creation time if no terminal state timestamp is available
+  eventMs = eventMs || ticketData.createdAtClientMs || toJsDate(Date.now())?.getTime();
+  if (!eventMs) return; // Cannot determine the day for the analytics update.
+
+  // --- Calculate Deltas ---
+  if (oldStatus !== 'served' && newStatus === 'served') { // Just became served
+    servedCountDelta = 1;
+    const dur = Number(newTicket?.durationMs ?? 0);
+    if (dur > 0) {
+        durationMsDelta = dur;
+        durationCountDelta = 1;
+    }
+  } else if (oldStatus === 'served' && newStatus !== 'served') { // No longer served (correction)
+    servedCountDelta = -1;
+    const dur = Number(oldTicket?.durationMs ?? 0);
+    if (dur > 0) {
+        durationMsDelta = -dur;
+        durationCountDelta = -1;
+    }
+  }
+  
+  if (oldStatus !== 'cancelled' && newStatus === 'cancelled') { // Just became cancelled
+    cancelledCountDelta = 1;
+  } else if (oldStatus === 'cancelled' && newStatus !== 'cancelled') { // No longer cancelled (correction)
+    cancelledCountDelta = -1;
+  }
+
+  // If no relevant analytics change occurred, exit.
+  if (servedCountDelta === 0 && cancelledCountDelta === 0 && durationMsDelta === 0) {
+    return;
+  }
+
+  // --- Prepare Update ---
+  const dayId = getDayIdFromTimestamp(eventMs);
   const monthId = dayId.slice(0, 6);
   const yearId = dayId.slice(0, 4);
 
-  const sign = isServed ? +1 : -1; // entering served = +, leaving served = -
-
   const dayRef = doc(db, "stores", storeId, "analytics", dayId);
   const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
-  const yearRef = doc(db, "stores", storeId, "analyticsYears", yearId);
+  const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
 
-  const ticket = sign > 0 ? (newTicket as KdsTicket) : (oldTicket as KdsTicket);
+  const typeKey = ticketData.type || "unknown";
+  const qty = Number(ticketData.qty ?? 1);
 
-  const typeKey = ticket.type;
-  const dur = Number(ticket.durationMs ?? 0);
-  const qty = Number(ticket.qty ?? 1);
-  const locationId = ticket.kitchenLocationId;
-  
   // Ensure docs exist by setting meta field. This is a safe "upsert".
-  const dayStartMs = ms;
+  const dayStartMs = eventMs;
   writerSet(w, dayRef, { meta: { dayId, dayStartMs, storeId, updatedAt: serverTimestamp() } }, { merge: true });
   writerSet(w, monthRef, { meta: { monthId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
   writerSet(w, yearRef, { meta: { yearId, storeId, updatedAt: serverTimestamp() } }, { merge: true });
-
-  // Base kitchen counters
+  
   const payload: Record<string, any> = {
     "meta.updatedAt": serverTimestamp(),
-    [`kitchen.servedCountByType.${typeKey}`]: increment(sign * qty),
-    [`kitchen.durationCountByType.${typeKey}`]: increment(sign * qty),
-    [`kitchen.durationMsSumByType.${typeKey}`]: increment(sign * dur),
   };
-  
+
+  if (servedCountDelta !== 0) payload[`kitchen.servedCountByType.${typeKey}`] = increment(servedCountDelta * qty);
+  if (cancelledCountDelta !== 0) payload[`kitchen.cancelledCountByType.${typeKey}`] = increment(cancelledCountDelta * qty);
+  if (durationMsDelta !== 0) payload[`kitchen.durationMsSumByType.${typeKey}`] = increment(durationMsDelta);
+  if (durationCountDelta !== 0) payload[`kitchen.durationCountByType.${typeKey}`] = increment(durationCountDelta);
+
   // Add location-specific analytics
+  const locationId = ticketData.kitchenLocationId;
   if (locationId) {
-    payload[`kitchen.durationMsSumByLocation.${locationId}`] = increment(sign * dur);
-    payload[`kitchen.durationCountByLocation.${locationId}`] = increment(sign * qty);
+    if (durationMsDelta !== 0) payload[`kitchen.durationMsSumByLocation.${locationId}`] = increment(durationMsDelta);
+    if (durationCountDelta !== 0) payload[`kitchen.durationCountByLocation.${locationId}`] = increment(durationCountDelta);
   }
   
-  // Refill totals + refillItems map update
-  if (typeKey === "refill") {
-    payload["refills.servedRefillsTotal"] = increment(sign * qty);
-
-    const refillName = (ticket.refillName ?? ticket.itemName ?? "Unknown").trim();
+  // Refill totals (only applies if status changes to/from 'served')
+  if (typeKey === "refill" && servedCountDelta !== 0) {
+    payload["refills.servedRefillsTotal"] = increment(servedCountDelta * qty);
+    const refillName = (ticketData.refillName ?? ticketData.itemName ?? "Unknown").trim();
     if (refillName) {
-        payload[`refills.servedRefillsByName.${safeKey(refillName)}`] = increment(sign * qty);
+        payload[`refills.servedRefillsByName.${safeKey(refillName)}`] = increment(servedCountDelta * qty);
     }
   }
 
