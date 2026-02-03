@@ -25,6 +25,13 @@ import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // Validation logic using cents
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -56,6 +63,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { confirm, Dialog } = useConfirmDialog();
+  const isMobile = useIsMobile();
 
   const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
 
@@ -415,6 +423,35 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const isLoading = isLoadingSession || isConfigLoading;
 
+  const BillSummaryContent = (
+    <div className="h-full flex flex-col">
+      <div className="flex-1 overflow-y-auto">
+        {session && <CustomerInfoForm session={session} />}
+        <BillTotals
+          lines={billLines}
+          store={activeStore!}
+          billDiscount={billDiscount}
+          customAdjustments={customAdjustments}
+          totalPaid={totalPaid}
+          isLocked={isBillingLocked}
+          onRemoveLineAdjustment={handleRemoveLineAdjustment}
+        />
+      </div>
+      <BillAdjustments
+        appUser={appUser}
+        charges={charges}
+        discounts={billableDiscounts}
+        onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])}
+        onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])}
+        onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))}
+        onSetBillDiscount={setBillDiscount}
+        billDiscount={billDiscount}
+        adjustments={customAdjustments || []}
+        isLocked={isBillingLocked}
+      />
+    </div>
+  );
+
   if (isLoading || !session || !storeId || !activeStore) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }
@@ -443,31 +480,21 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       
       <main className="flex-1 overflow-hidden">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 h-full">
-            <div className="md:col-span-1 xl:col-span-2 bg-muted/20 h-full flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-y-auto">
-                    <CustomerInfoForm session={session} />
-                    <BillTotals 
-                        lines={billLines} 
-                        store={activeStore} 
-                        billDiscount={billDiscount}
-                        customAdjustments={customAdjustments}
-                        totalPaid={totalPaid} 
-                        isLocked={isBillingLocked} 
-                        onRemoveLineAdjustment={handleRemoveLineAdjustment}
-                    />
-                </div>
-                <BillAdjustments
-                    appUser={appUser}
-                    charges={charges} 
-                    discounts={billableDiscounts} 
-                    onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])} 
-                    onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])} 
-                    onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))} 
-                    onSetBillDiscount={setBillDiscount} 
-                    billDiscount={billDiscount} 
-                    adjustments={customAdjustments || []} 
-                    isLocked={isBillingLocked} 
-                />
+            <div className="md:col-span-1 xl:col-span-2 bg-muted/20 md:h-full flex flex-col overflow-hidden">
+                {isMobile ? (
+                  <Accordion type="single" collapsible className="w-full" defaultValue="bill-summary">
+                    <AccordionItem value="bill-summary" className="border-b-0">
+                      <AccordionTrigger className="p-4 text-lg font-semibold">
+                        Bill Summary
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        {BillSummaryContent}
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                ) : (
+                  BillSummaryContent
+                )}
             </div>
             <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
                 <BillableItems 

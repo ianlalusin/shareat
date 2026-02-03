@@ -52,10 +52,10 @@ export default function Header({ user }: { user: User }) {
                     className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
                     >
                     <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-5 w-5 transition-all group-hover:scale-110" />
-                    <span className="sr-only">SharEat Hub SAFEMODE</span>
+                    <span className="sr-only">SharEat Hub </span>
                 </Link>
               </SheetClose>
-               <SheetTitle className="text-white">SharEat Hub</SheetTitle>
+               <SheetTitle className="text-white">SharEat Hub SAFEMODE</SheetTitle>
             </SheetHeader>
             <div className="border-y border-white/20 p-4">
                 <StoreSwitcher variant="mobileSheet" onSelected={() => setIsMobileSheetOpen(false)} />
