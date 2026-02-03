@@ -121,7 +121,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     setIsSubmitting(true);
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
-    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, session.id);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/activeSessions`, session.id);
     
     try {
         // Update session doc (truth)
@@ -161,7 +161,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
     setIsSubmitting(true);
     const batch = writeBatch(db);
     const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
-    const sessionProjectionRef = doc(db, `stores/${storeId}/sessions/activeSessions`, session.id);
+    const sessionProjectionRef = doc(db, `stores/${storeId}/activeSessions`, session.id);
 
     try {
         const requestedPackageSnapshot = {
