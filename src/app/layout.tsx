@@ -5,7 +5,6 @@ import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { Providers } from './providers';
-import PwaInstaller from '@/components/pwa-installer';
 
 // Define fonts
 const fontSans = Poppins({
@@ -85,7 +84,6 @@ export default function RootLayout({
           <FirstLoginGuard>
             {children}
           </FirstLoginGuard>
-          <PwaInstaller />
         </Providers>
         <Toaster />
       </body>
