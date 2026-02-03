@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QuantityInput } from "./quantity-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Form, FormControl, FormField, FormMessage } from "../ui/form";
+import { Form, FormControl, FormField, FormItem, FormMessage } from "../ui/form";
 import type { StorePackage, StoreFlavor } from "@/lib/types";
 
 // --- TYPES ---
@@ -231,7 +231,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     }
     
     return (
-        <CardContent className="p-4">
+        <CardContent className="px-4 pt-0">
             <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
@@ -469,3 +469,5 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         </CardContent>
     );
 }
+
+    
