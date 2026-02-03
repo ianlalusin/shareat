@@ -374,6 +374,19 @@ export async function completePaymentFromUnits(
       
       await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
       tx.update(ticketRef, updatePayload);
+      
+      const { kitchenLocationId } = oldTicketState;
+      if (kitchenLocationId) {
+          const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", kitchenLocationId);
+          tx.update(rtKdsDocRef, {
+              [`tickets.${ticketRef.id}`]: deleteField(),
+              activeIds: arrayRemove(ticketRef.id),
+              [`sessionIndex.${sessionId}`]: arrayRemove(ticketRef.id),
+              "meta.updatedAt": serverTimestamp(),
+          });
+          const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketRef.id);
+          tx.set(closedTicketRef, newTicketState);
+      }
     }
     
     // write payments subcollection
@@ -601,13 +614,17 @@ export async function voidSession({
     // Cancel any remaining active tickets
     for (const ticketDoc of activeTicketsSnap.docs) {
         const ticketRef = ticketDoc.ref;
-        tx.update(ticketRef, { 
-            status: 'cancelled',
+        const oldTicketState = ticketDoc.data() as KitchenTicket;
+        const updatePayload = {
+            status: 'cancelled' as const,
             cancelledAt: serverTimestamp(),
             cancelledAtClientMs: nowMs,
             cancelledByUid: actor.uid,
             cancelReason: "Session Voided",
-        });
+        };
+        const newTicketState = { ...oldTicketState, ...updatePayload };
+
+        tx.update(ticketRef, updatePayload);
         
         const stationId = ticketDoc.data().kitchenLocationId;
         if(stationId) {
@@ -618,6 +635,9 @@ export async function voidSession({
                 [`sessionIndex.${sessionId}`]: arrayRemove(ticketRef.id),
                 "meta.updatedAt": serverTimestamp(),
             });
+            // Add to historical view
+            const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", ticketRef.id);
+            tx.set(closedTicketRef, newTicketState);
         }
     }
 
