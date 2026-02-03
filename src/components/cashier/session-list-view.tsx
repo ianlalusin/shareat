@@ -17,6 +17,8 @@ import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SyncSessionsTool } from "./SyncSessionsTool";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -156,13 +158,27 @@ export function SessionListView() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                         <div className="lg:col-span-1 space-y-8">
-                            <StartSessionForm
-                                tables={sortedTables}
-                                packages={availablePackages}
-                                flavors={enabledFlavors}
-                                user={appUser}
-                                storeId={activeStore.id}
-                            />
+                             <Accordion type="single" collapsible className="w-full" defaultValue="new-session">
+                                <AccordionItem value="new-session" className="border-b-0">
+                                    <Card>
+                                        <AccordionTrigger className="p-6 hover:no-underline">
+                                            <CardHeader className="p-0 text-left">
+                                                <CardTitle>New Session</CardTitle>
+                                                <CardDescription>Start a new billing session for a table.</CardDescription>
+                                            </CardHeader>
+                                        </AccordionTrigger>
+                                        <AccordionContent>
+                                            <StartSessionForm
+                                                tables={sortedTables}
+                                                packages={availablePackages}
+                                                flavors={enabledFlavors}
+                                                user={appUser}
+                                                storeId={activeStore.id}
+                                            />
+                                        </AccordionContent>
+                                    </Card>
+                                </AccordionItem>
+                            </Accordion>
                         </div>
                         <div className="lg:col-span-2 space-y-8">
                             <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} />

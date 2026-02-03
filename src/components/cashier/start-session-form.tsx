@@ -9,7 +9,7 @@ import * as z from "zod";
 import { AppUser } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { startSession, StartSessionPayload } from "./firestore";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -231,173 +231,220 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     }
     
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>New Session</CardTitle>
-                <CardDescription>Start a new billing session for a table.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
-                        <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="unlimited">
-                        <Form {...unlimitedForm}>
-                            <form onSubmit={unlimitedForm.handleSubmit(onSubmitUnlimited)} className="space-y-6 pt-4">
-                                {/* Step 1: Table and Guests */}
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <FormField
-                                            name="tableId"
-                                            control={unlimitedForm.control}
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <Label>Table</Label>
-                                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                        <FormControl>
-                                                            <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-                                                        </FormControl>
-                                                        <SelectContent>
-                                                            {tables.map(table => <SelectItem key={table.id} value={table.id}>Table {table.tableNumber}</SelectItem>)}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                        <div className="space-y-2">
-                                            <Label>Guests</Label>
-                                            <div className="flex items-center gap-2">
-                                                <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', Math.max(1, guestCount - 1))}><Minus /></Button>
-                                                <QuantityInput
-                                                    value={guestCount}
-                                                    onChange={(val) => unlimitedForm.setValue('guestCount', val)}
-                                                    className="w-16 text-center"
-                                                />
-                                                <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', guestCount + 1)}><Plus /></Button>
-                                            </div>
+        <CardContent className="p-0">
+            <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
+                    <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
+                </TabsList>
+                <TabsContent value="unlimited">
+                    <Form {...unlimitedForm}>
+                        <form onSubmit={unlimitedForm.handleSubmit(onSubmitUnlimited)} className="space-y-6 pt-4">
+                            {/* Step 1: Table and Guests */}
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField
+                                        name="tableId"
+                                        control={unlimitedForm.control}
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <Label>Table</Label>
+                                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                    <FormControl>
+                                                        <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent>
+                                                        {tables.map(table => <SelectItem key={table.id} value={table.id}>Table {table.tableNumber}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <div className="space-y-2">
+                                        <Label>Guests</Label>
+                                        <div className="flex items-center gap-2">
+                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', Math.max(1, guestCount - 1))}><Minus /></Button>
+                                            <QuantityInput
+                                                value={guestCount}
+                                                onChange={(val) => unlimitedForm.setValue('guestCount', val)}
+                                                className="w-16 text-center"
+                                            />
+                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', guestCount + 1)}><Plus /></Button>
                                         </div>
                                     </div>
                                 </div>
-                                <Separator />
-                                {/* Step 2: Package */}
-                                <FormField
-                                    name="packageId"
-                                    control={unlimitedForm.control}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <Label>Package</Label>
-                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                <FormControl>
-                                                    <SelectTrigger><SelectValue placeholder="Select a package..." /></SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {packages.map(pkg => (
-                                                        <SelectItem key={pkg.packageId} value={pkg.packageId}>
-                                                            {pkg.packageName} - ₱{pkg.pricePerHead}/head
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <Separator />
-                                {/* Step 3: Flavors */}
-                                <FormField
-                                    name="initialFlavorIds"
-                                    control={unlimitedForm.control}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <Label>Initial Flavors (up to 3)</Label>
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 border rounded-md max-h-40 overflow-y-auto">
-                                                {flavors.map(flavor => (
-                                                    <div key={flavor.flavorId} className="flex items-center gap-2">
-                                                        <Checkbox
-                                                            id={`flavor-${flavor.flavorId}`}
-                                                            checked={field.value?.includes(flavor.flavorId)}
-                                                            onCheckedChange={(checked) => {
-                                                                const current = field.value || [];
-                                                                const newValue = checked
-                                                                    ? [...current, flavor.flavorId]
-                                                                    : current.filter(id => id !== flavor.flavorId);
-                                                                if (newValue.length <= 3) {
-                                                                    field.onChange(newValue);
-                                                                } else {
-                                                                    toast({ variant: 'destructive', title: "Limit Reached", description: "You can only select up to 3 flavors."});
-                                                                }
-                                                            }}
-                                                        />
-                                                        <Label htmlFor={`flavor-${flavor.flavorId}`} className="font-normal cursor-pointer">{flavor.flavorName}</Label>
-                                                    </div>
+                            </div>
+                            <Separator />
+                            {/* Step 2: Package */}
+                            <FormField
+                                name="packageId"
+                                control={unlimitedForm.control}
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <Label>Package</Label>
+                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                            <FormControl>
+                                                <SelectTrigger><SelectValue placeholder="Select a package..." /></SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                {packages.map(pkg => (
+                                                    <SelectItem key={pkg.packageId} value={pkg.packageId}>
+                                                        {pkg.packageName} - ₱{pkg.pricePerHead}/head
+                                                    </SelectItem>
                                                 ))}
-                                            </div>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <Separator />
-                                {/* Step 4: Notes and Customer */}
-                                <div className="space-y-4">
-                                    <div className="p-4 border rounded-md space-y-4">
-                                        <div className="grid grid-cols-3 gap-4 items-end">
-                                            <div className="space-y-2">
-                                                <Label>Rice</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(Math.max(0, riceQty - 1))}><Minus /></Button>
-                                                    <QuantityInput value={riceQty} onChange={handleRiceChange} className="w-12 text-center" />
-                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(riceQty + 1)}><Plus /></Button>
+                                            </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <Separator />
+                            {/* Step 3: Flavors */}
+                            <FormField
+                                name="initialFlavorIds"
+                                control={unlimitedForm.control}
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <Label>Initial Flavors (up to 3)</Label>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 border rounded-md max-h-40 overflow-y-auto">
+                                            {flavors.map(flavor => (
+                                                <div key={flavor.flavorId} className="flex items-center gap-2">
+                                                    <Checkbox
+                                                        id={`flavor-${flavor.flavorId}`}
+                                                        checked={field.value?.includes(flavor.flavorId)}
+                                                        onCheckedChange={(checked) => {
+                                                            const current = field.value || [];
+                                                            const newValue = checked
+                                                                ? [...current, flavor.flavorId]
+                                                                : current.filter(id => id !== flavor.flavorId);
+                                                            if (newValue.length <= 3) {
+                                                                field.onChange(newValue);
+                                                            } else {
+                                                                toast({ variant: 'destructive', title: "Limit Reached", description: "You can only select up to 3 flavors."});
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Label htmlFor={`flavor-${flavor.flavorId}`} className="font-normal cursor-pointer">{flavor.flavorName}</Label>
                                                 </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Cheese</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(Math.max(0, cheeseQty - 1))}><Minus /></Button>
-                                                    <QuantityInput value={cheeseQty} onChange={handleCheeseChange} className="w-12 text-center" />
-                                                    <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(cheeseQty + 1)}><Plus /></Button>
-                                                </div>
-                                            </div>
-                                            <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
-                                                <MessageSquarePlus className="mr-2"/> Add
-                                            </Button>
+                                            ))}
                                         </div>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <Separator />
+                            {/* Step 4: Notes and Customer */}
+                            <div className="space-y-4">
+                                <div className="p-4 border rounded-md space-y-4">
+                                    <div className="grid grid-cols-3 gap-4 items-end">
+                                        <div className="space-y-2">
+                                            <Label>Rice</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(Math.max(0, riceQty - 1))}><Minus /></Button>
+                                                <QuantityInput value={riceQty} onChange={handleRiceChange} className="w-12 text-center" />
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleRiceChange(riceQty + 1)}><Plus /></Button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Cheese</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(Math.max(0, cheeseQty - 1))}><Minus /></Button>
+                                                <QuantityInput value={cheeseQty} onChange={handleCheeseChange} className="w-12 text-center" />
+                                                <Button type="button" variant="outline" size="icon" onClick={() => handleCheeseChange(cheeseQty + 1)}><Plus /></Button>
+                                            </div>
+                                        </div>
+                                        <Button type="button" variant="outline" size="sm" onClick={handleAddNotes} className="self-end mb-1">
+                                            <MessageSquarePlus className="mr-2"/> Add
+                                        </Button>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="notes">Notes (Optional)</Label>
-                                        <Textarea id="notes" placeholder="e.g., birthday celebration, allergies..." {...unlimitedForm.register('notes')} />
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <FormField
-                                            control={unlimitedForm.control}
-                                            name="customerName"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <Label>Customer Name (Optional)</Label>
-                                                    <FormControl>
-                                                        <Input {...field} />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                        <FormField
-                                            control={unlimitedForm.control}
-                                            name="customerTin"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <Label>TIN (Optional)</Label>
-                                                    <FormControl>
-                                                        <Input {...field} />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="notes">Notes (Optional)</Label>
+                                    <Textarea id="notes" placeholder="e.g., birthday celebration, allergies..." {...unlimitedForm.register('notes')} />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <FormField
                                         control={unlimitedForm.control}
+                                        name="customerName"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <Label>Customer Name (Optional)</Label>
+                                                <FormControl>
+                                                    <Input {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={unlimitedForm.control}
+                                        name="customerTin"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <Label>TIN (Optional)</Label>
+                                                <FormControl>
+                                                    <Input {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+                                <FormField
+                                    control={unlimitedForm.control}
+                                    name="customerAddress"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label>Address (Optional)</Label>
+                                            <FormControl>
+                                                <Input {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+                            <Button type="submit" variant="destructive" disabled={isSubmitting} className="w-full">
+                                {isSubmitting ? <Loader2 className="animate-spin" /> : <PlusCircle className="mr-2" />}
+                                Start Session
+                            </Button>
+                        </form>
+                    </Form>
+                </TabsContent>
+                    <TabsContent value="alacarte">
+                        <Form {...alaCarteForm}>
+                        <form onSubmit={alaCarteForm.handleSubmit(onSubmitAlaCarte)} className="space-y-6 pt-4">
+                            <div className="space-y-4">
+                                <FormField
+                                    control={alaCarteForm.control}
+                                    name="customerName"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <Label>Customer Name <span className="text-destructive">*</span></Label>
+                                            <FormControl>
+                                                <Input {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField
+                                        control={alaCarteForm.control}
+                                        name="customerTin"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <Label>TIN (Optional)</Label>
+                                                <FormControl>
+                                                    <Input {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={alaCarteForm.control}
                                         name="customerAddress"
                                         render={({ field }) => (
                                             <FormItem>
@@ -410,68 +457,15 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                         )}
                                     />
                                 </div>
-                                <Button type="submit" variant="destructive" disabled={isSubmitting} className="w-full">
-                                    {isSubmitting ? <Loader2 className="animate-spin" /> : <PlusCircle className="mr-2" />}
-                                    Start Session
-                                </Button>
-                            </form>
+                            </div>
+                            <Button type="submit" variant="destructive" disabled={isSubmitting} className="w-full">
+                                {isSubmitting ? <Loader2 className="animate-spin" /> : <PlusCircle className="mr-2" />}
+                                Create Order & Add Items
+                            </Button>
+                        </form>
                         </Form>
-                    </TabsContent>
-                     <TabsContent value="alacarte">
-                         <Form {...alaCarteForm}>
-                            <form onSubmit={alaCarteForm.handleSubmit(onSubmitAlaCarte)} className="space-y-6 pt-4">
-                                <div className="space-y-4">
-                                    <FormField
-                                        control={alaCarteForm.control}
-                                        name="customerName"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <Label>Customer Name <span className="text-destructive">*</span></Label>
-                                                <FormControl>
-                                                    <Input {...field} />
-                                                </FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <FormField
-                                            control={alaCarteForm.control}
-                                            name="customerTin"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <Label>TIN (Optional)</Label>
-                                                    <FormControl>
-                                                        <Input {...field} />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                        <FormField
-                                            control={alaCarteForm.control}
-                                            name="customerAddress"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <Label>Address (Optional)</Label>
-                                                    <FormControl>
-                                                        <Input {...field} />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </div>
-                                </div>
-                                <Button type="submit" variant="destructive" disabled={isSubmitting} className="w-full">
-                                    {isSubmitting ? <Loader2 className="animate-spin" /> : <PlusCircle className="mr-2" />}
-                                    Create Order & Add Items
-                                </Button>
-                            </form>
-                         </Form>
-                    </TabsContent>
-                </Tabs>
-            </CardContent>
-        </Card>
+                </TabsContent>
+            </Tabs>
+        </CardContent>
     );
 }
