@@ -55,7 +55,7 @@ export default function Header({ user }: { user: User }) {
                     <span className="sr-only">SharEat Hub </span>
                 </Link>
               </SheetClose>
-               <SheetTitle className="text-white">SharEat Hub SAFEMODE</SheetTitle>
+               <SheetTitle className="text-white">SHAREAT POS</SheetTitle>
             </SheetHeader>
             <div className="border-y border-white/20 p-4">
                 <StoreSwitcher variant="mobileSheet" onSelected={() => setIsMobileSheetOpen(false)} />
