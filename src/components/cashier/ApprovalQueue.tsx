@@ -92,6 +92,17 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
               const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
               const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
 
+              if (session.packageOfferingId) {
+                const packageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageOfferingId}`);
+                batch.update(packageLineRef, {
+                    qtyOrdered: session.guestCountChange.requestedCount,
+                    qtyLastSyncedApprovedAt: session.guestCountChange.requestedAt.toString(),
+                    updatedAt: serverTimestamp(),
+                    updatedByUid: appUser?.uid,
+                    updatedByName: appUser?.displayName || appUser?.name || "System"
+                });
+              }
+
               batch.update(sessionRef, {
                 guestCountFinal: session.guestCountChange.requestedCount,
                 "guestCountChange.status": "approved",
@@ -149,6 +160,30 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
                 const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
                 
+                // Delete old bill line, create new one
+                const oldPackageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageOfferingId}`);
+                const newPackageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageChange.requestedPackageId}`);
+                
+                batch.delete(oldPackageLineRef);
+                
+                batch.set(newPackageLineRef, {
+                    id: newPackageLineRef.id,
+                    type: 'package',
+                    itemId: session.packageChange.requestedPackageId,
+                    itemName: session.packageChange.requestedPackageSnapshot.name,
+                    unitPrice: session.packageChange.requestedPackageSnapshot.pricePerHead,
+                    qtyOrdered: session.guestCountFinal,
+                    discountType: null,
+                    discountValue: 0,
+                    discountQty: 0,
+                    freeQty: 0,
+                    voidedQty: 0,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    updatedByUid: appUser?.uid,
+                    updatedByName: appUser?.displayName || appUser?.name || 'System'
+                });
+
                 batch.update(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
