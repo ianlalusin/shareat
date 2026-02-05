@@ -2,7 +2,7 @@
 
 "use client";
 
-import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
+import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine, ReceiptSettings } from "@/lib/types";
 import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -718,7 +718,7 @@ export default function ReceiptsPageContents() {
                                 <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
                             </Popover>
                         </div>
-                        <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                         <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
                     </div>
                 </div>
 
@@ -804,7 +804,7 @@ export default function ReceiptsPageContents() {
                     </Card>
 
                     <div className="sticky top-20">
-                        <Card>
+                         <Card className="no-print">
                             <CardHeader className="flex flex-row items-center justify-between">
                                 <CardTitle>Preview</CardTitle>
                                 <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting}>
@@ -877,7 +877,7 @@ export default function ReceiptsPageContents() {
               }}
             />
 
-            {/* This div is only for printing. It's positioned off-screen. */}
+            {/* This div is only for printing */}
             <div id="receipt-print-root" className="absolute -left-[9999px] top-0">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>

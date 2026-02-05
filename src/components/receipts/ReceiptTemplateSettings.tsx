@@ -103,5 +103,3 @@ export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsPro
     </Form>
   );
 }
-
-    
