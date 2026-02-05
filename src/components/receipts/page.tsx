@@ -357,13 +357,6 @@ export default function ReceiptsPageContents() {
           storeId: activeStore.id,
           sessionId: editingReceipt.sessionId,
           user: appUser,
-          sessionContext: {
-            sessionStatus: 'closed', // Receipts are for closed sessions
-            sessionStartedAt: editingReceipt.analytics?.sessionStartedAt,
-            sessionMode: editingReceipt.sessionMode,
-            customerName: editingReceipt.customerName,
-            tableNumber: editingReceipt.tableNumber,
-          },
           meta: {
             receiptId: editingReceipt.id,
             receiptNumber: editingReceipt.receiptNumber,
@@ -503,13 +496,6 @@ export default function ReceiptsPageContents() {
           sessionId: receipt.sessionId,
           user: appUser,
           reason,
-          sessionContext: {
-            sessionStatus: 'voided', // We are voiding it
-            sessionStartedAt: receipt.analytics?.sessionStartedAt,
-            sessionMode: receipt.sessionMode,
-            customerName: receipt.customerName,
-            tableNumber: receipt.tableNumber,
-          },
           meta: { 
             receiptId: receipt.id, 
             receiptNumber: receipt.receiptNumber,
@@ -837,10 +823,12 @@ export default function ReceiptsPageContents() {
             />
 
             {/* This div is only for printing */}
-            <div className="hidden print-block">
+            <div id="receipt-print-root" className="hidden">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
     )
 }
+
+    
