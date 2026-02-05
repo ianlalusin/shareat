@@ -38,7 +38,7 @@ export default function ReceiptPage() {
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm" | "A4">("80mm");
+    const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
     const [isThermalPrinting, setIsThermalPrinting] = useState(false);
     const { toast } = useToast();
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -51,10 +51,10 @@ export default function ReceiptPage() {
 
     useEffect(() => {
         const storedWidth = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
-        if (storedWidth === "58mm" || storedWidth === "80mm" || storedWidth === "A4") {
+        if (storedWidth === "58mm" || storedWidth === "80mm") {
             setPaperWidth(storedWidth);
-        } else if (receiptData?.settings?.paperWidth) {
-            setPaperWidth(receiptData.settings.paperWidth);
+        } else if (receiptData?.settings?.paperWidth && receiptData.settings.paperWidth !== "A4") {
+            setPaperWidth(receiptData.settings.paperWidth as "58mm" | "80mm");
         }
     }, [storageKey, receiptData]);
 
@@ -116,9 +116,9 @@ export default function ReceiptPage() {
                 });
                 
                 const storedWidth = localStorage.getItem(storageKey);
-                if (storedWidth === "58mm" || storedWidth === "80mm" || storedWidth === "A4") {
+                if (storedWidth === "58mm" || storedWidth === "80mm") {
                     setPaperWidth(storedWidth);
-                } else if (settingsData.paperWidth) {
+                } else if (settingsData.paperWidth && settingsData.paperWidth !== 'A4') {
                     setPaperWidth(settingsData.paperWidth);
                 }
 
@@ -218,15 +218,14 @@ export default function ReceiptPage() {
         }
     }, [shouldAutoPrint, receiptData, isLoading, sessionId]);
 
-    const handlePaperWidthChange = (value: "58mm" | "80mm" | "A4") => {
+    const handlePaperWidthChange = (value: "58mm" | "80mm") => {
         setPaperWidth(value);
         localStorage.setItem(storageKey, value);
     };
 
     const widthClass = useMemo(() => {
         if (paperWidth === "58mm") return "receipt-58";
-        if (paperWidth === "80mm") return "receipt-80";
-        return "receipt-a4";
+        return "receipt-80";
     }, [paperWidth]);
 
     if (isLoading) {
@@ -257,12 +256,11 @@ export default function ReceiptPage() {
                                 <SelectContent>
                                     <SelectItem value="58mm">58mm Thermal</SelectItem>
                                     <SelectItem value="80mm">80mm Thermal</SelectItem>
-                                    <SelectItem value="A4">A4 (Browser)</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
                         <div className="flex gap-2 w-full sm:w-auto">
-                            <Button variant="outline" onClick={handleThermalPrint} disabled={!receiptData || isThermalPrinting || paperWidth === "A4"} className="flex-1 sm:flex-none">
+                            <Button variant="outline" onClick={handleThermalPrint} disabled={!receiptData || isThermalPrinting} className="flex-1 sm:flex-none">
                                 {isThermalPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="mr-2 h-4 w-4"/>}
                                 Native Print
                             </Button>
@@ -288,7 +286,7 @@ export default function ReceiptPage() {
                 <div 
                     id="receipt-print-root" 
                     data-paper={paperWidth}
-                    style={{ ['--receipt-width' as any]: paperWidth === '58mm' ? '58mm' : paperWidth === '80mm' ? '80mm' : '210mm' }}
+                    style={{ ['--receipt-width' as any]: paperWidth === '58mm' ? '58mm' : '80mm' }}
                 >
                     <div id="print-receipt-area" className={widthClass}>
                         {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
@@ -298,3 +296,5 @@ export default function ReceiptPage() {
         </RoleGuard>
     );
 }
+
+    

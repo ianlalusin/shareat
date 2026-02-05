@@ -73,7 +73,6 @@
 
 .receipt-58 { width: 48mm; margin: 0 auto; }
 .receipt-80 { width: 72mm; margin: 0 auto; }
-.receipt-a4 { width: 210mm; margin: 0 auto; }
 
 @media print {
   @page {
@@ -140,4 +139,5 @@
 
 #receipt-print-root[data-paper="58mm"] { --receipt-width: 58mm; }
 #receipt-print-root[data-paper="80mm"] { --receipt-width: 80mm; }
-#receipt-print-root[data-paper="A4"] { --receipt-width: 210mm; }
+
+    
