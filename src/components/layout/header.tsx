@@ -18,7 +18,7 @@ export default function Header({ user }: { user: User }) {
   return (
     <header className={cn(
       "fixed top-0 z-50 flex h-14 w-full items-center justify-between gap-4 px-4 sm:px-6",
-      "border-b bg-destructive text-destructive-foreground"
+      "border-b bg-destructive text-destructive-foreground no-print"
     )}>
       <div className="flex flex-shrink min-w-0 items-center gap-4">
         <Link href="/dashboard" className="mr-4 flex shrink-0 items-center gap-2 font-serif text-xl font-semibold">
