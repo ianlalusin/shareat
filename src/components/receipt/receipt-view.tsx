@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo } from "react";
@@ -252,7 +253,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={grandTotal} isBold={true} isEmphasized={true} isCurrency prefix="PHP " />
+                <ReceiptRow label="TOTAL" value={grandTotal} isBold={true} isCurrency prefix="PHP " />
              </section>
             
              <hr className="border-dashed border-black my-2" />
@@ -261,7 +262,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
                 ))}
                  <ReceiptRow label="Total Paid" value={totalPaid} isCurrency />
-                 <ReceiptRow label="CHANGE" value={change} isBold={true} isEmphasized={true} isCurrency />
+                 <ReceiptRow label="CHANGE" value={change} isBold={true} isCurrency />
              </section>
 
              {freeItems.length > 0 && (
