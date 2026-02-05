@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.culinaryflow.app',
   appName: 'CulinaryFlow',
   webDir: 'out',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https'
   }
