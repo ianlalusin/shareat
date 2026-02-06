@@ -193,6 +193,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 });
                 
                  batch.update(sessionProjectionRef, {
+                    packageOfferingId: session.packageChange.requestedPackageId,
+                    packageName: session.packageChange.requestedPackageSnapshot.name,
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
                     "packageChange.status": 'approved',
                     updatedAt: serverTimestamp(),
