@@ -68,6 +68,7 @@ export function getActorStamp(user: AppUser): ActorStamp {
 export type StartSessionPayload = {
   tableId: string;
   tableNumber: string;
+  displayName?: string;
   guestCount: number;
   customer?: { name?: string | null; tin?: string | null; address?: string | null };
   notes?: string;
@@ -101,13 +102,15 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const isAlaCarte = payload.sessionMode === 'alacarte';
   const customerName = payload.customer?.name ?? null;
   const tableNumber = isAlaCarte ? null : payload.tableNumber;
-  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber });
+  const tableDisplayName = payload.displayName || `Table ${payload.tableNumber}`;
+  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber: tableDisplayName });
 
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
     storeId,
     tableId: payload.tableId,
     tableNumber,
+    tableDisplayName,
     customerName,
     sessionLabel,
     status: isAlaCarte ? 'active' : 'pending_verification',
@@ -167,6 +170,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       sessionMode: payload.sessionMode,
       tableId: payload.tableId,
       tableNumber: isAlaCarte ? null : payload.tableNumber,
+      tableDisplayName: isAlaCarte ? null : tableDisplayName,
       customerName: isAlaCarte ? customerName : null,
       packageOfferingId: payload.package?.packageId || null,
       packageName: payload.package?.packageName || null, // Denormalize for server page

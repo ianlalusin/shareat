@@ -78,6 +78,7 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
   tables.forEach((table: any) => {
     const tableCacheRef = doc(db, `stores/${storeId}/storeConfig/current/tables/${table.id}`);
     const cachePayload = {
+        displayName: table.displayName || `Table ${table.tableNumber}`,
         tableNumber: table.tableNumber || null,
         customerName: null, 
         status: table.status || 'available',

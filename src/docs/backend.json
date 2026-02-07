@@ -589,6 +589,12 @@
         "tableId": {
           "type": "string"
         },
+        "tableDisplayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "type": "string",
           "enum": [
@@ -893,6 +899,26 @@
         "packageSnapshot"
       ]
     },
+    "SessionProjection": {
+      "title": "Session Projection",
+      "type": "object",
+      "description": "A simplified session object for real-time UI updates.",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_verification", "active", "closed", "voided"] },
+        "sessionMode": { "type": "string", "enum": ["package_dinein", "alacarte"] },
+        "customerName": { "type": ["string", "null"] },
+        "tableNumber": { "type": ["string", "null"] },
+        "tableDisplayName": { "type": ["string", "null"] },
+        "guestCountFinal": { "type": ["number", "null"] },
+        "guestCountCashierInitial": { "type": "number" },
+        "packageSnapshot": { "type": "object" },
+        "initialFlavorIds": { "type": "array", "items": { "type": "string" } },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "startedAtClientMs": { "type": "number" }
+      }
+    },
     "PackageUnit": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "PackageUnit",
@@ -949,7 +975,7 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SessionBillLine",
       "type": "object",
-      "description": "Represents a single billable line item in a session, using counters.",
+      "description": "Represents a single billable line item in a session, consolidating all units of a specific item variant.",
       "properties": {
         "id": {
           "type": "string"
@@ -1346,8 +1372,7 @@
           "type": "string",
           "enum": [
             "58mm",
-            "80mm",
-            "A4"
+            "80mm"
           ]
         },
         "receiptNoFormat": {
@@ -1543,6 +1568,24 @@
               "description": "The unique identifier for the session."
             }
           ]
+        }
+      },
+       {
+        "path": "/stores/{storeId}/activeSessions/{sessionId}",
+        "definition": {
+          "entityName": "SessionProjection",
+          "schema": { "$ref": "#/backend/entities/SessionProjection" },
+          "description": "A simplified real-time projection of an active session for UI display.",
+          "params": [{"name": "storeId"}, {"name": "sessionId"}]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/closedSessions/{sessionId}",
+        "definition": {
+          "entityName": "SessionProjection",
+          "schema": { "$ref": "#/backend/entities/SessionProjection" },
+          "description": "A simplified projection of a closed session for historical views.",
+          "params": [{"name": "storeId"}, {"name": "sessionId"}]
         }
       },
       {

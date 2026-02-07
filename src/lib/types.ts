@@ -361,6 +361,7 @@ export type PendingSession = {
   storeId: string; // Added for convenience
   tableId?: string;
   tableNumber: string;
+  tableDisplayName?: string | null;
   packageName: string;
   status: 'pending_verification' | 'active' | 'closed' | 'voided';
   sessionMode: 'package_dinein' | 'alacarte';
@@ -654,5 +655,3 @@ export type RtKdsStationDoc = {
 };
 
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
-
-    

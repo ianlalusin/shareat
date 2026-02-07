@@ -27,6 +27,7 @@ import type { StorePackage, StoreFlavor } from "@/lib/types";
 export type Table = {
     id: string;
     tableNumber: string;
+    displayName: string;
     status: 'available' | 'occupied';
     currentSessionId: string | null;
     isActive: boolean;
@@ -159,6 +160,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         const sessionPayload: StartSessionPayload = {
             tableId: chosenTable.id,
             tableNumber: chosenTable.tableNumber,
+            displayName: chosenTable.displayName,
             guestCount: data.guestCount,
             initialFlavorIds: data.initialFlavorIds,
             notes: data.notes,
@@ -254,7 +256,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                                         <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                                                     </FormControl>
                                                     <SelectContent>
-                                                        {tables.map(table => <SelectItem key={table.id} value={table.id}>Table {table.tableNumber}</SelectItem>)}
+                                                        {tables.map(table => <SelectItem key={table.id} value={table.id}>{table.displayName || `Table ${table.tableNumber}`}</SelectItem>)}
                                                     </SelectContent>
                                                 </Select>
                                                 <FormMessage />
@@ -469,5 +471,3 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         </CardContent>
     );
 }
-
-    
