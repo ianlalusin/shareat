@@ -137,12 +137,24 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     // 1. Create the new session document
     transaction.set(newSessionRef, sessionPayload);
 
-    // 2. Update the table document if not ala carte
+    // 2. Update the table document and its projection if not ala carte
     if (!isAlaCarte) {
       const tableRef = doc(db, `stores/${storeId}/tables`, payload.tableId);
       transaction.update(tableRef, {
         status: 'occupied',
         currentSessionId: newSessionRef.id,
+        updatedAt: serverTimestamp(),
+      });
+      
+      const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, payload.tableId);
+      transaction.update(tableProjectionRef, {
+        status: 'occupied',
+        currentSessionId: newSessionRef.id,
+        customerName: customerName,
+        packageLabel: payload.package?.packageName || null,
+        sessionType: payload.sessionMode,
+        guestCount: payload.guestCount,
+        startedAtMs: sessionPayload.startedAtClientMs,
         updatedAt: serverTimestamp(),
       });
     }
@@ -560,6 +572,19 @@ export async function completePaymentFromUnits(
       const t = tableSnap.data() as any;
       if (t.currentSessionId === sessionId) {
         tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTs });
+        
+        const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
+        tx.update(tableProjectionRef, {
+          status: 'available',
+          currentSessionId: null,
+          customerName: null,
+          packageLabel: null,
+          sessionType: null,
+          guestCount: null,
+          itemCount: null,
+          startedAtMs: null,
+          updatedAt: serverTimestamp(),
+        });
       }
     }
   });
@@ -658,6 +683,19 @@ export async function voidSession({
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
       tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTimestamp() });
+      
+      const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
+      tx.update(tableProjectionRef, {
+        status: 'available',
+        currentSessionId: null,
+        customerName: null,
+        packageLabel: null,
+        sessionType: null,
+        guestCount: null,
+        itemCount: null,
+        startedAtMs: null,
+        updatedAt: serverTimestamp(),
+      });
     }
   });
 
