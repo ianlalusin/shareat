@@ -78,10 +78,9 @@ service cloud.firestore {
       allow read, write: if hasStoreAccess(storeId);
     }
 
-    // Store scoped (everything else): no deletes except admin
+    // Store scoped (everything else)
     match /stores/{storeId}/{docPath=**} {
-      allow read, create, update: if hasStoreAccess(storeId);
-      allow delete: if isAdmin();
+      allow read, write, delete: if hasStoreAccess(storeId);
     }
 
     // Root (non-store)
