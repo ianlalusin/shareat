@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -328,6 +327,9 @@ export default function LogsPage() {
       </PageHeader>
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <div className="space-y-4">
+            <VoidsAndCompsCard logs={voidAndFreeLogs} discountLogs={discountLogs} isLoading={isLoading} />
+        </div>
+        <div>
              <Card>
                 <CardHeader>
                     <CardTitle>Session Logs</CardTitle>
@@ -362,9 +364,6 @@ export default function LogsPage() {
                     </CardFooter>
                 )}
             </Card>
-        </div>
-        <div>
-            <VoidsAndCompsCard logs={voidAndFreeLogs} discountLogs={discountLogs} isLoading={isLoading} />
         </div>
       </div>
     </RoleGuard>
