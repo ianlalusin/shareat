@@ -1,8 +1,7 @@
-
-
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,17 +11,19 @@ import { useStoreContext } from "@/context/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { addDays, format } from "date-fns";
-import { Loader2, Calendar as CalendarIcon } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
 import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
 import { db } from "@/lib/firebase/client";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import CompactCalendar from "../ui/CompactCalendar";
+import CompactCalendar from "@/components/ui/CompactCalendar";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/page-header";
+import { RoleGuard } from "@/components/guards/RoleGuard";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
-export function BackfillTool() {
+export default function BackfillPage() {
+  const router = useRouter();
   const { appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
@@ -37,7 +38,7 @@ export function BackfillTool() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   if (appUser?.role !== 'admin') {
-    return null; // This component is strictly for admins
+    return null; // This page is strictly for admins, RoleGuard will handle redirect
   }
 
   const handleBackfill = async () => {
@@ -79,19 +80,19 @@ export function BackfillTool() {
   };
 
   return (
-    <Accordion type="single" collapsible className="w-full">
-      <AccordionItem value="backfill-tool" className="border-b-0">
-        <Card className="bg-muted/30">
-          <AccordionTrigger className="p-6 hover:no-underline [&>svg]:ml-auto">
-              <div className="text-left">
-                <CardTitle>Analytics Backfill Tool</CardTitle>
-                <CardDescription>
-                    Rebuild daily analytics data from historical receipts for a selected date range.
-                </CardDescription>
-              </div>
-          </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6">
-              <div className="space-y-4">
+    <RoleGuard allow={["admin"]}>
+        <PageHeader title="Analytics Backfill Tool" description="Rebuild daily analytics data from historical receipts for a selected date range.">
+            <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+        </PageHeader>
+        <div className="max-w-4xl mx-auto space-y-4 mt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Run Backfill</CardTitle>
+                    <CardDescription>Select a date range to rebuild analytics data.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <Alert variant="destructive">
                       <AlertTitle>Warning: Overwrite Operation</AlertTitle>
                       <AlertDescription>
@@ -157,10 +158,9 @@ export function BackfillTool() {
                   >
                       {isBackfilling ? "Running..." : `Rebuild Analytics for ${activeStore?.name || '...'}`}
                   </Button>
-              </div>
-          </AccordionContent>
-        </Card>
-      </AccordionItem>
-    </Accordion>
+                </CardContent>
+            </Card>
+        </div>
+    </RoleGuard>
   );
 }

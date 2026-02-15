@@ -6,8 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
-import { BackfillTool } from "@/components/admin/BackfillTool";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import dynamic from 'next/dynamic';
 
 const adminTools = [
@@ -35,6 +33,7 @@ const managerTools = [
 
 const dataTools = [
     { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck },
+    { title: "Analytics Backfill", description: "Rebuild daily analytics from receipts.", href: "/admin/backfill", icon: DatabaseZap },
 ]
 
 function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
@@ -108,26 +107,17 @@ export default function AdminPage() {
                 )}
                 
                 {appUser?.isPlatformAdmin && (
-                     <Accordion type="single" collapsible className="w-full">
-                        <AccordionItem value="data-tools" className="border-b-0">
-                             <Card>
-                                <AccordionTrigger className="p-6">
-                                     <CardHeader className="p-0 text-left">
-                                        <CardTitle className="flex items-center gap-2"><DatabaseZap /> Data Management Tools</CardTitle>
-                                        <CardDescription>Advanced tools for data maintenance. Use with caution.</CardDescription>
-                                    </CardHeader>
-                                </AccordionTrigger>
-                                <AccordionContent className="p-6 pt-0 space-y-4">
-                                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                        {dataTools.map(tool => (
-                                            <ToolCard key={tool.title} {...tool} />
-                                        ))}
-                                    </div>
-                                    <BackfillTool />
-                                </AccordionContent>
-                             </Card>
-                        </AccordionItem>
-                    </Accordion>
+                     <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><DatabaseZap /> Data Management Tools</CardTitle>
+                            <CardDescription>Advanced tools for data maintenance. Use with caution.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {dataTools.map(tool => (
+                                <ToolCard key={tool.title} {...tool} />
+                            ))}
+                        </CardContent>
+                     </Card>
                 )}
             </div>
         </RoleGuard>
