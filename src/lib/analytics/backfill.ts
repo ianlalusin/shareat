@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -114,6 +113,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           packageSalesQtyByName: {},
           addonSalesAmountByCategory: {},
           addonSalesQtyByCategory: {},
+          dineInAddonSalesAmount: 0,
           salesAmountByHour: {},
           sessionCountByHour: {},
         },
@@ -216,6 +216,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     }
 
     // sales
+    dayData.sales!.dineInAddonSalesAmount = (dayData.sales!.dineInAddonSalesAmount || 0) + Number(salesContrib.dineInAddonSalesAmount || 0);
     for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName || {})) {
       dayData.sales!.packageSalesAmountByName[pkgName] =
         (dayData.sales!.packageSalesAmountByName[pkgName] || 0) + Number(amount || 0);
@@ -318,3 +319,5 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
   onProgress("Backfill complete.");
 }
+
+    

@@ -1,5 +1,3 @@
-
-
 import { Timestamp } from "firebase/firestore";
 import type { ReceiptData, ReceiptSession, ReceiptSettings } from "@/components/receipt/receipt-view";
 
@@ -420,6 +418,7 @@ export type DailyMetric = {
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
         addonSalesQtyByCategory: Record<string, number>;
+        dineInAddonSalesAmount?: number;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
         topAddonsByQty?: TopAddonRow[];
@@ -655,3 +654,5 @@ export type RtKdsStationDoc = {
 };
 
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
+
+    

@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -29,8 +28,8 @@ type ContributionSet = {
   guest: ReturnType<typeof getGuestCoversContribution>;
   sales: ReturnType<typeof getSalesContribution>;
   peak: ReturnType<typeof getPeakHourContribution>;
-  closed: ReturnType<typeof getClosedSessionsContribution>;
   refill: ReturnType<typeof getRefillContribution>;
+  closed: ReturnType<typeof getClosedSessionsContribution>;
 };
 
 // --- Date Helpers for Presets ---
@@ -99,8 +98,8 @@ function getContributions(receipt: Receipt | null): ContributionSet {
     guest: getGuestCoversContribution(receipt),
     sales: getSalesContribution(receipt),
     peak: getPeakHourContribution(receipt),
-    closed: getClosedSessionsContribution(receipt),
     refill: getRefillContribution(receipt),
+    closed: getClosedSessionsContribution(receipt),
   };
 }
 
@@ -242,6 +241,11 @@ export async function applyAnalyticsDeltaV2(
     });
 
     // --- Sales Delta ---
+    const salesDelta = {
+        dineInAddonSalesAmount: (dayNew.sales.dineInAddonSalesAmount || 0) - (dayOld.sales.dineInAddonSalesAmount || 0),
+    };
+    if (salesDelta.dineInAddonSalesAmount !== 0) payload['sales.dineInAddonSalesAmount'] = increment(salesDelta.dineInAddonSalesAmount);
+
     const allSalesPkgNames = new Set([
       ...Object.keys(dayOld.sales.packageSalesAmountByName || {}),
       ...Object.keys(dayNew.sales.packageSalesAmountByName || {}),
@@ -363,3 +367,5 @@ export async function applyAnalyticsDeltaV2(
        }
    }
 }
+
+    

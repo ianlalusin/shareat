@@ -1,4 +1,3 @@
-
 'use client';
 
 import { doc, type Firestore } from "firebase/firestore";
@@ -187,10 +186,11 @@ type SalesContribution = {
     addonSalesAmountByCategory: Record<string, number>;
     addonSalesQtyByCategory: Record<string, number>;
     addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }>;
+    dineInAddonSalesAmount: number;
 };
 
 export function getSalesContribution(receipt: Receipt | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {} };
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0 };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
@@ -205,24 +205,8 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     const addonSalesAmountByCategory: Record<string, number> = {};
     const addonSalesQtyByCategory: Record<string, number> = {};
     const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
+    let dineInAddonSalesAmount = 0;
 
-
-    if (analytics.salesByItem) {
-        for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-            const isPackage = !values.categoryName || values.categoryName === "Uncategorized";
-
-            if (isPackage) {
-                packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
-                packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
-            } else {
-                 if (!addonSalesByItem[itemName]) {
-                    addonSalesByItem[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
-                }
-                addonSalesByItem[itemName].qty += values.qty;
-                addonSalesByItem[itemName].amount += values.amount;
-            }
-        }
-    }
 
     if (analytics.salesByCategory) {
         for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
@@ -230,7 +214,27 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
             addonSalesQtyByCategory[categoryName] = (addonSalesQtyByCategory[categoryName] || 0) + values.qty;
         }
     }
+    
+    if (r.sessionMode === 'package_dinein') {
+        dineInAddonSalesAmount = Object.values(addonSalesAmountByCategory).reduce((sum, amount) => sum + amount, 0);
+    }
 
+    if (analytics.salesByItem) {
+        for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
+            const isAddon = analytics.salesByCategory && !!analytics.salesByCategory[values.categoryName];
+            
+            if (isAddon) {
+                if (!addonSalesByItem[itemName]) {
+                    addonSalesByItem[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
+                }
+                addonSalesByItem[itemName].qty += values.qty;
+                addonSalesByItem[itemName].amount += values.amount;
+            } else {
+                packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
+                packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
+            }
+        }
+    }
 
     return {
         dayId,
@@ -239,7 +243,8 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
         packageSalesQtyByName,
         addonSalesAmountByCategory,
         addonSalesQtyByCategory,
-        addonSalesByItem
+        addonSalesByItem,
+        dineInAddonSalesAmount,
     };
 }
 
@@ -392,3 +397,5 @@ export function getRefillContribution(receipt: Receipt | null): RefillContributi
         packageSessionsCount: 1,
     };
 }
+
+    

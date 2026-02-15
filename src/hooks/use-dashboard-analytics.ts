@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -56,7 +55,8 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     
     const totalDineInSales = dailyMetrics.reduce((sum, metric) => {
         const packageSales = Object.values(metric.sales?.packageSalesAmountByName || {}).reduce((pkgSum, amount) => pkgSum + amount, 0);
-        return sum + packageSales;
+        const addonSales = metric.sales?.dineInAddonSalesAmount || 0;
+        return sum + packageSales + addonSales;
     }, 0);
     const totalDineInGuests = dailyMetrics.reduce((sum, metric) => sum + (metric.guests?.guestCountFinalTotal || 0), 0);
     const avgSpending = totalDineInGuests > 0 ? totalDineInSales / totalDineInGuests : 0;
@@ -292,3 +292,5 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         hasTopAddonItems
     };
 }
+
+    
