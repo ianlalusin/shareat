@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -13,9 +12,9 @@ type Props = {
 function roleHome(role?: string) {
   switch (role) {
     case "admin":
-      return "/admin";
+      return "/dashboard";
     case "manager":
-      return "/admin"; // Managers also go to the hub
+      return "/dashboard";
     case "cashier":
       return "/cashier";
     case "kitchen":

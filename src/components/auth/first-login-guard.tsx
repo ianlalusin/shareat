@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -13,9 +12,9 @@ import { AlertCircle } from "lucide-react";
 function roleHome(role?: string) {
   switch (role) {
     case "admin":
-      return "/admin";
+      return "/dashboard";
     case "manager":
-      return "/admin";
+      return "/dashboard";
     case "cashier":
       return "/cashier";
     case "kitchen":
