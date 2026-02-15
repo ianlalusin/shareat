@@ -51,7 +51,7 @@ export function PackageCountCheckCard({ dailyMetrics, isLoading }: PackageCountC
                 ...pkg,
                 delta: pkg.billedCovers - pkg.finalGuests,
             }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .sort((a, b) => b.billedCovers - a.billedCovers);
     }, [dailyMetrics]);
     
     const hasData = aggregatedData.some(d => d.billedCovers > 0 || d.finalGuests > 0);
