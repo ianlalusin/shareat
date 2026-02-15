@@ -1,10 +1,10 @@
-
 "use client";
 
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DailyMetric } from "@/lib/types";
+import Link from "next/link";
 
 function fmtCurrency(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -43,25 +43,27 @@ export function DiscountsChargesCard({ dailyMetrics, isLoading }: DiscountsCharg
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Discounts &amp; Charges</CardTitle>
-        <CardDescription className="text-center">Total adjustments in range.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="truncate text-sm text-destructive">Discounts</div>
-          <div className="shrink-0 text-sm font-medium tabular-nums text-destructive">
-            - {fmtCurrency(totalDiscounts)}
+    <Link href="/logs">
+      <Card className="h-full hover:bg-muted/50 transition-colors cursor-pointer">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Discounts &amp; Charges</CardTitle>
+          <CardDescription className="text-center">Total adjustments in range.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="truncate text-sm text-destructive">Discounts</div>
+            <div className="shrink-0 text-sm font-medium tabular-nums text-destructive">
+              - {fmtCurrency(totalDiscounts)}
+            </div>
           </div>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="truncate text-sm text-green-600">Charges</div>
-          <div className="shrink-0 text-sm font-medium tabular-nums text-green-600">
-            + {fmtCurrency(totalCharges)}
+          <div className="flex items-center justify-between gap-3">
+            <div className="truncate text-sm text-green-600">Charges</div>
+            <div className="shrink-0 text-sm font-medium tabular-nums text-green-600">
+              + {fmtCurrency(totalCharges)}
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
