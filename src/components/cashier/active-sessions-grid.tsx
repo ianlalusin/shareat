@@ -112,7 +112,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {activeAndPendingSessions.map(session => {
                         const isAlaCarte = session.sessionMode === 'alacarte';
-                        const title = isAlaCarte ? (session.customer?.name || 'Ala Carte') : (session.tableDisplayName || `Table ${session.tableNumber}`);
+                        const title = isAlaCarte ? (session.customerName || 'Ala Carte') : (session.tableDisplayName || `Table ${session.tableNumber}`);
                         const subtitle = isAlaCarte ? "Ala Carte" : session.packageName;
                         
                         const cashier = Number(session.guestCountCashierInitial ?? 0);
