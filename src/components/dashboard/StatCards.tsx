@@ -76,7 +76,7 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
         <>
             <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
-            {activeSessions !== undefined && <StatCard title="Active Sessions" value={activeSessions.count} description={`${activeSessions.guests} guests`} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
+            {activeSessions !== undefined && <StatCard title="Active Sessions" value={`${activeSessions.count} - ${activeSessions.guests} guests`} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
             <StatCard title="Avg Spending" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
         </>
     );
