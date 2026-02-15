@@ -11,12 +11,16 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DateRangePicker } from "../ui/date-range-picker";
-import { addDays } from "date-fns";
-import { Loader2 } from "lucide-react";
+import { addDays, format } from "date-fns";
+import { Loader2, Calendar as CalendarIcon } from "lucide-react";
 import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
 import { db } from "@/lib/firebase/client";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import CompactCalendar from "../ui/CompactCalendar";
+import { cn } from "@/lib/utils";
+
+function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
 export function BackfillTool() {
   const { appUser } = useAuthContext();
@@ -30,6 +34,7 @@ export function BackfillTool() {
   const [confirmationText, setConfirmationText] = useState("");
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [progressMessage, setProgressMessage] = useState("");
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   if (appUser?.role !== 'admin') {
     return null; // This component is strictly for admins
@@ -67,6 +72,11 @@ export function BackfillTool() {
       setConfirmationText("");
     }
   };
+  
+  const handleCalendarChange = (range: { start: Date; end: Date }) => {
+    setDateRange(range);
+    setIsCalendarOpen(false);
+  };
 
   return (
     <Accordion type="single" collapsible className="w-full">
@@ -92,7 +102,36 @@ export function BackfillTool() {
                   <div className="grid sm:grid-cols-2 gap-4 items-end">
                       <div className="space-y-2">
                           <Label>Date Range</Label>
-                          <DateRangePicker onDateChange={setDateRange} />
+                          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                    "w-full justify-start text-left font-normal h-9",
+                                    !dateRange && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {dateRange.start ? (
+                                    dateRange.end && !isSameDay(dateRange.start, dateRange.end) ? (
+                                        <>
+                                        {format(dateRange.start, "LLL dd, y")} -{" "}
+                                        {format(dateRange.end, "LLL dd, y")}
+                                        </>
+                                    ) : (
+                                        format(dateRange.start, "LLL dd, y")
+                                    )
+                                    ) : (
+                                    <span>Pick a date range</span>
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <CompactCalendar
+                                    onChange={(range) => handleCalendarChange(range)}
+                                />
+                            </PopoverContent>
+                         </Popover>
                       </div>
                       <div className="space-y-2">
                           <Label htmlFor="rebuild-confirm">Type "REBUILD" to confirm</Label>
