@@ -15,7 +15,7 @@ const DailySaleSchema = z.object({
   netSales: z.number().describe("The total net sales for that day."),
 });
 
-export const ForecastInputSchema = z.object({
+const ForecastInputSchema = z.object({
   historicalSales: z.array(DailySaleSchema).describe("An array of historical daily sales data for the past few weeks."),
 });
 export type ForecastInput = z.infer<typeof ForecastInputSchema>;
@@ -25,7 +25,7 @@ const ForecastedDaySchema = z.object({
     forecastedSales: z.number().describe("The forecasted net sales for that day."),
 });
 
-export const ForecastOutputSchema = z.object({
+const ForecastOutputSchema = z.object({
     forecast: z.array(ForecastedDaySchema).describe("An array of 7 objects, each representing a day's forecast for the next week.")
 });
 export type ForecastOutput = z.infer<typeof ForecastOutputSchema>;
