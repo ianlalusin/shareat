@@ -1,9 +1,9 @@
-
 "use client";
 
+import { useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Sun, Cloudy, CloudRain, CloudLightning } from "lucide-react";
+import { Sun, Cloudy, CloudRain, CloudLightning, Moon } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { db } from "@/lib/firebase/client";
 import { doc, setDoc, arrayUnion, getCountFromServer, collection, Timestamp } from "firebase/firestore";
@@ -16,7 +16,7 @@ interface WeatherLoggerModalProps {
     storeId: string;
 }
 
-const weatherOptions: { label: string; value: WeatherCondition; icon: React.ElementType }[] = [
+const baseWeatherOptions: { label: string; value: WeatherCondition; icon: React.ElementType }[] = [
     { label: "Sunny", value: "sunny", icon: Sun },
     { label: "Cloudy", value: "cloudy", icon: Cloudy },
     { label: "Light Rain", value: "light_rain", icon: CloudRain },
@@ -25,6 +25,18 @@ const weatherOptions: { label: string; value: WeatherCondition; icon: React.Elem
 
 export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerModalProps) {
     const { appUser } = useAuthContext();
+
+    const weatherOptions = useMemo(() => {
+        const currentHour = new Date().getHours();
+        const isNight = currentHour >= 18 || currentHour < 6; // After 6 PM or before 6 AM
+
+        if (isNight) {
+            return baseWeatherOptions.map(option => 
+                option.value === 'sunny' ? { ...option, label: 'Clear', icon: Moon } : option
+            );
+        }
+        return baseWeatherOptions;
+    }, []);
 
     const handleLogWeather = async (condition: WeatherCondition) => {
         if (!appUser || !storeId) {
@@ -49,7 +61,7 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
             const activeGuestCount = 0; 
 
             const newEntry: WeatherEntry = {
-                timestamp: Timestamp.fromDate(now), // Use Firestore Timestamp
+                timestamp: Timestamp.fromDate(now),
                 condition,
                 activeSessionCount,
                 activeGuestCount,
