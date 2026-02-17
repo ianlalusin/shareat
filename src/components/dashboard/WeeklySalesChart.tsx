@@ -25,6 +25,19 @@ function formatCurrency(value: number) {
     return `₱${value.toFixed(0)}`;
 }
 
+// --- Date Helpers ---
+function atStartOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function atEndOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
   const [data, setData] = useState<any[]>([]);
@@ -41,13 +54,20 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
       setError(null);
 
       try {
+        // --- 1. DEFINE DATE RANGES ---
         const today = new Date();
-        const fourWeeksAgo = addDays(today, -28);
+        const thisWeekEnd = atEndOfDay(today);
+        const thisWeekStart = atStartOfDay(addDays(today, -6));
+        const lastWeekEnd = atEndOfDay(addDays(today, -7));
+        const lastWeekStart = atStartOfDay(addDays(today, -13));
+        
+        const aiHistoryStart = addDays(today, -28);
 
+        // --- 2. FETCH HISTORICAL DATA ---
         const q = query(
           collection(db, "stores", storeId, "analytics"),
-          where("meta.dayStartMs", ">=", fourWeeksAgo.getTime()),
-          where("meta.dayStartMs", "<=", today.getTime()),
+          where("meta.dayStartMs", ">=", aiHistoryStart.getTime()),
+          where("meta.dayStartMs", "<=", thisWeekEnd.getTime()),
           orderBy("meta.dayStartMs", "asc")
         );
 
@@ -65,56 +85,61 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           setIsLoading(false);
           return;
         }
-
-        // Placeholder data for new context.
-        // In a real application, this would come from a configuration or a service.
-        const upcomingPayrollDates: string[] = []; // Example: ["2024-07-15", "2024-07-30"]
-        const upcomingHolidays: string[] = []; // Example: ["National Heroes Day"]
         
+        // --- 3. GET AI FORECAST ---
         const forecastInput: ForecastInput = { 
             historicalSales,
             storeLocation: activeStore.address,
-            upcomingPayrollDates,
-            upcomingHolidays,
+            upcomingPayrollDates: [],
+            upcomingHolidays: [],
         };
         const forecastResult = await forecastWeeklySales(forecastInput);
 
-        const todayDow = today.getDay(); // 0 = Sunday
-        const startOfThisWeek = startOfWeek(today, { weekStartsOn: 0 });
-        const startOfLastWeek = addDays(startOfThisWeek, -7);
+        // --- 4. PREPARE CHART DATA STRUCTURE ---
+        const chartDataTemplate = [];
+        for (let i = 0; i < 7; i++) {
+            chartDataTemplate.push({
+                name: format(addDays(thisWeekStart, i), 'E'), // 'Thu', 'Fri', etc.
+                lastWeek: 0,
+                thisWeek: 0,
+                forecast: 0,
+            });
+        }
+        
+        const thisWeekStartDow = thisWeekStart.getDay(); // e.g. 4 for Thursday
 
-        const chartData = DOW.map((day) => ({
-          name: day,
-          lastWeek: 0,
-          thisWeek: 0,
-          forecast: 0,
-        }));
-
+        // --- 5. POPULATE 'thisWeek' and 'lastWeek' ---
         historicalSales.forEach(sale => {
           const [year, month, day] = sale.date.split('-').map(Number);
           const saleDate = new Date(year, month - 1, day);
-          const dow = saleDate.getDay();
           
-          if (saleDate >= startOfLastWeek && saleDate < startOfThisWeek) {
-            chartData[dow].lastWeek = sale.netSales;
-          } else if (saleDate >= startOfThisWeek && saleDate <= today) {
-            chartData[dow].thisWeek = sale.netSales;
+          let targetKey: 'thisWeek' | 'lastWeek' | null = null;
+          if (saleDate >= thisWeekStart && saleDate <= thisWeekEnd) {
+            targetKey = 'thisWeek';
+          } else if (saleDate >= lastWeekStart && saleDate <= lastWeekEnd) {
+            targetKey = 'lastWeek';
+          }
+
+          if (targetKey) {
+             const saleDow = saleDate.getDay();
+             const index = (saleDow - thisWeekStartDow + 7) % 7;
+             if (chartDataTemplate[index]) {
+                chartDataTemplate[index][targetKey] = sale.netSales;
+             }
           }
         });
 
-        forecastResult.forecast.forEach((forecastItem, index) => {
-          // The forecast starts from "tomorrow"
-          const forecastDow = (todayDow + 1 + index) % 7;
-          chartData[forecastDow].forecast = forecastItem.forecastedSales;
+        // --- 6. POPULATE 'forecast' ---
+        forecastResult.forecast.forEach((dayForecast, i) => {
+            const forecastDate = addDays(today, i + 1);
+            const forecastDow = forecastDate.getDay();
+            const index = (forecastDow - thisWeekStartDow + 7) % 7;
+            if (chartDataTemplate[index]) {
+                chartDataTemplate[index].forecast = dayForecast.forecastedSales;
+            }
         });
         
-        // Reorder the data to start from tomorrow and end with today
-        const orderedChartData = [];
-        for (let i = 1; i <= 7; i++) {
-            const dowIndex = (todayDow + i) % 7;
-            orderedChartData.push(chartData[dowIndex]);
-        }
-        setData(orderedChartData);
+        setData(chartDataTemplate);
 
       } catch (err: any) {
         console.error("Failed to fetch data or forecast sales:", err);
