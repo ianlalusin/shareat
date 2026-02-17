@@ -84,20 +84,24 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const forecastByDay = new Map(forecastResult.forecast.map(f => [f.day, f.forecastedSales]));
 
         const chartData = [];
-        for (let i = 6; i >= 0; i--) {
-            const currentDay = addDays(endDate, -i);
-            const lastWeekDay = addDays(currentDay, -7);
-            const nextWeekDay = addDays(currentDay, 7);
-            
-            const currentDayStr = format(currentDay, "yyyy-MM-dd");
-            const lastWeekDayStr = format(lastWeekDay, "yyyy-MM-dd");
+        const days = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday'];
+        const todayDayIndex = today.getDay(); // Sunday is 0
 
-            chartData.push({
-                name: format(currentDay, 'E'), // 'Thu', 'Fri', etc.
-                thisWeek: salesByDate.get(currentDayStr) ?? 0,
-                lastWeek: salesByDate.get(lastWeekDayStr) ?? 0,
-                forecast: forecastByDay.get(format(nextWeekDay, 'EEEE')) ?? 0,
-            });
+        // Start from tomorrow and go for 7 days
+        for (let i = 1; i <= 7; i++) {
+          const currentDayOfWeekIndex = (todayDayIndex + i) % 7;
+          const currentDayName = format(addDays(today, i), 'EEEE');
+          const currentDayAbbr = format(addDays(today, i), 'E');
+          
+          const thisWeekDate = addDays(today, i - 7);
+          const lastWeekDate = addDays(today, i - 14);
+
+          chartData.push({
+              name: currentDayAbbr,
+              thisWeek: salesByDate.get(format(thisWeekDate, "yyyy-MM-dd")) ?? 0,
+              lastWeek: salesByDate.get(format(lastWeekDate, "yyyy-MM-dd")) ?? 0,
+              forecast: forecastByDay.get(currentDayName) ?? 0,
+          });
         }
         
         setData(chartData);
@@ -143,7 +147,37 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" />
                 <YAxis tickFormatter={(value) => formatCurrency(value)} />
-                <Tooltip content={<ChartTooltipContent formatter={(value) => `₱${Number(value).toLocaleString()}`} />} />
+                <Tooltip
+                    cursor={false}
+                    content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                            return (
+                                <div className="min-w-[8rem] rounded-lg border bg-background p-2 text-sm shadow-sm">
+                                    <div className="font-bold">{label}</div>
+                                    <div className="mt-2 grid gap-1.5">
+                                        {payload.map((item) => (
+                                            <div
+                                                key={item.dataKey}
+                                                className="flex items-center gap-2"
+                                            >
+                                                <div
+                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                    style={{
+                                                        backgroundColor: `var(--color-${item.dataKey})`,
+                                                    }}
+                                                />
+                                                <span className="font-mono font-medium tabular-nums text-foreground">
+                                                    {formatCurrency(item.value as number)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        }
+                        return null;
+                    }}
+                />
                 <Legend />
                 <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="This Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
