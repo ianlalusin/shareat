@@ -26,6 +26,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
 import { TopAddonItemsCard } from "@/components/dashboard/top-addon-items-card";
 import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-card";
+import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -144,16 +145,21 @@ export default function DashboardPage() {
                     <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
                 </div>
                 
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                    <div className="lg:col-span-2">
+                      <WeeklySalesChart storeId={activeStore.id} />
+                    </div>
+                    <div className="space-y-6">
+                      <Card>
+                          <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
+                          <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
+                      </Card>
+                      <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                    {/* Row 1 */}
-                    <Card>
-                        <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
-                        <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                    </Card>
                     <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    
-                    {/* Row 2 */}
                     <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
                     <TopAddonItemsCard 
                         dailyMetrics={dailyMetrics} 
@@ -162,8 +168,6 @@ export default function DashboardPage() {
                         hasTopAddonItems={hasTopAddonItems}
                     />
                      <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    
-                    {/* Row 3 */}
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <TopRefillsCard 
                         dailyMetrics={dailyMetrics} 
