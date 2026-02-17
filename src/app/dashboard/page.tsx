@@ -1,4 +1,3 @@
-export const runtime = "nodejs";
 
 import DashboardPageClient from "@/components/dashboard/DashboardPageClient";
 

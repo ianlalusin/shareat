@@ -76,6 +76,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDataAndForecast() {
@@ -84,6 +85,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         return;
       }
       setIsLoading(true);
+      setError(null);
 
       try {
         const today = new Date();
@@ -216,7 +218,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
       } catch (err: any) {
         console.error("[SalesForecast] failed:", err);
-        throw err;
+        setError(err.message || "Failed to generate sales forecast.");
       } finally {
         setIsLoading(false);
       }
@@ -242,6 +244,11 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           <div className="h-[300px] flex items-center justify-center">
             <Loader2 className="animate-spin" />
           </div>
+        ) : error ? (
+            <Alert variant="destructive">
+                <AlertTitle>Forecast Unavailable</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+            </Alert>
         ) : (
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
