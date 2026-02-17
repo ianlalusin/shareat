@@ -82,7 +82,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const startOfThisWeek = startOfWeek(today, { weekStartsOn: 0 });
         const startOfLastWeek = addDays(startOfThisWeek, -7);
 
-        const chartData = DOW.map((day, index) => ({
+        const chartData = DOW.map((day) => ({
           name: day,
           lastWeek: 0,
           thisWeek: 0,
@@ -90,8 +90,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         }));
 
         historicalSales.forEach(sale => {
-          const saleDate = new Date(sale.date);
-          const dow = addDays(saleDate,1).getDay(); // Adjust for timezone issues if any, getDay is local
+          const [year, month, day] = sale.date.split('-').map(Number);
+          const saleDate = new Date(year, month - 1, day);
+          const dow = saleDate.getDay();
           
           if (saleDate >= startOfLastWeek && saleDate < startOfThisWeek) {
             chartData[dow].lastWeek = sale.netSales;
@@ -105,8 +106,15 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           const forecastDow = (todayDow + 1 + index) % 7;
           chartData[forecastDow].forecast = forecastItem.forecastedSales;
         });
+        
+        // Reorder the data to start from tomorrow and end with today
+        const orderedChartData = [];
+        for (let i = 1; i <= 7; i++) {
+            const dowIndex = (todayDow + i) % 7;
+            orderedChartData.push(chartData[dowIndex]);
+        }
+        setData(orderedChartData);
 
-        setData(chartData);
       } catch (err: any) {
         console.error("Failed to fetch data or forecast sales:", err);
         setError("Could not load sales forecast. " + err.message);
