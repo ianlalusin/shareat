@@ -98,7 +98,13 @@ const forecastWeeklySalesFlow = ai.defineFlow(
     outputSchema: ForecastOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const { output } = await prompt(input);
+      if (!output) throw new Error("Forecast prompt returned no output");
+      return output;
+    } catch (e) {
+      console.error("[forecastWeeklySalesFlow] failed:", e);
+      throw e; // keep throwing so route error boundary/logs catch it
+    }
   }
 );
