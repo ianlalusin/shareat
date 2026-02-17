@@ -19,6 +19,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SyncSessionsTool } from "./SyncSessionsTool";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useWeatherLogger } from "@/hooks/useWeatherLogger";
+import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -32,6 +34,8 @@ export function SessionListView() {
     
     const [cachedTables, setCachedTables] = useState<any[]>([]);
     const [isLoadingTables, setIsLoadingTables] = useState(true);
+
+    const { isModalOpen, closeModal } = useWeatherLogger();
 
     useEffect(() => {
         if (!activeStore?.id) {
@@ -186,6 +190,13 @@ export function SessionListView() {
                         </div>
                     </div>
                 </div>
+            )}
+            {activeStore?.id && (
+                <WeatherLoggerModal 
+                    isOpen={isModalOpen}
+                    onClose={closeModal}
+                    storeId={activeStore.id}
+                />
             )}
         </>
     );

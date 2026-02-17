@@ -1,40 +1,87 @@
-'use server';
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-
-export const getWeatherForecast = ai.defineTool(
-  {
-    name: 'getWeatherForecast',
-    description: 'Get the 7-day weather forecast for a specific location.',
-    inputSchema: z.object({
-      location: z.string().describe('The city or area to get the weather for, e.g., "Manila, Philippines".'),
-    }),
-    outputSchema: z.object({
-      forecast: z.array(z.object({
-        day: z.string().describe("Day of the week."),
-        condition: z.string().describe("e.g., Sunny, Rainy, Cloudy."),
-        temperature: z.string().describe("e.g., 32°C"),
-      })),
-    }),
+{
+  "name": "culinaryflow",
+  "version": "0.1.20",
+  "private": true,
+  "scripts": {
+    "dev": "rm -rf .next && next dev",
+    "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
+    "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
+    "build": "NEXT_DISABLE_TURBOPACK=1 NEXT_PRIVATE_MAX_WORKERS=1 next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
+    "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
+    "build:storeConfig": "tsx scripts/build-store-config.ts"
   },
-  async (input) => {
-    // In a real application, you would implement a call to a weather API here.
-    // For this prototype, we'll return a placeholder forecast.
-    console.log(`[getWeatherForecast tool] Called for: ${input.location}`);
-    
-    // Placeholder logic: return a sunny forecast if the location is known, otherwise generic.
-    const isKnownCity = input.location.toLowerCase().includes('manila') || input.location.toLowerCase().includes('quezon city');
-    
-    const placeholderForecast = [
-        { day: 'Monday', condition: isKnownCity ? 'Sunny' : 'Partly Cloudy', temperature: '32°C' },
-        { day: 'Tuesday', condition: 'Sunny', temperature: '33°C' },
-        { day: 'Wednesday', condition: 'Chance of rain', temperature: '31°C' },
-        { day: 'Thursday', condition: 'Sunny', temperature: '33°C' },
-        { day: 'Friday', condition: 'Partly Cloudy', temperature: '32°C' },
-        { day: 'Saturday', condition: 'Sunny', temperature: '34°C' },
-        { day: 'Sunday', condition: 'Sunny', temperature: '34°C' },
-    ];
-    
-    return { forecast: placeholderForecast };
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@genkit-ai/google-genai": "^1.0.0",
+    "@genkit-ai/next": "^1.0.0",
+    "@hookform/resolvers": "^4.1.3",
+    "@radix-ui/react-accordion": "^1.2.3",
+    "@radix-ui/react-alert-dialog": "^1.1.6",
+    "@radix-ui/react-avatar": "^1.1.3",
+    "@radix-ui/react-checkbox": "^1.1.4",
+    "@radix-ui/react-collapsible": "^1.1.11",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-dropdown-menu": "^2.1.6",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-menubar": "^1.1.6",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-progress": "^1.1.2",
+    "@radix-ui/react-radio-group": "^1.2.3",
+    "@radix-ui/react-scroll-area": "^1.2.3",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-separator": "^1.1.2",
+    "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.1.3",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@radix-ui/react-toast": "^1.2.6",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.0.0",
+    "date-fns": "^3.6.0",
+    "deep-object-diff": "^1.1.9",
+    "dotenv": "^16.5.0",
+    "embla-carousel-react": "^8.0.0",
+    "eslint-config-next": "^16.1.6",
+    "firebase": "^10.12.2",
+    "firebase-admin": "^13.6.0",
+    "genkit": "^1.0.0",
+    "jwt-decode": "^4.0.0",
+    "lodash": "^4.17.21",
+    "lucide-react": "^0.475.0",
+    "next": "^16.1.6",
+    "react": "^18.3.1",
+    "react-day-picker": "^9.11.3",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.1",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "uuid": "^9.0.1",
+    "vaul": "0.9.9",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.17.4",
+    "@types/node": "^20",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@types/uuid": "^9.0.8",
+    "genkit-cli": "^1.0.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
   }
-);
+}

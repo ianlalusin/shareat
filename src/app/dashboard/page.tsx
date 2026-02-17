@@ -27,6 +27,8 @@ import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
 import { TopAddonItemsCard } from "@/components/dashboard/top-addon-items-card";
 import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-card";
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
+import { useWeatherLogger } from "@/hooks/useWeatherLogger";
+import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -54,6 +56,8 @@ export default function DashboardPage() {
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
+
+    const { isModalOpen, closeModal } = useWeatherLogger();
 
     const {
         isLoading,
@@ -176,6 +180,14 @@ export default function DashboardPage() {
                     />
                 </div>
             </div>
+
+            {activeStore?.id && (
+                <WeatherLoggerModal 
+                    isOpen={isModalOpen}
+                    onClose={closeModal}
+                    storeId={activeStore.id}
+                />
+            )}
         </RoleGuard>
     );
 }

@@ -654,4 +654,19 @@ export type RtKdsStationDoc = {
   sessionIndex: Record<string, string[]>; // Map of sessionId to its ticketIds
 };
 
+export type WeatherCondition = "sunny" | "cloudy" | "light_rain" | "heavy_rain";
+
+export type WeatherEntry = {
+  timestamp: Timestamp;
+  condition: WeatherCondition;
+  activeSessionCount: number;
+  activeGuestCount: number;
+  loggedByUid: string;
+};
+
+export type WeatherRecord = {
+  dayId: string;
+  entries: WeatherEntry[];
+};
+
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
