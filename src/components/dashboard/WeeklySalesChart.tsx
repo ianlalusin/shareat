@@ -17,8 +17,6 @@ interface WeeklySalesChartProps {
   storeId: string;
 }
 
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 function formatCurrency(value: number) {
     if (value >= 1_000_000) return `₱${(value / 1_000_000).toFixed(1)}M`;
     if (value >= 1_000) return `₱${(value / 1_000).toFixed(1)}k`;
@@ -31,12 +29,6 @@ function atStartOfDay(d: Date) {
   x.setHours(0, 0, 0, 0);
   return x;
 }
-function atEndOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
 
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
@@ -54,20 +46,14 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
       setError(null);
 
       try {
-        // --- 1. DEFINE DATE RANGES ---
         const today = new Date();
-        const thisWeekEnd = atEndOfDay(today);
-        const thisWeekStart = atStartOfDay(addDays(today, -6));
-        const lastWeekEnd = atEndOfDay(addDays(today, -7));
-        const lastWeekStart = atStartOfDay(addDays(today, -13));
-        
-        const aiHistoryStart = addDays(today, -28);
+        const endDate = atStartOfDay(today);
+        const startDate = addDays(endDate, -27); // Fetch 4 weeks of data
 
-        // --- 2. FETCH HISTORICAL DATA ---
         const q = query(
           collection(db, "stores", storeId, "analytics"),
-          where("meta.dayStartMs", ">=", aiHistoryStart.getTime()),
-          where("meta.dayStartMs", "<=", thisWeekEnd.getTime()),
+          where("meta.dayStartMs", ">=", startDate.getTime()),
+          where("meta.dayStartMs", "<=", endDate.getTime()),
           orderBy("meta.dayStartMs", "asc")
         );
 
@@ -85,61 +71,36 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           setIsLoading(false);
           return;
         }
-        
-        // --- 3. GET AI FORECAST ---
-        const forecastInput: ForecastInput = { 
-            historicalSales,
-            storeLocation: activeStore.address,
-            upcomingPayrollDates: [],
-            upcomingHolidays: [],
+
+        const forecastInput: ForecastInput = {
+          historicalSales,
+          storeLocation: activeStore.address,
+          upcomingPayrollDates: [],
+          upcomingHolidays: [],
         };
         const forecastResult = await forecastWeeklySales(forecastInput);
 
-        // --- 4. PREPARE CHART DATA STRUCTURE ---
-        const chartDataTemplate = [];
-        for (let i = 0; i < 7; i++) {
-            chartDataTemplate.push({
-                name: format(addDays(thisWeekStart, i), 'E'), // 'Thu', 'Fri', etc.
-                lastWeek: 0,
-                thisWeek: 0,
-                forecast: 0,
+        const salesByDate = new Map(historicalSales.map(s => [s.date, s.netSales]));
+        const forecastByDay = new Map(forecastResult.forecast.map(f => [f.day, f.forecastedSales]));
+
+        const chartData = [];
+        for (let i = 6; i >= 0; i--) {
+            const currentDay = addDays(endDate, -i);
+            const lastWeekDay = addDays(currentDay, -7);
+            const nextWeekDay = addDays(currentDay, 7);
+            
+            const currentDayStr = format(currentDay, "yyyy-MM-dd");
+            const lastWeekDayStr = format(lastWeekDay, "yyyy-MM-dd");
+
+            chartData.push({
+                name: format(currentDay, 'E'), // 'Thu', 'Fri', etc.
+                thisWeek: salesByDate.get(currentDayStr) ?? 0,
+                lastWeek: salesByDate.get(lastWeekDayStr) ?? 0,
+                forecast: forecastByDay.get(format(nextWeekDay, 'EEEE')) ?? 0,
             });
         }
         
-        const thisWeekStartDow = thisWeekStart.getDay(); // e.g. 4 for Thursday
-
-        // --- 5. POPULATE 'thisWeek' and 'lastWeek' ---
-        historicalSales.forEach(sale => {
-          const [year, month, day] = sale.date.split('-').map(Number);
-          const saleDate = new Date(year, month - 1, day);
-          
-          let targetKey: 'thisWeek' | 'lastWeek' | null = null;
-          if (saleDate >= thisWeekStart && saleDate <= thisWeekEnd) {
-            targetKey = 'thisWeek';
-          } else if (saleDate >= lastWeekStart && saleDate <= lastWeekEnd) {
-            targetKey = 'lastWeek';
-          }
-
-          if (targetKey) {
-             const saleDow = saleDate.getDay();
-             const index = (saleDow - thisWeekStartDow + 7) % 7;
-             if (chartDataTemplate[index]) {
-                chartDataTemplate[index][targetKey] = sale.netSales;
-             }
-          }
-        });
-
-        // --- 6. POPULATE 'forecast' ---
-        forecastResult.forecast.forEach((dayForecast, i) => {
-            const forecastDate = addDays(today, i + 1);
-            const forecastDow = forecastDate.getDay();
-            const index = (forecastDow - thisWeekStartDow + 7) % 7;
-            if (chartDataTemplate[index]) {
-                chartDataTemplate[index].forecast = dayForecast.forecastedSales;
-            }
-        });
-        
-        setData(chartDataTemplate);
+        setData(chartData);
 
       } catch (err: any) {
         console.error("Failed to fetch data or forecast sales:", err);
@@ -186,7 +147,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 <Legend />
                 <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="This Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={2} strokeDasharray="2 6" name="Forecast" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={4} name="Forecast" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ChartContainer>
         )}
