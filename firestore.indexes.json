@@ -75,7 +75,7 @@
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
-    },
+    }
   ],
   "fieldOverrides": []
 }
