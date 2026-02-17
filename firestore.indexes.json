@@ -76,13 +76,6 @@
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
     },
-    {
-      "collectionGroup": "addonItems",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "amount", "order": "DESCENDING" }
-      ]
-    }
   ],
   "fieldOverrides": []
 }
