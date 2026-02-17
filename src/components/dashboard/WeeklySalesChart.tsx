@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -57,29 +58,25 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           where("meta.dayStartMs", "<=", endDate.getTime()),
           orderBy("meta.dayStartMs", "asc")
         );
-        const weatherQuery = query(
-          collection(db, "stores", storeId, "weatherRecords"),
-          where("dayId", ">=", format(startDate, "yyyyMMdd")),
-          where("dayId", "<=", format(endDate, "yyyyMMdd"))
-        );
+        const weatherQuery = collection(db, "stores", storeId, "weatherRecords");
         
-        // Fetch today's live sales from the preset document for accuracy
-        const todayPresetDocRef = doc(db, "stores", storeId, "dashPresets", "today");
+        // Fetch today's live sales directly from the daily analytics doc for accuracy
+        const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
 
-        const [salesSnapshot, weatherSnapshot, todayPresetSnap] = await Promise.all([
+        const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap] = await Promise.all([
             getDocs(salesQuery),
-            getDocs(weatherQuery),
-            getDoc(todayPresetDocRef)
+            getDocs(query(weatherQuery, where("dayId", ">=", format(startDate, "yyyyMMdd")), where("dayId", "<=", format(endDate, "yyyyMMdd")))),
+            getDoc(todayAnalyticsDocRef)
         ]);
         
-        const todayLiveSales = todayPresetSnap.exists() ? (todayPresetSnap.data() as DailyMetric).payments?.totalGross ?? 0 : 0;
+        const todayLiveSales = todayAnalyticsSnap.exists() ? (todayAnalyticsSnap.data() as DailyMetric).payments?.totalGross ?? 0 : 0;
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
           const data = doc.data();
           const dayId = data.meta.dayId;
           const netSales = data.payments?.totalGross || 0;
 
-          // Replace today's historical data with the live data
+          // Replace today's historical data (which might be partial) with the live data
           if (dayId === todayDayId) {
               return {
                   date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
@@ -258,4 +255,3 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
     </Card>
   );
 }
-    
