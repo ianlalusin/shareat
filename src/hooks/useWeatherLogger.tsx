@@ -39,14 +39,19 @@ export function useWeatherLogger() {
 
             // Check if within store hours
             try {
-                const now = new Date();
-                const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+                // Use store's timezone, assuming Asia/Manila for this app
+                const nowInStoreTz = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+                const currentTimeInMinutes = nowInStoreTz.getHours() * 60 + nowInStoreTz.getMinutes();
 
                 const [startHour, startMinute] = activeStore.openingTime.split(':').map(Number);
                 const startTimeInMinutes = startHour * 60 + startMinute;
 
                 const [endHour, endMinute] = activeStore.closingTime.split(':').map(Number);
                 const endTimeInMinutes = endHour * 60 + endMinute;
+                
+                if (isNaN(startTimeInMinutes) || isNaN(endTimeInMinutes)) {
+                    throw new Error("Invalid time format in store settings.");
+                }
                 
                 let isInHours = false;
                 if (startTimeInMinutes <= endTimeInMinutes) { // Same day (e.g., 09:00 - 22:00)
