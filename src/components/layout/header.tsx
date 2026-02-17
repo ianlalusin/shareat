@@ -51,6 +51,7 @@ export default function Header({ user }: { user: User }) {
           </SheetTrigger>
           <SheetContent side="left" className="w-full max-w-xs border-destructive-foreground/20 bg-destructive text-destructive-foreground sm:max-w-xs">
             <SheetHeader className="flex flex-row items-center gap-4 p-4">
+              <SheetTitle className="sr-only">Main Menu</SheetTitle>
               <SheetClose asChild>
                 <Link
                     href="/dashboard"
