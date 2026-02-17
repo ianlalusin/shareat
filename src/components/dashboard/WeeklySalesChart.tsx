@@ -11,7 +11,7 @@ import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-wee
 import { Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
-import type { WeatherRecord } from "@/lib/types";
+import type { WeatherRecord, DailyMetric } from "@/lib/types";
 
 interface WeeklySalesChartProps {
   storeId: string;
@@ -62,32 +62,45 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           where("dayId", ">=", format(startDate, "yyyyMMdd")),
           where("dayId", "<=", format(endDate, "yyyyMMdd"))
         );
-        const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
+        
+        // Fetch today's live sales from the preset document for accuracy
+        const todayPresetDocRef = doc(db, "stores", storeId, "dashPresets", "today");
 
-        const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap] = await Promise.all([
+        const [salesSnapshot, weatherSnapshot, todayPresetSnap] = await Promise.all([
             getDocs(salesQuery),
             getDocs(weatherQuery),
-            getDoc(todayAnalyticsDocRef),
+            getDoc(todayPresetDocRef)
         ]);
-
-        const todayLiveSales = todayAnalyticsSnap.exists()
-          ? todayAnalyticsSnap.data().payments?.totalGross ?? 0
-          : 0;
+        
+        const todayLiveSales = todayPresetSnap.exists() ? (todayPresetSnap.data() as DailyMetric).payments?.totalGross ?? 0 : 0;
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
           const data = doc.data();
-          // Exclude today's data from the historical fetch to avoid double counting
-          if (data.meta.dayId === todayDayId) {
+          const dayId = data.meta.dayId;
+          const netSales = data.payments?.totalGross || 0;
+
+          // Replace today's historical data with the live data
+          if (dayId === todayDayId) {
               return {
                   date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
-                  netSales: 0, 
+                  netSales: todayLiveSales,
               };
           }
+
           return {
             date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
-            netSales: data.payments?.totalGross || 0,
+            netSales: netSales,
           };
         });
+        
+        // Add today's live sales if not already in the historical data (e.g., if no other receipts exist for today)
+        const hasTodayData = historicalSales.some(s => s.date === format(today, 'yyyy-MM-dd'));
+        if (!hasTodayData && todayLiveSales > 0) {
+            historicalSales.push({
+                date: format(today, 'yyyy-MM-dd'),
+                netSales: todayLiveSales,
+            });
+        }
         
         const historicalWeather = weatherSnapshot.docs.map(doc => {
             const data = doc.data() as WeatherRecord;
@@ -129,12 +142,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             const currentDay = addDays(today, -i);
             const lastWeekDay = addDays(currentDay, -7);
 
-            const isToday = i === 0;
-            const thisWeekSales = salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0;
-
             chartData.push({
                 name: format(currentDay, 'E'), // "Mon", "Tue"
-                thisWeek: isToday ? todayLiveSales : thisWeekSales,
+                thisWeek: salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0,
                 lastWeek: salesByDate.get(format(lastWeekDay, "yyyy-MM-dd")) ?? 0,
                 forecast: 0, // No forecast for past days
             });
@@ -214,7 +224,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                                     <div className="font-bold">{label}</div>
                                     <div className="mt-2 grid gap-1.5">
                                         {payload.map((item) => (
-                                            item.value > 0 && <div
+                                            (typeof item.value === 'number' && item.value > 0) && <div
                                                 key={item.dataKey}
                                                 className="flex items-center gap-2"
                                             >
@@ -248,3 +258,4 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
     </Card>
   );
 }
+    
