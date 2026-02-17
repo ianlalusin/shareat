@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -49,6 +48,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const today = new Date();
         const endDate = atStartOfDay(today);
         const startDate = addDays(endDate, -27); // Fetch ~4 weeks of historical data
+        const todayDayId = format(today, "yyyyMMdd");
 
         // Queries
         const salesQuery = query(
@@ -62,20 +62,27 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           where("dayId", ">=", format(startDate, "yyyyMMdd")),
           where("dayId", "<=", format(endDate, "yyyyMMdd"))
         );
-        const todayPresetRef = doc(db, "stores", storeId, "dashPresets", "today");
+        const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
 
-        const [salesSnapshot, weatherSnapshot, todayPresetSnap] = await Promise.all([
+        const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap] = await Promise.all([
             getDocs(salesQuery),
             getDocs(weatherQuery),
-            getDoc(todayPresetRef),
+            getDoc(todayAnalyticsDocRef),
         ]);
 
-        const todayLiveSales = todayPresetSnap.exists()
-          ? todayPresetSnap.data().payments?.totalGross ?? 0
+        const todayLiveSales = todayAnalyticsSnap.exists()
+          ? todayAnalyticsSnap.data().payments?.totalGross ?? 0
           : 0;
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
           const data = doc.data();
+          // Exclude today's data from the historical fetch to avoid double counting
+          if (data.meta.dayId === todayDayId) {
+              return {
+                  date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
+                  netSales: 0, 
+              };
+          }
           return {
             date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
             netSales: data.payments?.totalGross || 0,
@@ -169,7 +176,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   }, [storeId, activeStore]);
   
   const chartConfig = {
-      thisWeek: { label: "This Week", color: "hsl(var(--primary))" },
+      thisWeek: { label: "Current Week", color: "hsl(var(--primary))" },
       lastWeek: { label: "Last Week", color: "hsl(var(--secondary-foreground))" },
       forecast: { label: "Forecast", color: "hsl(var(--destructive))" },
   };
@@ -231,7 +238,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                     }}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="This Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="Current Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={3} name="Forecast" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
               </LineChart>
