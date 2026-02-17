@@ -9,6 +9,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { getWeatherForecast } from '@/ai/tools/weather';
 
 const DailySaleSchema = z.object({
   date: z.string().describe("The date of the sales data in YYYY-MM-DD format."),
@@ -17,6 +18,9 @@ const DailySaleSchema = z.object({
 
 const ForecastInputSchema = z.object({
   historicalSales: z.array(DailySaleSchema).describe("An array of historical daily sales data for the past few weeks."),
+  storeLocation: z.string().describe("The location of the store, e.g., 'Manila, Philippines'. This is used to get local weather and holidays."),
+  upcomingPayrollDates: z.array(z.string()).describe("A list of upcoming payroll dates in YYYY-MM-DD format. Sales may increase on or after these dates.").optional(),
+  upcomingHolidays: z.array(z.string()).describe("A list of upcoming local holidays, e.g., 'National Heroes Day'. Sales may be higher or lower depending on the holiday.").optional(),
 });
 export type ForecastInput = z.infer<typeof ForecastInputSchema>;
 
@@ -38,16 +42,36 @@ const prompt = ai.definePrompt({
   name: 'forecastWeeklySalesPrompt',
   input: {schema: ForecastInputSchema},
   output: {schema: ForecastOutputSchema},
-  prompt: `You are a data analyst for a restaurant. Based on the following daily sales data, provide a realistic day-by-day sales forecast for the next 7 days.
+  tools: [getWeatherForecast],
+  prompt: `You are a data analyst for a restaurant located in {{{storeLocation}}}. Based on the following information, provide a realistic day-by-day sales forecast for the next 7 days.
 
-Analyze the historical data to identify weekly trends, such as higher sales on weekends (Friday, Saturday) and lower sales on weekdays. Your forecast should reflect these patterns.
+Your analysis must consider multiple factors:
+1.  **Historical Data**: Analyze the provided sales data to identify weekly trends, such as higher sales on weekends (Friday, Saturday, Sunday) and lower sales on weekdays.
+2.  **Weather**: Use the 'getWeatherForecast' tool to get the weather for {{{storeLocation}}}. Rainy days often lead to lower sales, while sunny days might increase them. Incorporate the weather forecast into your sales predictions.
+3.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
+4.  **Holidays**: Consider any upcoming local holidays. Some holidays boost sales (e.g., Christmas), while others might decrease them if people leave town.
 
-Historical Sales Data:
+**Input Data:**
+
+*   **Store Location**: {{{storeLocation}}}
+*   **Historical Sales**:
 {{#each historicalSales}}
-- {{date}}: ₱{{netSales}}
+    - {{date}}: ₱{{netSales}}
 {{/each}}
+*   **Upcoming Payroll Dates**: 
+{{#if upcomingPayrollDates}}
+    {{#each upcomingPayrollDates}}{{{this}}}{{/each}}
+{{else}}
+    None specified.
+{{/if}}
+*   **Upcoming Holidays**: 
+{{#if upcomingHolidays}}
+    {{#each upcomingHolidays}}{{{this}}}{{/each}}
+{{else}}
+    None specified.
+{{/if}}
 
-Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday") and a 'forecastedSales' property.
+Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday") and a 'forecastedSales' property. Your reasoning should reflect the combined impact of all the factors provided.
 `,
 });
 

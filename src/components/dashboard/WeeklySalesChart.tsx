@@ -10,6 +10,7 @@ import { addDays, format, startOfWeek } from "date-fns";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useStoreContext } from "@/context/store-context";
 
 interface WeeklySalesChartProps {
   storeId: string;
@@ -24,13 +25,14 @@ function formatCurrency(value: number) {
 }
 
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
+  const { activeStore } = useStoreContext();
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDataAndForecast() {
-      if (!storeId) {
+      if (!storeId || !activeStore) {
         setIsLoading(false);
         return;
       }
@@ -62,8 +64,18 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           setIsLoading(false);
           return;
         }
+
+        // Placeholder data for new context.
+        // In a real application, this would come from a configuration or a service.
+        const upcomingPayrollDates: string[] = []; // Example: ["2024-07-15", "2024-07-30"]
+        const upcomingHolidays: string[] = []; // Example: ["National Heroes Day"]
         
-        const forecastInput: ForecastInput = { historicalSales };
+        const forecastInput: ForecastInput = { 
+            historicalSales,
+            storeLocation: activeStore.address,
+            upcomingPayrollDates,
+            upcomingHolidays,
+        };
         const forecastResult = await forecastWeeklySales(forecastInput);
 
         const todayDow = today.getDay(); // 0 = Sunday
@@ -104,7 +116,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
     }
 
     fetchDataAndForecast();
-  }, [storeId]);
+  }, [storeId, activeStore]);
   
   const chartConfig = {
       thisWeek: { label: "This Week", color: "hsl(var(--primary))" },
