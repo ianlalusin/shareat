@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
-import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, Timestamp, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { addDays, format, startOfWeek } from "date-fns";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
@@ -49,25 +50,29 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const endDate = atStartOfDay(today);
         const startDate = addDays(endDate, -27); // Fetch ~4 weeks of historical data
 
-        // Fetch sales data
+        // Queries
         const salesQuery = query(
           collection(db, "stores", storeId, "analytics"),
           where("meta.dayStartMs", ">=", startDate.getTime()),
           where("meta.dayStartMs", "<=", endDate.getTime()),
           orderBy("meta.dayStartMs", "asc")
         );
-
-        // Fetch weather data
         const weatherQuery = query(
           collection(db, "stores", storeId, "weatherRecords"),
           where("dayId", ">=", format(startDate, "yyyyMMdd")),
           where("dayId", "<=", format(endDate, "yyyyMMdd"))
         );
+        const todayPresetRef = doc(db, "stores", storeId, "dashPresets", "today");
 
-        const [salesSnapshot, weatherSnapshot] = await Promise.all([
+        const [salesSnapshot, weatherSnapshot, todayPresetSnap] = await Promise.all([
             getDocs(salesQuery),
-            getDocs(weatherQuery)
+            getDocs(weatherQuery),
+            getDoc(todayPresetRef),
         ]);
+
+        const todayLiveSales = todayPresetSnap.exists()
+          ? todayPresetSnap.data().payments?.totalGross ?? 0
+          : 0;
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
           const data = doc.data();
@@ -117,9 +122,12 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             const currentDay = addDays(today, -i);
             const lastWeekDay = addDays(currentDay, -7);
 
+            const isToday = i === 0;
+            const thisWeekSales = salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0;
+
             chartData.push({
                 name: format(currentDay, 'E'), // "Mon", "Tue"
-                thisWeek: salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0,
+                thisWeek: isToday ? todayLiveSales : thisWeekSales,
                 lastWeek: salesByDate.get(format(lastWeekDay, "yyyy-MM-dd")) ?? 0,
                 forecast: 0, // No forecast for past days
             });
@@ -223,8 +231,8 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                     }}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="This Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 2 }} activeDot={{ r: 4 }} />
+                <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="This Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={3} name="Forecast" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ChartContainer>
