@@ -76,14 +76,6 @@
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
     },
-    
-    {
-      "collectionGroup": "refillItems",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "qty", "order": "DESCENDING" }
-      ]
-    },
     {
       "collectionGroup": "addonItems",
       "queryScope": "COLLECTION",
