@@ -240,72 +240,73 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
-        <DialogHeader className="p-6 pb-0">
-          <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
-          <DialogDescription>{product ? "Update the details of this product." : "Fill in the details to create a new global product."}</DialogDescription>
-        </DialogHeader>
-        <div className="overflow-y-auto">
-          <div className="p-6">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} id="product-form" className="space-y-4">
-                 <div className="space-y-2">
-                    <Label>Product Image</Label>
-                    <div className="flex items-center gap-4">
-                        <div className="w-24 h-24 rounded-md border flex items-center justify-center bg-muted/50 relative">
-                            <ImageBoundary>
-                              {imageUrl ? (<Image src={imageUrl} alt="Product image" fill style={{objectFit:"cover"}} className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
-                            </ImageBoundary>
-                        </div>
-                        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-2" /> Upload</Button>
-                        <input type="file" ref={fileInputRef} onChange={handleImageSelection} className="hidden" accept="image/*" />
-                    </div>
-                </div>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
+            <DialogDescription>{product ? "Update the details of this product." : "Fill in the details to create a new global product."}</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto">
+            <div className="p-6">
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} id="product-form" className="space-y-4">
+                   <div className="space-y-2">
+                      <Label>Product Image</Label>
+                      <div className="flex items-center gap-4">
+                          <div className="w-24 h-24 rounded-md border flex items-center justify-center bg-muted/50 relative">
+                              <ImageBoundary>
+                                {imageUrl ? (<Image src={imageUrl} alt="Product image" fill style={{objectFit:"cover"}} className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
+                              </ImageBoundary>
+                          </div>
+                          <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-2" /> Upload</Button>
+                          <input type="file" ref={fileInputRef} onChange={handleImageSelection} className="hidden" accept="image/*" />
+                      </div>
+                  </div>
 
-                <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Product Name</FormLabel><FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl><FormMessage /></FormItem> )}/>
-                <FormField control={form.control} name="variant" render={({ field }) => ( <FormItem><FormLabel>Description / Variant Notes</FormLabel><FormControl><Textarea placeholder="Describe the product..." {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                  <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Product Name</FormLabel><FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                  <FormField control={form.control} name="variant" render={({ field }) => ( <FormItem><FormLabel>Description / Variant Notes</FormLabel><FormControl><Textarea placeholder="Describe the product..." {...field} /></FormControl><FormMessage /></FormItem> )}/>
 
-                <FormItem>
-                  <FormLabel>Sub-Category</FormLabel>
-                  <FormControl><Input placeholder="e.g., Syrups, Meats" value={subCategoryInput} onChange={(e) => setSubCategoryInput(e.target.value)}/></FormControl>
-                  <FormDescription className="text-xs pt-2">Suggestions: <span className="flex flex-wrap gap-1 mt-1">{addonCategories.map(cat => (<Badge key={cat.id} variant="secondary" className="cursor-pointer" onClick={() => { setSubCategoryInput(cat.name); form.setValue('subCategory', cat.name); }}>{cat.name}</Badge>))}</span></FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  <FormItem>
+                    <FormLabel>Sub-Category</FormLabel>
+                    <FormControl><Input placeholder="e.g., Syrups, Meats" value={subCategoryInput} onChange={(e) => setSubCategoryInput(e.target.value)}/></FormControl>
+                    <FormDescription className="text-xs pt-2">Suggestions: <span className="flex flex-wrap gap-1 mt-1">{addonCategories.map(cat => (<Badge key={cat.id} variant="secondary" className="cursor-pointer" onClick={() => { setSubCategoryInput(cat.name); form.setValue('subCategory', cat.name); }}>{cat.name}</Badge>))}</span></FormDescription>
+                    <FormMessage />
+                  </FormItem>
 
-                <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                
-                <Separator />
-                
-                <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types).</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                
-                {hasVariants ? (
-                    <div className="space-y-4">
-                        <h4 className="font-semibold text-lg">Variants</h4>
-                        <div className="space-y-2">
-                          {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
-                        </div>
-                        {showVariantForm ? (
-                            <VariantForm form={variantForm} onSave={handleSaveVariant} onCancel={() => { setShowVariantForm(false); setEditingVariant(null); }} parentProduct={product!} />
-                        ) : (
-                            <Button type="button" variant="outline" onClick={() => { setEditingVariant(null); variantForm.reset({ variantLabel: '', uom: 'pcs', barcode: '', isActive: true }); setShowVariantForm(true)}}>+ Add Variant</Button>
-                        )}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-2 gap-4">
-                        <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                        <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
-                    </div>
-                )}
-              </form>
-            </Form>
+                  <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+                  
+                  <Separator />
+                  
+                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types).</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+                  
+                  {hasVariants ? (
+                      <div className="space-y-4">
+                          <h4 className="font-semibold text-lg">Variants</h4>
+                          <div className="space-y-2">
+                            {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
+                          </div>
+                          {showVariantForm ? (
+                              <VariantForm form={variantForm} onSave={handleSaveVariant} onCancel={() => { setShowVariantForm(false); setEditingVariant(null); }} parentProduct={product!} />
+                          ) : (
+                              <Button type="button" variant="outline" onClick={() => { setEditingVariant(null); variantForm.reset({ variantLabel: '', uom: 'pcs', barcode: '', isActive: true }); setShowVariantForm(true)}}>+ Add Variant</Button>
+                          )}
+                      </div>
+                  ) : (
+                      <div className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                          <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                      </div>
+                  )}
+                </form>
+              </Form>
+            </div>
           </div>
-        </div>
-        <DialogFooter className="p-6 pt-0">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-          <Button type="submit" form="product-form" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save Product"}</Button>
-        </DialogFooter>
-      </DialogContent>
+          <DialogFooter className="p-6 pt-0">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" form="product-form" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save Product"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
