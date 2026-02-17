@@ -23,7 +23,7 @@ export default function Header({ user }: { user: User }) {
       <div className="flex flex-shrink min-w-0 items-center gap-4">
         <Link href="/dashboard" className="mr-4 flex shrink-0 items-center gap-2 font-serif text-xl font-semibold">
           <Image src="/logo.png" alt="SharEat Hub Logo" width={24} height={24} className="h-6 w-6" />
-          <span className="hidden sm:inline-block">SHAREAT POS</span>
+          <span className="sm:inline-block">SHAREAT POS</span>
         </Link>
         <div className="hidden items-center gap-4 md:flex lg:gap-6">
           <MainNav role={user.role} />
@@ -55,7 +55,6 @@ export default function Header({ user }: { user: User }) {
                     <span className="sr-only">SharEat Hub </span>
                 </Link>
               </SheetClose>
-               <SheetTitle className="text-white">SHAREAT POS</SheetTitle>
             </SheetHeader>
             <div className="border-y border-white/20 p-4">
                 <StoreSwitcher variant="mobileSheet" onSelected={() => setIsMobileSheetOpen(false)} />
