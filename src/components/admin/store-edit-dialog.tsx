@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { useToast } from "@/hooks/use-toast";
 import { uploadStoreLogo } from "@/lib/firebase/client";
 import { Timestamp } from "firebase/firestore";
+import { ImageBoundary } from "@/components/shared/ImageBoundary";
 
 const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),
@@ -248,11 +249,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                     <FormLabel>Logo</FormLabel>
                     <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-md border flex items-center justify-center bg-muted/50 relative">
-                            {logoUrl ? (
-                                <Image src={logoUrl} alt="Store logo" layout="fill" objectFit="contain" className="rounded-md" />
-                            ) : (
-                                <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                            )}
+                            <ImageBoundary>
+                              {logoUrl ? (
+                                  <Image src={logoUrl} alt="Store logo" fill style={{ objectFit: "contain" }} className="rounded-md" />
+                              ) : (
+                                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                              )}
+                            </ImageBoundary>
                         </div>
                         <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!store}><UploadCloud className="mr-2" />Upload</Button>
                         <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />

@@ -28,6 +28,7 @@ import { Separator } from "../ui/separator";
 import { getDisplayName } from "@/lib/products/variants";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { serverTimestamp } from "firebase/firestore";
+import { ImageBoundary } from "@/components/shared/ImageBoundary";
 
 type AddonCategory = {
     id: string;
@@ -253,7 +254,9 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                     <Label>Product Image</Label>
                     <div className="flex items-center gap-4">
                         <div className="w-24 h-24 rounded-md border flex items-center justify-center bg-muted/50 relative">
-                            {imageUrl ? (<Image src={imageUrl} alt="Product image" fill style={{objectFit:"cover"}} className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
+                            <ImageBoundary>
+                              {imageUrl ? (<Image src={imageUrl} alt="Product image" fill style={{objectFit:"cover"}} className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
+                            </ImageBoundary>
                         </div>
                         <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-2" /> Upload</Button>
                         <input type="file" ref={fileInputRef} onChange={handleImageSelection} className="hidden" accept="image/*" />

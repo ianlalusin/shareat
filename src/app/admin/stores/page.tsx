@@ -21,6 +21,7 @@ import { StoreDetailsModal } from "@/components/admin/store-details-modal";
 import type { Store } from "@/lib/types";
 import Image from "next/image";
 import { useStoreContext } from "@/context/store-context";
+import { ImageBoundary } from "@/components/shared/ImageBoundary";
 
 function toJsDate(v: any): Date | null {
   if (!v) return null;
@@ -293,11 +294,13 @@ export default function StoreManagementPage() {
                             <TableRow key={store.id} onClick={() => setSelectedStore(store)} className="cursor-pointer">
                                 <TableCell>
                                     <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
-                                        {store.logoUrl ? (
-                                            <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md" />
-                                        ) : (
-                                            <ImageIcon className="text-muted-foreground" />
-                                        )}
+                                        <ImageBoundary>
+                                            {store.logoUrl ? (
+                                                <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md" />
+                                            ) : (
+                                                <ImageIcon className="text-muted-foreground" />
+                                            )}
+                                        </ImageBoundary>
                                     </div>
                                 </TableCell>
                                 <TableCell className="font-medium">{store.name}</TableCell>
@@ -345,11 +348,13 @@ export default function StoreManagementPage() {
                     <CardHeader>
                       <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative flex-shrink-0">
-                          {store.logoUrl ? (
-                              <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
-                          ) : (
-                              <ImageIcon className="text-muted-foreground" />
-                          )}
+                           <ImageBoundary>
+                              {store.logoUrl ? (
+                                  <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
+                              ) : (
+                                  <ImageIcon className="text-muted-foreground" />
+                              )}
+                           </ImageBoundary>
                         </div>
                         <div className="flex-1">
                           <CardTitle>{store.name}</CardTitle>

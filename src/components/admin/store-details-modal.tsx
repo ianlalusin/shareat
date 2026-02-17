@@ -10,6 +10,7 @@ import type { Store } from "@/lib/types";
 import { format } from "date-fns";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
+import { ImageBoundary } from "@/components/shared/ImageBoundary";
 
 interface StoreDetailsModalProps {
   store: Store;
@@ -54,11 +55,13 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
             <DialogHeader>
                 <div className="flex items-center gap-4">
                      <div className="p-3 bg-muted rounded-md relative h-20 w-20 flex-shrink-0">
-                        {store.logoUrl ? (
-                            <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
-                        ) : (
-                            <ImageIcon className="h-full w-full text-muted-foreground" />
-                        )}
+                        <ImageBoundary>
+                          {store.logoUrl ? (
+                              <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
+                          ) : (
+                              <ImageIcon className="h-full w-full text-muted-foreground" />
+                          )}
+                        </ImageBoundary>
                     </div>
                     <div className="grid gap-1">
                         <DialogTitle className="text-2xl">{store.name}</DialogTitle>

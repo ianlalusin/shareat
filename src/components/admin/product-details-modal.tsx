@@ -9,6 +9,7 @@ import { Edit, Package, Tag, Hash, Barcode, Ruler, FileText, Image as ImageIcon,
 import Image from "next/image";
 import type { Product } from "@/lib/types";
 import { useAuthContext } from "@/context/auth-context";
+import { ImageBoundary } from "@/components/shared/ImageBoundary";
 
 interface ProductDetailsModalProps {
   product: Product;
@@ -28,11 +29,13 @@ export function ProductDetailsModal({ product, isOpen, onClose, onEdit, onDelete
             <DialogHeader>
                 <div className="flex items-start gap-4">
                      <div className="p-3 bg-muted rounded-md relative h-20 w-20 flex-shrink-0">
-                        {product.imageUrl ? (
-                            <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md"/>
-                        ) : (
-                            <Package className="h-full w-full text-muted-foreground" />
-                        )}
+                        <ImageBoundary>
+                          {product.imageUrl ? (
+                              <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md"/>
+                          ) : (
+                              <Package className="h-full w-full text-muted-foreground" />
+                          )}
+                        </ImageBoundary>
                     </div>
                     <div className="grid gap-1 pt-2">
                         <DialogTitle className="text-2xl">{product.name}</DialogTitle>
