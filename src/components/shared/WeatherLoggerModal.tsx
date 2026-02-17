@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -5,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Sun, Cloudy, CloudRain, CloudLightning } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { db } from "@/lib/firebase/client";
-import { doc, setDoc, arrayUnion, getCountFromServer, collection } from "firebase/firestore";
+import { doc, setDoc, arrayUnion, getCountFromServer, collection, Timestamp } from "firebase/firestore";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import type { WeatherCondition, WeatherEntry } from "@/lib/types";
 
@@ -48,7 +49,7 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
             const activeGuestCount = 0; 
 
             const newEntry: WeatherEntry = {
-                timestamp: now, // Firestore handles Date objects
+                timestamp: Timestamp.fromDate(now), // Use Firestore Timestamp
                 condition,
                 activeSessionCount,
                 activeGuestCount,
