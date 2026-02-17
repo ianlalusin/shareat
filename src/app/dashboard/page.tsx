@@ -11,7 +11,6 @@ import { StatCards } from "@/components/dashboard/StatCards";
 import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
-import { TopPackagesCard } from "@/components/dashboard/top-packages-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
@@ -155,7 +154,6 @@ export default function DashboardPage() {
                     <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     
                     {/* Row 2 */}
-                    <TopPackagesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <TopCategoryCard categorySales={topCategories} isLoading={isLoading} />
                     <TopAddonItemsCard 
                         dailyMetrics={dailyMetrics} 
@@ -163,6 +161,7 @@ export default function DashboardPage() {
                         topAddonItems={topAddonItems} 
                         hasTopAddonItems={hasTopAddonItems}
                     />
+                     <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     
                     {/* Row 3 */}
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
@@ -171,7 +170,6 @@ export default function DashboardPage() {
                         isLoading={isLoading} 
                         topRefills={topRefills} 
                     />
-                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
             </div>
         </RoleGuard>

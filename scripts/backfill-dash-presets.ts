@@ -1,7 +1,7 @@
 
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
-import { DailyMetric, TopRefillRow } from '../src/lib/types';
+import { DailyMetric, TopAddonRow, TopRefillRow } from '../src/lib/types';
 import { mergeWith } from 'lodash';
 import { addDays } from 'date-fns';
 
@@ -79,6 +79,20 @@ function computeTopRefills(metric: DailyMetric, topN = 10): TopRefillRow[] {
         .slice(0, topN);
 }
 
+/** Computes top addons from an aggregated metric */
+function computeTopAddons(metric: DailyMetric, topN = 10): TopAddonRow[] {
+    const addonSalesByItem = metric.sales?.addonSalesByItem || {};
+    return Object.entries(addonSalesByItem)
+        .map(([name, data]) => ({
+            name,
+            qty: data.qty,
+            amount: data.amount,
+            categoryName: data.categoryName,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, topN);
+}
+
 // --- Main Script ---
 
 async function main() {
@@ -139,6 +153,7 @@ async function main() {
 
             // Compute top lists from the aggregated data
             const topRefills = computeTopRefills(aggregatedMetric);
+            const topAddons = computeTopAddons(aggregatedMetric);
 
             // Add computed data and metadata to the final preset document
             finalPresetData = {
@@ -156,7 +171,10 @@ async function main() {
                     ...(aggregatedMetric.refills || { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 }),
                     topRefillsByQty: topRefills,
                 },
-                // addons sales by item is not pre-computed
+                sales: {
+                  ...(aggregatedMetric.sales as any),
+                  topAddonsByQty: topAddons,
+                }
             };
         }
         

@@ -418,6 +418,7 @@ export type DailyMetric = {
         packageSalesQtyByName: Record<string, number>;
         addonSalesAmountByCategory: Record<string, number>;
         addonSalesQtyByCategory: Record<string, number>;
+        addonSalesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
         dineInAddonSalesAmount?: number;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
@@ -654,5 +655,3 @@ export type RtKdsStationDoc = {
 };
 
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
-
-    
