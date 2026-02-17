@@ -172,10 +172,23 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           storeLocation: activeStore.address,
           upcomingPayrollDates,
         };
-        const forecastResult = await forecastWeeklySales(forecastInput);
+        
+        // Replace direct server action call with API route fetch
+        const res = await fetch('/api/forecast-weekly-sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(forecastInput),
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Failed to fetch forecast: ${res.statusText} - ${errorText}`);
+        }
+
+        const forecastResult = await res.json();
 
         const salesByDate = new Map(historicalSales.map(s => [s.date, s.netSales]));
-        const forecastByDay = new Map(forecastResult.forecast.map(f => [f.day, f.forecastedSales]));
+        const forecastByDay = new Map(forecastResult.forecast.map((f: any) => [f.day, f.forecastedSales]));
 
         const chartData = [];
 
