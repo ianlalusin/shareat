@@ -30,6 +30,48 @@ function atStartOfDay(d: Date) {
   return x;
 }
 
+/**
+ * Generates a list of upcoming payroll dates based on common mid-month and end-of-month schedules.
+ * Adjusts for weekends by moving the payday to the preceding Friday.
+ * @returns {string[]} An array of formatted payroll dates (YYYY-MM-DD).
+ */
+function getUpcomingPayrollDates(): string[] {
+    const dates: Date[] = [];
+    const today = atStartOfDay(new Date());
+
+    // Look at current month and next two months for potential paydays
+    for (let i = 0; i < 3; i++) {
+        const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+        const year = d.getFullYear();
+        const month = d.getMonth();
+
+        // Mid-month payday (around 15th)
+        let midMonthPayday = new Date(year, month, 15);
+        if (midMonthPayday.getDay() === 6) { // Saturday -> Friday
+            midMonthPayday.setDate(midMonthPayday.getDate() - 1);
+        } else if (midMonthPayday.getDay() === 0) { // Sunday -> Friday
+            midMonthPayday.setDate(midMonthPayday.getDate() - 2);
+        }
+
+        // End-of-month payday (last day of month)
+        let endOfMonthPayday = new Date(year, month + 1, 0);
+        if (endOfMonthPayday.getDay() === 6) { // Saturday -> Friday
+            endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 1);
+        } else if (endOfMonthPayday.getDay() === 0) { // Sunday -> Friday
+            endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 2);
+        }
+
+        if (midMonthPayday >= today) dates.push(midMonthPayday);
+        if (endOfMonthPayday >= today) dates.push(endOfMonthPayday);
+    }
+    
+    // Using Set to handle duplicates, then sort and format.
+    return [...new Set(dates.map(d => d.getTime()))]
+        .map(time => new Date(time))
+        .sort((a,b) => a.getTime() - b.getTime())
+        .map(date => format(date, "yyyy-MM-dd"));
+}
+
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
   const [data, setData] = useState<any[]>([]);
@@ -122,10 +164,13 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           return;
         }
 
+        const upcomingPayrollDates = getUpcomingPayrollDates();
+
         const forecastInput: ForecastInput = {
           historicalSales,
           historicalWeather,
           storeLocation: activeStore.address,
+          upcomingPayrollDates,
         };
         const forecastResult = await forecastWeeklySales(forecastInput);
 
