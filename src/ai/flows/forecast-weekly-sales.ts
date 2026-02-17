@@ -44,6 +44,7 @@ export async function forecastWeeklySales(input: ForecastInput): Promise<Forecas
 
 const prompt = ai.definePrompt({
   name: 'forecastWeeklySalesPrompt',
+  model: "googleai/gemini-1.5-flash",
   input: {schema: ForecastInputSchema},
   output: {schema: ForecastOutputSchema},
   prompt: `You are a data analyst for a restaurant located in {{{storeLocation}}}. Based on the following information, provide a realistic day-by-day sales forecast for the next 7 days.
