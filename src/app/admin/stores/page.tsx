@@ -294,7 +294,7 @@ export default function StoreManagementPage() {
                                 <TableCell>
                                     <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
                                         {store.logoUrl ? (
-                                            <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                                            <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md" />
                                         ) : (
                                             <ImageIcon className="text-muted-foreground" />
                                         )}
@@ -346,7 +346,7 @@ export default function StoreManagementPage() {
                       <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative flex-shrink-0">
                           {store.logoUrl ? (
-                              <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                              <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
                           ) : (
                               <ImageIcon className="text-muted-foreground" />
                           )}

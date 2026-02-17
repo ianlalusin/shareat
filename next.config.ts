@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "firebasestorage.googleapis.com",
-        pathname: "/v0/b/shareat-hub-v2.firebasestorage.app/o/**",
+        pathname: "/v0/b/**",
       },
     ],
   },
