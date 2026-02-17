@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -67,7 +66,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
         const [salesSnapshot, weatherSnapshot] = await Promise.all([
             getDocs(salesQuery),
-            getDocs(weatherSnapshot)
+            getDocs(weatherQuery)
         ]);
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
