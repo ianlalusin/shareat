@@ -253,7 +253,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                     <Label>Product Image</Label>
                     <div className="flex items-center gap-4">
                         <div className="w-24 h-24 rounded-md border flex items-center justify-center bg-muted/50 relative">
-                            {imageUrl ? (<Image src={imageUrl} alt="Product image" layout="fill" objectFit="cover" className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
+                            {imageUrl ? (<Image src={imageUrl} alt="Product image" fill style={{objectFit:"cover"}} className="rounded-md" />) : (<Package className="h-10 w-10 text-muted-foreground" />)}
                         </div>
                         <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-2" /> Upload</Button>
                         <input type="file" ref={fileInputRef} onChange={handleImageSelection} className="hidden" accept="image/*" />
@@ -303,7 +303,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
           <Button type="submit" form="product-form" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save Product"}</Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
     </>
   );
 }

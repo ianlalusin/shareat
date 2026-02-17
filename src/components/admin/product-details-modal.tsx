@@ -29,7 +29,7 @@ export function ProductDetailsModal({ product, isOpen, onClose, onEdit, onDelete
                 <div className="flex items-start gap-4">
                      <div className="p-3 bg-muted rounded-md relative h-20 w-20 flex-shrink-0">
                         {product.imageUrl ? (
-                            <Image src={product.imageUrl} alt={product.name} layout="fill" objectFit="cover" className="rounded-md"/>
+                            <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md"/>
                         ) : (
                             <Package className="h-full w-full text-muted-foreground" />
                         )}

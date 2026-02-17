@@ -22,7 +22,7 @@ function toJsDate(v: any): Date | null {
   if (!v) return null;
   if (v instanceof Date) return v;
   if (v instanceof Timestamp) return v.toDate();
-  if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
+  if (typeof v?.toDate === "function") return v.toDate(); // Handle other timestamp-like objects
   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
     const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
     return isNaN(d.getTime()) ? null : d;
@@ -55,7 +55,7 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                 <div className="flex items-center gap-4">
                      <div className="p-3 bg-muted rounded-md relative h-20 w-20 flex-shrink-0">
                         {store.logoUrl ? (
-                            <Image src={store.logoUrl} alt={store.name} layout="fill" objectFit="contain" className="rounded-md"/>
+                            <Image src={store.logoUrl} alt={store.name} fill style={{objectFit:"contain"}} className="rounded-md"/>
                         ) : (
                             <ImageIcon className="h-full w-full text-muted-foreground" />
                         )}
