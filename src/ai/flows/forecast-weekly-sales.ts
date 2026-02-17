@@ -56,22 +56,26 @@ Your analysis must consider multiple factors:
 *   **Store Location**: {{{storeLocation}}}
 *   **Historical Sales**:
 {{#each historicalSales}}
-    - {{date}}: ₱{{netSales}}
+    - {{date}}: {{netSales}}
 {{/each}}
 *   **Upcoming Payroll Dates**: 
 {{#if upcomingPayrollDates}}
-    {{#each upcomingPayrollDates}}{{{this}}}{{/each}}
+{{#each upcomingPayrollDates}}
+    - {{{this}}}
+{{/each}}
 {{else}}
     None specified.
 {{/if}}
 *   **Upcoming Holidays**: 
 {{#if upcomingHolidays}}
-    {{#each upcomingHolidays}}{{{this}}}{{/each}}
+{{#each upcomingHolidays}}
+    - {{{this}}}
+{{/each}}
 {{else}}
     None specified.
 {{/if}}
 
-Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday") and a 'forecastedSales' property. Your reasoning should reflect the combined impact of all the factors provided.
+Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday") and a 'forecastedSales' property.
 `,
 });
 
