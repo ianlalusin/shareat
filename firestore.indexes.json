@@ -76,13 +76,7 @@
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
     },
-    {
-      "collectionGroup": "analytics",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "meta.dayStartMs", "order": "ASCENDING" }
-      ]
-    },
+    
     {
       "collectionGroup": "refillItems",
       "queryScope": "COLLECTION",
