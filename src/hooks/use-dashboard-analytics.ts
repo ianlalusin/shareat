@@ -196,11 +196,11 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
 
                 if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
                     if (validateAndUse(cached.data)) {
-                        console.log(`[useDashboardAnalytics] Using MEMORY CACHE for: ${presetId}`);
+                        // console.log(`[useDashboardAnalytics] Using MEMORY CACHE for: ${presetId}`);
                         setIsLoading(false);
                         return;
                     } else {
-                        console.warn(`[useDashboardAnalytics] Stale memory cache for ${presetId}. Refetching.`);
+                        // console.warn(`[useDashboardAnalytics] Stale memory cache for ${presetId}. Refetching.`);
                         presetCache.delete(cacheKey); // Evict stale cache
                     }
                 }
@@ -210,15 +210,15 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                 if (presetSnap.exists()) {
                     const presetData = presetSnap.data() as DailyMetric;
                     if (validateAndUse(presetData)) {
-                        console.log(`[useDashboardAnalytics] Using PRESET DOC for: ${presetId}`);
+                        // console.log(`[useDashboardAnalytics] Using PRESET DOC for: ${presetId}`);
                         presetCache.set(cacheKey, { data: presetData, timestamp: Date.now() });
                         setIsLoading(false);
                         return;
                     } else {
-                         console.warn(`[useDashboardAnalytics] Stale preset doc found for ${presetId}. Falling back to query.`);
+                         // console.warn(`[useDashboardAnalytics] Stale preset doc found for ${presetId}. Falling back to query.`);
                     }
                 } else {
-                    console.log(`[useDashboardAnalytics] Preset doc not found for ${presetId}, using fallback.`);
+                    // console.log(`[useDashboardAnalytics] Preset doc not found for ${presetId}, using fallback.`);
                 }
             }
             
@@ -292,5 +292,3 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         hasTopAddonItems
     };
 }
-
-    
