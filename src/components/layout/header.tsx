@@ -1,4 +1,3 @@
-
 'use client'
 
 import Link from 'next/link'
@@ -32,8 +31,14 @@ export default function Header({ user }: { user: User }) {
 
       <div className="flex items-center gap-2 md:gap-4">
         <div className="relative hidden flex-1 md:block md:grow-0">
-          <StoreSwitcher />
+          <StoreSwitcher className="text-black" />
         </div>
+        
+        {/* Mobile store switcher */}
+        <div className="md:hidden">
+            <StoreSwitcher className="text-destructive-foreground bg-transparent border-0 hover:bg-white/20 w-auto" />
+        </div>
+
         <UserNav user={user} />
         
         {/* Mobile Navigation Trigger */}
@@ -56,9 +61,6 @@ export default function Header({ user }: { user: User }) {
                 </Link>
               </SheetClose>
             </SheetHeader>
-            <div className="border-y border-white/20 p-4">
-                <StoreSwitcher variant="mobileSheet" onSelected={() => setIsMobileSheetOpen(false)} />
-            </div>
             <nav className="grid gap-6 p-4 text-lg font-medium">
               <MainNav role={user.role} isMobile={true} />
             </nav>
