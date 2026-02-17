@@ -76,7 +76,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDataAndForecast() {
@@ -85,7 +84,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         return;
       }
       setIsLoading(true);
-      setError(null);
 
       try {
         const today = new Date();
@@ -159,7 +157,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
 
         if (historicalSales.length < 7) {
-          setError("Not enough data to generate a forecast. At least 7 days of sales are required.");
+          setData([]);
           setIsLoading(false);
           return;
         }
@@ -217,8 +215,8 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         setData(finalChartData);
 
       } catch (err: any) {
-        console.error("Failed to fetch data or forecast sales:", err);
-        setError("Could not load sales forecast. " + err.message);
+        console.error("[SalesForecast] failed:", err);
+        throw err;
       } finally {
         setIsLoading(false);
       }
@@ -244,13 +242,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           <div className="h-[300px] flex items-center justify-center">
             <Loader2 className="animate-spin" />
           </div>
-        ) : error ? (
-           <div className="h-[300px] flex items-center justify-center">
-                <Alert variant="destructive" className="max-w-sm">
-                    <AlertTitle>Error</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            </div>
         ) : (
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
