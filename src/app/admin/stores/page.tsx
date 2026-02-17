@@ -100,7 +100,7 @@ export default function StoreManagementPage() {
     setIsDialogOpen(false);
   };
 
-  const handleSaveStore = async (storeData: Omit<Store, 'id' | 'createdAt' | 'updatedAt' | 'openingDate' | 'logoUrl'> & { openingDate?: Date | null, logoUrl?: string | null }) => {
+  const handleSaveStore = async (storeData: Omit<Store, 'id' | 'createdAt' | 'updatedAt' | 'openingDate' | 'logoUrl'> & { openingDate?: Date | null, logoUrl?: string | null, openingTime?: string, closingTime?: string }) => {
     if (!appUser) return;
     setIsSubmitting(true);
     

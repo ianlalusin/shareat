@@ -338,6 +338,8 @@ export type Store = {
   taxRatePct?: number;
   isActive: boolean;
   openingDate?: Timestamp | null;
+  openingTime?: string;
+  closingTime?: string;
   contactNumber?: string;
   email?: string;
   createdAt: any;

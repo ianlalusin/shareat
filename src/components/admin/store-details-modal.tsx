@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Edit, Globe, Mail, Phone, Calendar, Hash, MapPin, Image as ImageIcon } from "lucide-react";
+import { Edit, Globe, Mail, Phone, Calendar, Hash, MapPin, Image as ImageIcon, Clock } from "lucide-react";
 import type { Store } from "@/lib/types";
 import { format } from "date-fns";
 import { Timestamp } from "firebase/firestore";
@@ -23,12 +23,12 @@ function toJsDate(v: any): Date | null {
   if (v instanceof Date) return v;
   if (v instanceof Timestamp) return v.toDate();
   if (typeof v?.toDate === "function") return v.toDate(); // Timestamp-like
-  if (typeof v === "number" || typeof v === "string") {
-    const d = new Date(v);
+  if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
+    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
     return isNaN(d.getTime()) ? null : d;
   }
-   if (typeof v === 'object' && 'seconds' in v && 'nanoseconds' in v) {
-    const d = new Date(v.seconds * 1000 + v.nanoseconds / 1000000);
+  if (typeof v === "number" || typeof v === "string") {
+    const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
   }
   return null;
@@ -109,6 +109,10 @@ export function StoreDetailsModal({ store, isOpen, onClose, onEdit }: StoreDetai
                         <span className="font-medium text-sm">
                             {openingDate ? format(openingDate, 'MMMM dd, yyyy') : 'N/A'}
                         </span>
+                    </div>
+                    <div className="flex items-start justify-between">
+                        <span className="text-sm text-muted-foreground flex items-center gap-2"><Clock /> Operating Hours</span>
+                        <span className="font-medium text-sm text-right">{store.openingTime || 'N/A'} - {store.closingTime || 'N/A'}</span>
                     </div>
                 </div>
             </div>

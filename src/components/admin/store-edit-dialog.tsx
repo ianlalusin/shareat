@@ -34,6 +34,8 @@ const formSchema = z.object({
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   openingDate: z.date().optional().nullable(),
+  openingTime: z.string().optional(),
+  closingTime: z.string().optional(),
 });
 
 type StoreFormValues = z.infer<typeof formSchema>;
@@ -73,6 +75,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       name: "", code: "", address: "", tin: "", isActive: true,
       email: "", contactNumber: "", openingDate: null,
       logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
+      openingTime: "", closingTime: ""
     },
   });
 
@@ -104,6 +107,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         tin: store.tin || "", isActive: store.isActive,
         email: store.email || "", contactNumber: store.contactNumber || "",
         openingDate: toJsDate(store.openingDate),
+        openingTime: store.openingTime || "",
+        closingTime: store.closingTime || "",
         logoUrl: store.logoUrl || null,
         taxType: currentTaxType || "NON_VAT",
         taxRatePct: currentTaxRate
@@ -112,6 +117,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       form.reset({
         name: "", code: "", address: "", tin: "", isActive: true,
         email: "", contactNumber: "", openingDate: null,
+        openingTime: "", closingTime: "",
         logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
       });
     }
@@ -190,7 +196,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <FormField control={form.control} name="taxRatePct" render={({ field }) => ( <FormItem><FormLabel>Tax Rate (%)</FormLabel><FormControl><Input type="number" {...field} disabled={taxType === 'NON_VAT'} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                     <FormField
                         control={form.control}
                         name="openingDate"
@@ -208,21 +214,51 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                             </FormItem>
                         )}
                     />
-                    <FormItem>
-                        <FormLabel>Logo</FormLabel>
-                        <div className="flex items-center gap-4">
-                           <div className="w-16 h-16 rounded-md border flex items-center justify-center bg-muted/50 relative">
-                                {logoUrl ? (
-                                    <Image src={logoUrl} alt="Store logo" layout="fill" objectFit="contain" className="rounded-md" />
-                                ) : (
-                                    <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                                )}
-                           </div>
-                            <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!store}><UploadCloud className="mr-2" />Upload</Button>
-                            <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
-                        </div>
-                    </FormItem>
+                    <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                            control={form.control}
+                            name="openingTime"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Opening Time</FormLabel>
+                                    <FormControl>
+                                        <Input type="time" {...field} value={field.value ?? ""} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="closingTime"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Closing Time</FormLabel>
+                                    <FormControl>
+                                        <Input type="time" {...field} value={field.value ?? ""} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                    </div>
                 </div>
+
+                <FormItem>
+                    <FormLabel>Logo</FormLabel>
+                    <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-md border flex items-center justify-center bg-muted/50 relative">
+                            {logoUrl ? (
+                                <Image src={logoUrl} alt="Store logo" layout="fill" objectFit="contain" className="rounded-md" />
+                            ) : (
+                                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                            )}
+                        </div>
+                        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!store}><UploadCloud className="mr-2" />Upload</Button>
+                        <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
+                    </div>
+                </FormItem>
+
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
               </form>
             </Form>

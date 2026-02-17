@@ -43,6 +43,16 @@
         "isActive": {
           "type": "boolean",
           "description": "Indicates whether the store is currently active."
+        },
+        "openingTime": {
+          "type": "string",
+          "description": "The opening time of the store in HH:MM format.",
+          "format": "time"
+        },
+        "closingTime": {
+          "type": "string",
+          "description": "The closing time of the store in HH:MM format.",
+          "format": "time"
         }
       },
       "required": [
