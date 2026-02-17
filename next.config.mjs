@@ -1,31 +1,26 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disables trailing slashes (e.g., /about/ -> /about) to prevent redirects
-  // that can interfere with service worker registration.
   trailingSlash: false,
-
-  // Explicitly sets headers for the service worker file to ensure it's served
-  // with the correct content type and not cached improperly.
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "firebasestorage.googleapis.com",
+        pathname: "/v0/b/**",
+      },
+    ],
+  },
   async headers() {
     return [
       {
         source: '/sw.js',
         headers: [
-          {
-            key: 'Content-Type',
-            value: 'application/javascript; charset=utf-8',
-          },
-          {
-            key: 'Cache-Control',
-            value: 'no-cache, no-store, must-revalidate',
-          },
-          {
-            key: 'Service-Worker-Allowed',
-            value: '/',
-          }
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
-    ]
+    ];
   },
 };
 
