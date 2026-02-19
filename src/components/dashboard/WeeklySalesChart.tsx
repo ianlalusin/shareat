@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -13,6 +12,10 @@ import { Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
 import type { WeatherRecord, DailyMetric } from "@/lib/types";
+
+// --- Caching Constants ---
+const CACHE_KEY_PREFIX = 'weeklySalesChartData';
+const CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
 
 interface WeeklySalesChartProps {
   storeId: string;
@@ -30,34 +33,26 @@ function atStartOfDay(d: Date) {
   return x;
 }
 
-/**
- * Generates a list of upcoming payroll dates based on common mid-month and end-of-month schedules.
- * Adjusts for weekends by moving the payday to the preceding Friday.
- * @returns {string[]} An array of formatted payroll dates (YYYY-MM-DD).
- */
 function getUpcomingPayrollDates(): string[] {
     const dates: Date[] = [];
     const today = atStartOfDay(new Date());
 
-    // Look at current month and next two months for potential paydays
     for (let i = 0; i < 3; i++) {
         const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
         const year = d.getFullYear();
         const month = d.getMonth();
 
-        // Mid-month payday (around 15th)
         let midMonthPayday = new Date(year, month, 15);
-        if (midMonthPayday.getDay() === 6) { // Saturday -> Friday
+        if (midMonthPayday.getDay() === 6) { 
             midMonthPayday.setDate(midMonthPayday.getDate() - 1);
-        } else if (midMonthPayday.getDay() === 0) { // Sunday -> Friday
+        } else if (midMonthPayday.getDay() === 0) {
             midMonthPayday.setDate(midMonthPayday.getDate() - 2);
         }
 
-        // End-of-month payday (last day of month)
         let endOfMonthPayday = new Date(year, month + 1, 0);
-        if (endOfMonthPayday.getDay() === 6) { // Saturday -> Friday
+        if (endOfMonthPayday.getDay() === 6) {
             endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 1);
-        } else if (endOfMonthPayday.getDay() === 0) { // Sunday -> Friday
+        } else if (endOfMonthPayday.getDay() === 0) {
             endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 2);
         }
 
@@ -65,12 +60,12 @@ function getUpcomingPayrollDates(): string[] {
         if (endOfMonthPayday >= today) dates.push(endOfMonthPayday);
     }
     
-    // Using Set to handle duplicates, then sort and format.
     return [...new Set(dates.map(d => d.getTime()))]
         .map(time => new Date(time))
         .sort((a,b) => a.getTime() - b.getTime())
         .map(date => format(date, "yyyy-MM-dd"));
 }
+
 
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
@@ -86,14 +81,28 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
       }
       setIsLoading(true);
       setError(null);
+      
+      const cacheKey = `${CACHE_KEY_PREFIX}:${storeId}`;
+      try {
+        const cachedItem = localStorage.getItem(cacheKey);
+        if (cachedItem) {
+          const { timestamp, data: cachedData } = JSON.parse(cachedItem);
+          if (Date.now() - timestamp < CACHE_TTL) {
+            setData(cachedData);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not read weekly sales cache:", e);
+      }
 
       try {
         const today = new Date();
         const endDate = atStartOfDay(today);
-        const startDate = addDays(endDate, -27); // Fetch ~4 weeks of historical data
+        const startDate = addDays(endDate, -27);
         const todayDayId = format(today, "yyyyMMdd");
 
-        // Queries
         const salesQuery = query(
           collection(db, "stores", storeId, "analytics"),
           where("meta.dayStartMs", ">=", startDate.getTime()),
@@ -101,8 +110,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           orderBy("meta.dayStartMs", "asc")
         );
         const weatherQuery = collection(db, "stores", storeId, "weatherRecords");
-        
-        // Fetch today's live sales directly from the daily analytics doc for accuracy
         const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
 
         const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap] = await Promise.all([
@@ -118,7 +125,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           const dayId = data.meta.dayId;
           const netSales = data.payments?.totalGross || 0;
 
-          // Replace today's historical data (which might be partial) with the live data
           if (dayId === todayDayId) {
               return {
                   date: format(new Date(data.meta.dayStartMs), "yyyy-MM-dd"),
@@ -132,7 +138,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           };
         });
         
-        // Add today's live sales if not already in the historical data (e.g., if no other receipts exist for today)
         const hasTodayData = historicalSales.some(s => s.date === format(today, 'yyyy-MM-dd'));
         if (!hasTodayData && todayLiveSales > 0) {
             historicalSales.push({
@@ -144,7 +149,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const historicalWeather = weatherSnapshot.docs.map(doc => {
             const data = doc.data() as WeatherRecord;
             const conditions = data.entries.map(e => e.condition);
-            // Simple summary: find the most frequent condition
             const conditionCounts = conditions.reduce((acc, cond) => {
                 acc[cond] = (acc[cond] || 0) + 1;
                 return acc;
@@ -156,7 +160,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 condition: summary.replace('_', ' '),
             }
         });
-
 
         if (historicalSales.length < 7) {
           setData([]);
@@ -173,7 +176,6 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           upcomingPayrollDates,
         };
         
-        // Replace direct server action call with API route fetch
         const res = await fetch('/api/forecast-weekly-sales', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -181,8 +183,8 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         });
 
         if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`Failed to fetch forecast: ${res.statusText} - ${errorText}`);
+          const errorJson = await res.json().catch(() => ({ error: "Failed to parse error response." }));
+          throw new Error(errorJson.error || "Failed to fetch forecast.");
         }
 
         const forecastResult = await res.json();
@@ -192,23 +194,21 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
         const chartData = [];
 
-        // Build rolling 7 days ending today
         for (let i = 6; i >= 0; i--) {
             const currentDay = addDays(today, -i);
             const lastWeekDay = addDays(currentDay, -7);
 
             chartData.push({
-                name: format(currentDay, 'E'), // "Mon", "Tue"
+                name: format(currentDay, 'E'),
                 thisWeek: salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0,
                 lastWeek: salesByDate.get(format(lastWeekDay, "yyyy-MM-dd")) ?? 0,
-                forecast: 0, // No forecast for past days
+                forecast: 0,
             });
         }
         
-        // Add forecast data starting from tomorrow
         for (let i = 1; i <= 7; i++) {
             const forecastDay = addDays(today, i);
-            const dayName = format(forecastDay, 'EEEE'); // "Monday", "Tuesday"
+            const dayName = format(forecastDay, 'EEEE');
             const dayAbbr = format(forecastDay, 'E');
             
             const existingIndex = chartData.findIndex(d => d.name === dayAbbr);
@@ -223,11 +223,15 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 });
             }
         }
-        // Ensure we only have 7 days in the final chart, with today at the end.
         const finalChartData = chartData.slice(chartData.length - 7);
 
-
         setData(finalChartData);
+
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: finalChartData }));
+        } catch(e) {
+            console.warn("Could not write to weekly sales cache:", e);
+        }
 
       } catch (err: any) {
         console.error("[SalesForecast] failed:", err);

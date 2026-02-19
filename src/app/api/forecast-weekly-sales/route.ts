@@ -10,8 +10,9 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (e: any) {
     console.error("[api/forecast-weekly-sales] failed:", e);
+    // Send a more structured error response
     return NextResponse.json(
-      { error: e.message || "An unexpected error occurred." },
+      { error: e.message || "An unexpected error occurred while generating the forecast." },
       { status: 500 }
     );
   }
