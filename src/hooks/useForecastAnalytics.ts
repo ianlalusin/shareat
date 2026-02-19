@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, updateDoc, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, updateDoc, setDoc, serverTimestamp, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { format, addDays, subDays } from 'date-fns';
 import { forecastWeeklySales, type ForecastInput } from '@/ai/flows/forecast-weekly-sales';
