@@ -27,6 +27,7 @@ import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-c
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
+import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -157,6 +158,7 @@ export default function DashboardPageClient() {
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                      <ForecastAccuracyCard />
                     </div>
                 </div>
 

@@ -43,6 +43,16 @@
         "isActive": {
           "type": "boolean",
           "description": "Indicates whether the store is currently active."
+        },
+        "openingTime": {
+          "type": "string",
+          "description": "The opening time of the store in HH:MM format.",
+          "format": "time"
+        },
+        "closingTime": {
+          "type": "string",
+          "description": "The closing time of the store in HH:MM format.",
+          "format": "time"
         }
       },
       "required": [
@@ -1388,6 +1398,64 @@
         "address",
         "contact"
       ]
+    },
+    "WeatherEntry": {
+      "title": "Weather Entry",
+      "type": "object",
+      "description": "A single weather observation at a specific time.",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "condition": { "type": "string", "enum": ["sunny", "cloudy", "light_rain", "heavy_rain"] },
+        "activeSessionCount": { "type": "number" },
+        "activeGuestCount": { "type": "number" },
+        "loggedByUid": { "type": "string" }
+      },
+      "required": ["timestamp", "condition", "activeSessionCount", "activeGuestCount", "loggedByUid"]
+    },
+    "WeatherRecord": {
+      "title": "Daily Weather Record",
+      "type": "object",
+      "description": "A document containing all weather entries for a single day.",
+      "properties": {
+        "dayId": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#/backend/entities/WeatherEntry" }
+        }
+      },
+      "required": ["dayId"]
+    },
+    "SalesForecast": {
+      "title": "Sales Forecast",
+      "type": "object",
+      "description": "Stores a sales projection and the subsequent actual sales and accuracy.",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "The date of the forecast in YYYY-MM-DD format."
+        },
+        "projectedSales": {
+          "type": "number",
+          "description": "The forecasted sales amount."
+        },
+        "actualSales": {
+          "type": "number",
+          "description": "The actual sales recorded for that day."
+        },
+        "accuracy": {
+          "type": "number",
+          "description": "The calculated accuracy of the forecast, from 0 to 1."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "date",
+        "projectedSales",
+        "createdAt"
+      ]
     }
   },
   "auth": {
@@ -1859,6 +1927,43 @@
             {
               "name": "settingsId",
               "description": "Should be a fixed ID like 'config'."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/weatherRecords/{dayId}",
+        "definition": {
+          "entityName": "WeatherRecord",
+          "schema": {
+            "$ref": "#/backend/entities/WeatherRecord"
+          },
+          "description": "Stores a log of weather conditions throughout the day.",
+          "params": [
+            {
+              "name": "storeId"
+            },
+            {
+              "name": "dayId"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/salesForecasts/{date}",
+        "definition": {
+          "entityName": "SalesForecast",
+          "schema": {
+            "$ref": "#/backend/entities/SalesForecast"
+          },
+          "description": "Stores daily sales forecasts and their accuracy after the day has passed.",
+          "params": [
+            {
+              "name": "storeId"
+            },
+            {
+              "name": "date",
+              "description": "The date in YYYY-MM-DD format."
             }
           ]
         }

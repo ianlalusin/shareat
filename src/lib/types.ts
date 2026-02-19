@@ -671,4 +671,12 @@ export type WeatherRecord = {
   entries: WeatherEntry[];
 };
 
+export type SalesForecast = {
+  date: string; // YYYY-MM-DD
+  projectedSales: number;
+  actualSales?: number;
+  accuracy?: number;
+  createdAt: Timestamp;
+};
+
 export type { ReceiptData, ReceiptSession, ReceiptSettings };
