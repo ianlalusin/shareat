@@ -1,9 +1,9 @@
-
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Receipt, Users, BarChart } from "lucide-react";
+import Link from "next/link";
 
 // Inline SVG for Peso Sign
 const PesoSign = ({ className }: { className?: string }) => (
@@ -37,7 +37,7 @@ interface StatCardsProps {
     isLoading: boolean;
 }
 
-function StatCard({ title, value, description, icon, isLoading, format = "number" }: { title: string, value: string | number, description?: string, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number" }) {
+function StatCard({ title, value, description, icon, isLoading, format = "number", className }: { title: string, value: string | number, description?: string, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number", className?: string }) {
     
     const formattedValue = () => {
         if (isLoading) return "—";
@@ -52,7 +52,7 @@ function StatCard({ title, value, description, icon, isLoading, format = "number
     };
 
     return (
-        <Card>
+        <Card className={className}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{title}</CardTitle>
                 {icon}
@@ -74,7 +74,9 @@ function StatCard({ title, value, description, icon, isLoading, format = "number
 export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) {
     return (
         <>
-            <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
+            <Link href="/receipts">
+              <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" className="hover:bg-muted/50 transition-colors" />
+            </Link>
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
             {activeSessions !== undefined && <StatCard title="Active Sessions" value={`${activeSessions.count} - ${activeSessions.guests} guests`} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
             <StatCard title="Avg Spending" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
