@@ -66,6 +66,39 @@ function getUpcomingPayrollDates(): string[] {
         .map(date => format(date, "yyyy-MM-dd"));
 }
 
+// Helper to find e.g., the 2nd Sunday of a month
+function getNthDayOfMonth(n: number, day: number, month: number, year: number) {
+    const d = new Date(year, month, 1);
+    let count = 0;
+    while (count < n) {
+        if (d.getDay() === day) {
+            count++;
+            if (count === n) break;
+        }
+        d.setDate(d.getDate() + 1);
+    }
+    return d;
+}
+
+// Helper function to get upcoming holidays
+function getUpcomingHolidays(year: number): { name: string; date: string }[] {
+    const holidays = [
+        { name: "New Year's Day", date: new Date(year, 0, 1) },
+        { name: "Valentine's Day", date: new Date(year, 1, 14) },
+        // Mother's Day: 2nd Sunday in May
+        { name: "Mother's Day", date: getNthDayOfMonth(2, 0, 4, year) },
+        // Father's Day: 3rd Sunday in June
+        { name: "Father's Day", date: getNthDayOfMonth(3, 0, 5, year) },
+        { name: "Christmas Day", date: new Date(year, 11, 25) },
+        { name: "New Year's Eve", date: new Date(year, 11, 31) },
+    ];
+
+    const today = atStartOfDay(new Date());
+    return holidays
+        .filter(h => h.date >= today) // Only future holidays
+        .map(h => ({ name: h.name, date: format(h.date, 'yyyy-MM-dd') }));
+}
+
 
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
@@ -169,11 +202,15 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
         const upcomingPayrollDates = getUpcomingPayrollDates();
 
+        // NEW: Get upcoming holidays
+        const upcomingHolidays = getUpcomingHolidays(today.getFullYear()).map(h => `${h.name} on ${h.date}`);
+
         const forecastInput: ForecastInput = {
           historicalSales,
           historicalWeather,
           storeLocation: activeStore.address,
           upcomingPayrollDates,
+          upcomingHolidays,
         };
         
         const res = await fetch('/api/forecast-weekly-sales', {
