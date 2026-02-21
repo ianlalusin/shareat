@@ -45,7 +45,7 @@ export type ReceiptSettings = {
   showItemNotes: boolean;
   showDiscountBreakdown: boolean;
   showChargeBreakdown: boolean;
-  paperWidth?: "58mm" | "80mm" | "A4";
+  paperWidth?: "58mm" | "80mm";
   receiptNoFormat?: string;
   autoPrintAfterPayment: boolean;
   fontSize?: number;
@@ -67,7 +67,7 @@ export type ReceiptData = {
 interface ReceiptViewProps {
     data: ReceiptData | null;
     paymentMethods?: ModeOfPayment[];
-    forcePaperWidth?: "58mm" | "80mm" | "A4";
+    forcePaperWidth?: "58mm" | "80mm";
 }
 
 function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '', suffix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string, suffix?: string }) {
@@ -238,7 +238,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
             </section>
 
              <hr className="border-dashed border-black my-2" />
-             <section className="space-y-px mb-2 text-xs receipt-section">
+             <section className="space-y-px mb-2 receipt-section">
                 <ReceiptRow label="Subtotal" value={subtotal} isCurrency />
                 {(discountsTotal > 0) && (
                     <ReceiptRow label="Discounts" value={discountsTotal} isCurrency prefix="(- " suffix=")" />
@@ -251,7 +251,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
              {(taxAmount > 0) && (
                  <>
                     <hr className="border-dashed border-black my-2" />
-                    <section className="space-y-px mb-2 text-[10px] receipt-section">
+                    <section className="space-y-px mb-2 receipt-section">
                          <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
                          <ReceiptRow label="VAT Exempt Sales" value={0} isCurrency />
                          <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
@@ -266,7 +266,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
              </section>
             
              <hr className="border-dashed border-black my-2" />
-             <section className="space-y-px mb-2 text-xs receipt-section">
+             <section className="space-y-px mb-2 receipt-section">
                 {paymentsFromAnalytics.map((p, i) => (
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
                 ))}
@@ -293,5 +293,3 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
         </div>
     );
 }
-
-    
