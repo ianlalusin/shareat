@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -84,6 +85,29 @@ function aggregateRefills(metrics: DailyMetric[], topN: number = 5): TopRefillRo
     .sort((a, b) => b.qty - a.qty)
     .slice(0, topN);
 }
+
+function aggregateTopAddons(metrics: DailyMetric[]): TopAddonRow[] {
+  const itemMap: Record<string, TopAddonRow> = {};
+
+  metrics.forEach(metric => {
+    // The field might not exist on older documents, and could be under sales.addonSalesByItem or sales.salesByItem
+    const items = (metric.sales as any)?.addonSalesByItem || (metric.sales as any)?.salesByItem || {};
+    for (const [name, data] of Object.entries(items as Record<string, any>)) {
+      // Check if it's not a package by looking for it in package sales
+      const isPackage = metric.sales?.packageSalesAmountByName && name in metric.sales.packageSalesAmountByName;
+      if (isPackage) continue;
+
+      if (!itemMap[name]) {
+        itemMap[name] = { name, qty: 0, amount: 0, categoryName: data.categoryName || 'Uncategorized' };
+      }
+      itemMap[name].qty += data.qty || 0;
+      itemMap[name].amount += data.amount || 0;
+    }
+  });
+
+  return Object.values(itemMap).sort((a, b) => b.amount - a.amount);
+}
+
 
 const presetIdMap: Partial<Record<DatePreset, string>> = {
     today: "today",
@@ -241,11 +265,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                 if (cancelled) return;
 
                 const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
+                const aggregatedAddons = aggregateTopAddons(metrics);
+                
                 setDailyMetrics(metrics);
                 setTopCategories(aggregateAddonCategories(metrics));
                 setTopRefills(aggregateRefills(metrics));
-                setTopAddonItems([]); // No subcollection reads in fallback
-                setHasTopAddonItems(false);
+                setTopAddonItems(aggregatedAddons);
+                setHasTopAddonItems(aggregatedAddons.length > 0);
             }
         }
         
@@ -292,3 +318,5 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
         hasTopAddonItems
     };
 }
+
+    
