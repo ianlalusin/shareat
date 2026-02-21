@@ -155,13 +155,13 @@ export default function DashboardPageClient() {
 
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
                     <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
-                    <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
                 </div>
                 
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     <div className="lg:col-span-2 space-y-6">
                       <WeeklySalesChart storeId={activeStore.id} />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
                         <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
                       </div>
                     </div>
