@@ -1,15 +1,16 @@
+
 "use client";
 
-import { useForecastAnalytics } from '@/hooks/useForecastAnalytics';
-import { useStoreContext } from '@/context/store-context';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Loader2, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export function ForecastAccuracyCard() {
-    const { activeStore } = useStoreContext();
-    const { accuracy, isLoading } = useForecastAnalytics(activeStore?.id, activeStore?.address);
-    
+interface ForecastAccuracyCardProps {
+    accuracy: number | null;
+    isLoading: boolean;
+}
+
+export function ForecastAccuracyCard({ accuracy, isLoading }: ForecastAccuracyCardProps) {
     const accuracyPercent = accuracy !== null ? (accuracy * 100).toFixed(1) : null;
     const accuracyColor = accuracy !== null 
         ? accuracy > 0.85 ? 'text-green-600' : accuracy > 0.7 ? 'text-amber-600' : 'text-red-600'

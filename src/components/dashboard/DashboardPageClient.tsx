@@ -159,8 +159,12 @@ export default function DashboardPageClient() {
                 </div>
                 
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-2 space-y-6">
                       <WeeklySalesChart storeId={activeStore.id} />
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
+                        <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
+                      </div>
                     </div>
                     <div className="space-y-6">
                       <Card>
@@ -168,10 +172,6 @@ export default function DashboardPageClient() {
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                      <div className="grid grid-cols-2 gap-6">
-                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
-                        <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
-                      </div>
                     </div>
                 </div>
 
