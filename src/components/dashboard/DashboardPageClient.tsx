@@ -29,7 +29,7 @@ import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
 import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
-import { WeatherLogCard } from "@/components/dashboard/WeatherLogCard";
+import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 
 
@@ -177,7 +177,7 @@ export default function DashboardPageClient() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                     <TopCategoryCard 
                         categorySales={topCategories}
                         topAddonItems={topAddonItems}
@@ -191,7 +191,6 @@ export default function DashboardPageClient() {
                         isLoading={isLoading} 
                         topRefills={topRefills} 
                     />
-                    <WeatherLogCard storeId={activeStore.id} />
                 </div>
             </div>
 
@@ -201,6 +200,10 @@ export default function DashboardPageClient() {
                     onClose={closeModal}
                     storeId={activeStore.id}
                 />
+            )}
+            
+            {activeStore?.id && (
+                <WeatherLogFloatingButton storeId={activeStore.id} />
             )}
         </RoleGuard>
     );
