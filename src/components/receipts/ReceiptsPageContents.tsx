@@ -768,6 +768,7 @@ export default function ReceiptsPageContents() {
                     </Card>
                 </div>
             </div>
+        </div>
             
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
