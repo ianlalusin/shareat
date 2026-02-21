@@ -165,15 +165,15 @@ export default function DashboardPageClient() {
                         <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
                         <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
                       </div>
-                      <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                       <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                     <div className="space-y-6">
                       <Card>
                           <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
-                       <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                 </div>
 
