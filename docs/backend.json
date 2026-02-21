@@ -1382,7 +1382,8 @@
           "type": "string",
           "enum": [
             "58mm",
-            "80mm"
+            "80mm",
+            "A4"
           ]
         },
         "receiptNoFormat": {
@@ -1390,6 +1391,12 @@
         },
         "autoPrintAfterPayment": {
           "type": "boolean"
+        },
+        "fontSize": {
+          "type": "number"
+        },
+        "fontFamily": {
+          "type": "string"
         }
       },
       "required": [

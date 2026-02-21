@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 export type ReceiptSession = {
@@ -28,24 +28,6 @@ export type ReceiptSession = {
     startedByUid: string;
     verifiedByUid?: string;
     cashierName?: string;
-};
-
-export type ReceiptSettings = {
-    businessName?: string;
-    branchName?: string;
-    address?: string;
-    contact?: string;
-    tin?: string;
-    vatType?: "VAT" | "NON_VAT";
-    logoUrl?: string;
-    footerText?: string;
-    showCashierName?: boolean;
-    showTableOrCustomer?: boolean;
-    showItemNotes?: boolean;
-    showDiscountBreakdown?: boolean;
-    showChargeBreakdown?: boolean;
-    paperWidth?: "58mm" | "80mm" | "A4";
-    receiptNoFormat?: string;
 };
 
 export type ReceiptData = {
@@ -135,11 +117,16 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const paymentsFromAnalytics = Object.entries(mop).map(([methodId, amount]) => ({ methodId, amount: amount as number }));
     const vatableSales = grandTotal - taxAmount;
 
+    const receiptStyles: React.CSSProperties = {
+        fontFamily: settings?.fontFamily || "'Courier New', Courier, monospace",
+        fontSize: `${settings?.fontSize || 12}px`,
+    };
+
     return (
         <div 
             data-paper-width={paperWidth} 
-            className="receipt-view bg-white text-black font-mono mx-auto p-4 shadow-lg border-t-[5mm] border-transparent"
-            style={{ fontSize: '12px' }}
+            className="receipt-view bg-white text-black mx-auto p-4 shadow-lg border-t-[5mm] border-transparent"
+            style={receiptStyles}
         >
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && (

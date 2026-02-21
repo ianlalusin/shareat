@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase/firestore";
-import type { ReceiptData, ReceiptSession, ReceiptSettings } from "@/components/receipt/receipt-view";
+import type { ReceiptData, ReceiptSession, ReceiptSettings as ReceiptSettingsFromComponent } from "@/components/receipt/receipt-view";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
 
@@ -679,4 +679,9 @@ export type SalesForecast = {
   createdAt: Timestamp;
 };
 
-export type { ReceiptData, ReceiptSession, ReceiptSettings };
+export interface ReceiptSettings extends ReceiptSettingsFromComponent {
+    fontSize?: number;
+    fontFamily?: string;
+}
+
+export type { ReceiptData, ReceiptSession };
