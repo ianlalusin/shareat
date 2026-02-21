@@ -30,6 +30,7 @@ import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
 import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogCard } from "@/components/dashboard/WeatherLogCard";
+import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
@@ -160,7 +161,7 @@ export default function DashboardPageClient() {
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     <div className="lg:col-span-2 space-y-6">
                       <WeeklySalesChart storeId={activeStore.id} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
                         <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
                       </div>
@@ -171,8 +172,8 @@ export default function DashboardPageClient() {
                           <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
+                       <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                 </div>
 
