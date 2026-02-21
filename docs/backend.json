@@ -1424,6 +1424,38 @@
         }
       },
       "required": ["dayId"]
+    },
+    "SalesForecast": {
+      "title": "Sales Forecast",
+      "type": "object",
+      "description": "Stores a sales projection and the subsequent actual sales and accuracy.",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "The date of the forecast in YYYY-MM-DD format."
+        },
+        "projectedSales": {
+          "type": "number",
+          "description": "The forecasted sales amount."
+        },
+        "actualSales": {
+          "type": "number",
+          "description": "The actual sales recorded for that day."
+        },
+        "accuracy": {
+          "type": "number",
+          "description": "The calculated accuracy of the forecast, from 0 to 1."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "date",
+        "projectedSales",
+        "createdAt"
+      ]
     }
   },
   "auth": {
@@ -1913,6 +1945,25 @@
             },
             {
               "name": "dayId"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/stores/{storeId}/salesForecasts/{date}",
+        "definition": {
+          "entityName": "SalesForecast",
+          "schema": {
+            "$ref": "#/backend/entities/SalesForecast"
+          },
+          "description": "Stores daily sales forecasts and their accuracy after the day has passed.",
+          "params": [
+            {
+              "name": "storeId"
+            },
+            {
+              "name": "date",
+              "description": "The date in YYYY-MM-DD format."
             }
           ]
         }

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -28,6 +29,9 @@ import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
+import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
+import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
+
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtDate(d: Date) {
@@ -75,6 +79,12 @@ export default function DashboardPageClient() {
         preset: datePreset,
         customRange,
     });
+    
+    const { 
+        accuracy, 
+        todaysProjectedSales, 
+        isLoading: isForecastLoading 
+    } = useForecastAnalytics(activeStore?.id, activeStore?.address);
     
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
@@ -148,7 +158,7 @@ export default function DashboardPageClient() {
                     <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
                 </div>
                 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     <div className="lg:col-span-2">
                       <WeeklySalesChart storeId={activeStore.id} />
                     </div>
@@ -158,7 +168,10 @@ export default function DashboardPageClient() {
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                      <ForecastAccuracyCard />
+                      <div className="grid grid-cols-2 gap-6">
+                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
+                        <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
+                      </div>
                     </div>
                 </div>
 

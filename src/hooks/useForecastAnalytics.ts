@@ -1,15 +1,14 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, updateDoc, setDoc, serverTimestamp, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { format, addDays, subDays } from 'date-fns';
 import { forecastWeeklySales, type ForecastInput } from '@/ai/flows/forecast-weekly-sales';
 import type { DailyMetric, SalesForecast } from '@/lib/types';
 
-const FORECAST_ANALYTICS_KEY = 'forecast-analytics-last-run';
-const RUN_INTERVAL_HOURS = 22;
+const FORECAST_ANALYTICS_LAST_RUN_DATE_KEY = 'forecast-analytics-last-run-date';
 
 async function runForecastAnalytics(storeId: string, storeAddress: string) {
   const now = new Date();
@@ -39,10 +38,11 @@ async function runForecastAnalytics(storeId: string, storeAddress: string) {
   }
 
   // --- 2. Generate Forecasts for the upcoming week if needed ---
-  const todayForecastRef = doc(db, 'stores', storeId, 'salesForecasts', todayStr);
-  const todayForecastSnap = await getDoc(todayForecastRef);
+  // Check if forecast for *tomorrow* exists. If not, generate for the week.
+  const forecastForTomorrowRef = doc(db, 'stores', storeId, 'salesForecasts', format(addDays(now, 1), 'yyyy-MM-dd'));
+  const forecastForTomorrowSnap = await getDoc(forecastForTomorrowRef);
 
-  if (!todayForecastSnap.exists()) {
+  if (!forecastForTomorrowSnap.exists()) {
     // Fetch last 28 days of sales data
     const historyEndDate = subDays(now, 1);
     const historyStartDate = subDays(historyEndDate, 27);
@@ -83,10 +83,7 @@ async function runForecastAnalytics(storeId: string, storeAddress: string) {
             const forecastDayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dailyForecast.day);
             
             let dayDiff = forecastDayIndex - todayDayIndex;
-            if (dayDiff < 0) {
-                dayDiff += 7;
-            }
-            if (dayDiff === 0) { // If it's the same day of the week, it must be next week
+            if (dayDiff <= 0) { // If it's today or a past day of the week, schedule for next week
                 dayDiff += 7;
             }
 
@@ -106,46 +103,62 @@ async function runForecastAnalytics(storeId: string, storeAddress: string) {
   }
 }
 
-
 export function useForecastAnalytics(storeId?: string, storeAddress?: string) {
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [todaysProjectedSales, setTodaysProjectedSales] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Effect for the "cron" job
+  // Effect for the daily "cron" job
   useEffect(() => {
     if (!storeId || !storeAddress) return;
 
-    const lastRun = localStorage.getItem(FORECAST_ANALYTICS_KEY);
-    const shouldRun = !lastRun || (Date.now() - Number(lastRun) > RUN_INTERVAL_HOURS * 60 * 60 * 1000);
+    const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+    const lastRunDate = localStorage.getItem(FORECAST_ANALYTICS_LAST_RUN_DATE_KEY);
+    
+    const shouldRun = lastRunDate !== todayDateStr;
 
     if (shouldRun) {
       runForecastAnalytics(storeId, storeAddress).then(() => {
-        localStorage.setItem(FORECAST_ANALYTICS_KEY, Date.now().toString());
+        localStorage.setItem(FORECAST_ANALYTICS_LAST_RUN_DATE_KEY, todayDateStr);
       }).catch(error => {
         console.error("Error running forecast analytics tasks:", error);
       });
     }
   }, [storeId, storeAddress]);
 
-  // Effect for fetching and displaying accuracy
+  // Combined effect for fetching accuracy and today's forecast
   useEffect(() => {
     if (!storeId) {
       setAccuracy(null);
+      setTodaysProjectedSales(null);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
 
-    const q = query(
+    // --- Listener for today's forecast ---
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayForecastRef = doc(db, 'stores', storeId, 'salesForecasts', todayStr);
+    const unsubToday = onSnapshot(todayForecastRef, (snap) => {
+      if (snap.exists()) {
+        setTodaysProjectedSales(snap.data().projectedSales ?? null);
+      } else {
+        setTodaysProjectedSales(null);
+      }
+      // Don't set loading false here, wait for accuracy
+    });
+
+    // --- Listener for 7-day accuracy ---
+    const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+    const accuracyQuery = query(
       collection(db, 'stores', storeId, 'salesForecasts'),
       where('accuracy', '>=', 0),
       where('date', '>=', sevenDaysAgo),
       orderBy('date', 'desc'),
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubAccuracy = onSnapshot(accuracyQuery, (snapshot) => {
       if (snapshot.empty) {
         setAccuracy(null);
       } else {
@@ -153,6 +166,7 @@ export function useForecastAnalytics(storeId?: string, storeAddress?: string) {
         const avgAccuracy = accuracies.reduce((sum, acc) => sum + acc, 0) / accuracies.length;
         setAccuracy(avgAccuracy);
       }
+      // This is the last listener, so we can set loading state
       setIsLoading(false);
     }, (error) => {
       console.error("Error fetching forecast accuracy:", error);
@@ -160,8 +174,11 @@ export function useForecastAnalytics(storeId?: string, storeAddress?: string) {
       setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubToday();
+      unsubAccuracy();
+    };
   }, [storeId]);
 
-  return { accuracy, isLoading };
+  return { accuracy, todaysProjectedSales, isLoading };
 }
