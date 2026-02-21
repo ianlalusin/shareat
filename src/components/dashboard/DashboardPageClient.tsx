@@ -172,11 +172,11 @@ export default function DashboardPageClient() {
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                    <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <TopCategoryCard 
                         categorySales={topCategories}
                         topAddonItems={topAddonItems}
