@@ -12,6 +12,7 @@ import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
 import type { WeatherEntry, WeatherRecord } from "@/lib/types";
 import { Skeleton } from "../ui/skeleton";
+import { ScrollArea } from "../ui/scroll-area";
 
 const weatherIcons: Record<string, React.ElementType> = {
   sunny: Sun,
@@ -53,7 +54,7 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                     const timeB = toJsDate(b.timestamp)?.getTime() || 0;
                     return timeB - timeA;
                 });
-                setEntries(sortedEntries); // Keep all entries for the modal
+                setEntries(sortedEntries);
             } else {
                 setEntries([]);
             }
@@ -80,38 +81,39 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                     {isLoading ? <Skeleton className="h-8 w-8 rounded-full" /> : <LatestIcon className="h-8 w-8" />}
                 </Button>
             </SheetTrigger>
-            <SheetContent>
+            <SheetContent className="flex flex-col">
                 <SheetHeader>
                     <SheetTitle>Today's Weather Log</SheetTitle>
                     <SheetDescription>
                         A log of weather conditions recorded today.
                     </SheetDescription>
                 </SheetHeader>
-                <div className="py-4">
-                    {entries.length === 0 ? (
-                        <p className="text-center text-sm text-muted-foreground py-10">No weather logged today.</p>
-                    ) : (
-                        <div className="space-y-4">
-                            {entries.slice(0, 10).map((entry, index) => {
-                                const entryDate = toJsDate(entry.timestamp);
-                                if (!entryDate) return null;
+                <ScrollArea className="flex-1">
+                  <div className="py-4 pr-6">
+                      {entries.length === 0 ? (
+                          <p className="text-center text-sm text-muted-foreground py-10">No weather logged today.</p>
+                      ) : (
+                          <div className="space-y-4">
+                              {entries.map((entry, index) => {
+                                  const entryDate = toJsDate(entry.timestamp);
+                                  if (!entryDate) return null;
 
-                                const Icon = getWeatherIcon(entry.condition, entryDate);
-                                
-                                return (
-                                    <div key={index} className="flex items-center justify-between text-sm p-2 border-b">
-                                        <span className="text-muted-foreground">{format(entryDate, 'p')}</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="capitalize font-medium">{entry.condition.replace('_', ' ')}</span>
-                                            <Icon className="h-5 w-5" />
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                            {entries.length > 10 && <p className="text-center text-xs text-muted-foreground mt-4">Showing last 10 entries.</p>}
-                        </div>
-                    )}
-                </div>
+                                  const Icon = getWeatherIcon(entry.condition, entryDate);
+                                  
+                                  return (
+                                      <div key={index} className="flex items-center justify-between text-sm p-2 border-b">
+                                          <span className="text-muted-foreground">{format(entryDate, 'p')}</span>
+                                          <div className="flex items-center gap-2">
+                                              <span className="capitalize font-medium">{entry.condition.replace('_', ' ')}</span>
+                                              <Icon className="h-5 w-5" />
+                                          </div>
+                                      </div>
+                                  )
+                              })}
+                          </div>
+                      )}
+                  </div>
+                </ScrollArea>
             </SheetContent>
         </Sheet>
     );
