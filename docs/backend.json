@@ -1382,8 +1382,7 @@
           "type": "string",
           "enum": [
             "58mm",
-            "80mm",
-            "A4"
+            "80mm"
           ]
         },
         "receiptNoFormat": {

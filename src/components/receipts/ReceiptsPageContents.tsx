@@ -634,62 +634,63 @@ export default function ReceiptsPageContents() {
     
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
-            <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => router.back()}>
-                        <ArrowLeft className="mr-2 h-4 w-4" /> Back
-                    </Button>
-                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
-                        {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
-                        Export
-                    </Button>
-                    <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
-                </div>
-            </PageHeader>
-            
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
-                <div className="relative flex-1 w-full sm:w-auto">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                </div>
-                <div className="flex flex-col items-start sm:items-end gap-2">
-                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
-                        {presets.map(p => (
-                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                        ))}
-                        <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                            <PopoverTrigger asChild>
-                                <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
-                        </Popover>
+            <div className="no-print">
+                <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => router.back()}>
+                            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                        </Button>
+                        <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
+                            {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
+                            Export
+                        </Button>
+                        <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                     </div>
-                     <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                </PageHeader>
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
+                    <div className="relative flex-1 w-full sm:w-auto">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col items-start sm:items-end gap-2">
+                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                            {presets.map(p => (
+                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                            ))}
+                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                            </Popover>
+                        </div>
+                         <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                    </div>
                 </div>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Transactions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {isLoadingReceipts ? <div className="flex justify-center p-8"><Loader2 className="mx-auto animate-spin" /></div> : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Identifier</TableHead>
-                                        <TableHead>Total</TableHead>
-                                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredReceipts.map(r => {
-                                        const isVoidDisabled =
-                                            (isProcessing === r.id) ||
-                                            (r.status === "voided") ||
-                                            ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
-                                        return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Transactions</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {isLoadingReceipts ? <div className="flex justify-center p-8"><Loader2 className="mx-auto animate-spin" /></div> : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Identifier</TableHead>
+                                            <TableHead>Total</TableHead>
+                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredReceipts.map(r => {
+                                            const isVoidDisabled =
+                                                (isProcessing === r.id) ||
+                                                (r.status === "voided") ||
+                                                ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
+                                            return (
                                         <TableRow 
                                             key={r.id} 
                                             onClick={(e) => {
@@ -823,10 +824,12 @@ export default function ReceiptsPageContents() {
             />
 
             {/* This div is only for printing */}
-            <div className="hidden print-block">
+            <div id="receipt-print-root" className="hidden print-block">
                 {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
     )
 }
+
+    

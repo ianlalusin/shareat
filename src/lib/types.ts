@@ -685,3 +685,5 @@ export interface ReceiptSettings extends ReceiptSettingsFromComponent {
 }
 
 export type { ReceiptData, ReceiptSession };
+
+    

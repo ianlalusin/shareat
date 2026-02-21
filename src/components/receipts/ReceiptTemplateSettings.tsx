@@ -33,7 +33,7 @@ export const receiptSettingsSchema = z.object({
   showItemNotes: z.boolean().default(true),
   showDiscountBreakdown: z.boolean().default(true),
   showChargeBreakdown: z.boolean().default(true),
-  paperWidth: z.enum(["58mm", "80mm", "A4"]).default("80mm"),
+  paperWidth: z.enum(["58mm", "80mm"]).default("80mm"),
   receiptNoFormat: z.string().optional(),
   autoPrintAfterPayment: z.boolean().default(false),
   fontSize: z.number().min(8).max(16).default(12),
@@ -89,7 +89,7 @@ export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsPro
             <div className="space-y-4 p-4 border rounded-lg">
                 <h3 className="font-semibold">Formatting & Behavior</h3>
                  <div className="grid md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="paperWidth" render={({ field }) => <FormItem><FormLabel>Paper Width</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="58mm">58mm (Small Thermal)</SelectItem><SelectItem value="80mm">80mm (Standard Thermal)</SelectItem><SelectItem value="A4">A4</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="paperWidth" render={({ field }) => <FormItem><FormLabel>Paper Width</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="58mm">58mm (Small Thermal)</SelectItem><SelectItem value="80mm">80mm (Standard Thermal)</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="receiptNoFormat" render={({ field }) => <FormItem><FormLabel>Receipt No. Format</FormLabel><FormControl><Input placeholder="e.g., SEV5-{YYYY}-{####}" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="footerText" render={({ field }) => <FormItem className="md:col-span-2"><FormLabel>Footer Text</FormLabel><FormControl><Textarea {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
                      <FormField control={form.control} name="autoPrintAfterPayment" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3 col-span-2"><FormLabel>Auto-print after payment</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
@@ -143,3 +143,5 @@ export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsPro
     </Form>
   );
 }
+
+    
