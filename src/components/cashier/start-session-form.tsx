@@ -42,13 +42,13 @@ const unlimitedSchema = z.object({
     cheeseQty: z.coerce.number().min(0),
     initialFlavorIds: z.array(z.string()).min(1, "Select at least one flavor.").max(3, "You can select up to 3 flavors."),
     notes: z.string().optional(),
-    customerName: z.string().optional(),
+    customerName: z.string().min(2, "Customer name is required."),
     customerTin: z.string().optional(),
     customerAddress: z.string().optional(),
 });
 
 const alacarteSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required."),
+  customerName: z.string().min(2, "Customer name is required."),
   customerTin: z.string().optional(),
   customerAddress: z.string().optional(),
 });
@@ -193,11 +193,6 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         }
         
         const name = (data.customerName || "").trim();
-        if (!name) {
-            alaCarteForm.setError("customerName", { type: "manual", message: "Customer name is required."})
-            toast({ variant: 'destructive', title: 'Validation Error', description: 'Customer name cannot be empty.'});
-            return;
-        }
 
         setIsSubmitting(true);
         
@@ -371,7 +366,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                         name="customerName"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <Label>Customer Name (Optional)</Label>
+                                                <Label>Customer Name</Label>
                                                 <FormControl>
                                                     <Input {...field} />
                                                 </FormControl>
