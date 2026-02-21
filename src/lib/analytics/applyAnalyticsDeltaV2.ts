@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -259,7 +260,7 @@ export async function applyAnalyticsDeltaV2(
 
     const catQtyDelta: Record<string, number> = {};
     const catAmtDelta: Record<string, number> = {};
-
+    
     const allAddonItems = new Set([
       ...Object.keys(dayOld.sales.addonSalesByItem || {}),
       ...Object.keys(dayNew.sales.addonSalesByItem || {}),
@@ -271,7 +272,13 @@ export async function applyAnalyticsDeltaV2(
 
       const qtyDelta = (newItem?.qty || 0) - (oldItem?.qty || 0);
       const amtDelta = (newItem?.amount || 0) - (oldItem?.amount || 0);
-      if (qtyDelta === 0 && amtDelta === 0) return;
+      
+      if (qtyDelta !== 0) {
+          payload[`sales.addonSalesByItem.${safeKey(itemName)}.qty`] = increment(qtyDelta);
+      }
+      if (amtDelta !== 0) {
+           payload[`sales.addonSalesByItem.${safeKey(itemName)}.amount`] = increment(amtDelta);
+      }
 
       const cat = safeKey(newItem?.categoryName ?? oldItem?.categoryName ?? "Uncategorized");
       catQtyDelta[cat] = (catQtyDelta[cat] ?? 0) + qtyDelta;

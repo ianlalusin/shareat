@@ -1,3 +1,4 @@
+
 'use client';
 
 import { doc, type Firestore } from "firebase/firestore";
@@ -195,47 +196,28 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
     if (!r) return defaultReturn;
     if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
     
-    const analytics = r.analytics as ReceiptAnalyticsV2;
+    const analytics = r.analytics as any; // Use any to access new properties
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     const dayId = eventMs ? getDayIdFromTimestamp(eventMs) : "";
     const dayStartMs = eventMs ? getDayStartMs(eventMs) : 0;
+    
+    const packageSalesAmountByName = analytics.packageSalesAmountByName ?? {};
+    const packageSalesQtyByName = analytics.packageSalesQtyByName ?? {};
+    const addonSalesByItem = analytics.addonSalesByItem ?? {};
+    const addonSalesAmountByCategory = analytics.salesByCategory ?? {};
 
-    const packageSalesAmountByName: Record<string, number> = {};
-    const packageSalesQtyByName: Record<string, number> = {};
-    const addonSalesAmountByCategory: Record<string, number> = {};
     const addonSalesQtyByCategory: Record<string, number> = {};
-    const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
-    let dineInAddonSalesAmount = 0;
-
-
-    if (analytics.salesByCategory) {
-        for (const [categoryName, values] of Object.entries(analytics.salesByCategory)) {
-            addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + values.amount;
-            addonSalesQtyByCategory[categoryName] = (addonSalesQtyByCategory[categoryName] || 0) + values.qty;
+    if (analytics.addonSalesByItem) {
+        for (const item of Object.values(analytics.addonSalesByItem as Record<string, any>)) {
+            const cat = item.categoryName || 'Uncategorized';
+            addonSalesQtyByCategory[cat] = (addonSalesQtyByCategory[cat] || 0) + (item.qty || 0);
         }
     }
     
-    if (r.sessionMode === 'package_dinein') {
-        dineInAddonSalesAmount = Object.values(addonSalesAmountByCategory).reduce((sum, amount) => sum + amount, 0);
-    }
-
-    if (analytics.salesByItem) {
-        for (const [itemName, values] of Object.entries(analytics.salesByItem)) {
-            const isAddon = analytics.salesByCategory && !!analytics.salesByCategory[values.categoryName];
-            
-            if (isAddon) {
-                if (!addonSalesByItem[itemName]) {
-                    addonSalesByItem[itemName] = { qty: 0, amount: 0, categoryName: values.categoryName };
-                }
-                addonSalesByItem[itemName].qty += values.qty;
-                addonSalesByItem[itemName].amount += values.amount;
-            } else {
-                packageSalesAmountByName[itemName] = (packageSalesAmountByName[itemName] || 0) + values.amount;
-                packageSalesQtyByName[itemName] = (packageSalesQtyByName[itemName] || 0) + values.qty;
-            }
-        }
-    }
-
+    const dineInAddonSalesAmount = r.sessionMode === 'package_dinein' 
+        ? Object.values(addonSalesAmountByCategory).reduce((sum: number, cat: any) => sum + (cat.amount || 0), 0)
+        : 0;
+    
     return {
         dayId,
         dayStartMs,
@@ -247,6 +229,7 @@ export function getSalesContribution(receipt: Receipt | null): SalesContribution
         dineInAddonSalesAmount,
     };
 }
+
 
 // --- Peak Hour Contribution ---
 type PeakHourContribution = {

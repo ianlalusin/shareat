@@ -90,13 +90,9 @@ function aggregateTopAddons(metrics: DailyMetric[]): TopAddonRow[] {
   const itemMap: Record<string, TopAddonRow> = {};
 
   metrics.forEach(metric => {
-    // The field might not exist on older documents, and could be under sales.addonSalesByItem or sales.salesByItem
-    const items = (metric.sales as any)?.addonSalesByItem || (metric.sales as any)?.salesByItem || {};
+    // Use the explicit addonSalesByItem field
+    const items = (metric.sales as any)?.addonSalesByItem || {};
     for (const [name, data] of Object.entries(items as Record<string, any>)) {
-      // Check if it's not a package by looking for it in package sales
-      const isPackage = metric.sales?.packageSalesAmountByName && name in metric.sales.packageSalesAmountByName;
-      if (isPackage) continue;
-
       if (!itemMap[name]) {
         itemMap[name] = { name, qty: 0, amount: 0, categoryName: data.categoryName || 'Uncategorized' };
       }
