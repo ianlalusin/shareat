@@ -152,20 +152,20 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
         >
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && (
-                    <div className="relative w-10 h-10 mx-auto mb-1">
+                    <div className="relative w-20 h-20 mx-auto mb-1">
                         <Image 
                             src={settings.logoUrl} 
                             alt="Logo" 
-                            width={40} 
-                            height={40} 
+                            width={80} 
+                            height={80} 
                             className="object-contain mx-auto" 
                         />
                     </div>
                 )}
-                <h1 className="font-bold text-sm">{settings.businessName || 'Your Business'}</h1>
-                <p className="text-[10px] uppercase truncate">{settings.address}</p>
-                <p className="text-[10px]">{settings.contact}</p>
-                {settings.tin && <p className="text-[10px]">TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
+                <h1 className="font-bold">{settings.businessName || 'Your Business'}</h1>
+                <p>{settings.address}</p>
+                <p>{settings.contact}</p>
+                {settings.tin && <p>TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
             </header>
 
             <hr className="border-dashed border-black my-2" />
@@ -278,18 +278,17 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                 <>
                  <hr className="border-dashed border-black my-2" />
                  <section className="space-y-px mb-2 receipt-section">
-                    <p className="font-bold text-[10px] uppercase">Free Items:</p>
+                    <p className="font-bold">Free Items:</p>
                     {freeItems.map(([name, item]) => (
-                        <p key={name} className="text-[10px]">{item.qty}x {name}</p>
+                        <p key={name}>{item.qty}x {name}</p>
                     ))}
                  </section>
                 </>
              )}
 
             <footer className="text-center mt-4 space-y-2 receipt-section">
-                {settings.footerText && <p className="text-[10px]">{settings.footerText}</p>}
-                <p className="text-xs">Thank you!</p>
+                {settings.footerText && <p>{settings.footerText}</p>}
+                <p>Thank you!</p>
             </footer>
         </div>
     );
-}
