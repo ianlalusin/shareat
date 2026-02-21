@@ -18,7 +18,7 @@ import { useAuthContext } from "@/context/auth-context";
 import type { PendingSession } from "@/lib/types";
 
 const formSchema = z.object({
-  name: z.string().optional(),
+  name: z.string().min(2, "Customer name is required."),
   tin: z.string().optional(),
   address: z.string().optional(),
 });
@@ -81,7 +81,7 @@ export function CustomerInfoForm({ session }: { session: PendingSession }) {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Customer Name</FormLabel>
+                      <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
                         <Input placeholder="John Doe" {...field} />
                       </FormControl>
