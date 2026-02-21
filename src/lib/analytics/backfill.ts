@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -12,9 +13,10 @@ import {
   serverTimestamp,
   type Firestore,
   collectionGroup,
+  getDoc,
 } from "firebase/firestore";
 
-import type { DailyMetric, Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
+import type { DailyMetric, Receipt, ReceiptAnalyticsV2, KitchenTicket, Store } from "@/lib/types";
 import {
   getDayIdFromTimestamp,
   getDayStartMs,
@@ -49,6 +51,15 @@ export async function rebuildDailyAnalyticsFromReceipts(
   const startInclusive = new Date(startDate);
   const endExclusive = new Date(endDate);
   endExclusive.setDate(endExclusive.getDate() + 1);
+
+  // Fetch store object for tax info
+  const storeRef = doc(db, "stores", storeId);
+  const storeSnap = await getDoc(storeRef);
+  if (!storeSnap.exists()) {
+    onProgress("Error: Store not found.");
+    throw new Error("Store not found.");
+  }
+  const store = storeSnap.data() as Store;
 
   // 1) Query receipts within range
   const receiptsRef = collection(db, "stores", storeId, "receipts");
@@ -113,6 +124,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           packageSalesQtyByName: {},
           addonSalesAmountByCategory: {},
           addonSalesQtyByCategory: {},
+          addonSalesByItem: {},
           dineInAddonSalesAmount: 0,
           salesAmountByHour: {},
           sessionCountByHour: {},
@@ -183,7 +195,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     const fixedByMethod = correctedByMethodForReceipt(receipt, (paymentContrib.byMethod || {}) as any);
 
     const guestContrib = getGuestCoversContribution(receipt);
-    const salesContrib = getSalesContribution(receipt);
+    const salesContrib = getSalesContribution(receipt, store);
     const peakHourContrib = getPeakHourContribution(receipt);
     const closedSessionContrib = getClosedSessionsContribution(receipt);
     const refillContrib = getRefillContribution(receipt);
@@ -216,19 +228,34 @@ export async function rebuildDailyAnalyticsFromReceipts(
     }
 
     // sales
-    dayData.sales!.dineInAddonSalesAmount = (dayData.sales!.dineInAddonSalesAmount || 0) + Number(salesContrib.dineInAddonSalesAmount || 0);
+    dayData.sales ??= { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, salesAmountByHour: {}, sessionCountByHour: {} };
+    dayData.sales.dineInAddonSalesAmount = (dayData.sales.dineInAddonSalesAmount || 0) + Number(salesContrib.dineInAddonSalesAmount || 0);
+    
     for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName || {})) {
-      dayData.sales!.packageSalesAmountByName[pkgName] =
-        (dayData.sales!.packageSalesAmountByName[pkgName] || 0) + Number(amount || 0);
+      dayData.sales.packageSalesAmountByName[pkgName] =
+        (dayData.sales.packageSalesAmountByName[pkgName] || 0) + Number(amount || 0);
     }
     for (const [pkgName, qty] of Object.entries(salesContrib.packageSalesQtyByName || {})) {
-      dayData.sales!.packageSalesQtyByName[pkgName] =
-        (dayData.sales!.packageSalesQtyByName[pkgName] || 0) + Number(qty || 0);
+      dayData.sales.packageSalesQtyByName[pkgName] =
+        (dayData.sales.packageSalesQtyByName[pkgName] || 0) + Number(qty || 0);
     }
     for (const [catName, amount] of Object.entries(salesContrib.addonSalesAmountByCategory || {})) {
-      dayData.sales!.addonSalesAmountByCategory[catName] =
-        (dayData.sales!.addonSalesAmountByCategory[catName] || 0) + Number(amount || 0);
+      dayData.sales.addonSalesAmountByCategory[catName] =
+        (dayData.sales.addonSalesAmountByCategory[catName] || 0) + Number(amount || 0);
     }
+     for (const [catName, qty] of Object.entries(salesContrib.addonSalesQtyByCategory || {})) {
+      dayData.sales.addonSalesQtyByCategory[catName] =
+        (dayData.sales.addonSalesQtyByCategory[catName] || 0) + Number(qty || 0);
+    }
+    for (const [itemName, itemData] of Object.entries(salesContrib.addonSalesByItem || {})) {
+      dayData.sales.addonSalesByItem ??= {};
+      if (!dayData.sales.addonSalesByItem[itemName]) {
+        dayData.sales.addonSalesByItem[itemName] = { qty: 0, amount: 0, categoryName: itemData.categoryName };
+      }
+      dayData.sales.addonSalesByItem[itemName].qty += itemData.qty;
+      dayData.sales.addonSalesByItem[itemName].amount += itemData.amount;
+    }
+
 
     // peak hours
     if (peakHourContrib.hourKey) {
@@ -303,7 +330,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
     // meta stamps
     (data.meta as any).backfilledAt = serverTimestamp();
-    (data.meta as any).source = "backfill_v3_receipts_and_kds";
+    (data.meta as any).source = "backfill_v4_receipts_and_kds";
 
     batches[batches.length - 1].set(docRef, data, { merge: false }); // overwrite
     opCount++;

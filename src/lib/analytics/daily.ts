@@ -3,7 +3,7 @@
 
 import { doc, type Firestore } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
-import type { Receipt, ReceiptAnalyticsV2, KitchenTicket } from "@/lib/types";
+import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, Store, LineAdjustment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 /**
@@ -190,34 +190,83 @@ type SalesContribution = {
     dineInAddonSalesAmount: number;
 };
 
-export function getSalesContribution(receipt: Receipt | null): SalesContribution {
+export function getSalesContribution(receipt: Receipt | null, store?: Store | null): SalesContribution {
     const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0 };
     const r = receipt;
     if (!r) return defaultReturn;
-    if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
+    if (isVoidReceipt(r)) return defaultReturn;
     
-    const analytics = r.analytics as any; // Use any to access new properties
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
-    const dayId = eventMs ? getDayIdFromTimestamp(eventMs) : "";
-    const dayStartMs = eventMs ? getDayStartMs(eventMs) : 0;
+    if (!eventMs) return defaultReturn;
     
-    const packageSalesAmountByName = analytics.packageSalesAmountByName ?? {};
-    const packageSalesQtyByName = analytics.packageSalesQtyByName ?? {};
-    const addonSalesByItem = analytics.addonSalesByItem ?? {};
-    const addonSalesAmountByCategory = analytics.salesByCategory ?? {};
+    const dayId = getDayIdFromTimestamp(eventMs);
+    const dayStartMs = getDayStartMs(eventMs);
 
+    const packageSalesAmountByName: Record<string, number> = {};
+    const packageSalesQtyByName: Record<string, number> = {};
+    const addonSalesAmountByCategory: Record<string, number> = {};
     const addonSalesQtyByCategory: Record<string, number> = {};
-    if (analytics.addonSalesByItem) {
-        for (const item of Object.values(analytics.addonSalesByItem as Record<string, any>)) {
-            const cat = item.categoryName || 'Uncategorized';
-            addonSalesQtyByCategory[cat] = (addonSalesQtyByCategory[cat] || 0) + (item.qty || 0);
+    const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
+
+    const taxRate = (store?.taxRatePct || 0) / 100;
+    const isVatInclusive = store?.taxType === 'VAT_INCLUSIVE';
+
+    (r.lines || []).forEach(line => {
+        const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0) - (line.freeQty || 0);
+        if (billableQty <= 0) return;
+
+        const unitPrice = line.unitPrice || 0;
+        const lineGross = billableQty * unitPrice;
+        
+        let lineDiscount = 0;
+        const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
+        
+        const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
+        if (adjs.length > 0) {
+            let remainingQty = billableQty;
+            adjs.filter(a => a.kind === 'discount').forEach(adj => {
+                const qtyToApply = Math.min(adj.qty, remainingQty);
+                if (qtyToApply <= 0) return;
+
+                if (adj.type === 'percent') {
+                    lineDiscount += qtyToApply * baseUnitPrice * (adj.value / 100);
+                } else { // fixed
+                    lineDiscount += qtyToApply * Math.min(baseUnitPrice, adj.value);
+                }
+                remainingQty -= qtyToApply;
+            });
+        } else if (line.discountValue && line.discountQty > 0) { // Legacy discount fields
+            const discountedQty = Math.min(line.discountQty, billableQty);
+            if (line.discountType === 'percent') {
+                lineDiscount = discountedQty * baseUnitPrice * (line.discountValue / 100);
+            } else {
+                lineDiscount = discountedQty * Math.min(baseUnitPrice, line.discountValue);
+            }
         }
-    }
+        
+        const netAmount = lineGross - lineDiscount;
+
+        if (line.type === 'package') {
+            packageSalesAmountByName[line.itemName] = (packageSalesAmountByName[line.itemName] || 0) + netAmount;
+            packageSalesQtyByName[line.itemName] = (packageSalesQtyByName[line.itemName] || 0) + billableQty;
+        } else if (line.type === 'addon') {
+            const categoryName = line.category || 'Uncategorized';
+            
+            addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + netAmount;
+            addonSalesQtyByCategory[categoryName] = (addonSalesQtyByCategory[categoryName] || 0) + billableQty;
+            
+            if (!addonSalesByItem[line.itemName]) {
+                addonSalesByItem[line.itemName] = { qty: 0, amount: 0, categoryName: categoryName };
+            }
+            addonSalesByItem[line.itemName].qty += billableQty;
+            addonSalesByItem[line.itemName].amount += netAmount;
+        }
+    });
     
     const dineInAddonSalesAmount = r.sessionMode === 'package_dinein' 
-        ? Object.values(addonSalesAmountByCategory).reduce((sum: number, cat: any) => sum + (cat.amount || 0), 0)
+        ? Object.values(addonSalesAmountByCategory).reduce((sum, amount) => sum + amount, 0)
         : 0;
-    
+
     return {
         dayId,
         dayStartMs,
