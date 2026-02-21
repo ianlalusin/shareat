@@ -65,8 +65,8 @@
    Receipt printing safety
    ========================= */
 .receipt-view {
-  font-family: 'Courier New', Courier, monospace !important;
-  font-size: 12px !important;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
   line-height: 1.1 !important;
   padding-top: 5mm !important;
 }
