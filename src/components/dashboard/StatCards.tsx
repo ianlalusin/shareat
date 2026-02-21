@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,7 +79,17 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
               <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" className="hover:bg-muted/50 transition-colors" />
             </Link>
             <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
-            {activeSessions !== undefined && <StatCard title="Active Sessions" value={`${activeSessions.count} - ${activeSessions.guests} guests`} icon={<Users className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />}
+            {activeSessions !== undefined && (
+              <Link href="/cashier">
+                <StatCard 
+                  title="Active Sessions" 
+                  value={`${activeSessions.count} - ${activeSessions.guests} guests`} 
+                  icon={<Users className="h-4 w-4 text-muted-foreground" />} 
+                  isLoading={isLoading} 
+                  className="hover:bg-muted/50 transition-colors"
+                />
+              </Link>
+            )}
             <StatCard title="Avg Spending" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
         </>
     );
