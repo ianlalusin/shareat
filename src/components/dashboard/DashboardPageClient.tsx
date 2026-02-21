@@ -153,7 +153,7 @@ export default function DashboardPageClient() {
                     </RoleGuard>
                 )}
 
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
                     <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
                 </div>
                 
