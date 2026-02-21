@@ -143,26 +143,30 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
         fontFamily: settings?.fontFamily || "'Courier New', Courier, monospace",
         fontSize: `${settings?.fontSize || 12}px`,
     };
+    
+    const headerFontSize = {
+        fontSize: `${(settings?.fontSize || 12) * 1.5}px`,
+    };
 
     return (
         <div 
             data-paper-width={paperWidth} 
-            className="receipt-view bg-white text-black mx-auto p-4 shadow-lg border-t-[5mm] border-transparent"
+            className="receipt-view bg-white text-black mx-auto p-4 shadow-lg"
             style={receiptStyles}
         >
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && (
-                    <div className="relative w-20 h-20 mx-auto mb-1">
+                    <div className="relative w-40 h-40 mx-auto mb-1">
                         <Image 
                             src={settings.logoUrl} 
                             alt="Logo" 
-                            width={80} 
-                            height={80} 
+                            width={160} 
+                            height={160} 
                             className="object-contain mx-auto" 
                         />
                     </div>
                 )}
-                <h1 className="font-bold">{settings.businessName || 'Your Business'}</h1>
+                <h1 className="font-bold" style={headerFontSize}>{settings.businessName || 'Your Business'}</h1>
                 <p>{settings.address}</p>
                 <p>{settings.contact}</p>
                 {settings.tin && <p>TIN: {settings.tin} {settings.vatType === 'VAT' ? 'VAT' : 'Non-VAT'}</p>}
@@ -227,7 +231,7 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                                 </span>
                             </div>
                              {hasDiscount && settings.showDiscountBreakdown && (
-                                <div className="pl-4 text-[10px] flex justify-between italic">
+                                <div className="pl-4 italic">
                                     <span>Discount ({line.discountQty}x)</span>
                                     <span className="text-right whitespace-nowrap">- {lineDiscountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
@@ -292,3 +296,4 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
             </footer>
         </div>
     );
+}
