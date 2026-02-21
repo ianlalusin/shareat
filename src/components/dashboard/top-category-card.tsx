@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo } from "react";
@@ -100,61 +101,57 @@ export function TopCategoryCard({ categorySales, topAddonItems, hasTopAddonItems
                         Breakdown of add-on sales for the selected period.
                     </SheetDescription>
                 </SheetHeader>
-                <Tabs defaultValue="category" className="w-full mt-4 flex-1 flex flex-col">
+                <Tabs defaultValue="category" className="w-full mt-4 flex-1 flex flex-col overflow-hidden">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="category">By Category</TabsTrigger>
                         <TabsTrigger value="item">By Item</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="category" className="flex-1 min-h-0">
-                        <ScrollArea className="h-full">
+                    <TabsContent value="category" className="flex-1 overflow-y-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Category</TableHead>
+                                    <TableHead className="text-right">Qty</TableHead>
+                                    <TableHead className="text-right">Amount</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {categorySales.map(({ categoryName, qty, amount }) => (
+                                    <TableRow key={categoryName}>
+                                        <TableCell className="font-medium">{categoryName}</TableCell>
+                                        <TableCell className="text-right">{qty.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right">{fmtCurrency(amount)}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TabsContent>
+                    <TabsContent value="item" className="flex-1 overflow-y-auto">
+                         {hasTopAddonItems ? (
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Category</TableHead>
+                                        <TableHead>Item</TableHead>
                                         <TableHead className="text-right">Qty</TableHead>
                                         <TableHead className="text-right">Amount</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {categorySales.map(({ categoryName, qty, amount }) => (
-                                        <TableRow key={categoryName}>
-                                            <TableCell className="font-medium">{categoryName}</TableCell>
-                                            <TableCell className="text-right">{qty.toLocaleString()}</TableCell>
-                                            <TableCell className="text-right">{fmtCurrency(amount)}</TableCell>
+                                    {topAddonItems.map((item, idx) => (
+                                        <TableRow key={`${item.name}-${idx}`}>
+                                            <TableCell>
+                                                <div className="font-medium">{item.name}</div>
+                                                <div className="text-xs text-muted-foreground">{item.categoryName}</div>
+                                            </TableCell>
+                                            <TableCell className="text-right">{item.qty.toLocaleString()}</TableCell>
+                                            <TableCell className="text-right">{fmtCurrency(item.amount)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
                             </Table>
-                        </ScrollArea>
-                    </TabsContent>
-                    <TabsContent value="item" className="flex-1 min-h-0">
-                        <ScrollArea className="h-full">
-                             {hasTopAddonItems ? (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Item</TableHead>
-                                            <TableHead className="text-right">Qty</TableHead>
-                                            <TableHead className="text-right">Amount</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {topAddonItems.map((item, idx) => (
-                                            <TableRow key={`${item.name}-${idx}`}>
-                                                <TableCell>
-                                                    <div className="font-medium">{item.name}</div>
-                                                    <div className="text-xs text-muted-foreground">{item.categoryName}</div>
-                                                </TableCell>
-                                                <TableCell className="text-right">{item.qty.toLocaleString()}</TableCell>
-                                                <TableCell className="text-right">{fmtCurrency(item.amount)}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            ) : (
-                                <div className="text-sm text-center text-muted-foreground pt-10">Top item data is not available for custom date ranges.</div>
-                            )}
-                        </ScrollArea>
+                        ) : (
+                            <div className="text-sm text-center text-muted-foreground pt-10">Top item data is not available for custom date ranges.</div>
+                        )}
                     </TabsContent>
                 </Tabs>
             </SheetContent>
