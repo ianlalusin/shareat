@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -8,7 +9,7 @@ import { collection, query, where, orderBy, getDocs, Timestamp, doc, getDoc } fr
 import { db } from "@/lib/firebase/client";
 import { addDays, format, startOfWeek } from "date-fns";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
 import type { WeatherRecord, DailyMetric } from "@/lib/types";
@@ -290,8 +291,11 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Weekly Sales</CardTitle>
-        <CardDescription>A rolling 7-day view of sales performance and a 7-day forecast.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+            <Sparkles />
+            Weekly Sales
+        </CardTitle>
+        <CardDescription>A rolling 7-day view of sales performance and a 7-day forecast. <span className="text-xs text-muted-foreground/80">(powered by AI)</span></CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
