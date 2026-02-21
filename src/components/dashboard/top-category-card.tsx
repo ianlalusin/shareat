@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo } from "react";
@@ -106,7 +105,7 @@ export function TopCategoryCard({ categorySales, topAddonItems, hasTopAddonItems
                         <TabsTrigger value="category">By Category</TabsTrigger>
                         <TabsTrigger value="item">By Item</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="category" className="flex-1 overflow-hidden">
+                    <TabsContent value="category" className="flex-1 min-h-0">
                         <ScrollArea className="h-full">
                             <Table>
                                 <TableHeader>
@@ -128,7 +127,7 @@ export function TopCategoryCard({ categorySales, topAddonItems, hasTopAddonItems
                             </Table>
                         </ScrollArea>
                     </TabsContent>
-                    <TabsContent value="item" className="flex-1 overflow-hidden">
+                    <TabsContent value="item" className="flex-1 min-h-0">
                         <ScrollArea className="h-full">
                              {hasTopAddonItems ? (
                                 <Table>
