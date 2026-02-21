@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings as ReceiptSettingsFromComponent } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
 export type ReceiptSession = {
@@ -29,6 +29,28 @@ export type ReceiptSession = {
     verifiedByUid?: string;
     cashierName?: string;
 };
+
+// This type must match the one in `receipt-settings.tsx`
+export type ReceiptSettings = {
+  businessName: string;
+  branchName: string;
+  address: string;
+  contact: string;
+  tin?: string;
+  vatType?: "VAT" | "NON_VAT";
+  logoUrl?: string | null;
+  footerText?: string;
+  showCashierName: boolean;
+  showTableOrCustomer: boolean;
+  showItemNotes: boolean;
+  showDiscountBreakdown: boolean;
+  showChargeBreakdown: boolean;
+  paperWidth?: "58mm" | "80mm" | "A4";
+  receiptNoFormat?: string;
+  autoPrintAfterPayment: boolean;
+  fontSize?: number;
+  fontFamily?: string;
+}
 
 export type ReceiptData = {
     session: ReceiptSession;
@@ -271,3 +293,5 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
         </div>
     );
 }
+
+    
