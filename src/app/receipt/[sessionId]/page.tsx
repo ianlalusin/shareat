@@ -9,13 +9,13 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2, Printer, Info, Bluetooth } from "lucide-react";
-import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
+import { ReceiptView } from "@/components/receipt/receipt-view";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, Store } from "@/lib/types";
+import type { ModeOfPayment, Store, ReceiptData, ReceiptSettings } from "@/lib/types";
 import { formatReceiptText } from "@/lib/printing/receiptFormatter";
 import ThermalPrinter from "@/lib/printing/thermalPrinter";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
@@ -239,6 +239,8 @@ export default function ReceiptPage() {
     }
 
     const printedCount = receiptData?.analytics?.printedCount || 0;
+    
+    const finalReceiptData = receiptData ? { ...receiptData, settings: receiptSettings } : null;
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -283,10 +285,12 @@ export default function ReceiptPage() {
                     data-paper={paperWidth}
                 >
                     <div id="print-receipt-area">
-                        {receiptData && <ReceiptView data={{ ...receiptData, settings: receiptSettings }} paymentMethods={paymentMethods} />}
+                        {finalReceiptData && <ReceiptView data={finalReceiptData} paymentMethods={paymentMethods} />}
                     </div>
                 </div>
             </div>
         </RoleGuard>
     );
 }
+
+    
