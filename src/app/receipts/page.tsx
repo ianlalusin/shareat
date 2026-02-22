@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
@@ -21,7 +23,7 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
-import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/receipts/ReceiptTemplateSettings";
+import { ReceiptTemplateSettings, receiptSettingsSchema } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
@@ -146,6 +148,16 @@ export default function ReceiptsPage() {
         }
         return `${fmtDate(start)} - ${fmtDate(end)}`;
     }, [start, end]);
+
+    const form = useForm({
+        resolver: zodResolver(receiptSettingsSchema),
+    });
+
+    useEffect(() => {
+        if (isSettingsOpen && settings && !form.formState.isSubmitting) {
+          form.reset(settings);
+        }
+    }, [settings, isSettingsOpen, form.reset, form.formState.isSubmitting]);
 
 
     useEffect(() => {
@@ -735,7 +747,7 @@ export default function ReceiptsPage() {
                         <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
                     </DialogHeader>
                      <div className="overflow-y-auto px-6">
-                        <ReceiptTemplateSettings store={activeStore} />
+                        {activeStore && <ReceiptTemplateSettings store={activeStore} form={form} />}
                      </div>
                      <div className="p-6 pt-0">
                         <DialogClose asChild><Button type="button" variant="secondary">Close</Button></DialogClose>
