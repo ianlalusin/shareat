@@ -27,6 +27,8 @@ export const receiptSettingsSchema = z.object({
   logoWidthPct: z.coerce.number().min(20).max(100).default(80),
 });
 
+export type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
+
 export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
     businessName: "Your Business",
     branchName: "",
