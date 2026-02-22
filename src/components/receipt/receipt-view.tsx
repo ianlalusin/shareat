@@ -231,7 +231,7 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
 
             <footer className="text-center mt-4 space-y-2 receipt-section">
                 {settings.footerText && <p>{settings.footerText}</p>}
-                <p>This is an Official Receipt.</p>
+                <p>Thank you for sharelebrating with us!</p>
             </footer>
         </div>
     );
