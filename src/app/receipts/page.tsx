@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
+import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine, ReceiptData } from "@/lib/types";
 import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increme
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
-import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
+import { ReceiptView } from "@/components/receipt/receipt-view";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
@@ -791,4 +791,3 @@ export default function ReceiptsPage() {
         </RoleGuard>
     )
 }
-
