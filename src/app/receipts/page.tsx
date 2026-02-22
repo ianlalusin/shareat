@@ -785,9 +785,10 @@ export default function ReceiptsPage() {
 
             {/* This div is only for printing */}
             <div id="receipt-print-root" className="hidden">
-                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings: settings!}} paymentMethods={paymentMethods} />}
+                {selectedReceiptData && settings && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
     )
 }
+
