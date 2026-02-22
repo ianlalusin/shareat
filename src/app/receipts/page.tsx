@@ -718,7 +718,7 @@ export default function ReceiptsPage() {
                                 </Button>
                             </CardHeader>
                             <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
+                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData && settings ? (
                                 <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />
                             ) : (
                                 <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
@@ -785,7 +785,7 @@ export default function ReceiptsPage() {
 
             {/* This div is only for printing */}
             <div id="receipt-print-root" className="hidden">
-                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
+                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings: settings!}} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
