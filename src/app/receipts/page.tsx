@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -13,8 +12,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
@@ -24,7 +21,7 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
-import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } from "@/components/receipts/ReceiptTemplateSettings";
+import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/receipts/ReceiptTemplateSettings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
@@ -68,14 +65,13 @@ function getUsername(appUser: any) {
     || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
 }
 
-export default function ReceiptsPageContents() {
+export default function ReceiptsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
     const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
     const { appUser, isSigningOut } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
-
     const { settings, isLoading: settingsLoading } = useReceiptSettings(activeStore?.id);
 
     const [receipts, setReceipts] = useState<ReceiptType[]>([]);
@@ -721,7 +717,7 @@ export default function ReceiptsPageContents() {
                             </Button>
                         </CardHeader>
                         <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                        {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
+                        {isLoadingPreview || settingsLoading ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
                             <ReceiptView data={{...selectedReceiptData, settings }} paymentMethods={paymentMethods} />
                         ) : (
                             <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
@@ -729,7 +725,6 @@ export default function ReceiptsPageContents() {
                         </CardContent>
                     </Card>
                 </div>
-            </div>
             </div>
             
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
@@ -788,7 +783,7 @@ export default function ReceiptsPageContents() {
 
             {/* This div is only for printing */}
             <div id="receipt-print-root" className="hidden print-block">
-                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings }} paymentMethods={paymentMethods} />}
+                {selectedReceiptData && <ReceiptView data={{ ...selectedReceiptData, settings }} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
