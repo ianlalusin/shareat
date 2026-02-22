@@ -6,11 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { collection, query, orderBy, limit, onSnapshot, Timestamp, getDoc, doc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Store, SessionBillLine } from "@/lib/types";
+import type { Store, SessionBillLine, ReceiptData } from "@/lib/types";
 import { Loader2 } from "lucide-react";
 import { format } from 'date-fns';
 import { Button } from "@/components/ui/button";
-import type { ReceiptData } from "@/components/receipt/receipt-view";
 import { toJsDate } from "@/lib/utils/date";
 
 type ReceiptRow = {
