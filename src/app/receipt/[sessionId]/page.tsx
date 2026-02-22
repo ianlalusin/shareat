@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
@@ -174,14 +175,16 @@ export default function ReceiptPage() {
 
             // Always fetch latest settings for thermal printing
             const liveSettings = await getReceiptSettings(db, activeStoreId);
-            const text = formatReceiptText({ ...receiptData, settings: liveSettings }, liveSettings.paperWidth);
+            const paperWidth = liveSettings.paperWidth === "58mm" ? 58 : 80;
+            const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth);
 
             await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
             await ThermalPrinter.printReceipt({
                 text,
-                widthMm: liveSettings.paperWidth === "58mm" ? 58 : 80,
+                widthMm: paperWidth,
                 cut: true,
-                beep: true
+                beep: true,
+                encoding: 'CP437'
             });
 
             if (sessionId !== "PREVIEW") {
@@ -288,3 +291,5 @@ export default function ReceiptPage() {
         </RoleGuard>
     );
 }
+
+    
