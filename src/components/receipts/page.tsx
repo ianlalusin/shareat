@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
@@ -24,7 +23,8 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
-import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } from "@/components/receipts/ReceiptTemplateSettings";
+import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
+import { receiptSettingsSchema } from "@/lib/receipts/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
@@ -147,7 +147,7 @@ export default function ReceiptsPageContents() {
         }
         return `${fmtDate(start)} - ${fmtDate(end)}`;
     }, [start, end]);
-
+    
     const form = useForm({
         resolver: zodResolver(receiptSettingsSchema),
         defaultValues: {
@@ -634,137 +634,139 @@ export default function ReceiptsPageContents() {
     
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
-            <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => router.back()}>
-                        <ArrowLeft className="mr-2 h-4 w-4" /> Back
-                    </Button>
-                    <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
-                        {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
-                        Export
-                    </Button>
-                    <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
-                </div>
-            </PageHeader>
-            
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
-                <div className="relative flex-1 w-full sm:w-auto">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                </div>
-                <div className="flex flex-col items-start sm:items-end gap-2">
-                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
-                        {presets.map(p => (
-                            <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
-                        ))}
-                        <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                            <PopoverTrigger asChild>
-                                <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
-                        </Popover>
+            <div className="no-print">
+                <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => router.back()}>
+                            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                        </Button>
+                        <Button onClick={handleExport} disabled={isExporting || isLoadingReceipts || filteredReceipts.length === 0} variant="outline">
+                            {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
+                            Export
+                        </Button>
+                        <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                     </div>
-                     <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                </PageHeader>
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
+                    <div className="relative flex-1 w-full sm:w-auto">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search by Receipt #, Table, Customer..." className="pl-8" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col items-start sm:items-end gap-2">
+                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
+                            {presets.map(p => (
+                                <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
+                            ))}
+                            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button variant={datePreset === "custom" ? "default" : "ghost"} size="sm" className="h-8 min-w-[100px]">{customBtnLabel(customRange, datePreset === "custom")}</Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0"><CompactCalendar onChange={handleCalendarChange}/></PopoverContent>
+                            </Popover>
+                        </div>
+                         <p className="text-sm text-muted-foreground text-right">{dateRangeLabel}</p>
+                    </div>
                 </div>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Transactions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {isLoadingReceipts ? <div className="flex justify-center p-8"><Loader2 className="mx-auto animate-spin" /></div> : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Identifier</TableHead>
-                                        <TableHead>Total</TableHead>
-                                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredReceipts.map(r => {
-                                        const isVoidDisabled =
-                                            (isProcessing === r.id) ||
-                                            (r.status === "voided") ||
-                                            ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
-                                        return (
-                                        <TableRow 
-                                            key={r.id} 
-                                            onClick={(e) => {
-                                                const el = e.target as HTMLElement;
-                                                if (el.closest("button")) return;
-                                                handleSelectReceipt(r.id);
-                                            }}
-                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
-                                        >
-                                            <TableCell className="font-medium py-2">
-                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
-                                                <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
-                                            </TableCell>
-                                            <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
-                                                <TableCell
-                                                    className="text-right py-2"
-                                                >
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
-                                                        className="mr-2"
-                                                        disabled={r.status === "voided"}
-                                                        type="button"
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mt-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Transactions</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {isLoadingReceipts ? <div className="flex justify-center p-8"><Loader2 className="mx-auto animate-spin" /></div> : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Identifier</TableHead>
+                                            <TableHead>Total</TableHead>
+                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && <TableHead className="text-right">Actions</TableHead>}
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredReceipts.map(r => {
+                                            const isVoidDisabled =
+                                                (isProcessing === r.id) ||
+                                                (r.status === "voided") ||
+                                                ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
+                                            return (
+                                            <TableRow 
+                                                key={r.id} 
+                                                onClick={(e) => {
+                                                    const el = e.target as HTMLElement;
+                                                    if (el.closest("button")) return;
+                                                    handleSelectReceipt(r.id);
+                                                }}
+                                                className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
+                                            >
+                                                <TableCell className="font-medium py-2">
+                                                    <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
+                                                    <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
+                                                </TableCell>
+                                                <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                                {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
+                                                    <TableCell
+                                                        className="text-right py-2"
                                                     >
-                                                        <Edit className="h-4 w-4" />
-                                                    </Button>
-                                                    
-                                                    {(appUser?.role === "admin" || appUser?.role === "manager") && (
                                                         <Button
-                                                            variant="destructive"
+                                                            variant="outline"
                                                             size="sm"
-                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
-                                                            disabled={isVoidDisabled}
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
+                                                            className="mr-2"
+                                                            disabled={r.status === "voided"}
                                                             type="button"
                                                         >
-                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                            <Edit className="h-4 w-4" />
                                                         </Button>
-                                                    )}
-                                                </TableCell>
-                                            )}
-                                        </TableRow>
-                                    )})}
-                                </TableBody>
-                            </Table>
-                        )}
-                         {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
-                         {hasMore && !isLoadingReceipts && (
-                            <div className="text-center py-4">
-                                <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
-                                    {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
-                                    Load More
-                                </Button>
-                            </div>
-                         )}
-                    </CardContent>
-                </Card>
-
-                <div className="sticky top-20">
-                     <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <CardTitle>Preview</CardTitle>
-                            <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting}>
-                                {isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
-                            </Button>
-                        </CardHeader>
-                        <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                        {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
-                            <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />
-                        ) : (
-                            <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
-                        )}
+                                                        
+                                                        {(appUser?.role === "admin" || appUser?.role === "manager") && (
+                                                            <Button
+                                                                variant="destructive"
+                                                                size="sm"
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
+                                                                disabled={isVoidDisabled}
+                                                                type="button"
+                                                            >
+                                                                {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                            </Button>
+                                                        )}
+                                                    </TableCell>
+                                                )}
+                                            </TableRow>
+                                        )})}
+                                    </TableBody>
+                                </Table>
+                            )}
+                             {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
+                             {hasMore && !isLoadingReceipts && (
+                                <div className="text-center py-4">
+                                    <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
+                                        {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
+                                        Load More
+                                    </Button>
+                                </div>
+                             )}
                         </CardContent>
                     </Card>
+
+                    <div className="sticky top-20">
+                         <Card>
+                            <CardHeader className="flex flex-row items-center justify-between">
+                                <CardTitle>Preview</CardTitle>
+                                <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting}>
+                                    {isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
+                                </Button>
+                            </CardHeader>
+                            <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
+                                <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />
+                            ) : (
+                                <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
+                            )}
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
             </div>
             
