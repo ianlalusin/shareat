@@ -21,7 +21,6 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView } from "@/components/receipt/receipt-view";
-import type { ReceiptData } from "@/lib/types";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
@@ -35,6 +34,7 @@ import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
+import type { ReceiptData } from "@/lib/types";
 
 
 // --- Date Helpers ---
@@ -53,8 +53,8 @@ type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 const presets: { label: string, value: DatePreset }[] = [
     { label: "Today", value: "today" },
     { label: "Yesterday", value: "yesterday" },
-    { label: "This Week", value = "week" },
-    { label: "This Month", value = "month" },
+    { label: "This Week", value: "week" },
+    { label: "This Month", value: "month" },
 ];
 
 
@@ -793,5 +793,3 @@ export default function ReceiptsPage() {
         </RoleGuard>
     )
 }
-
-    
