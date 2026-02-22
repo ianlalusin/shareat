@@ -21,7 +21,7 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView } from "@/components/receipt/receipt-view";
-import { ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
+import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
@@ -35,7 +35,6 @@ import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
 import type { ReceiptData } from "@/lib/types";
-import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 
 
 // --- Date Helpers ---
@@ -785,9 +784,11 @@ export default function ReceiptsPage() {
 
             {/* This div is only for printing */}
             <div id="receipt-print-root" className="hidden">
-                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
+                {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings: settings!}} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
     )
 }
+
+    
