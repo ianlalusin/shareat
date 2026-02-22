@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine, ReceiptData } from "@/lib/types";
+import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
 import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -21,6 +21,7 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView } from "@/components/receipt/receipt-view";
+import type { ReceiptData } from "@/lib/types";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
@@ -34,7 +35,6 @@ import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
-import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 
 
 // --- Date Helpers ---
@@ -53,8 +53,8 @@ type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
 const presets: { label: string, value: DatePreset }[] = [
     { label: "Today", value: "today" },
     { label: "Yesterday", value: "yesterday" },
-    { label: "This Week", value: "week" },
-    { label: "This Month", value: "month" },
+    { label: "This Week", value = "week" },
+    { label: "This Month", value = "month" },
 ];
 
 
@@ -73,8 +73,6 @@ export default function ReceiptsPage() {
     const { appUser, isSigningOut } = useAuthContext();
     const { activeStore, loading: storeLoading } = useStoreContext();
     
-    const { settings, isLoading: settingsLoading } = useReceiptSettings(activeStore?.id);
-
     const [receipts, setReceipts] = useState<ReceiptType[]>([]);
     const [isLoadingReceipts, setIsLoadingReceipts] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
@@ -148,7 +146,6 @@ export default function ReceiptsPage() {
         return `${fmtDate(start)} - ${fmtDate(end)}`;
     }, [start, end]);
     
-
     useEffect(() => {
         if (!searchParams) return;
       
@@ -362,11 +359,15 @@ export default function ReceiptsPage() {
         setIsLoadingPreview(true);
         const fetchReceiptDetails = async () => {
              try {
-                const receiptSnap = await getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId));
+                const [settingsSnap, receiptSnap] = await Promise.all([
+                    getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main")),
+                    getDoc(doc(db, "stores", activeStore.id, "receipts", selectedReceiptId))
+                ]);
                 
                 if (!receiptSnap.exists()) throw new Error("Receipt not found.");
 
                 const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+                const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
                 
                 const sessionDataForPreview = {
                     id: receiptDocData.sessionId,
@@ -382,6 +383,7 @@ export default function ReceiptsPage() {
                     session: sessionDataForPreview as any,
                     lines: receiptDocData.lines || [],
                     payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
+                    settings: settingsData,
                     store: activeStore as Store,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
@@ -713,13 +715,13 @@ export default function ReceiptsPage() {
                          <Card>
                             <CardHeader className="flex flex-row items-center justify-between">
                                 <CardTitle>Preview</CardTitle>
-                                <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting || settingsLoading}>
-                                    {isPrinting || settingsLoading ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
+                                <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting}>
+                                    {isPrinting ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
                                 </Button>
                             </CardHeader>
                             <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData && settings ? (
-                                <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />
+                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
+                                <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />
                             ) : (
                                 <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
                             )}
@@ -733,7 +735,7 @@ export default function ReceiptsPage() {
                 <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
                     <DialogHeader className="p-6 pb-0">
                         <DialogTitle>Receipt Template Settings</DialogTitle>
-                        <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}.</DialogDescription>
+                        <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
                     </DialogHeader>
                      <div className="overflow-y-auto px-6">
                         <ReceiptTemplateSettings store={activeStore} />
@@ -785,7 +787,7 @@ export default function ReceiptsPage() {
 
             {/* This div is only for printing */}
             <div id="receipt-print-root" className="hidden">
-                {selectedReceiptData && settings && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
+                {selectedReceiptData && <ReceiptView data={selectedReceiptData} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>
