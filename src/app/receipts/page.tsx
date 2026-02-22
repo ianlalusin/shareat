@@ -398,7 +398,7 @@ export default function ReceiptsPage() {
         };
         fetchReceiptDetails();
     }, [selectedReceiptId, activeStore, toast]);
-    
+
     const handlePrint = async () => {
         if (!selectedReceiptData || !selectedReceiptId || !appUser || !activeStore) return;
         setIsPrinting(true);
@@ -791,3 +791,5 @@ export default function ReceiptsPage() {
         </RoleGuard>
     )
 }
+
+    

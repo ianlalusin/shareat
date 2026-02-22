@@ -237,10 +237,8 @@ export default function ReceiptPage() {
             </div>
         )
     }
-
-    const printedCount = receiptData?.analytics?.printedCount || 0;
     
-    const finalReceiptData = receiptData ? { ...receiptData, settings: receiptSettings } : null;
+    const printedCount = (receiptData?.analytics as any)?.printedCount || 0;
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -285,7 +283,7 @@ export default function ReceiptPage() {
                     data-paper={paperWidth}
                 >
                     <div id="print-receipt-area">
-                        {finalReceiptData && <ReceiptView data={finalReceiptData} paymentMethods={paymentMethods} />}
+                        {receiptData && receiptSettings && <ReceiptView data={{...receiptData, settings: receiptSettings}} paymentMethods={paymentMethods} />}
                     </div>
                 </div>
             </div>

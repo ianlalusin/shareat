@@ -182,3 +182,5 @@ export function RecentReceiptsList({ store, onSelectReceipt }: RecentReceiptsLis
         </Card>
     );
 }
+
+    

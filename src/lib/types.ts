@@ -679,6 +679,20 @@ export type SalesForecast = {
   createdAt: Timestamp;
 };
 
+export type ReceiptSession = {
+    id: string;
+    tableNumber?: string;
+    customer?: { name?: string };
+    customerName?: string | null;
+    sessionMode: 'package_dinein' | 'alacarte';
+    guestCountFinal?: number;
+    paymentSummary: any;
+    closedAt: any;
+    startedByUid: string;
+    verifiedByUid?: string;
+    cashierName?: string;
+};
+
 export type ReceiptSettings = {
     businessName: string;
     branchName: string;
@@ -702,29 +716,6 @@ export type ReceiptSettings = {
     fontFamily: string;
 };
 
-export type ReceiptSession = {
-    id: string;
-    tableNumber?: string;
-    customer?: { name?: string };
-    customerName?: string | null;
-    sessionMode: 'package_dinein' | 'alacarte';
-    guestCountFinal?: number;
-    paymentSummary: {
-        subtotal: number;
-        lineDiscountsTotal: number;
-        billDiscountAmount: number;
-        adjustmentsTotal: number;
-        grandTotal: number;
-        totalPaid: number;
-        change: number;
-        printedCount?: number;
-    };
-    closedAt: any;
-    startedByUid: string;
-    verifiedByUid?: string;
-    cashierName?: string;
-};
-
 export type ReceiptData = {
     session: ReceiptSession;
     lines?: SessionBillLine[];
@@ -736,3 +727,5 @@ export type ReceiptData = {
     receiptNumber?: string;
     analytics?: any;
 };
+
+    

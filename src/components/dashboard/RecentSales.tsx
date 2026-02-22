@@ -161,3 +161,5 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
         </>
     );
 }
+
+    
