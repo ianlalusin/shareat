@@ -9,15 +9,19 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2, Printer, Info, Bluetooth } from "lucide-react";
-import { ReceiptView } from "@/components/receipt/receipt-view";
+import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { ModeOfPayment, Store, ReceiptData } from "@/lib/types";
+import type { ModeOfPayment, Store } from "@/lib/types";
 import { formatReceiptText } from "@/lib/printing/receiptFormatter";
 import ThermalPrinter from "@/lib/printing/thermalPrinter";
+import { useReceiptSettings } from "@/hooks/use-receipt-settings";
+import { getReceiptSettings } from "@/lib/receipts/receipt-settings";
+
+type StrippedReceiptData = Omit<ReceiptData, 'settings'>;
 
 function getUsername(appUser: any) {
   return (appUser?.displayName?.trim())
@@ -36,7 +40,9 @@ export default function ReceiptPage() {
     const { activeStore } = useStoreContext();
     const activeStoreId = activeStore?.id ?? null;
 
-    const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+    const { settings: receiptSettings, isLoading: settingsLoading } = useReceiptSettings(activeStoreId);
+
+    const [receiptData, setReceiptData] = useState<StrippedReceiptData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
@@ -54,13 +60,13 @@ export default function ReceiptPage() {
         const storedWidth = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
         if (storedWidth === "58mm" || storedWidth === "80mm") {
             setPaperWidth(storedWidth);
-        } else if (receiptData?.settings?.paperWidth) {
-            const paperSetting = receiptData.settings.paperWidth as "58mm" | "80mm";
+        } else if (receiptSettings?.paperWidth) {
+            const paperSetting = receiptSettings.paperWidth as "58mm" | "80mm";
              if (paperSetting === '58mm' || paperSetting === '80mm') {
                 setPaperWidth(paperSetting);
             }
         }
-    }, [storageKey, receiptData]);
+    }, [storageKey, receiptSettings]);
 
 
     useEffect(() => {
@@ -86,15 +92,11 @@ export default function ReceiptPage() {
             }
 
             try {
-                const [settingsSnap, receiptSnap] = await Promise.all([
-                    getDoc(doc(db, "stores", activeStoreId, "receiptSettings", "main")),
-                    getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string))
-                ]);
+                const receiptSnap = await getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string));
                 
                 if (!receiptSnap.exists()) throw new Error("Receipt not found.");
 
                 const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-                const settingsData = settingsSnap.exists() ? settingsSnap.data() as any : {};
                 
                 const sessionDataForPreview = {
                     id: receiptDocData.sessionId,
@@ -111,25 +113,12 @@ export default function ReceiptPage() {
                     session: sessionDataForPreview as any,
                     lines: receiptDocData.lines || [],
                     payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number})),
-                    settings: settingsData,
                     store: activeStore as Store,
                     receiptCreatedAt: receiptDocData.createdAt,
                     createdByUsername: receiptDocData.createdByUsername,
                     receiptNumber: receiptDocData.receiptNumber,
                     analytics: receiptDocData.analytics,
                 });
-                
-                const storedWidth = localStorage.getItem(storageKey);
-                if (storedWidth === "58mm" || storedWidth === "80mm") {
-                    setPaperWidth(storedWidth);
-                } else if (settingsData.paperWidth) {
-                    const paperSetting = settingsData.paperWidth as "58mm" | "80mm";
-                    if (paperSetting === "58mm" || paperSetting === "80mm") {
-                        setPaperWidth(paperSetting);
-                    }
-                }
-
-
             } catch (err: any) {
                 setError(err.message);
             } finally {
@@ -143,7 +132,7 @@ export default function ReceiptPage() {
     const [isPrinting, setIsPrinting] = useState(false);
 
     const handlePrint = async () => {
-        if (!receiptData || !activeStoreId || !sessionId) return;
+        if (!receiptData || !activeStoreId || !sessionId || settingsLoading) return;
         if (isPrinting) return;
     
         setIsPrinting(true);
@@ -184,13 +173,14 @@ export default function ReceiptPage() {
                 return;
             }
 
-            const width = paperWidth === "58mm" ? 58 : 80;
-            const text = formatReceiptText(receiptData, width);
+            // Always fetch latest settings for thermal printing
+            const liveSettings = await getReceiptSettings(db, activeStoreId);
+            const text = formatReceiptText({ ...receiptData, settings: liveSettings }, liveSettings.paperWidth);
 
             await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
             await ThermalPrinter.printReceipt({
                 text,
-                widthMm: width,
+                widthMm: liveSettings.paperWidth === "58mm" ? 58 : 80,
                 cut: true,
                 beep: true
             });
@@ -216,26 +206,22 @@ export default function ReceiptPage() {
     };
     
     useEffect(() => {
-        if (shouldAutoPrint && receiptData && !isLoading) {
+        if (shouldAutoPrint && receiptData && !isLoading && !settingsLoading) {
             const printKey = `autoprint:${sessionId}`;
             if (sessionStorage.getItem(printKey) !== "1") {
                 sessionStorage.setItem(printKey, "1");
                 handlePrint();
             }
         }
-    }, [shouldAutoPrint, receiptData, isLoading, sessionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shouldAutoPrint, receiptData, isLoading, settingsLoading, sessionId]);
 
     const handlePaperWidthChange = (value: "58mm" | "80mm") => {
         setPaperWidth(value);
         localStorage.setItem(storageKey, value);
     };
-
-    const widthClass = useMemo(() => {
-        if (paperWidth === "58mm") return "receipt-58";
-        return "receipt-80";
-    }, [paperWidth]);
-
-    if (isLoading) {
+    
+    if (isLoading || settingsLoading) {
         return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin h-10 w-10" /></div>;
     }
 
@@ -251,6 +237,7 @@ export default function ReceiptPage() {
     }
 
     const printedCount = receiptData?.analytics?.printedCount || 0;
+    const finalReceiptData = { ...receiptData, settings: receiptSettings };
 
     return (
         <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -271,8 +258,8 @@ export default function ReceiptPage() {
                                 {isThermalPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="mr-2 h-4 w-4"/>}
                                 Native Print
                             </Button>
-                            <Button onClick={handlePrint} disabled={!receiptData || isPrinting} className="flex-1 sm:flex-none">
-                                {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4"/>}
+                            <Button onClick={handlePrint} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
+                                {isPrinting || settingsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4"/>}
                                 {printedCount > 0 ? 'Reprint' : 'Print'}
                             </Button>
                         </div>
@@ -294,14 +281,11 @@ export default function ReceiptPage() {
                     id="receipt-print-root" 
                     data-paper={paperWidth}
                 >
-                    <div id="print-receipt-area" className={widthClass}>
-                        {receiptData ? <ReceiptView data={receiptData} paymentMethods={paymentMethods} forcePaperWidth={paperWidth} /> : <p>No receipt data found.</p>}
+                    <div id="print-receipt-area">
+                        {receiptData && <ReceiptView data={finalReceiptData} paymentMethods={paymentMethods} />}
                     </div>
                 </div>
             </div>
         </RoleGuard>
     );
 }
-
-    
-    

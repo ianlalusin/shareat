@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import Image from "next/image";
 import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings as ReceiptSettingsFromComponent } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
+import { cn } from "@/lib/utils";
 
 export type ReceiptSession = {
     id: string;
@@ -67,7 +68,6 @@ export type ReceiptData = {
 interface ReceiptViewProps {
     data: ReceiptData | null;
     paymentMethods?: ModeOfPayment[];
-    forcePaperWidth?: "58mm" | "80mm";
 }
 
 function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '', suffix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string, suffix?: string }) {
@@ -84,12 +84,12 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurr
     );
 }
 
-export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: ReceiptViewProps) {
-    if (!data || !data.session) {
+export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
+    if (!data || !data.session || !data.settings) {
         return null;
     }
     const { session, lines, settings, createdByUsername, store } = data;
-    const paperWidth = forcePaperWidth || settings.paperWidth || "80mm";
+    const paperWidth = settings.paperWidth || "80mm";
     const analytics = data.analytics || {};
 
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
@@ -116,15 +116,11 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const getPaymentMethodName = (id: string) => {
         const fromMap = paymentMethodMap.get(id);
         if (fromMap) return fromMap;
-
-        // Fallback for when `payments` in analytics is just a map of names to amounts
         const found = paymentMethods.find(pm => pm.name.toLowerCase() === id.toLowerCase());
         if (found) return found.name;
-
         return id;
     };
     
-    // Use analytics totals directly
     const { 
         subtotal = 0,
         discountsTotal = 0,
@@ -140,23 +136,24 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
     const vatableSales = grandTotal - taxAmount;
 
     const receiptStyles: React.CSSProperties = {
-        fontFamily: settings?.fontFamily || "'Courier New', Courier, monospace",
-        fontSize: `${settings?.fontSize || 12}px`,
+        fontFamily: settings?.fontFamily || undefined,
+        fontSize: settings?.fontSize ? `${settings.fontSize}px` : undefined,
     };
     
     const headerFontSize = {
-        fontSize: `${(settings?.fontSize || 12) * 1.5}px`,
+        fontSize: settings?.fontSize ? `${settings.fontSize * 1.5}px` : undefined,
     };
+    
+    const widthClass = paperWidth === "58mm" ? "receipt-58" : "receipt-80";
 
     return (
         <div 
-            data-paper-width={paperWidth} 
-            className="receipt-view bg-white text-black mx-auto p-4 shadow-lg"
+            className={cn("receipt-view bg-white text-black mx-auto p-4 shadow-lg", widthClass)}
             style={receiptStyles}
         >
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.logoUrl && (
-                    <div className="relative w-40 h-40 mx-auto mb-1">
+                    <div className="relative mx-auto mb-1" style={{width: '80%', height: 'auto', aspectRatio: '1 / 1'}}>
                         <Image 
                             src={settings.logoUrl} 
                             alt="Logo" 
@@ -257,12 +254,11 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
                     <hr className="border-dashed border-black my-2" />
                     <section className="space-y-px mb-2 receipt-section">
                          <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
-                         <ReceiptRow label="VAT Exempt Sales" value={0} isCurrency />
+                         <ReceiptRow label="VAT-Exempt Sales" value={0} isCurrency />
                          <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
                     </section>
                 </>
              )}
-
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
@@ -292,7 +288,6 @@ export function ReceiptView({ data, paymentMethods = [], forcePaperWidth }: Rece
 
             <footer className="text-center mt-4 space-y-2 receipt-section">
                 {settings.footerText && <p>{settings.footerText}</p>}
-                <p>Thank you!</p>
             </footer>
         </div>
     );

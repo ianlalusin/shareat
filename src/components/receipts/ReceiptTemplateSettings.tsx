@@ -2,10 +2,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { UseFormReturn } from "react-hook-form";
+import { useForm, UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Printer } from "lucide-react";
 import type { Store } from "@/lib/types";
 import { Slider } from "@/components/ui/slider";
+import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 
 export const receiptSettingsSchema = z.object({
   businessName: z.string(),
@@ -44,13 +45,24 @@ type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
 
 interface ReceiptSettingsProps {
     store: Store;
-    form: UseFormReturn<ReceiptSettingsFormValues>;
     onTestPrint?: () => void;
 }
 
-export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsProps) {
+export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const { settings, isLoading: settingsLoading } = useReceiptSettings(store.id);
+
+  const form = useForm<ReceiptSettingsFormValues>({
+    resolver: zodResolver(receiptSettingsSchema),
+    defaultValues: settings,
+  });
+
+  useEffect(() => {
+    if (settings) {
+        form.reset(settings);
+    }
+  }, [settings, form]);
   
   const isSubmitting = form.formState.isSubmitting;
 
@@ -65,6 +77,10 @@ export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsPro
     }
   };
   
+  if (settingsLoading) {
+      return <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin" /></div>
+  }
+
   return (
     <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
@@ -143,5 +159,3 @@ export function ReceiptSettings({ store, form, onTestPrint }: ReceiptSettingsPro
     </Form>
   );
 }
-
-    
