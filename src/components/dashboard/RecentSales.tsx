@@ -1,12 +1,12 @@
 
-
 "use client";
 
 import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { ReceiptView, type ReceiptData } from "../receipt/receipt-view";
+import { ReceiptView } from "../receipt/receipt-view";
+import type { ReceiptData } from "@/lib/types";
 import { Button } from "../ui/button";
 import { Printer } from "lucide-react";
 import { doc, getDoc, collection, getDocs, query, orderBy, updateDoc, increment, serverTimestamp } from "firebase/firestore";
