@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { useForm, UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -48,7 +48,7 @@ interface ReceiptSettingsProps {
     onTestPrint?: () => void;
 }
 
-export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
+export function ReceiptTemplateSettings({ store, onTestPrint }: ReceiptSettingsProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const { settings, isLoading: settingsLoading } = useReceiptSettings(store.id);
@@ -59,10 +59,10 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
   });
 
   useEffect(() => {
-    if (settings) {
+    if (settings && !form.formState.isSubmitting) {
         form.reset(settings);
     }
-  }, [settings, form]);
+  }, [settings, form.reset, form.formState.isSubmitting]);
   
   const isSubmitting = form.formState.isSubmitting;
 
