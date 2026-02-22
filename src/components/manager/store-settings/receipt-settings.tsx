@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { UseFormReturn } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
@@ -163,5 +163,3 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
     </Form>
   );
 }
-
-    
