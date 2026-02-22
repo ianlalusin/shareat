@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect } from "react";
@@ -20,6 +21,7 @@ import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { receiptSettingsSchema, type ReceiptSettingsFormValues } from "@/lib/receipts/receipt-settings";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 
 const fontOptions = [
     { name: "Courier New", value: "'Courier New', Courier, monospace" },
@@ -187,3 +189,5 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
     </Form>
   );
 }
+
+    
