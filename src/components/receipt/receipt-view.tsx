@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings as ReceiptSettingsFromComponent } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 
@@ -30,28 +30,6 @@ export type ReceiptSession = {
     verifiedByUid?: string;
     cashierName?: string;
 };
-
-// This type must match the one in `receipt-settings.tsx`
-export type ReceiptSettings = {
-  businessName: string;
-  branchName: string;
-  address: string;
-  contact: string;
-  tin?: string;
-  vatType?: "VAT" | "NON_VAT";
-  logoUrl?: string | null;
-  footerText?: string;
-  showCashierName: boolean;
-  showTableOrCustomer: boolean;
-  showItemNotes: boolean;
-  showDiscountBreakdown: boolean;
-  showChargeBreakdown: boolean;
-  paperWidth?: "58mm" | "80mm";
-  receiptNoFormat?: string;
-  autoPrintAfterPayment: boolean;
-  fontSize?: number;
-  fontFamily?: string;
-}
 
 export type ReceiptData = {
     session: ReceiptSession;
@@ -152,8 +130,8 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
             style={receiptStyles}
         >
             <header className="text-center space-y-px mb-2 receipt-section">
-                {settings.logoUrl && (
-                    <div className="relative mx-auto mb-1" style={{width: '80%', height: 'auto', aspectRatio: '1 / 1'}}>
+                {settings.showLogo && settings.logoUrl && (
+                    <div className="relative mx-auto mb-1" style={{width: `${settings.logoWidthPct || 80}%`, height: 'auto', aspectRatio: '1 / 1'}}>
                         <Image 
                             src={settings.logoUrl} 
                             alt="Logo" 
@@ -292,3 +270,5 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
         </div>
     );
 }
+
+    

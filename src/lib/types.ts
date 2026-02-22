@@ -1,3 +1,4 @@
+
 import { Timestamp } from "firebase/firestore";
 import type { ReceiptData, ReceiptSession, ReceiptSettings as ReceiptSettingsFromComponent } from "@/components/receipt/receipt-view";
 
@@ -679,10 +680,28 @@ export type SalesForecast = {
   createdAt: Timestamp;
 };
 
-export interface ReceiptSettings extends ReceiptSettingsFromComponent {
-    fontSize?: number;
-    fontFamily?: string;
-}
+export type ReceiptSettings = {
+    businessName: string;
+    branchName: string;
+    address: string;
+    contact: string;
+    tin?: string;
+    vatType?: "VAT" | "NON_VAT";
+    logoUrl?: string | null;
+    showLogo?: boolean;
+    logoWidthPct?: number;
+    footerText?: string;
+    showCashierName: boolean;
+    showTableOrCustomer: boolean;
+    showItemNotes: boolean;
+    showDiscountBreakdown: boolean;
+    showChargeBreakdown: boolean;
+    paperWidth: "58mm" | "80mm";
+    receiptNoFormat?: string;
+    autoPrintAfterPayment: boolean;
+    fontSize: number;
+    fontFamily: string;
+};
 
 export type { ReceiptData, ReceiptSession };
 

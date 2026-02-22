@@ -12,6 +12,8 @@ export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
     tin: "",
     vatType: "NON_VAT",
     logoUrl: null,
+    showLogo: true,
+    logoWidthPct: 80,
     footerText: "",
     showCashierName: true,
     showTableOrCustomer: true,
@@ -60,3 +62,5 @@ export async function getReceiptSettings(db: Firestore, storeId: string): Promis
     const fetched = docSnap.exists() ? (docSnap.data() as Partial<ReceiptSettings>) : {};
     return mergeReceiptSettings(fetched);
 }
+
+    
