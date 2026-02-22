@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -37,10 +36,10 @@ export const receiptSettingsSchema = z.object({
   paperWidth: z.enum(["58mm", "80mm"]).default("80mm"),
   receiptNoFormat: z.string().optional(),
   autoPrintAfterPayment: z.boolean().default(false),
-  fontSize: z.number().min(8).max(16).default(12),
+  fontSize: z.coerce.number().min(8).max(16).default(12),
   fontFamily: z.string().default("'Courier New', Courier, monospace"),
   showLogo: z.boolean().default(true),
-  logoWidthPct: z.number().min(20).max(100).default(80),
+  logoWidthPct: z.coerce.number().min(20).max(100).default(80),
 });
 
 type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
@@ -108,7 +107,7 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
                 <h3 className="font-semibold">Logo & Font</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="showLogo" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Logo</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
-                    <FormField control={form.control} name="logoWidthPct" render={({ field }) => <FormItem><FormLabel>Logo Width (%)</FormLabel><Select onValueChange={(val) => field.onChange(Number(val))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="50">50%</SelectItem><SelectItem value="60">60%</SelectItem><SelectItem value="70">70%</SelectItem><SelectItem value="80">80%</SelectItem><SelectItem value="90">90%</SelectItem><SelectItem value="100">100%</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="logoWidthPct" render={({ field }) => <FormItem><FormLabel>Logo Width (%)</FormLabel><Select onValueChange={(val) => field.onChange(Number(val))} value={String(field.value ?? 80)}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="50">50%</SelectItem><SelectItem value="60">60%</SelectItem><SelectItem value="70">70%</SelectItem><SelectItem value="80">80%</SelectItem><SelectItem value="90">90%</SelectItem><SelectItem value="100">100%</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="fontFamily" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Font Family</FormLabel>
@@ -127,10 +126,10 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
                     )} />
                     <FormField control={form.control} name="fontSize" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Font Size: {field.value}px</FormLabel>
+                            <FormLabel>Font Size: {field.value ?? 12}px</FormLabel>
                             <FormControl>
                                 <Slider
-                                    value={[field.value]}
+                                    value={[field.value ?? 12]}
                                     onValueChange={(value) => field.onChange(value[0])}
                                     min={8}
                                     max={16}
