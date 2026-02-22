@@ -4,44 +4,9 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store, ReceiptSettings } from "@/lib/types";
+import type { ModeOfPayment, SessionBillLine, Store, ReceiptData, ReceiptSettings } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
-
-export type ReceiptSession = {
-    id: string;
-    tableNumber?: string;
-    customer?: { name?: string };
-    customerName?: string | null;
-    sessionMode: 'package_dinein' | 'alacarte';
-    guestCountFinal?: number;
-    paymentSummary: {
-        subtotal: number;
-        lineDiscountsTotal: number;
-        billDiscountAmount: number;
-        adjustmentsTotal: number;
-        grandTotal: number;
-        totalPaid: number;
-        change: number;
-        printedCount?: number;
-    };
-    closedAt: any;
-    startedByUid: string;
-    verifiedByUid?: string;
-    cashierName?: string;
-};
-
-export type ReceiptData = {
-    session: ReceiptSession;
-    lines?: SessionBillLine[];
-    payments: any[];
-    settings: ReceiptSettings;
-    store?: Store;
-    receiptCreatedAt?: any;
-    createdByUsername?: string;
-    receiptNumber?: string;
-    analytics?: any;
-};
 
 interface ReceiptViewProps {
     data: ReceiptData | null;
@@ -270,5 +235,3 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
         </div>
     );
 }
-
-    

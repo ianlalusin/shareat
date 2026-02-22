@@ -1,6 +1,5 @@
 
 import { Timestamp } from "firebase/firestore";
-import type { ReceiptData, ReceiptSession, ReceiptSettings as ReceiptSettingsFromComponent } from "@/components/receipt/receipt-view";
 
 export type UserRole = 'admin' | 'manager' | 'cashier' | 'kitchen' | 'server' | 'pending';
 
@@ -703,6 +702,37 @@ export type ReceiptSettings = {
     fontFamily: string;
 };
 
-export type { ReceiptData, ReceiptSession };
+export type ReceiptSession = {
+    id: string;
+    tableNumber?: string;
+    customer?: { name?: string };
+    customerName?: string | null;
+    sessionMode: 'package_dinein' | 'alacarte';
+    guestCountFinal?: number;
+    paymentSummary: {
+        subtotal: number;
+        lineDiscountsTotal: number;
+        billDiscountAmount: number;
+        adjustmentsTotal: number;
+        grandTotal: number;
+        totalPaid: number;
+        change: number;
+        printedCount?: number;
+    };
+    closedAt: any;
+    startedByUid: string;
+    verifiedByUid?: string;
+    cashierName?: string;
+};
 
-    
+export type ReceiptData = {
+    session: ReceiptSession;
+    lines?: SessionBillLine[];
+    payments: any[];
+    settings: ReceiptSettings;
+    store?: Store;
+    receiptCreatedAt?: any;
+    createdByUsername?: string;
+    receiptNumber?: string;
+    analytics?: any;
+};
