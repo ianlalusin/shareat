@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm, type UseFormReturn } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -12,15 +12,22 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Printer } from "lucide-react";
 import type { Store } from "@/lib/types";
 import { Slider } from "@/components/ui/slider";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
-import { receiptSettingsSchema } from "@/lib/receipts/receipt-settings";
+import { receiptSettingsSchema, type ReceiptSettingsFormValues } from "@/lib/receipts/receipt-settings";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
+const fontOptions = [
+    { name: "Courier New", value: "'Courier New', Courier, monospace" },
+    { name: "Lucida Console", value: "'Lucida Console', Monaco, monospace" },
+    { name: "Monospace", value: "monospace" },
+    { name: "Sans-Serif", value: "sans-serif" },
+    { name: "Serif", value: "serif" },
+];
 
 interface ReceiptSettingsProps {
     store: Store;
@@ -38,10 +45,12 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
   });
 
   useEffect(() => {
+    // Only reset the form if the settings have loaded and the form is not currently being submitted.
+    // This prevents a race condition where a save is in progress but new data comes in.
     if (settings && !form.formState.isSubmitting) {
         form.reset(settings);
     }
-  }, [settings, form]);
+  }, [settings, form]); // depends on `form` to get `formState`
   
   const isSubmitting = form.formState.isSubmitting;
 
@@ -73,6 +82,7 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
                     )}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <FormField control={form.control} name="showLogo" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Logo</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showCashierName" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Cashier</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showTableOrCustomer" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Table/Customer</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
                     <FormField control={form.control} name="showItemNotes" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Item Notes</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
@@ -82,51 +92,88 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
             </div>
 
             <div className="space-y-4 p-4 border rounded-lg">
-                <h3 className="font-semibold">Logo & Font</h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="showLogo" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Show Logo</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
-                    <FormField control={form.control} name="logoWidthPct" render={({ field }) => <FormItem><FormLabel>Logo Width (%)</FormLabel><Select onValueChange={(val) => field.onChange(Number(val))} value={String(field.value ?? 80)}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="50">50%</SelectItem><SelectItem value="60">60%</SelectItem><SelectItem value="70">70%</SelectItem><SelectItem value="80">80%</SelectItem><SelectItem value="90">90%</SelectItem><SelectItem value="100">100%</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="fontFamily" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Font Family</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                <SelectContent>
-                                    <SelectItem value="'Courier New', Courier, monospace">Courier New</SelectItem>
-                                    <SelectItem value="'Lucida Console', Monaco, monospace">Lucida Console</SelectItem>
-                                    <SelectItem value="monospace">Monospace</SelectItem>
-                                    <SelectItem value="sans-serif">Sans-Serif</SelectItem>
-                                    <SelectItem value="serif">Serif</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                    <FormField control={form.control} name="fontSize" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Font Size: {field.value ?? 12}px</FormLabel>
-                            <FormControl>
-                                <Slider
-                                    value={[field.value ?? 12]}
-                                    onValueChange={(value) => field.onChange(value[0])}
-                                    min={8}
-                                    max={16}
-                                    step={1}
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                </div>
-            </div>
-
-            <div className="space-y-4 p-4 border rounded-lg">
-                <h3 className="font-semibold">Formatting & Behavior</h3>
-                 <div className="grid md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="paperWidth" render={({ field }) => <FormItem><FormLabel>Paper Width</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="58mm">58mm (Small Thermal)</SelectItem><SelectItem value="80mm">80mm (Standard Thermal)</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="receiptNoFormat" render={({ field }) => <FormItem><FormLabel>Receipt No. Format</FormLabel><FormControl><Input placeholder="e.g., SEV5-{YYYY}-{####}" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="footerText" render={({ field }) => <FormItem className="md:col-span-2"><FormLabel>Footer Text</FormLabel><FormControl><Textarea {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
-                     <FormField control={form.control} name="autoPrintAfterPayment" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3 col-span-2"><FormLabel>Auto-print after payment</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
+                <h3 className="font-semibold">Formatting & Style</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                       <FormField control={form.control} name="paperWidth" render={({ field }) => (
+                            <FormItem className="space-y-3">
+                                <FormLabel>Paper Width</FormLabel>
+                                <FormControl>
+                                    <RadioGroup
+                                        onValueChange={field.onChange}
+                                        value={field.value}
+                                        className="flex items-center space-x-4"
+                                    >
+                                        <FormItem className="flex items-center space-x-2 space-y-0">
+                                            <FormControl><RadioGroupItem value="58mm" id="r1" /></FormControl>
+                                            <Label htmlFor="r1" className="font-normal">58mm</Label>
+                                        </FormItem>
+                                        <FormItem className="flex items-center space-x-2 space-y-0">
+                                            <FormControl><RadioGroupItem value="80mm" id="r2" /></FormControl>
+                                            <Label htmlFor="r2" className="font-normal">80mm</Label>
+                                        </FormItem>
+                                    </RadioGroup>
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+                        <FormField control={form.control} name="receiptNoFormat" render={({ field }) => <FormItem><FormLabel>Receipt No. Format</FormLabel><FormControl><Input placeholder="e.g., SEV5-{YYYY}-{####}" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
+                        <FormField control={form.control} name="footerText" render={({ field }) => <FormItem><FormLabel>Footer Text</FormLabel><FormControl><Textarea {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
+                        <FormField control={form.control} name="autoPrintAfterPayment" render={({ field }) => <FormItem className="flex items-center justify-between rounded-lg border p-3"><FormLabel>Auto-print after payment</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>} />
+                    </div>
+                     <div className="space-y-4">
+                        <FormField control={form.control} name="logoWidthPct" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Logo Width: {field.value ?? 80}%</FormLabel>
+                                <FormControl>
+                                    <Slider
+                                        value={[field.value ?? 80]}
+                                        onValueChange={(value) => field.onChange(value[0])}
+                                        min={20}
+                                        max={100}
+                                        step={10}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+                        <FormField control={form.control} name="fontSize" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Font Size: {field.value ?? 12}px</FormLabel>
+                                <FormControl>
+                                    <Slider
+                                        value={[field.value ?? 12]}
+                                        onValueChange={(value) => field.onChange(value[0])}
+                                        min={8}
+                                        max={16}
+                                        step={1}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+                        <FormField control={form.control} name="fontFamily" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Font Family</FormLabel>
+                                <FormControl>
+                                    <div className="flex flex-wrap gap-2 pt-2">
+                                        {fontOptions.map((opt) => (
+                                            <Badge
+                                                key={opt.name}
+                                                variant={field.value === opt.value ? "default" : "outline"}
+                                                onClick={() => field.onChange(opt.value)}
+                                                className="cursor-pointer text-base"
+                                                style={{ fontFamily: opt.value }}
+                                            >
+                                                {opt.name}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+                    </div>
                 </div>
             </div>
 
