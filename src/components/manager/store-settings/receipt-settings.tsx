@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -15,32 +15,10 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Printer } from "lucide-react";
-import type { Store, ReceiptSettings as ReceiptSettingsType } from "@/lib/types";
+import type { Store } from "@/lib/types";
 import { Slider } from "@/components/ui/slider";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
-
-export const receiptSettingsSchema = z.object({
-  businessName: z.string(),
-  branchName: z.string(),
-  address: z.string(),
-  contact: z.string(),
-  tin: z.string().optional(),
-  vatType: z.enum(["VAT", "NON_VAT"]).optional(),
-  logoUrl: z.string().url().optional().nullable(),
-  footerText: z.string().optional(),
-  showCashierName: z.boolean().default(true),
-  showTableOrCustomer: z.boolean().default(true),
-  showItemNotes: z.boolean().default(true),
-  showDiscountBreakdown: z.boolean().default(true),
-  showChargeBreakdown: z.boolean().default(true),
-  paperWidth: z.enum(["58mm", "80mm"]).default("80mm"),
-  receiptNoFormat: z.string().optional(),
-  autoPrintAfterPayment: z.boolean().default(false),
-  fontSize: z.coerce.number().min(8).max(16).default(12),
-  fontFamily: z.string().default("'Courier New', Courier, monospace"),
-  showLogo: z.boolean().default(true),
-  logoWidthPct: z.coerce.number().min(20).max(100).default(80),
-});
+import { receiptSettingsSchema } from "@/lib/receipts/receipt-settings";
 
 type ReceiptSettingsFormValues = z.infer<typeof receiptSettingsSchema>;
 
@@ -63,7 +41,7 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
     if (settings && !form.formState.isSubmitting) {
         form.reset(settings);
     }
-  }, [settings, form.reset, form.formState.isSubmitting]);
+  }, [settings, form]);
   
   const isSubmitting = form.formState.isSubmitting;
 

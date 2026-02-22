@@ -12,8 +12,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
@@ -23,7 +21,7 @@ import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
 import { ReceiptView, type ReceiptData } from "@/components/receipt/receipt-view";
-import { ReceiptSettings as ReceiptTemplateSettings, receiptSettingsSchema } from "@/components/manager/store-settings/receipt-settings";
+import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
@@ -149,26 +147,7 @@ export default function ReceiptsPage() {
         }
         return `${fmtDate(start)} - ${fmtDate(end)}`;
     }, [start, end]);
-
-    const form = useForm<z.infer<typeof receiptSettingsSchema>>({
-        resolver: zodResolver(receiptSettingsSchema),
-        defaultValues: settings
-    });
-
-    useEffect(() => {
-      if (isSettingsOpen && activeStore) {
-        const settingsRef = doc(db, "stores", activeStore.id, "receiptSettings", "main");
-        const unsub = onSnapshot(settingsRef, (doc) => {
-          if (doc.exists()) {
-            if (!form.formState.isSubmitting) {
-                form.reset(doc.data());
-            }
-          }
-        });
-        return () => unsub();
-      }
-    }, [isSettingsOpen, activeStore, form]);
-
+    
 
     useEffect(() => {
         if (!searchParams) return;
@@ -420,7 +399,6 @@ export default function ReceiptsPage() {
         fetchReceiptDetails();
     }, [selectedReceiptId, activeStore, toast]);
     
-
     const handlePrint = async () => {
         if (!selectedReceiptData || !selectedReceiptId || !appUser || !activeStore) return;
         setIsPrinting(true);
@@ -672,93 +650,93 @@ export default function ReceiptsPage() {
                                                 (r.status === "voided") ||
                                                 ((appUser?.role || "").toLowerCase() === "manager" && r.isEdited === true);
                                             return (
-                                        <TableRow 
-                                            key={r.id} 
-                                            onClick={(e) => {
-                                                const el = e.target as HTMLElement;
-                                                if (el.closest("button")) return;
-                                                handleSelectReceipt(r.id);
-                                            }}
-                                            className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
-                                        >
-                                            <TableCell className="font-medium py-2">
-                                                <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
-                                                <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
-                                            </TableCell>
-                                            <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                            {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
-                                                <TableCell
-                                                    className="text-right py-2"
-                                                >
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
-                                                        className="mr-2"
-                                                        disabled={r.status === "voided"}
-                                                        type="button"
+                                            <TableRow 
+                                                key={r.id} 
+                                                onClick={(e) => {
+                                                    const el = e.target as HTMLElement;
+                                                    if (el.closest("button")) return;
+                                                    handleSelectReceipt(r.id);
+                                                }}
+                                                className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
+                                            >
+                                                <TableCell className="font-medium py-2">
+                                                    <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
+                                                    <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
+                                                </TableCell>
+                                                <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                                {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
+                                                    <TableCell
+                                                        className="text-right py-2"
                                                     >
-                                                        <Edit className="h-4 w-4" />
-                                                    </Button>
-                                                    
-                                                    {(appUser?.role === "admin" || appUser?.role === "manager") && (
                                                         <Button
-                                                            variant="destructive"
+                                                            variant="outline"
                                                             size="sm"
-                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
-                                                            disabled={isVoidDisabled}
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
+                                                            className="mr-2"
+                                                            disabled={r.status === "voided"}
                                                             type="button"
                                                         >
-                                                            {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                            <Edit className="h-4 w-4" />
                                                         </Button>
-                                                    )}
-                                                </TableCell>
-                                            )}
-                                        </TableRow>
-                                    )})}
-                                </TableBody>
-                            </Table>
-                        )}
-                         {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
-                         {hasMore && !isLoadingReceipts && (
-                            <div className="text-center py-4">
-                                <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
-                                    {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
-                                    Load More
-                                </Button>
-                            </div>
-                         )}
-                    </CardContent>
-                </Card>
-
-                <div className="sticky top-20">
-                     <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <CardTitle>Preview</CardTitle>
-                            <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting || settingsLoading}>
-                                {isPrinting || settingsLoading ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
-                            </Button>
-                        </CardHeader>
-                        <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
-                        {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
-                            <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />
-                        ) : (
-                            <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
-                        )}
+                                                        
+                                                        {(appUser?.role === "admin" || appUser?.role === "manager") && (
+                                                            <Button
+                                                                variant="destructive"
+                                                                size="sm"
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleVoidClick(r); }}
+                                                                disabled={isVoidDisabled}
+                                                                type="button"
+                                                            >
+                                                                {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
+                                                            </Button>
+                                                        )}
+                                                    </TableCell>
+                                                )}
+                                            </TableRow>
+                                        )})}
+                                    </TableBody>
+                                </Table>
+                            )}
+                             {filteredReceipts.length === 0 && !isLoadingReceipts && <p className="text-center text-muted-foreground py-10">No receipts found for this period.</p>}
+                             {hasMore && !isLoadingReceipts && (
+                                <div className="text-center py-4">
+                                    <Button onClick={() => fetchReceipts(true)} disabled={isLoadingMore}>
+                                        {isLoadingMore ? <Loader2 className="animate-spin mr-2"/> : null}
+                                        Load More
+                                    </Button>
+                                </div>
+                             )}
                         </CardContent>
                     </Card>
+
+                    <div className="sticky top-20">
+                         <Card>
+                            <CardHeader className="flex flex-row items-center justify-between">
+                                <CardTitle>Preview</CardTitle>
+                                <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting || settingsLoading}>
+                                    {isPrinting || settingsLoading ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
+                                </Button>
+                            </CardHeader>
+                            <CardContent id="print-receipt-area" className="bg-gray-100 dark:bg-gray-800 p-2 rounded-b-lg">
+                            {isLoadingPreview ? <div className="flex justify-center p-8"><Loader2 className="animate-spin"/></div> : selectedReceiptData ? (
+                                <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />
+                            ) : (
+                                <div className="text-center text-muted-foreground py-20">Select a receipt to preview</div>
+                            )}
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
-            </div>
             </div>
             
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
                     <DialogHeader className="p-6 pb-0">
                         <DialogTitle>Receipt Template Settings</DialogTitle>
-                        <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
+                        <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}.</DialogDescription>
                     </DialogHeader>
                      <div className="overflow-y-auto px-6">
-                        <ReceiptTemplateSettings store={activeStore} form={form} />
+                        <ReceiptTemplateSettings store={activeStore} />
                      </div>
                      <div className="p-6 pt-0">
                         <DialogClose asChild><Button type="button" variant="secondary">Close</Button></DialogClose>
@@ -806,7 +784,7 @@ export default function ReceiptsPage() {
             />
 
             {/* This div is only for printing */}
-            <div id="receipt-print-root" className="hidden print-block">
+            <div id="receipt-print-root" className="hidden">
                 {selectedReceiptData && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}

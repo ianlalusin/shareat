@@ -1,8 +1,31 @@
-
 "use client";
 
 import { doc, getDoc, onSnapshot, type DocumentData, type Firestore } from "firebase/firestore";
 import type { ReceiptSettings } from "@/lib/types";
+import { z } from "zod";
+
+export const receiptSettingsSchema = z.object({
+  businessName: z.string(),
+  branchName: z.string(),
+  address: z.string(),
+  contact: z.string(),
+  tin: z.string().optional(),
+  vatType: z.enum(["VAT", "NON_VAT"]).optional(),
+  logoUrl: z.string().url().optional().nullable(),
+  footerText: z.string().optional(),
+  showCashierName: z.boolean().default(true),
+  showTableOrCustomer: z.boolean().default(true),
+  showItemNotes: z.boolean().default(true),
+  showDiscountBreakdown: z.boolean().default(true),
+  showChargeBreakdown: z.boolean().default(true),
+  paperWidth: z.enum(["58mm", "80mm"]).default("80mm"),
+  receiptNoFormat: z.string().optional(),
+  autoPrintAfterPayment: z.boolean().default(false),
+  fontSize: z.coerce.number().min(8).max(16).default(12),
+  fontFamily: z.string().default("'Courier New', Courier, monospace"),
+  showLogo: z.boolean().default(true),
+  logoWidthPct: z.coerce.number().min(20).max(100).default(80),
+});
 
 export const DEFAULT_RECEIPT_SETTINGS: ReceiptSettings = {
     businessName: "Your Business",
@@ -62,5 +85,3 @@ export async function getReceiptSettings(db: Firestore, storeId: string): Promis
     const fetched = docSnap.exists() ? (docSnap.data() as Partial<ReceiptSettings>) : {};
     return mergeReceiptSettings(fetched);
 }
-
-    
