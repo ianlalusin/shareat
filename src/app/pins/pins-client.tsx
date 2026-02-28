@@ -9,7 +9,7 @@ import { useStoreContext } from "@/context/store-context";
 import { issueCustomerPinClient, disableCustomerAccessClient } from "@/components/pins/firestore";
 
 // If you have RoleGuard, wrap it exactly how your other pages do:
-import { RoleGuard } from "@/components/auth/role-guard"; // <-- adjust import path if different
+import { RoleGuard } from "@/components/guards/RoleGuard";
 
 type ActiveSession = {
   id: string;
