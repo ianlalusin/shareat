@@ -78,6 +78,22 @@ export type StartSessionPayload = {
 };
 
 /**
+ * Helper to disable customer PIN access within a transaction.
+ * It finds the PIN from the session projection and deletes it from the pinRegistry.
+ * @param tx The Firestore transaction object.
+ * @param projectionSnap The DocumentSnapshot of the active session projection.
+ */
+function _disableCustomerPinInTx(tx: Transaction, projectionSnap: DocumentSnapshot<DocumentData>) {
+    if (projectionSnap.exists()) {
+        const pin = projectionSnap.data()?.customerPin;
+        if (pin) {
+            tx.delete(doc(db, "pinRegistry", String(pin)));
+        }
+    }
+}
+
+
+/**
  * Formats a receipt number based on a template and a sequence number.
  * @param fmt The format string (e.g., "PREFIX-#####").
  * @param seq The sequence number.
@@ -103,7 +119,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const customerName = payload.customer?.name ?? null;
   const tableNumber = isAlaCarte ? null : payload.tableNumber;
   const tableDisplayName = payload.displayName || `Table ${payload.tableNumber}`;
-  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber: payload.tableNumber });
+  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableDisplayName, tableNumber: payload.tableNumber });
 
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
@@ -318,6 +334,10 @@ export async function completePaymentFromUnits(
       tx.get(counterRef),
       tx.get(activeProjectionRef),
     ]);
+    
+    // Disable any active PIN associated with this session.
+    _disableCustomerPinInTx(tx, activeProjectionSnap);
+
 
     const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
     const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
@@ -633,6 +653,10 @@ export async function voidSession({
         tx.get(sessionRef),
         tx.get(activeProjectionRef),
     ]);
+    
+    // Disable any active PIN associated with this session.
+    _disableCustomerPinInTx(tx, activeProjectionSnap);
+
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
