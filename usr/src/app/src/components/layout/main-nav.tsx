@@ -1,10 +1,11 @@
+
 'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/lib/types'
-import { SheetClose } from '../ui/sheet'
+import { SheetClose } from '@/components/ui/sheet'
 
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier'] },
