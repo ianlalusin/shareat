@@ -45,7 +45,7 @@ import type {
 
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
-import { writeActivityLog } from './activity-log';
+import { writeActivityLog } from '@/components/cashier/activity-log';
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
@@ -103,7 +103,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const customerName = payload.customer?.name ?? null;
   const tableNumber = isAlaCarte ? null : payload.tableNumber;
   const tableDisplayName = payload.displayName || `Table ${payload.tableNumber}`;
-  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber: tableDisplayName });
+  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableNumber: payload.tableNumber });
 
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
@@ -171,7 +171,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       tableId: payload.tableId,
       tableNumber: isAlaCarte ? null : payload.tableNumber,
       tableDisplayName: isAlaCarte ? null : tableDisplayName,
-      customerName: isAlaCarte ? customerName : null,
+      customerName: customerName,
       packageOfferingId: payload.package?.packageId || null,
       packageName: payload.package?.packageName || null, // Denormalize for server page
       packageSnapshot: payload.package
@@ -220,6 +220,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         storeId,
         tableId: payload.tableId,
         tableNumber: payload.tableNumber,
+        tableDisplayName: tableDisplayName,
         type: 'package',
         itemId: payload.package.packageId,
         itemName: payload.package.packageName,
@@ -819,6 +820,7 @@ export async function createKitchenTickets(
       sessionId: sessionId, 
       storeId,
       tableNumber: session.tableNumber,
+      tableDisplayName: session.tableDisplayName,
       customerName: session.customer?.name || session.customerName,
       sessionMode: session.sessionMode,
       sessionLabel: computeSessionLabel(session),

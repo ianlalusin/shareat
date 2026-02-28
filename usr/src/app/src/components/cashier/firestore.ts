@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import {
@@ -44,7 +45,7 @@ import type {
 
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
-import { writeActivityLog } from './activity-log';
+import { writeActivityLog } from '@/components/cashier/activity-log';
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
@@ -219,6 +220,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         storeId,
         tableId: payload.tableId,
         tableNumber: payload.tableNumber,
+        tableDisplayName: tableDisplayName,
         type: 'package',
         itemId: payload.package.packageId,
         itemName: payload.package.packageName,
@@ -818,6 +820,7 @@ export async function createKitchenTickets(
       sessionId: sessionId, 
       storeId,
       tableNumber: session.tableNumber,
+      tableDisplayName: session.tableDisplayName,
       customerName: session.customer?.name || session.customerName,
       sessionMode: session.sessionMode,
       sessionLabel: computeSessionLabel(session),
