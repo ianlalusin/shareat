@@ -87,24 +87,14 @@ export type StartSessionPayload = {
  */
 function _disableCustomerPinInTx(
   tx: Transaction,
-  activeProjectionRef: DocumentReference<DocumentData>,
   projectionSnap: DocumentSnapshot<DocumentData>
 ) {
   if (!projectionSnap.exists()) return;
 
   const pin = projectionSnap.data()?.customerPin;
-  if (pin) tx.delete(doc(db, "pinRegistry", String(pin)));
-
-  tx.set(
-    activeProjectionRef,
-    {
-      customerAccessEnabled: false,
-      customerPin: null,
-      customerAccessExpiresAtMs: null,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+  if (pin) {
+    tx.delete(doc(db, "pinRegistry", String(pin)));
+  }
 }
 
 
@@ -351,7 +341,7 @@ export async function completePaymentFromUnits(
     ]);
     
     // Disable any active PIN associated with this session.
-    _disableCustomerPinInTx(tx, activeProjectionRef, activeProjectionSnap);
+    _disableCustomerPinInTx(tx, activeProjectionSnap);
 
 
     const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
@@ -675,7 +665,7 @@ export async function voidSession({
         tx.get(activeProjectionRef),
     ]);
     
-    _disableCustomerPinInTx(tx, activeProjectionRef, activeProjectionSnap);
+    _disableCustomerPinInTx(tx, activeProjectionSnap);
 
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
