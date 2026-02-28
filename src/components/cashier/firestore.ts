@@ -79,17 +79,32 @@ export type StartSessionPayload = {
 
 /**
  * Helper to disable customer PIN access within a transaction.
- * It finds the PIN from the session projection and deletes it from the pinRegistry.
+ * It finds the PIN from the session projection, deletes it from the pinRegistry,
+ * and updates the active projection itself to reflect the disabled state.
  * @param tx The Firestore transaction object.
+ * @param activeProjectionRef Reference to the active session projection document.
  * @param projectionSnap The DocumentSnapshot of the active session projection.
  */
-function _disableCustomerPinInTx(tx: Transaction, projectionSnap: DocumentSnapshot<DocumentData>) {
-    if (projectionSnap.exists()) {
-        const pin = projectionSnap.data()?.customerPin;
-        if (pin) {
-            tx.delete(doc(db, "pinRegistry", String(pin)));
-        }
-    }
+function _disableCustomerPinInTx(
+  tx: Transaction,
+  activeProjectionRef: DocumentReference<DocumentData>,
+  projectionSnap: DocumentSnapshot<DocumentData>
+) {
+  if (!projectionSnap.exists()) return;
+
+  const pin = projectionSnap.data()?.customerPin;
+  if (pin) tx.delete(doc(db, "pinRegistry", String(pin)));
+
+  tx.set(
+    activeProjectionRef,
+    {
+      customerAccessEnabled: false,
+      customerPin: null,
+      customerAccessExpiresAtMs: null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
 
 
@@ -119,7 +134,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const customerName = payload.customer?.name ?? null;
   const tableNumber = isAlaCarte ? null : payload.tableNumber;
   const tableDisplayName = payload.displayName || `Table ${payload.tableNumber}`;
-  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableDisplayName, tableNumber: payload.tableNumber });
+  const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableDisplayName: tableDisplayName });
 
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
@@ -336,7 +351,7 @@ export async function completePaymentFromUnits(
     ]);
     
     // Disable any active PIN associated with this session.
-    _disableCustomerPinInTx(tx, activeProjectionSnap);
+    _disableCustomerPinInTx(tx, activeProjectionRef, activeProjectionSnap);
 
 
     const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
@@ -457,6 +472,9 @@ export async function completePaymentFromUnits(
       tx.set(closedProjectionRef, {
         ...projectionData,
         status: 'closed',
+        customerAccessEnabled: false,
+        customerPin: null,
+        customerAccessExpiresAtMs: null,
         updatedAt: serverTimestamp(),
         closedAt: serverTimestamp(),
       });
@@ -465,6 +483,9 @@ export async function completePaymentFromUnits(
         tx.set(closedProjectionRef, {
             ...sessionData,
             status: 'closed',
+            customerAccessEnabled: false,
+            customerPin: null,
+            customerAccessExpiresAtMs: null,
             updatedAt: serverTimestamp(),
             closedAt: serverTimestamp(),
         })
@@ -654,8 +675,7 @@ export async function voidSession({
         tx.get(activeProjectionRef),
     ]);
     
-    // Disable any active PIN associated with this session.
-    _disableCustomerPinInTx(tx, activeProjectionSnap);
+    _disableCustomerPinInTx(tx, activeProjectionRef, activeProjectionSnap);
 
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
@@ -703,8 +723,11 @@ export async function voidSession({
       tx.set(closedProjectionRef, {
         ...projectionData,
         status: 'voided',
+        customerAccessEnabled: false,
+        customerPin: null,
+        customerAccessExpiresAtMs: null,
         updatedAt: serverTimestamp(),
-        closedAt: serverTimestamp(), // Use closedAt for consistency
+        closedAt: serverTimestamp(),
       });
       tx.delete(activeProjectionRef);
     }
