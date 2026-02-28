@@ -1,3 +1,4 @@
+
 # SharEat Hub (shareat-v2)
 
 This is the repository for the SharEat Hub application, a comprehensive Point-of-Sale (POS), Kitchen Display System (KDS), and Enterprise Resource Planning (ERP) solution for restaurants.
