@@ -85,8 +85,8 @@ export default function PrintPinPage() {
         }
 
         return (
-             <div className="receipt-view receipt-58 bg-white text-black p-2 text-center font-serif text-base/relaxed">
-                <p className="text-lg">Welcome {customerName || 'Valued Customer'},</p>
+             <div className="receipt-view receipt-58 bg-white text-black p-2 text-center font-serif text-sm/relaxed">
+                <p className="text-base">Welcome {customerName || 'Valued Customer'},</p>
                 
                 <p className="my-3">
                     We are glad you are here to
@@ -95,7 +95,7 @@ export default function PrintPinPage() {
                     <br />
                     with us. To use this code, go to:
                 </p>
-                <p className="font-bold text-base break-all">customer.shareat.net</p>
+                <p className="font-bold text-base break-all underline">customer.shareat.net</p>
                 <p className="text-sm mt-2">then enter your pin:</p>
 
                 <p className="text-2xl font-bold font-mono tracking-wider my-2 bg-muted p-2 rounded-lg">
@@ -128,3 +128,4 @@ export default function PrintPinPage() {
         </div>
     );
 }
+
