@@ -95,7 +95,7 @@ export default function PrintPinPage() {
                     <br />
                     with us. To use this code, go to:
                 </p>
-                <p className="font-bold text-base underline">
+                <p className="font-bold text-sm underline break-words">
                     customer.shareat<br/>.net
                 </p>
                 <p className="text-sm mt-2">
@@ -106,7 +106,7 @@ export default function PrintPinPage() {
                     {pin}
                 </p>
 
-                <p className="text-sm my-2">
+                <p className="text-xs my-2">
                     and enjoy our fast refilling system. If you need any help please call the attention of our staff. They will be more than happy to assist you.
                 </p>
                 <p className="mt-4">Have a nice stay!</p>
@@ -132,4 +132,3 @@ export default function PrintPinPage() {
         </div>
     );
 }
-
