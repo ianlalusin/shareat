@@ -85,7 +85,7 @@ export default function PrintPinPage() {
         }
 
         return (
-             <div className="bg-white text-black p-4 text-center font-serif text-base/relaxed">
+             <div className="receipt-view receipt-58 bg-white text-black p-2 text-center font-serif text-base/relaxed">
                 <p className="text-lg">Welcome {customerName || 'Valued Customer'},</p>
                 
                 <p className="my-3">
@@ -113,30 +113,10 @@ export default function PrintPinPage() {
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 print:bg-white">
-            <style jsx global>{`
-                @media print {
-                    body * {
-                        visibility: hidden;
-                    }
-                    #print-area, #print-area * {
-                        visibility: visible;
-                    }
-                    #print-area {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                        padding: 0;
-                        margin: 0;
-                    }
-                    .no-print {
-                        display: none;
-                    }
-                }
-            `}</style>
-
-            <div id="print-area" className="w-full max-w-xs mx-auto border rounded-lg bg-white shadow-lg print:shadow-none print:border-none">
+            <div id="receipt-print-root" data-paper="58mm">
+              <div id="print-receipt-area">
                 {renderContent()}
+              </div>
             </div>
             
             <div className="mt-6 flex gap-4 no-print">
