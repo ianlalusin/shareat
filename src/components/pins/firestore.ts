@@ -34,34 +34,40 @@ export async function issueCustomerPinClient(params: { storeId: string; sessionI
   const activeSessionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
 
   return await runTransaction(db, async (tx) => {
+    // --- READ PHASE ---
     const activeSnap = await tx.get(activeSessionRef);
     if (!activeSnap.exists()) throw new Error("Active session not found.");
-
     const active = activeSnap.data() as any;
 
-    // Invalidate old pin if present
-    const oldPin = active?.customerPin ? String(active.customerPin) : null;
-    if (oldPin) tx.delete(pinRegistryDocRef(oldPin));
-
-    // Reserve unique PIN (read phase)
+    // Find a new unique PIN by reading potential candidates.
     let reservedPin: string | null = null;
     let pinRef: DocumentReference | null = null;
-
     for (let attempt = 0; attempt < 25; attempt++) {
       const candidate = randomCustomerPin();
       const ref = pinRegistryDocRef(candidate);
-      const snap = await tx.get(ref);
+      const snap = await tx.get(ref); // This is a read.
       if (!snap.exists()) {
         reservedPin = candidate;
         pinRef = ref;
         break;
       }
     }
-    if (!reservedPin || !pinRef) throw new Error("Failed to reserve a unique PIN. Try again.");
+    if (!reservedPin || !pinRef) {
+      throw new Error("Failed to reserve a unique PIN. Try again.");
+    }
+    
+    // --- WRITE PHASE ---
+    // Now that all reads are done, we can start writing.
+    
+    // Invalidate old pin if present.
+    const oldPin = active?.customerPin ? String(active.customerPin) : null;
+    if (oldPin) {
+      tx.delete(pinRegistryDocRef(oldPin));
+    }
 
     const expiresAtMs = Date.now() + PIN_TTL_MS;
 
-    // Write pin registry doc
+    // Write new pin registry doc.
     tx.set(pinRef, {
       pin: reservedPin,
       storeId,
@@ -71,12 +77,12 @@ export async function issueCustomerPinClient(params: { storeId: string; sessionI
       expiresAtMs,
     });
 
-    // Update session projection explicitly
+    // Update session projection explicitly.
     tx.set(
       activeSessionRef,
       {
         customerPin: reservedPin,
-        customerAccessEnabled: true, // <-- always present
+        customerAccessEnabled: true,
         customerAccessExpiresAtMs: expiresAtMs,
         updatedAt: serverTimestamp(),
       },

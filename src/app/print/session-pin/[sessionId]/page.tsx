@@ -98,7 +98,7 @@ export default function PrintPinPage() {
                 <p className="font-bold text-sm underline break-words">
                     customer.shareat<br/>.net
                 </p>
-                <p className="text-sm mt-2">
+                <p className="text-xs my-2">
                     then enter your pin:
                 </p>
 
