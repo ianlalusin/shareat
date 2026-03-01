@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -86,12 +87,16 @@ export default function PrintPinPage() {
         return (
              <div className="bg-white text-black p-4 text-center font-serif text-base/relaxed">
                 <p className="text-lg">Welcome {customerName || 'Valued Customer'},</p>
+                
                 <p className="my-3">
-                    We are glad you are here to <b className="text-destructive font-bold">sharelebrate</b> with us.
+                    We are glad you are here to
+                    <br />
+                    <b className="font-bold uppercase">SHARELEBRATE</b>
+                    <br />
+                    with us. To use this code, go to:
                 </p>
-                <p className="text-sm mt-4">To use this code, go to</p>
                 <p className="font-bold text-lg tracking-wider">customer.shareat.net</p>
-                <p className="text-sm mt-2">and enter your PIN:</p>
+                <p className="text-sm mt-2">then enter your pin:</p>
 
                 <p className="text-5xl font-bold font-mono tracking-widest my-4 bg-muted p-4 rounded-lg">
                     {pin}
