@@ -79,8 +79,10 @@ export type StartSessionPayload = {
 
 /**
  * Helper to disable customer PIN access within a transaction.
- * It finds the PIN from the session projection and deletes it from the pinRegistry.
+ * It finds the PIN from the session projection, deletes it from the pinRegistry,
+ * and updates the active projection itself to reflect the disabled state.
  * @param tx The Firestore transaction object.
+ * @param activeProjectionRef Reference to the active session projection document.
  * @param projectionSnap The DocumentSnapshot of the active session projection.
  */
 function _disableCustomerPinInTx(
@@ -328,25 +330,21 @@ export async function completePaymentFromUnits(
     const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
     
-    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-    
     const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap, activeTicketsSnap
+      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
     ] = await Promise.all([
       tx.get(sessionRef),
       tx.get(receiptRef),
       tx.get(settingsRef),
       tx.get(counterRef),
       tx.get(activeProjectionRef),
-      tx.get(activeTicketsQuery)
     ]);
     
-    // --- WRITE PHASE ---
-    // All reads are done. Now we can start writing.
-    _disableCustomerPinInTx(tx, activeProjectionSnap);
 
-
+    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+    const activeTicketsSnap = await getDocs(activeTicketsQuery);
+    
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
 
@@ -374,10 +372,12 @@ export async function completePaymentFromUnits(
 
     if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
       tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
-      // We read this transactionally now.
-      const snap = await tx.get(tableRef);
-      tableSnap = snap;
+      tableSnap = await tx.get(tableRef);
     }
+
+    
+    // Disable any active PIN associated with this session (WRITE PHASE starts after all reads).
+    _disableCustomerPinInTx(tx, activeProjectionSnap);
     
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
     const amountDueCents = Math.round(Number(amountDue || 0) * 100);
@@ -651,21 +651,23 @@ export async function voidSession({
   const safeReason = (reason ?? '').toString().trim();
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   const nowMs = Date.now();
+  
+  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+  const activeTicketsSnap = await getDocs(activeTicketsQuery);
 
   await runTransaction(db, async (tx: Transaction) => {
-    // --- READ PHASE ---
+    // New projection paths
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
-    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
 
-    const [sessionSnap, activeProjectionSnap, activeTicketsSnap] = await Promise.all([
+    const [sessionSnap, activeProjectionSnap] = await Promise.all([
         tx.get(sessionRef),
         tx.get(activeProjectionRef),
-        tx.get(activeTicketsQuery),
     ]);
     
-    // --- WRITE PHASE ---
     _disableCustomerPinInTx(tx, activeProjectionSnap);
+
 
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
@@ -707,7 +709,6 @@ export async function voidSession({
     tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: safeReason, updatedAt: serverTimestamp() });
     
     // Move projection from active to closed
-    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
     if (activeProjectionSnap.exists()) {
       const projectionData = activeProjectionSnap.data();
       tx.set(closedProjectionRef, {
