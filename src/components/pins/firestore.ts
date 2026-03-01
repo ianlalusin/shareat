@@ -8,7 +8,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
-const PIN_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const PIN_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 function randomCustomerPin(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
