@@ -1,28 +1,16 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    function isSignedIn() { return request.auth != null; }
 
     function staffPath() {
       return /databases/$(database)/documents/staff/$(request.auth.uid);
     }
-
-    function staffExists() {
-      return isSignedIn() && exists(staffPath());
-    }
-
-    function staffData() {
-      return get(staffPath()).data;
-    }
-
-    function isActiveStaff() {
-      return staffExists() && staffData().status == 'active';
-    }
+    function staffExists() { return isSignedIn() && exists(staffPath()); }
+    function staffData() { return get(staffPath()).data; }
+    function isActiveStaff() { return staffExists() && staffData().status == 'active'; }
 
     function isAdmin() {
       return isSignedIn() && (
@@ -39,41 +27,90 @@ service cloud.firestore {
       );
     }
 
-    // ✅ Collection Group Rules (works for collectionGroup queries anywhere)
+    // -----------------------------
+    // CUSTOMER AUTH (via custom token)
+    // -----------------------------
+    function isCustomer() {
+      return isSignedIn() && request.auth.token.customer == true;
+    }
+    function customerStoreId() { return request.auth.token.storeId; }
+    function customerSessionId() { return request.auth.token.sessionId; }
+
+    function isCustomerForSession(storeId, sessionId) {
+      return isCustomer()
+        && customerStoreId() == storeId
+        && customerSessionId() == sessionId;
+    }
+
+    function msNow() { return request.time.toMillis(); }
+
+    // -----------------------------
+    // Collection Group Rules
+    // -----------------------------
     match /{path=**}/kitchentickets/{ticketId} {
       allow read: if isActiveStaff();
     }
-
     match /{path=**}/activityLogs/{logId} {
       allow read: if isActiveStaff();
     }
 
-
-    // ✅ Staff Profile (Admins can manage, users can get their own)
+    // -----------------------------
+    // Staff Profiles
+    // -----------------------------
     match /staff/{uid} {
-      // Admins can read/write any staff profile.
       allow read, write: if isAdmin();
-      
-      // A non-admin user can read their own profile.
       allow get: if isSignedIn() && request.auth.uid == uid;
-      
-      // A user can create their own profile during signup.
       allow create: if isSignedIn() && request.auth.uid == uid;
     }
 
-    // ✅ Real-time KDS Projections
-    // This rule allows any authenticated staff member with access to the store
-    // to read, create, update, and delete tickets in the real-time KDS projection.
+    // -----------------------------
+    // PIN REGISTRY (STAFF + CUSTOMER)
+    // -----------------------------
+    match /pinRegistry/{pin} {
+      // CUSTOMER: allow get only if active + not expired
+      // (No list, no write)
+      allow get: if isCustomer()
+        && resource.data.status == 'active'
+        && resource.data.expiresAtMs > msNow();
+
+      // STAFF: allow CRUD only if they have access to the store in the doc
+      allow get, list: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
+
+      allow create: if isActiveStaff()
+        && hasStoreAccess(request.resource.data.storeId);
+
+      allow update: if isActiveStaff()
+        && hasStoreAccess(resource.data.storeId);
+
+      allow delete: if isActiveStaff()
+        && hasStoreAccess(resource.data.storeId);
+    }
+
+    // -----------------------------
+    // Real-time KDS Projections
+    // -----------------------------
     match /stores/{storeId}/rtKdsTickets/{docPath=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
 
-    // ✅ Real-time Session Projections
-    // This rule allows any authenticated staff member with access to the store
-    // to read, create, update, and delete documents in the session projections.
+    // -----------------------------
+    // Active Sessions Projection
+    // -----------------------------
+    // Staff access (existing) + Customer read access to ONLY their session doc
+    match /stores/{storeId}/activeSessions/{sessionId} {
+      allow read, write: if hasStoreAccess(storeId);
+
+      // CUSTOMER: read only if access enabled + not expired
+      allow get: if isCustomerForSession(storeId, sessionId)
+        && resource.data.customerAccessEnabled == true
+        && resource.data.customerAccessExpiresAtMs > msNow();
+    }
+
+    // Keep your existing catch-all for staff subpaths under activeSessions if needed
     match /stores/{storeId}/activeSessions/{docPath=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
+
     match /stores/{storeId}/closedSessions/{docPath=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
@@ -83,12 +120,11 @@ service cloud.firestore {
       allow read, write, delete: if hasStoreAccess(storeId);
     }
 
-    // Root (non-store)
+    // Root (non-store) - keep as-is, but note: pinRegistry is now explicitly handled above
     match /{collection}/{docId} {
       allow read, create, update: if isActiveStaff();
       allow delete: if isAdmin();
     }
-
     match /{collection}/{docId}/{docPath=**} {
       allow read, create, update: if isActiveStaff();
       allow delete: if isAdmin();
