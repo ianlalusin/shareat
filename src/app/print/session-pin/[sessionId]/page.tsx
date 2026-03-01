@@ -95,10 +95,10 @@ export default function PrintPinPage() {
                     <br />
                     with us. To use this code, go to:
                 </p>
-                <p className="font-bold text-lg tracking-wider">customer.shareat.net</p>
+                <p className="font-bold text-lg">customer.shareat.net</p>
                 <p className="text-sm mt-2">then enter your pin:</p>
 
-                <p className="text-5xl font-bold font-mono tracking-widest my-4 bg-muted p-4 rounded-lg">
+                <p className="text-4xl font-bold font-mono tracking-widest my-2 bg-muted p-2 rounded-lg">
                     {pin}
                 </p>
 
