@@ -289,7 +289,7 @@ export default function PinsClient() {
                       <div className="flex gap-2 flex-wrap justify-end pt-1">
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
-                          disabled={isPending || busyId === s.id}
+                          disabled={isPending || busyId === s.id || (s._enabled && s._hasPin && !s._expired)}
                           onClick={() => {
                             startTransition(async () => {
                               try {
@@ -317,7 +317,7 @@ export default function PinsClient() {
 
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
-                          disabled={isPending || busyId === s.id}
+                          disabled={isPending || busyId === s.id || (s._enabled && s._hasPin && !s._expired)}
                           onClick={() => {
                             const ok = window.confirm("Disable customer access and invalidate the PIN?");
                             if (!ok) return;
