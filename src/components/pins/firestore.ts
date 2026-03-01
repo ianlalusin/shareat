@@ -5,6 +5,7 @@ import {
   runTransaction,
   serverTimestamp,
   type DocumentReference,
+  updateDoc,
 } from "firebase/firestore";
 
 const PIN_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
@@ -92,7 +93,10 @@ export async function disableCustomerAccessClient(params: { storeId: string; ses
 
   return await runTransaction(db, async (tx) => {
     const snap = await tx.get(activeSessionRef);
-    if (!snap.exists()) throw new Error("Active session not found.");
+    if (!snap.exists()) {
+        console.warn(`disableCustomerAccessClient: Active session ${sessionId} not found.`);
+        return { ok: false, message: "Active session not found." };
+    }
     const data = snap.data() as any;
 
     const oldPin = data?.customerPin ? String(data.customerPin) : null;
@@ -110,5 +114,18 @@ export async function disableCustomerAccessClient(params: { storeId: string; ses
     );
 
     return { ok: true };
+  });
+}
+
+
+/**
+ * Directly disables a PIN in the pinRegistry by setting its status.
+ * This is for cleaning up expired pins where the session may already be closed.
+ */
+export async function disablePinInRegistry(pin: string) {
+  const pinRef = pinRegistryDocRef(pin);
+  return await updateDoc(pinRef, {
+    status: "disabled",
+    updatedAt: serverTimestamp(),
   });
 }

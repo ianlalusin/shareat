@@ -1,12 +1,13 @@
+
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
-import { issueCustomerPinClient, disableCustomerAccessClient } from "@/components/pins/firestore";
+import { issueCustomerPinClient, disableCustomerAccessClient, disablePinInRegistry } from "@/components/pins/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 
 type ActiveSession = {
@@ -23,6 +24,14 @@ type ActiveSession = {
 
   startedAtClientMs?: number | null;
 };
+
+type PastPin = {
+  id: string;
+  sessionId: string;
+  storeId: string;
+  status: string;
+  expiresAtMs: number;
+}
 
 function fmtExpiry(ms?: number | null) {
   if (!ms) return "—";
@@ -55,6 +64,9 @@ export default function PinsClient() {
 
   const [now, setNow] = useState(() => Date.now());
   const [filter, setFilter] = useState<Filter>("needs");
+  
+  const [allActiveStorePins, setAllActiveStorePins] = useState<any[]>([]);
+  const [isLoadingPastPins, setIsLoadingPastPins] = useState(true);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -72,6 +84,36 @@ export default function PinsClient() {
       setSessions(rows);
     });
   }, [storeId]);
+  
+  useEffect(() => {
+    if (!storeId) {
+        setIsLoadingPastPins(false);
+        setAllActiveStorePins([]);
+        return;
+    };
+
+    setIsLoadingPastPins(true);
+
+    const pinsRef = collection(db, "pinRegistry");
+    const q = query(pinsRef, where("storeId", "==", storeId), where("status", "==", "active"));
+
+    const unsubPast = onSnapshot(q, (snap) => {
+      const pins = snap.docs.map((d) => ({id: d.id, ...d.data()}));
+      setAllActiveStorePins(pins);
+      setIsLoadingPastPins(false);
+    }, (err) => {
+        console.error("Failed to fetch past pins:", err);
+        setIsLoadingPastPins(false);
+    });
+
+    return () => unsubPast();
+  }, [storeId]);
+
+  const pastPins = useMemo(() => {
+    return allActiveStorePins
+      .filter(p => p.expiresAtMs < now)
+      .sort((a,b) => b.expiresAtMs - a.expiresAtMs);
+  }, [allActiveStorePins, now]);
 
   const view = useMemo(() => {
     const mapped = sessions.map((s) => {
@@ -150,118 +192,170 @@ export default function PinsClient() {
         {!storeId ? (
           <div className="text-sm opacity-70">No store selected.</div>
         ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium bg-muted">
-              <div className="col-span-3">Session</div>
-              <div className="col-span-3">Table / Customer</div>
-              <div className="col-span-2">PIN</div>
-              <div className="col-span-2">Expiry</div>
-              <div className="col-span-2 text-right">Actions</div>
+          <div className="space-y-4">
+            <div className="border rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium bg-muted">
+                <div className="col-span-3">Session</div>
+                <div className="col-span-3">Table / Customer</div>
+                <div className="col-span-2">PIN</div>
+                <div className="col-span-2">Expiry</div>
+                <div className="col-span-2 text-right">Actions</div>
+                </div>
+
+                {view.map((s) => {
+                const pinLabel = s.customerPin || "—";
+                const statusLabel = s._enabled ? (s._expired ? "Expired" : "Enabled") : "Disabled";
+                const remaining = s._enabled ? fmtRemaining(s._exp, now) : "";
+
+                const title = s.sessionLabel || s.tableDisplayName || s.id;
+
+                const rowClass =
+                    s._expired || (s._enabled && !s._hasPin)
+                    ? "bg-red-50/40"
+                    : s._needsPin
+                        ? "bg-yellow-50/40"
+                        : "";
+
+                return (
+                    <div
+                    key={s.id}
+                    className={`grid grid-cols-12 gap-2 px-3 py-3 border-t items-center ${rowClass}`}
+                    >
+                    <div className="col-span-3">
+                        <div className="font-medium">{title}</div>
+                        <div className="text-xs opacity-70">
+                        {s.status || "—"} • {s.sessionMode || "—"}
+                        </div>
+                    </div>
+
+                    <div className="col-span-3">
+                        <div className="text-sm">{s.tableDisplayName || "—"}</div>
+                        <div className="text-xs opacity-70">{s.customerName || ""}</div>
+                    </div>
+
+                    <div className="col-span-2">
+                        <div className="font-mono text-sm">{pinLabel}</div>
+                        <div className="text-xs opacity-70">{statusLabel}</div>
+                    </div>
+
+                    <div className="col-span-2 text-sm">
+                        <div>{fmtExpiry(s._exp)}</div>
+                        {remaining ? <div className="text-xs opacity-70">{remaining}</div> : null}
+                    </div>
+
+                    <div className="col-span-2 flex justify-end gap-2">
+                        <button
+                        className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                        disabled={isPending || busyId === s.id}
+                        onClick={() => {
+                            startTransition(async () => {
+                            try {
+                                setBusyId(s.id);
+                                await issueCustomerPinClient({ storeId, sessionId: s.id });
+                                // one-click workflow: issue then print
+                                router.push(`/print/session-pin/${s.id}`);
+                            } finally {
+                                setBusyId(null);
+                            }
+                            });
+                        }}
+                        type="button"
+                        >
+                        Issue & Print
+                        </button>
+
+                        <button
+                        className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                        disabled={!s.customerPin}
+                        onClick={() => router.push(`/print/session-pin/${s.id}`)}
+                        type="button"
+                        >
+                        Print
+                        </button>
+
+                        <button
+                        className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                        disabled={isPending || busyId === s.id}
+                        onClick={() => {
+                            const ok = window.confirm("Disable customer access and invalidate the PIN?");
+                            if (!ok) return;
+
+                            startTransition(async () => {
+                            try {
+                                setBusyId(s.id);
+                                await disableCustomerAccessClient({ storeId, sessionId: s.id });
+                            } finally {
+                                setBusyId(null);
+                            }
+                            });
+                        }}
+                        type="button"
+                        >
+                        Disable
+                        </button>
+                    </div>
+                    </div>
+                );
+                })}
+
+                {view.length === 0 && (
+                <div className="p-6 text-sm opacity-70">
+                    {filter === "needs"
+                    ? "No sessions currently need a PIN."
+                    : "No active sessions found for this filter."}
+                </div>
+                )}
             </div>
 
-            {view.map((s) => {
-              const pinLabel = s.customerPin || "—";
-              const statusLabel = s._enabled ? (s._expired ? "Expired" : "Enabled") : "Disabled";
-              const remaining = s._enabled ? fmtRemaining(s._exp, now) : "";
-
-              const title = s.sessionLabel || s.tableDisplayName || s.id;
-
-              const rowClass =
-                s._expired || (s._enabled && !s._hasPin)
-                  ? "bg-red-50/40"
-                  : s._needsPin
-                    ? "bg-yellow-50/40"
-                    : "";
-
-              return (
-                <div
-                  key={s.id}
-                  className={`grid grid-cols-12 gap-2 px-3 py-3 border-t items-center ${rowClass}`}
-                >
-                  <div className="col-span-3">
-                    <div className="font-medium">{title}</div>
-                    <div className="text-xs opacity-70">
-                      {s.status || "—"} • {s.sessionMode || "—"}
+            <Card className="mt-4">
+                <CardHeader>
+                    <CardTitle>Expired PINs</CardTitle>
+                    <CardDescription>
+                    These PINs have expired but have not been cleaned up. Disabling them removes them permanently from the registry.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {isLoadingPastPins ? (
+                        <p className="text-sm text-muted-foreground">Loading expired PINs...</p>
+                    ) : pastPins.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No expired PINs to clean up.</p>
+                    ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium bg-muted">
+                            <div className="col-span-3">Session ID</div>
+                            <div className="col-span-3">PIN</div>
+                            <div className="col-span-4">Expired At</div>
+                            <div className="col-span-2 text-right">Action</div>
+                        </div>
+                        {pastPins.map((pin: PastPin) => (
+                        <div key={pin.id} className="grid grid-cols-12 gap-2 px-3 py-3 border-t items-center">
+                            <div className="col-span-3 font-mono text-xs">{pin.sessionId.slice(0, 8)}...</div>
+                            <div className="col-span-3 font-mono">{pin.id}</div>
+                            <div className="col-span-4 text-xs">{fmtExpiry(pin.expiresAtMs)}</div>
+                            <div className="col-span-2 text-right">
+                            <button
+                                className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                                disabled={isPending || busyId === pin.id}
+                                onClick={() => {
+                                startTransition(async () => {
+                                    try {
+                                    setBusyId(pin.id);
+                                    await disablePinInRegistry(pin.id);
+                                    } finally {
+                                    setBusyId(null);
+                                    }
+                                });
+                                }}
+                            >
+                                Disable
+                            </button>
+                            </div>
+                        </div>
+                        ))}
                     </div>
-                  </div>
-
-                  <div className="col-span-3">
-                    <div className="text-sm">{s.tableDisplayName || "—"}</div>
-                    <div className="text-xs opacity-70">{s.customerName || ""}</div>
-                  </div>
-
-                  <div className="col-span-2">
-                    <div className="font-mono text-sm">{pinLabel}</div>
-                    <div className="text-xs opacity-70">{statusLabel}</div>
-                  </div>
-
-                  <div className="col-span-2 text-sm">
-                    <div>{fmtExpiry(s._exp)}</div>
-                    {remaining ? <div className="text-xs opacity-70">{remaining}</div> : null}
-                  </div>
-
-                  <div className="col-span-2 flex justify-end gap-2">
-                    <button
-                      className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                      disabled={isPending || busyId === s.id}
-                      onClick={() => {
-                        startTransition(async () => {
-                          try {
-                            setBusyId(s.id);
-                            await issueCustomerPinClient({ storeId, sessionId: s.id });
-                            // one-click workflow: issue then print
-                            router.push(`/print/session-pin/${s.id}`);
-                          } finally {
-                            setBusyId(null);
-                          }
-                        });
-                      }}
-                      type="button"
-                    >
-                      Issue & Print
-                    </button>
-
-                    <button
-                      className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                      disabled={!s.customerPin}
-                      onClick={() => router.push(`/print/session-pin/${s.id}`)}
-                      type="button"
-                    >
-                      Print
-                    </button>
-
-                    <button
-                      className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                      disabled={isPending || busyId === s.id}
-                      onClick={() => {
-                        const ok = window.confirm("Disable customer access and invalidate the PIN?");
-                        if (!ok) return;
-
-                        startTransition(async () => {
-                          try {
-                            setBusyId(s.id);
-                            await disableCustomerAccessClient({ storeId, sessionId: s.id });
-                          } finally {
-                            setBusyId(null);
-                          }
-                        });
-                      }}
-                      type="button"
-                    >
-                      Disable
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {view.length === 0 && (
-              <div className="p-6 text-sm opacity-70">
-                {filter === "needs"
-                  ? "No sessions currently need a PIN."
-                  : "No active sessions found for this filter."}
-              </div>
-            )}
+                    )}
+                </CardContent>
+            </Card>
           </div>
         )}
       </div>
