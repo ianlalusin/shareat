@@ -411,6 +411,7 @@ export async function completePaymentFromUnits(
           servedAtClientMs: now,
           servedByUid: actor.uid,
           durationMs: durationMs,
+          updatedAt: serverTs,
       };
 
       const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
@@ -686,6 +687,7 @@ export async function voidSession({
             cancelledAtClientMs: nowMs,
             cancelledByUid: actor.uid,
             cancelReason: "Session Voided",
+            updatedAt: serverTimestamp(),
         };
         const newTicketState = { ...oldTicketState, ...updatePayload };
 
