@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -9,6 +10,7 @@ import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
 import { issueCustomerPinClient, disableCustomerAccessClient, disablePinInRegistry } from "@/components/pins/firestore";
 import { RoleGuard } from "@/components/guards/RoleGuard";
+import { Button } from "@/components/ui/button";
 
 type ActiveSession = {
   id: string;
@@ -52,6 +54,7 @@ function fmtRemaining(ms?: number | null, nowMs?: number) {
 }
 
 type Filter = "needs" | "enabled" | "expired" | "all";
+const PAST_PINS_PAGE_SIZE = 10;
 
 export default function PinsClient() {
   const router = useRouter();
@@ -67,6 +70,7 @@ export default function PinsClient() {
   
   const [allActiveStorePins, setAllActiveStorePins] = useState<any[]>([]);
   const [isLoadingPastPins, setIsLoadingPastPins] = useState(true);
+  const [pastPinsPage, setPastPinsPage] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -109,11 +113,19 @@ export default function PinsClient() {
     return () => unsubPast();
   }, [storeId]);
 
-  const pastPins = useMemo(() => {
-    return allActiveStorePins
+  const { pastPins, paginatedPastPins, totalPastPinPages } = useMemo(() => {
+    const allPast = allActiveStorePins
       .filter(p => p.expiresAtMs < now)
       .sort((a,b) => b.expiresAtMs - a.expiresAtMs);
-  }, [allActiveStorePins, now]);
+
+    const paginated = allPast.slice(
+      pastPinsPage * PAST_PINS_PAGE_SIZE,
+      (pastPinsPage + 1) * PAST_PINS_PAGE_SIZE
+    );
+    const totalPages = Math.ceil(allPast.length / PAST_PINS_PAGE_SIZE);
+
+    return { pastPins: allPast, paginatedPastPins: paginated, totalPastPinPages: totalPages };
+  }, [allActiveStorePins, now, pastPinsPage]);
 
   const view = useMemo(() => {
     const mapped = sessions.map((s) => {
@@ -317,7 +329,7 @@ export default function PinsClient() {
                 <CardContent>
                     {isLoadingPastPins ? (
                         <p className="text-sm text-muted-foreground">Loading expired PINs...</p>
-                    ) : pastPins.length === 0 ? (
+                    ) : paginatedPastPins.length === 0 ? (
                         <p className="text-sm text-muted-foreground">No expired PINs to clean up.</p>
                     ) : (
                     <div className="border rounded-lg overflow-hidden">
@@ -327,7 +339,7 @@ export default function PinsClient() {
                             <div className="col-span-4">Expired At</div>
                             <div className="col-span-2 text-right">Action</div>
                         </div>
-                        {pastPins.map((pin: PastPin) => (
+                        {paginatedPastPins.map((pin: PastPin) => (
                         <div key={pin.id} className="grid grid-cols-12 gap-2 px-3 py-3 border-t items-center">
                             <div className="col-span-3 font-mono text-xs">{pin.sessionId.slice(0, 8)}...</div>
                             <div className="col-span-3 font-mono">{pin.id}</div>
@@ -340,7 +352,11 @@ export default function PinsClient() {
                                 startTransition(async () => {
                                     try {
                                     setBusyId(pin.id);
-                                    await disablePinInRegistry(pin.id);
+                                    await disablePinInRegistry({
+                                        pin: pin.id,
+                                        storeId: pin.storeId,
+                                        sessionId: pin.sessionId,
+                                    });
                                     } finally {
                                     setBusyId(null);
                                     }
@@ -355,6 +371,29 @@ export default function PinsClient() {
                     </div>
                     )}
                 </CardContent>
+                 {totalPastPinPages > 1 && (
+                    <div className="p-4 border-t flex items-center justify-between">
+                        <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPastPinsPage(p => Math.max(0, p - 1))}
+                        disabled={pastPinsPage === 0}
+                        >
+                        Previous
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                        Page {pastPinsPage + 1} of {totalPastPinPages}
+                        </span>
+                        <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPastPinsPage(p => Math.min(totalPastPinPages - 1, p + 1))}
+                        disabled={pastPinsPage >= totalPastPinPages - 1}
+                        >
+                        Next
+                        </Button>
+                    </div>
+                )}
             </Card>
           </div>
         )}

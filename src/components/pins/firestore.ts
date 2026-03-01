@@ -119,13 +119,39 @@ export async function disableCustomerAccessClient(params: { storeId: string; ses
 
 
 /**
- * Directly disables a PIN in the pinRegistry by setting its status.
- * This is for cleaning up expired pins where the session may already be closed.
+ * Disables a PIN in the pinRegistry and attempts to clear the PIN from the
+ * corresponding active session projection.
  */
-export async function disablePinInRegistry(pin: string) {
+export async function disablePinInRegistry(params: {
+  pin: string;
+  storeId: string;
+  sessionId: string;
+}) {
+  const { pin, storeId, sessionId } = params;
+
   const pinRef = pinRegistryDocRef(pin);
-  return await updateDoc(pinRef, {
-    status: "disabled",
-    updatedAt: serverTimestamp(),
+  const activeSessionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
+
+  return await runTransaction(db, async (tx) => {
+    const activeSessionSnap = await tx.get(activeSessionRef);
+
+    // Always disable the pin in the registry
+    tx.update(pinRef, {
+      status: "disabled",
+      updatedAt: serverTimestamp(),
+    });
+
+    // If the active session projection still exists, also clear its PIN fields
+    if (activeSessionSnap.exists()) {
+      tx.set(
+        activeSessionRef,
+        {
+          customerAccessEnabled: false,
+          customerPin: null,
+          customerAccessExpiresAtMs: null,
+        },
+        { merge: true }
+      );
+    }
   });
 }
