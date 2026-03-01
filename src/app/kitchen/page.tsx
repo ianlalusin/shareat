@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -404,7 +405,7 @@ export default function KitchenPage() {
             await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
         });
 
-        const ticket = tickets.find(t => t.id === ticketId);
+        const ticket = ticketsWithData.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
 
     } catch (error: any) {
