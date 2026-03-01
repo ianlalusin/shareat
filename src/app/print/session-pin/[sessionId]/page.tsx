@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase/client';
 import { useStoreContext } from '@/context/store-context';
 import { Loader2, Printer, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export default function PrintPinPage() {
     const params = useParams<{ sessionId: string }>();
@@ -32,7 +33,7 @@ export default function PrintPinPage() {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setPin(data.customerPin || null);
-                setCustomerName(data.customerName || null);
+                setCustomerName(data.customerName || data.customer?.name || null);
                 setError(null);
             } else {
                 setError("Active session not found. It may have been closed.");
@@ -52,7 +53,6 @@ export default function PrintPinPage() {
     // Auto-print effect
     useEffect(() => {
         if (pin && !isLoading && !error) {
-            // Use a timeout to ensure the DOM has updated before printing
             const timer = setTimeout(() => {
                 window.print();
             }, 500);
@@ -95,10 +95,14 @@ export default function PrintPinPage() {
                     <br />
                     with us. To use this code, go to:
                 </p>
-                <p className="font-bold text-base break-all underline">customer.shareat.net</p>
-                <p className="text-sm mt-2">then enter your pin:</p>
+                <p className="font-bold text-base underline">
+                    customer.shareat<br/>.net
+                </p>
+                <p className="text-sm mt-2">
+                    then enter your pin:
+                </p>
 
-                <p className="text-2xl font-bold font-mono tracking-wider my-2 bg-muted p-2 rounded-lg">
+                <p className="text-xl font-bold font-mono tracking-wider my-2 bg-muted p-2 rounded-lg">
                     {pin}
                 </p>
 
