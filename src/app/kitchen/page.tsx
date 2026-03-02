@@ -287,7 +287,7 @@ export default function KitchenPage() {
         return {
           id: ticket.id,
           sessionLabel: ticket.sessionLabel || 'N/A',
-          tableNumber: ticket.tableNumber,
+          tableNumber: (ticket as any).tableDisplayName || ticket.sessionLabel || ticket.tableNumber,
           customerName: ticket.customerName,
           itemName: ticket.itemName,
           qty: ticket.qty,
@@ -445,6 +445,8 @@ export default function KitchenPage() {
 
                 // Add to historical view
                 const closedTicketRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketId);
+                updatePayload.updatedAt = serverTimestamp(); // bump for history ordering
+                newTicketState = { ...oldTicketState, ...updatePayload };
                 transaction.set(closedTicketRef, newTicketState);
             }
             

@@ -127,10 +127,11 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
     const isAlaCarte = ticket.sessionMode === 'alacarte';
     
     const guestCountLabel = isPackage ? `(${ticket.guestCount} guests)` : "";
-    const identifier = ticket.sessionLabel 
-        ?? (isAlaCarte ? (ticket.customerName || "Ala Carte") : `Table ${ticket.tableNumber}`);
+    const identifier = isAlaCarte
+        ? (ticket.sessionLabel ?? (ticket.customerName || "Ala Carte"))
+        : ((ticket as any).tableDisplayName || ticket.sessionLabel || `Table ${ticket.tableNumber}`);
         
-    const qtyLabel = formatKitchenQty(ticket.qty, ticket.uom);
+    const qtyLabel = "";
 
     return (
         <>
@@ -143,9 +144,20 @@ export function KdsItemCard({ ticket, onUpdateStatus }: KdsItemCardProps) {
                         </div>
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
-                    <CardTitle className="text-xl">{ticket.itemName} {qtyLabel}</CardTitle>
+                    <CardTitle className="text-xl">{ticket.itemName}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-grow space-y-2 p-3 pt-0">
+                {ticket.type === 'refill' && (ticket as any).refillRequest && (
+                    <div className="space-y-1">
+                        {Object.entries((ticket as any).refillRequest as Record<string, any>)
+                          .filter(([, v]) => Number(v || 0) > 0)
+                          .map(([k, v]) => (
+                            <p key={k} className="text-lg font-semibold">
+                              {String(k).replace(/_/g, " ")} {Number(v)}
+                            </p>
+                          ))}
+                    </div>
+                )}
                     {ticket.initialFlavorNames && ticket.initialFlavorNames.length > 0 && (
                         <div className="text-base flex items-baseline gap-2 flex-wrap">
                             <span className="font-semibold text-base">Flavors:</span>

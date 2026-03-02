@@ -831,7 +831,8 @@ export async function createKitchenTickets(
   qty: number,
   actor: ActorStamp,
   opts: { tx: Transaction },
-  notes?: string
+  notes?: string,
+  extra?: Record<string, any>
 ) {
   const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
   const now = Date.now();
@@ -843,6 +844,7 @@ export async function createKitchenTickets(
   for (let i = 0; i < qty; i++) {
     const ticketRef = doc(ticketsColRef);
     const ticketPayload = stripUndefined({
+      ...(extra || {}),
       id: ticketRef.id,
       type: type,
       itemId: line.itemId,

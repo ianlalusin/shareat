@@ -35,6 +35,8 @@ type CartItem = {
     notes: string;
 }
 
+const OTHER_REFILLS_ID = "__OTHER_REFILLS__";
+
 function POSContent({
     storeId, 
     session, 
@@ -57,6 +59,7 @@ function POSContent({
   const [cart, setCart] = useState<Map<string, CartItem>>(new Map());
   const [activeRefillId, setActiveRefillId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otherQty, setOtherQty] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!storeId) {
@@ -121,6 +124,17 @@ function POSContent({
     return availableRefills;
   }, [storeRefills, currentPackage]);
 
+  const otherRefills = useMemo(() => {
+    return (storeRefills || [])
+      .filter(r => (r as any).isOther === true)
+      .sort((a,b) => (a.sortOrder - b.sortOrder) || a.refillName.localeCompare(b.refillName));
+  }, [storeRefills]);
+
+  const hasOther = useMemo(() => {
+    return otherRefills.some(r => Number(otherQty[r.refillId] || 0) > 0);
+  }, [otherRefills, otherQty]);
+
+
   const activeCartItem = activeRefillId ? cart.get(activeRefillId) : null;
   const activeGlobalRefill = activeCartItem ? globalRefills.find(r => r.id === activeCartItem.refill.refillId) : null;
   
@@ -153,7 +167,9 @@ function POSContent({
   const handleSelectRefill = (refill: StoreRefill) => {
     setCart(prev => {
         const newCart = new Map(prev);
-        if (!newCart.has(refill.refillId)) {
+        if (newCart.has(refill.refillId)) {
+            newCart.delete(refill.refillId);
+        } else {
             newCart.set(refill.refillId, {
                 refill: refill,
                 flavorIds: [],
@@ -162,7 +178,16 @@ function POSContent({
         }
         return newCart;
     });
-    setActiveRefillId(refill.refillId);
+
+    setActiveRefillId(prev => {
+      // If we are unselecting the currently active item, clear focus
+      if (prev === refill.refillId) return null;
+      return refill.refillId;
+    });
+  };
+
+  const handleSelectOtherRefills = () => {
+    setActiveRefillId(OTHER_REFILLS_ID);
   };
   
   const handleAddToOrder = async () => {
@@ -170,7 +195,8 @@ function POSContent({
       toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
       return;
     }
-    if (!appUser || cart.size === 0) {
+    const hasOtherNow = otherRefills.some(r => Number(otherQty[r.refillId] || 0) > 0);
+    if (!appUser || (cart.size === 0 && !hasOtherNow)) {
       toast({ variant: "destructive", title: "Cannot Add Item", description: "Your order list is empty." });
       return;
     }
@@ -187,6 +213,13 @@ function POSContent({
             setActiveRefillId(item.refill.refillId); // Switch to the item that needs attention
             return;
         }
+    }
+
+    // Validate other refills (rice/cheese)
+    const otherStation = storeRefills.find(r => !!r.kitchenLocationId);
+    if (hasOtherNow && !otherStation?.kitchenLocationId) {
+      toast({ variant: 'destructive', title: 'Kitchen Not Assigned', description: 'No kitchen location is configured to receive Other Refills.' });
+      return;
     }
 
     setIsSubmitting(true);
@@ -226,9 +259,36 @@ function POSContent({
                     finalNotes
                 );
             }
+            // Other Refills ticket (rice/cheese)
+            if (hasOther && otherStation?.kitchenLocationId) {
+                await createKitchenTickets(
+                    db,
+                    storeId,
+                    session.id,
+                    session,
+                    'refill',
+                    {
+                        itemId: "OTHER_REFILLS",
+                        itemName: "OTHER REFILLS",
+                        kitchenLocationId: otherStation.kitchenLocationId,
+                        kitchenLocationName: otherStation.kitchenLocationName,
+                        billLineId: null,
+                    },
+                    1,
+                    actor,
+                    { tx },
+                    "",
+                    { refillRequest: Object.fromEntries(
+                        otherRefills
+                          .map(r => [r.refillName, Number(otherQty[r.refillId] || 0)])
+                          .filter(([, v]) => v > 0)
+                    ) }
+                );
+            }
+
         });
         
-        toast({ title: `Sent ${cart.size} refill(s) to the kitchen.` });
+        toast({ title: `Sent ${cart.size + (hasOther ? 1 : 0)} refill(s) to the kitchen.` });
         handleReset();
 
     } catch(e: any) {
@@ -320,6 +380,7 @@ function POSContent({
   const handleReset = () => {
     setCart(new Map());
     setActiveRefillId(null);
+    setOtherQty({});
     onClose();
   }
   
@@ -423,14 +484,25 @@ function POSContent({
                     onClick={() => handleSelectRefill(refill)}
                     className={cn(
                         "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none",
-                        cart.has(refill.refillId) && "bg-muted font-semibold",
-                        activeRefillId === refill.refillId && "bg-destructive/10 text-destructive border-destructive font-bold"
+                        cart.has(refill.refillId) && "bg-destructive text-white border-destructive font-bold",
+                        activeRefillId === refill.refillId && !cart.has(refill.refillId) && "bg-muted font-semibold"
                     )}
                   >
                     {refill.refillName}
                   </button>
                 ))
               )}
+
+              <button
+                type="button"
+                onClick={handleSelectOtherRefills}
+                className={cn(
+                  "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none",
+                  activeRefillId === OTHER_REFILLS_ID && "bg-destructive/10 text-destructive border-destructive font-bold"
+                )}
+              >
+                Other Refills
+              </button>
                {filteredRefills.length === 0 && !isLoading && (
                  <p className="text-center text-sm text-muted-foreground py-10">No refills available for this package.</p>
               )}
@@ -441,7 +513,66 @@ function POSContent({
         {/* Right Panel: Flavors & Notes for Active Item */}
         <div className="md:col-span-2 flex flex-col gap-4">
           <h3 className="font-semibold">2. Customize Selection</h3>
-          {activeCartItem ? (
+          {activeRefillId === OTHER_REFILLS_ID ? (
+            <div className="flex-1 flex flex-col gap-4">
+              <div className="border rounded-lg">
+                <div className="p-4 space-y-4">
+                  <h3 className="font-semibold">Other Refills</h3>
+
+                  {otherRefills.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No other refills configured (toggle "Other" in Store Refills).</p>
+                  ) : (
+                    otherRefills.map((r) => {
+                      const k = r.refillId;
+                      const v = Number(otherQty[k] || 0);
+                      return (
+                        <div key={k} className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{r.refillName}</p>
+                            <p className="text-xs text-muted-foreground">Quantity</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() =>
+                                setOtherQty((prev) => ({
+                                  ...prev,
+                                  [k]: Math.max(0, Number(prev[k] || 0) - 1),
+                                }))
+                              }
+                            >
+                              -
+                            </Button>
+                            <div className="w-10 text-center font-mono">{v}</div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() =>
+                                setOtherQty((prev) => ({
+                                  ...prev,
+                                  [k]: Number(prev[k] || 0) + 1,
+                                }))
+                              }
+                            >
+                              +
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+
+                </div>
+              </div>
+              <div className="flex-1 flex items-center justify-center text-center text-muted-foreground bg-muted/50 rounded-lg">
+                <p>These refills are always available and optional.</p>
+              </div>
+            </div>
+          ) : activeCartItem ? (
             <div className="flex-1 flex flex-col gap-4">
               <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
                 <div className="p-4 space-y-2">
@@ -495,9 +626,9 @@ function POSContent({
         <Button variant="ghost" onClick={handleReset}>Cancel</Button>
         <Button 
           onClick={handleAddToOrder} 
-          disabled={isSubmitting || sessionIsLocked || cart.size === 0}
+          disabled={isSubmitting || sessionIsLocked || (cart.size === 0 && !hasOther)}
         >
-           {isSubmitting ? <Loader2 className="animate-spin" /> : `Send ${cart.size} Item(s) to Kitchen`}
+           {isSubmitting ? <Loader2 className="animate-spin" /> : `Send ${cart.size + (hasOther ? 1 : 0)} Item(s) to Kitchen`}
         </Button>
       </DialogFooter>
     </div>

@@ -125,6 +125,7 @@ export type StoreRefill = {
     kitchenLocationId: string | null;
     kitchenLocationName: string | null;
     flavorsAllowed?: string[] | null;
+    isOther?: boolean; // shows under "Other Refills" steppers
     menuScheduleId?: string | null;
 };
 
@@ -188,6 +189,12 @@ export type KitchenTicket = {
     sessionLabel?: string;
     orderedByRole?: UserRole | null;
     billLineId?: string; // Link to SessionBillLine
+    refillRequest?: {
+        /** Extra refill counts requested via customer app buttons */
+        rice?: number;   // integer
+        cheese?: number; // integer
+    };
+
     billing?: {
         isVoided: boolean;
         voidReason?: string | null;

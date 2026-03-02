@@ -40,6 +40,7 @@ function coerceStoreRefill(d: QueryDocumentSnapshot<DocumentData>): StoreRefill 
     kitchenLocationId: (data.kitchenLocationId as string) ?? null,
     kitchenLocationName: (data.kitchenLocationName as string) ?? null,
     flavorsAllowed: Array.isArray(data.flavorsAllowed) ? data.flavorsAllowed : [],
+    isOther: typeof (data as any).isOther === "boolean" ? (data as any).isOther : false,
   };
 }
 
@@ -136,6 +137,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                 sortOrder: 1000,
                 kitchenLocationId: null,
                 kitchenLocationName: null,
+                isOther: false,
             }, { merge: true });
             toast({ title: "Refill Added" });
         } catch (error: any) {
@@ -202,6 +204,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                 <TableHead>Kitchen</TableHead>
                                 <TableHead>Sort</TableHead>
                                 <TableHead>Enabled</TableHead>
+                                <TableHead>Other</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -241,6 +244,21 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                         <Switch 
                                             checked={refill.isEnabled}
                                             onCheckedChange={() => handleToggleEnabled(refill as any)}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Switch
+                                            checked={!!(refill as any).isOther}
+                                            onCheckedChange={async (v) => {
+                                                if (!appUser || !store) return;
+                                                const docRef = doc(db, "stores", store.id, "storeRefills", refill.refillId);
+                                                try {
+                                                    await updateDoc(docRef, { isOther: !!v });
+                                                    toast({ title: "Other flag updated" });
+                                                } catch (error: any) {
+                                                    toast({ variant: 'destructive', title: "Update Failed", description: error.message });
+                                                }
+                                            }}
                                         />
                                     </TableCell>
                                     <TableCell className="text-right">
