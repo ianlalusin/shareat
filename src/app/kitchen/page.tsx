@@ -98,6 +98,30 @@ function formatDuration(ms: number): string {
     return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 }
 
+function requestNotifyPermission() {
+  try {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      void Notification.requestPermission().catch(() => {});
+    }
+  } catch {}
+}
+
+function notifyNewTicket(opts: { title: string; body?: string }) {
+  try {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    // Foreground notification (PWA). Background requires Push; this is best-effort.
+    new Notification(opts.title, {
+      body: opts.body || "",
+      silent: false,
+    });
+  } catch {}
+}
+
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
   const { activeStore } = useStoreContext();
@@ -111,6 +135,12 @@ export default function KitchenPage() {
   const [sessionsMap, setSessionsMap] = useState<Map<string, Session>>(new Map());
   const [flavorsMap, setFlavorsMap] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const prevTicketIdsRef = useRef(new Set());
+  const didInitTicketsRef = useRef(false);
+
+  useEffect(() => {
+    requestNotifyPermission();
+  }, []);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
   const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
@@ -194,6 +224,22 @@ export default function KitchenPage() {
         setStationDoc(data);
         
         const currentTickets = data?.tickets || {};
+
+        // Device notification when new ticket appears (ignore first load)
+        const ids = Object.keys(currentTickets);
+        if (didInitTicketsRef.current) {
+          const prev = prevTicketIdsRef.current;
+          const hasNew = ids.some((id) => !prev.has(id));
+          if (hasNew) {
+            notifyNewTicket({
+              title: "New Kitchen Ticket",
+              body: `${activeStationName || "Station"}: ${ids.length} active`,
+            });
+          }
+        } else {
+          didInitTicketsRef.current = true;
+        }
+        prevTicketIdsRef.current = new Set(ids);
         const sessionIds = [...new Set(Object.values(currentTickets).map(t => t.sessionId))];
 
         if (sessionIds.length > 0) {
