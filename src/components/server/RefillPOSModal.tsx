@@ -259,32 +259,48 @@ function POSContent({
                     finalNotes
                 );
             }
-            // Other Refills ticket (rice/cheese)
-            if (hasOther && otherStation?.kitchenLocationId) {
-                await createKitchenTickets(
-                    db,
-                    storeId,
-                    session.id,
-                    session,
-                    'refill',
-                    {
-                        itemId: "OTHER_REFILLS",
-                        itemName: "OTHER REFILLS",
-                        kitchenLocationId: otherStation.kitchenLocationId,
-                        kitchenLocationName: otherStation.kitchenLocationName,
-                        billLineId: null,
-                    },
-                    1,
-                    actor,
-                    { tx },
-                    "",
-                    { refillRequest: Object.fromEntries(
-                        otherRefills
-                          .map(r => [r.refillName, Number(otherQty[r.refillId] || 0)])
-                          .filter(([, v]) => Number(v) > 0)
-                    ) }
-                );
+            // Other Refills tickets (grouped by kitchenLocationId)
+            if (hasOtherNow) {
+                const byStation = new Map<string, { name?: string | null; entries: Array<[string, number]> }>();
+
+                for (const r of otherRefills) {
+                    const qty = Number(otherQty[r.refillId] || 0);
+                    if (qty <= 0) continue;
+
+                    const stationId = r.kitchenLocationId;
+                    if (!stationId) {
+                        throw new Error(`Other refill "${r.refillName}" is missing an assigned kitchen location.`);
+                    }
+
+                    const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [] };
+                    bucket.name = bucket.name || r.kitchenLocationName;
+                    bucket.entries.push([r.refillName, qty]);
+                    byStation.set(stationId, bucket);
+                }
+
+                for (const [stationId, bucket] of byStation.entries()) {
+                    await createKitchenTickets(
+                        db,
+                        storeId,
+                        session.id,
+                        session,
+                        'refill',
+                        {
+                            itemId: "OTHER_REFILLS",
+                            itemName: "OTHER REFILLS",
+                            kitchenLocationId: stationId,
+                            kitchenLocationName: bucket.name,
+                            billLineId: null,
+                        },
+                        1,
+                        actor,
+                        { tx },
+                        "",
+                        { refillRequest: Object.fromEntries(bucket.entries) }
+                    );
+                }
             }
+
 
         });
         
