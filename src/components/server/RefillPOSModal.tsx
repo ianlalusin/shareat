@@ -281,7 +281,7 @@ function POSContent({
                     { refillRequest: Object.fromEntries(
                         otherRefills
                           .map(r => [r.refillName, Number(otherQty[r.refillId] || 0)])
-                          .filter(([, v]) => v > 0)
+                          .filter(([, v]) => Number(v) > 0)
                     ) }
                 );
             }
