@@ -6,11 +6,12 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Printer, Bluetooth, Check, RefreshCw, ShieldAlert } from "lucide-react";
+import { Printer, Bluetooth, Check, RefreshCw, ShieldAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrinter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Capacitor } from '@capacitor/core';
+import { getLastPrinterAddress, setLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 
 export default function PrinterTestPage() {
   const { toast } = useToast();
@@ -21,12 +22,14 @@ export default function PrinterTestPage() {
   const [isNative, setIsNative] = useState(true);
 
   useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-    if (Capacitor.isNativePlatform()) {
+    const native = Capacitor.isNativePlatform();
+    setIsNative(native);
+    if (native) {
       refreshDevices();
-      const stored = localStorage.getItem('last_printer_address');
+      const stored = getLastPrinterAddress();
       if (stored) setConnectedAddress(stored);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshDevices = async () => {
@@ -52,7 +55,7 @@ export default function PrinterTestPage() {
     try {
       await ThermalPrinter.connectBluetoothPrinter({ address });
       setConnectedAddress(address);
-      localStorage.setItem('last_printer_address', address);
+      setLastPrinterAddress(address);
       toast({ title: 'Connected', description: 'Printer is ready.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Connection Failed', description: e.message });
@@ -81,13 +84,16 @@ abcdefghijklmnopqrstuvwxyz
       TEST COMPLETE
 --------------------------------
 \n\n\n\n`;
-      await ThermalPrinter.printReceipt({
+
+      await printViaNativeBluetooth({
+        target: 'receipt',
         text,
-        widthMm: parseInt(paperWidth) as any,
+        widthMm: parseInt(paperWidth, 10) as any,
         cut: true,
         beep: true,
-        encoding: 'CP437'
+        encoding: 'CP437',
       });
+
       toast({ title: 'Print Job Sent' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
@@ -121,7 +127,7 @@ abcdefghijklmnopqrstuvwxyz
           <Bluetooth className="mr-2 h-4 w-4" /> Request Permissions
         </Button>
       </PageHeader>
-      
+
       <div className="grid gap-6 md:grid-cols-2 mt-6">
         <Card>
           <CardHeader>

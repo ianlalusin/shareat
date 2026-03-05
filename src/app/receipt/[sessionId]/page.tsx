@@ -17,9 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import type { ModeOfPayment, Store, ReceiptData, ReceiptSettings } from "@/lib/types";
 import { formatReceiptText } from "@/lib/printing/receiptFormatter";
-import ThermalPrinter from "@/lib/printing/thermalPrinter";
+import { printViaNativeBluetooth, getLastPrinterAddress } from "@/lib/printing/printHub";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { getReceiptSettings } from "@/lib/receipts/receipt-settings";
+import { Capacitor } from "@capacitor/core";
 
 type StrippedReceiptData = Omit<ReceiptData, 'settings'>;
 
@@ -166,7 +167,7 @@ export default function ReceiptPage() {
         
         setIsThermalPrinting(true);
         try {
-            const lastAddress = localStorage.getItem('last_printer_address');
+            const lastAddress = getLastPrinterAddress();
             if (!lastAddress) {
                 toast({ variant: 'destructive', title: 'No Printer', description: 'Configure thermal printer in Manager Tools.' });
                 setIsThermalPrinting(false);
@@ -178,14 +179,7 @@ export default function ReceiptPage() {
             const paperWidth = liveSettings.paperWidth === "58mm" ? 58 : 80;
             const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth);
 
-            await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-            await ThermalPrinter.printReceipt({
-                text,
-                widthMm: paperWidth,
-                cut: true,
-                beep: true,
-                encoding: 'CP437'
-            });
+            await printViaNativeBluetooth({ target: 'receipt', text, widthMm: paperWidth, cut: true, beep: true, encoding: 'CP437' });
 
             if (sessionId !== "PREVIEW") {
                 const receiptRef = doc(db, "stores", activeStoreId, "receipts", sessionId);
@@ -255,9 +249,9 @@ export default function ReceiptPage() {
                             </Select>
                         </div>
                         <div className="flex gap-2 w-full sm:w-auto">
-                            <Button variant="outline" onClick={handleThermalPrint} disabled={!receiptData || isThermalPrinting} className="flex-1 sm:flex-none">
+                            <Button variant="outline" onClick={handleThermalPrint} disabled={!receiptData || isThermalPrinting || !Capacitor.isNativePlatform()} className="flex-1 sm:flex-none">
                                 {isThermalPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="mr-2 h-4 w-4"/>}
-                                Native Print
+                                {Capacitor.isNativePlatform() ? 'Native Print' : 'Native Print (Android only)'}
                             </Button>
                             <Button onClick={handlePrint} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
                                 {isPrinting || settingsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4"/>}
@@ -271,7 +265,7 @@ export default function ReceiptPage() {
                            <span className="flex items-center gap-2"><Info /> Printing Tips</span>
                         </AccordionTrigger>
                         <AccordionContent className="text-sm text-muted-foreground space-y-1">
-                          <p>• <b>Native Print</b> is recommended for Bluetooth thermal printers on Android.</p>
+                          <p>• <b>Native Print</b> works only in the Android app build (Bluetooth thermal printers).</p>
                           <p>• For <b>Standard Print</b>, ensure print <b>Scale</b> is set to 100% or "Actual Size".</p>
                           <p>• Disable <b>Headers and Footers</b> in the browser print dialog.</p>
                         </AccordionContent>

@@ -24,31 +24,3 @@ const ThermalPrinter = registerPlugin<ThermalPrinterPlugin>('ThermalPrinter');
 
 export default ThermalPrinter;
 
-/**
- * High-level wrapper for printing with environment safety checks.
- */
-export async function printToThermal(text: string, widthMm: 58 | 80 = 80) {
-  if (!Capacitor.isNativePlatform()) {
-    throw new Error('Native Bluetooth printing is only available in the Android app build.');
-  }
-
-  try {
-    const lastAddress = localStorage.getItem('last_printer_address');
-    if (lastAddress) {
-      await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-    } else {
-      throw new Error('No printer connected. Please configure printer in Settings.');
-    }
-
-    await ThermalPrinter.printReceipt({
-      text,
-      widthMm,
-      cut: true,
-      beep: true,
-      encoding: 'CP437'
-    });
-  } catch (error: any) {
-    console.error('[ThermalPrinter] Print failed:', error);
-    throw error;
-  }
-}

@@ -21,7 +21,7 @@ export default function PrintPinPage() {
 
   const [paperSize, setPaperSize] = useState<"58mm" | "80mm">(() => {
     try {
-      return (localStorage.getItem("shareat_print_paper") as any) || "58mm";
+      return (localStorage.getItem("receiptPaperWidth:global") as any) || "58mm";
     } catch {
       return "58mm";
     }
@@ -69,7 +69,7 @@ export default function PrintPinPage() {
   }, [pin, isLoading, error]);
 
   useEffect(() => {
-    try { localStorage.setItem("shareat_print_paper", paperSize); } catch {}
+    try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}
   }, [paperSize]);
 
   const handlePrint = () => window.print();
