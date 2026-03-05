@@ -2,6 +2,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
+import { webusbPrint } from '@/lib/printing/webusbPrinter';
 
 export type PrintTarget = 'receipt' | 'pin';
 export type PrintTransport = 'browser' | 'native_bluetooth' | 'webusb';
@@ -49,4 +50,17 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
     beep: job.beep ?? true,
     encoding: job.encoding ?? 'CP437',
   });
+}
+
+
+/**
+ * Central print function for WebUSB (browser-to-USB).
+ * Caller must ensure this runs from a user gesture (e.g. button click).
+ */
+export async function printViaWebUSB(job: Required<Pick<PrintJob, 'text'>> & PrintJob) {
+  const res = await webusbPrint({
+    text: job.text,
+    cut: job.cut ?? true,
+  });
+  return res;
 }
