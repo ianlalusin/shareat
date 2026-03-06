@@ -279,23 +279,23 @@ export default function KitchenPage() {
     setIsLoadingHistory(true);
     
     const closedTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab, 'closedKdsTickets');
-    const q = query(closedTicketsRef, orderBy('updatedAt', 'desc'), limit(5));
+    const q = query(closedTicketsRef, limit(25));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const historyItems = snapshot.docs.map(doc => {
         const ticket = doc.data() as KitchenTicket;
         return {
-          id: ticket.id,
+          id: doc.id,
           sessionLabel: ticket.sessionLabel || 'N/A',
           tableNumber: (ticket as any).tableDisplayName || ticket.sessionLabel || ticket.tableNumber,
           customerName: ticket.customerName,
           itemName: ticket.itemName,
           qty: ticket.qty,
           status: ticket.status,
-          closedAtClientMs: ticket.servedAtClientMs || ticket.cancelledAtClientMs || Date.now(),
+          closedAtClientMs: ticket.servedAtClientMs || ticket.cancelledAtClientMs || 0,
           durationMs: ticket.durationMs || 0,
         };
-      });
+      }).sort((a, b) => b.closedAtClientMs - a.closedAtClientMs).slice(0, 5);
       setHistoryPreview(historyItems);
       setIsLoadingHistory(false);
     }, (err) => {
