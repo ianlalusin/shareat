@@ -176,7 +176,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
             const newSessionId = await startSession(storeId, sessionPayload, user);
 
             toast({ title: 'Session Created!', description: `Table ${chosenTable.tableNumber} is now pending server verification.` });
-            router.push(`/cashier?sessionId=${newSessionId}`);
+            router.push(`/pins?sessionId=${newSessionId}`);
 
         } catch (error: any) {
             console.error("Error Starting Session:", error);
