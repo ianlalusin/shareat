@@ -97,7 +97,8 @@ export default function PinsClient() {
     const q = query(ref, orderBy("startedAtClientMs", "desc"));
 
     return onSnapshot(q, (snap) => {
-      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ActiveSession[];
+      const rowsAll = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ActiveSession[];
+      const rows = rowsAll.filter((r) => (r.sessionMode || '') !== 'alacarte');
       setSessions(rows);
     });
   }, [storeId]);
