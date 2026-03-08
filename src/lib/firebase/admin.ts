@@ -1,5 +1,6 @@
 import "server-only";
 
+import { readFileSync } from 'fs';
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -13,6 +14,23 @@ function initializeAdminApp(): App {
   // If an app is already initialized, return it.
   if (getApps().length) {
     return getApps()[0];
+  }
+
+  const serviceAccountPath = process.env.FIREBASE_ADMIN_SA_PATH;
+  if (serviceAccountPath) {
+    try {
+      const raw = readFileSync(serviceAccountPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      return initializeApp({
+        credential: cert({
+          projectId: parsed.project_id,
+          clientEmail: parsed.client_email,
+          privateKey: String(parsed.private_key || '').replace(/\\n/g, '\n'),
+        }),
+      });
+    } catch (e) {
+      console.error('Firebase Admin SDK initialization failed with FIREBASE_ADMIN_SA_PATH:', e);
+    }
   }
 
   // Try to use individual environment variables for service account credentials.

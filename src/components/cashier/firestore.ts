@@ -90,11 +90,6 @@ function _disableCustomerPinInTx(
   projectionSnap: DocumentSnapshot<DocumentData>
 ) {
   if (!projectionSnap.exists()) return;
-
-  const pin = projectionSnap.data()?.customerPin;
-  if (pin) {
-    tx.delete(doc(db, "pinRegistry", String(pin)));
-  }
 }
 
 

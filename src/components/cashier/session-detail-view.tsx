@@ -60,7 +60,7 @@ function validatePayments(payments: Payment[], grandTotalCents: number, paymentM
 export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const { toast } = useToast();
-  const { appUser } = useAuthContext();
+  const { user, appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { confirm, Dialog } = useConfirmDialog();
   const isMobile = useIsMobile();
@@ -398,6 +398,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     try {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
+        const activeProjectionSnap = await getDoc(doc(db, "stores", activeStore.id, "activeSessions", sessionId));
+        const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
         
         const receiptId = await completePaymentFromUnits(
             activeStore.id,
@@ -411,6 +413,27 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             customAdjustments
         );
         
+        if (user && currentPin) {
+            const token = await user.getIdToken();
+            const finalizeRes = await fetch("/api/pins/finalize", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    storeId: activeStore.id,
+                    sessionId,
+                    pin: currentPin,
+                    reason: "payment_closed",
+                }),
+            });
+            if (!finalizeRes.ok) {
+                const finalizeData = await finalizeRes.json().catch(() => ({}));
+                throw new Error(finalizeData?.error || "Payment succeeded but PIN finalization failed.");
+            }
+        }
+
         const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
         const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
         toast({ title: "Payment complete", description: "Session closed successfully." });

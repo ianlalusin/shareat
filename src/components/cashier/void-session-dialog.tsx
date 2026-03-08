@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuthContext } from "@/context/auth-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ interface VoidSessionDialogProps {
 
 export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: VoidSessionDialogProps) {
   const { toast } = useToast();
+  const { user: firebaseUser } = useAuthContext();
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,12 +38,39 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
     }
     setIsSubmitting(true);
     try {
+      const { doc, getDoc } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase/client");
+      const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", session.id));
+      const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
+
       await voidSession({
         storeId: storeId,
         sessionId: session.id,
         reason: safeReason,
         actor: user,
       });
+
+      if (firebaseUser && currentPin) {
+        const token = await firebaseUser.getIdToken();
+        const finalizeRes = await fetch("/api/pins/finalize", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            storeId,
+            sessionId: session.id,
+            pin: currentPin,
+            reason: "session_voided",
+          }),
+        });
+        if (!finalizeRes.ok) {
+          const finalizeData = await finalizeRes.json().catch(() => ({}));
+          throw new Error(finalizeData?.error || "Session voided but PIN finalization failed.");
+        }
+      }
+
       toast({ title: "Session Voided", description: "The session has been cancelled and the table is now free." });
       onClose();
     } catch (error: any) {

@@ -43,6 +43,14 @@ service cloud.firestore {
     }
 
     function msNow() { return request.time.toMillis(); }
+    function pinFieldsUnchanged() {
+      return !resource.exists()
+        || (
+          request.resource.data.customerPin == resource.data.customerPin
+          && request.resource.data.customerAccessEnabled == resource.data.customerAccessEnabled
+          && request.resource.data.customerAccessExpiresAtMs == resource.data.customerAccessExpiresAtMs
+        );
+    }
 
     // -----------------------------
     // Collection Group Rules
@@ -73,17 +81,10 @@ service cloud.firestore {
         && resource.data.status == 'active'
         && resource.data.expiresAtMs > msNow();
 
-      // STAFF: allow CRUD only if they have access to the store in the doc
+      // STAFF: read only. PIN writes now go through trusted server routes.
       allow get, list: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
 
-      allow create: if isActiveStaff()
-        && hasStoreAccess(request.resource.data.storeId);
-
-      allow update: if isActiveStaff()
-        && hasStoreAccess(resource.data.storeId);
-
-      allow delete: if isActiveStaff()
-        && hasStoreAccess(resource.data.storeId);
+      allow create, update, delete: if false;
     }
 
     // -----------------------------
@@ -98,7 +99,9 @@ service cloud.firestore {
     // -----------------------------
     // Staff access (existing) + Customer read access to ONLY their session doc
     match /stores/{storeId}/activeSessions/{sessionId} {
-      allow read, write: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId);
+      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged();
+      allow delete: if hasStoreAccess(storeId);
 
       // CUSTOMER: read only if access enabled + not expired
       allow get: if isCustomerForSession(storeId, sessionId)

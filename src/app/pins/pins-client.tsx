@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
-import { issueCustomerPinClient, disableCustomerAccessClient, disablePinInRegistry } from "@/components/pins/firestore";
+import { useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/global/confirm-dialog";
 
 type ActiveSession = {
   id: string;
@@ -17,21 +18,47 @@ type ActiveSession = {
   sessionMode?: string | null;
   tableDisplayName?: string | null;
   customerName?: string | null;
-
   customerPin?: string | null;
   customerAccessEnabled?: boolean | null;
   customerAccessExpiresAtMs?: number | null;
-
   startedAtClientMs?: number | null;
 };
 
-type PastPin = {
+type ArchivedPin = {
   id: string;
+  pin?: string;
   sessionId: string;
   storeId: string;
-  status: string;
-  expiresAtMs: number;
+  customerName?: string | null;
+  tableDisplayName?: string | null;
+  tableNumber?: string | number | null;
+  status?: string;
+  expiresAtMs?: number;
+  archivedAt?: any;
+  archivedByUid?: string;
+  archiveReason?: string;
+  originalStatus?: string;
+  reviveCount?: number;
+  revivedAt?: any;
+  revivedByUid?: string;
 };
+
+function getManilaDayId(input?: Date | number | string | null): string {
+  const date =
+    input instanceof Date ? input :
+    typeof input === "number" ? new Date(input) :
+    typeof input === "string" ? new Date(input) :
+    new Date();
+
+  const safeDate = isNaN(date.getTime()) ? new Date() : date;
+
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Manila",
+  }).format(safeDate).replace(/-/g, "");
+}
 
 function fmtExpiry(ms?: number | null) {
   if (!ms) return "—";
@@ -51,7 +78,6 @@ function fmtRemaining(ms?: number | null, nowMs?: number) {
   return `${h}h ${m}m left`;
 }
 
-type Filter = "needs" | "enabled" | "expired" | "all";
 const PAST_PINS_PAGE_SIZE = 10;
 
 function StatusBadge({ enabled, expired }: { enabled: boolean; expired: boolean }) {
@@ -71,19 +97,25 @@ function StatusBadge({ enabled, expired }: { enabled: boolean; expired: boolean 
 
 export default function PinsClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { activeStore } = useStoreContext();
+  const { user } = useAuthContext();
+  const { confirm, Dialog } = useConfirmDialog();
 
   const storeId = activeStore?.id;
+  const targetSessionId = searchParams.get("sessionId");
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const [now, setNow] = useState(() => Date.now());
-  const [filter, setFilter] = useState<Filter>("needs");
 
-  const [allActiveStorePins, setAllActiveStorePins] = useState<any[]>([]);
-  const [isLoadingPastPins, setIsLoadingPastPins] = useState(true);
-  const [pastPinsPage, setPastPinsPage] = useState(0);
+  const [archivedPins, setArchivedPins] = useState<ArchivedPin[]>([]);
+  const [isLoadingArchivedPins, setIsLoadingArchivedPins] = useState(true);
+  const [archivedPinsPage, setArchivedPinsPage] = useState(0);
+  const autoIssueAttemptedRef = useRef<string | null>(null);
+  const autoFinalizeExpiredRef = useRef<Record<string, true>>({});
+  const todayDayId = getManilaDayId(now);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -98,77 +130,163 @@ export default function PinsClient() {
 
     return onSnapshot(q, (snap) => {
       const rowsAll = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ActiveSession[];
-      const rows = rowsAll.filter((r) => (r.sessionMode || '') !== 'alacarte');
+      const rows = rowsAll.filter((r) => (r.sessionMode || "") !== "alacarte");
       setSessions(rows);
     });
   }, [storeId]);
 
   useEffect(() => {
-    if (!storeId) {
-      setIsLoadingPastPins(false);
-      setAllActiveStorePins([]);
+    if (!storeId || !targetSessionId || !user) return;
+    if (autoIssueAttemptedRef.current === targetSessionId) return;
+
+    const target = sessions.find((session) => session.id === targetSessionId);
+    if (!target) return;
+    if ((target.sessionMode || "") === "alacarte") return;
+
+    const hasActivePin =
+      !!target.customerAccessEnabled &&
+      !!target.customerPin &&
+      !!target.customerAccessExpiresAtMs &&
+      target.customerAccessExpiresAtMs > Date.now();
+
+    autoIssueAttemptedRef.current = targetSessionId;
+
+    if (hasActivePin) {
+      router.replace(`/print/session-pin/${targetSessionId}`);
       return;
     }
 
-    setIsLoadingPastPins(true);
+    startTransition(async () => {
+      try {
+        setBusyId(targetSessionId);
+        const token = await user.getIdToken();
+        const res = await fetch("/api/pins/issue", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storeId, sessionId: targetSessionId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
+        router.replace(`/print/session-pin/${targetSessionId}`);
+      } catch (error) {
+        console.error("Auto-issue PIN failed:", error);
+        autoIssueAttemptedRef.current = null;
+      } finally {
+        setBusyId(null);
+      }
+    });
+  }, [storeId, targetSessionId, user, sessions, router, startTransition]);
 
-    const pinsRef = collection(db, "pinRegistry");
-    const q = query(pinsRef, where("storeId", "==", storeId), where("status", "==", "active"));
+  useEffect(() => {
+    if (!storeId || !user) return;
 
-    const unsubPast = onSnapshot(
+    const expiredSessions = sessions.filter((s) =>
+      (s.sessionMode || "") !== "alacarte" &&
+      !!s.customerAccessEnabled &&
+      !!s.customerPin &&
+      !!s.customerAccessExpiresAtMs &&
+      s.customerAccessExpiresAtMs <= now &&
+      !autoFinalizeExpiredRef.current[s.id]
+    );
+
+    if (expiredSessions.length === 0) return;
+
+    expiredSessions.forEach((s) => {
+      autoFinalizeExpiredRef.current[s.id] = true;
+
+      startTransition(async () => {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch("/api/pins/finalize", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              storeId,
+              sessionId: s.id,
+              reason: "expired_cleanup",
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || "Failed to finalize expired PIN.");
+        } catch (error) {
+          console.error("Auto-finalize expired PIN failed:", error);
+          delete autoFinalizeExpiredRef.current[s.id];
+        }
+      });
+    });
+  }, [storeId, user, sessions, now, startTransition]);
+
+  useEffect(() => {
+    if (!storeId) {
+      setIsLoadingArchivedPins(false);
+      setArchivedPins([]);
+      return;
+    }
+
+    setIsLoadingArchivedPins(true);
+
+    const ref = collection(db, `stores/${storeId}/pinArchiveByDay/${todayDayId}/pins`);
+    const q = query(ref);
+
+    const unsub = onSnapshot(
       q,
       (snap) => {
-        const pins = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setAllActiveStorePins(pins);
-        setIsLoadingPastPins(false);
-
-        // Auto-disable expired active pins (best-effort)
-        const nowMs = Date.now();
-        pins.forEach((p: any) => {
-          if (p?.id && typeof p.expiresAtMs === "number" && p.expiresAtMs <= nowMs) {
-            startTransition(async () => {
-              try {
-                await disablePinInRegistry({
-                  pin: String(p.id),
-                  storeId: String(p.storeId || storeId),
-                  sessionId: String(p.sessionId || ""),
-                });
-              } catch {}
-            });
-          }
-        });
+        const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as ArchivedPin[];
+        setArchivedPins(rows);
+        setIsLoadingArchivedPins(false);
       },
       (err) => {
-        console.error("Failed to fetch past pins:", err);
-        setIsLoadingPastPins(false);
+        console.error("Failed to fetch archived pins:", err);
+        setIsLoadingArchivedPins(false);
       }
     );
 
-    return () => unsubPast();
-  }, [storeId, startTransition]);
+    return () => unsub();
+  }, [storeId, todayDayId]);
 
-  const { paginatedPastPins, totalPastPinPages } = useMemo(() => {
-    const allPast = allActiveStorePins
-      .filter((p) => p.expiresAtMs < now)
-      .sort((a, b) => b.expiresAtMs - a.expiresAtMs);
+  const { paginatedArchivedPins, totalArchivedPinPages } = useMemo(() => {
+    const allArchived = [...archivedPins].sort((a, b) => {
+      const aMs = typeof a.expiresAtMs === "number" ? a.expiresAtMs : 0;
+      const bMs = typeof b.expiresAtMs === "number" ? b.expiresAtMs : 0;
+      return bMs - aMs;
+    });
 
-    const paginated = allPast.slice(
-      pastPinsPage * PAST_PINS_PAGE_SIZE,
-      (pastPinsPage + 1) * PAST_PINS_PAGE_SIZE
+    const paginated = allArchived.slice(
+      archivedPinsPage * PAST_PINS_PAGE_SIZE,
+      (archivedPinsPage + 1) * PAST_PINS_PAGE_SIZE
     );
-    const totalPages = Math.ceil(allPast.length / PAST_PINS_PAGE_SIZE);
+    const totalPages = Math.ceil(allArchived.length / PAST_PINS_PAGE_SIZE);
 
-    return { paginatedPastPins: paginated, totalPastPinPages: totalPages };
-  }, [allActiveStorePins, now, pastPinsPage]);
+    return { paginatedArchivedPins: paginated, totalArchivedPinPages: totalPages };
+  }, [archivedPins, archivedPinsPage]);
+
+  const latestArchivedPinBySession = useMemo(() => {
+    const sorted = [...archivedPins].sort((a, b) => {
+      const aMs = typeof a.expiresAtMs === "number" ? a.expiresAtMs : 0;
+      const bMs = typeof b.expiresAtMs === "number" ? b.expiresAtMs : 0;
+      return bMs - aMs;
+    });
+
+    const map: Record<string, ArchivedPin> = {};
+    for (const pin of sorted) {
+      if (!pin.sessionId) continue;
+      if (!map[pin.sessionId]) map[pin.sessionId] = pin;
+    }
+    return map;
+  }, [archivedPins]);
 
   const view = useMemo(() => {
-    const mapped = sessions.map((s) => {
+    return sessions.map((s) => {
       const enabled = s.customerAccessEnabled ?? false;
       const exp = s.customerAccessExpiresAtMs ?? null;
       const hasPin = !!s.customerPin;
       const expired = enabled && !!exp && exp <= now;
-
-      const needsPin = !enabled || !hasPin || expired;
 
       return {
         ...s,
@@ -176,24 +294,22 @@ export default function PinsClient() {
         _exp: exp,
         _hasPin: hasPin,
         _expired: expired,
-        _needsPin: needsPin,
+        _needsPin: !enabled || !hasPin || expired,
       };
     });
+  }, [sessions, now]);
 
-    const filtered =
-      filter === "all"
-        ? mapped
-        : filter === "needs"
-          ? mapped.filter((s) => s._needsPin)
-          : filter === "enabled"
-            ? mapped.filter((s) => s._enabled && s._hasPin && !s._expired)
-            : mapped.filter((s) => s._expired);
-
-    return filtered;
-  }, [sessions, filter, now]);
+  console.log("[pins-page-debug]", {
+    storeId,
+    sessionsCount: sessions.length,
+    viewCount: view.length,
+    sessions,
+    view,
+  });
 
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
+      {Dialog}
       <div className="p-6 space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div>
@@ -203,47 +319,17 @@ export default function PinsClient() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              className={`border rounded px-3 py-1 text-sm ${filter === "needs" ? "bg-muted" : ""}`}
-              onClick={() => setFilter("needs")}
-              type="button"
-            >
-              Needs PIN
-            </button>
-            <button
-              className={`border rounded px-3 py-1 text-sm ${filter === "enabled" ? "bg-muted" : ""}`}
-              onClick={() => setFilter("enabled")}
-              type="button"
-            >
-              Enabled
-            </button>
-            <button
-              className={`border rounded px-3 py-1 text-sm ${filter === "expired" ? "bg-muted" : ""}`}
-              onClick={() => setFilter("expired")}
-              type="button"
-            >
-              Expired
-            </button>
-            <button
-              className={`border rounded px-3 py-1 text-sm ${filter === "all" ? "bg-muted" : ""}`}
-              onClick={() => setFilter("all")}
-              type="button"
-            >
-              All
-            </button>
-          </div>
         </div>
 
         {!storeId ? (
           <div className="text-sm opacity-70">No store selected.</div>
         ) : (
           <div className="space-y-4">
-            {/* Active sessions as cards */}
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {view.map((s) => {
                 const pinLabel = s.customerPin ? String(s.customerPin) : "WAITING FOR PIN";
                 const remaining = s._enabled ? fmtRemaining(s._exp, now) : "";
+                const archivedPinForSession = latestArchivedPinBySession[s.id];
 
                 const title = s.tableDisplayName || s.sessionLabel || s.id;
                 const customer = s.customerName || "—";
@@ -265,9 +351,9 @@ export default function PinsClient() {
                         </div>
                         <div className="min-w-0 flex-1 text-center">
                           <div className="flex items-baseline justify-center gap-2 flex-wrap">
-                          <div className="text-2xl font-bold truncate">{title}</div>
-                          <StatusBadge enabled={!!s._enabled} expired={!!s._expired} />
-                        </div>
+                            <div className="text-2xl font-bold truncate">{title}</div>
+                            <StatusBadge enabled={!!s._enabled} expired={!!s._expired} />
+                          </div>
                         </div>
                       </div>
 
@@ -290,25 +376,6 @@ export default function PinsClient() {
                       <div className="flex gap-2 flex-wrap justify-end pt-1">
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
-                          disabled={isPending || busyId === s.id || (s._enabled && s._hasPin && !s._expired)}
-                          onClick={() => {
-                            startTransition(async () => {
-                              try {
-                                setBusyId(s.id);
-                                await issueCustomerPinClient({ storeId, sessionId: s.id });
-                                router.push(`/print/session-pin/${s.id}`);
-                              } finally {
-                                setBusyId(null);
-                              }
-                            });
-                          }}
-                          type="button"
-                        >
-                          Issue & Print
-                        </button>
-
-                        <button
-                          className="border rounded px-3 py-2 text-sm disabled:opacity-50"
                           disabled={!s.customerPin}
                           onClick={() => router.push(`/print/session-pin/${s.id}`)}
                           type="button"
@@ -316,31 +383,86 @@ export default function PinsClient() {
                           Print
                         </button>
 
-                        <button
-                          className="border rounded px-3 py-2 text-sm disabled:opacity-50"
-                          disabled={isPending || busyId === s.id || (s._enabled && s._hasPin && !s._expired)}
-                          onClick={() => {
-                            const ok = window.confirm("Disable customer access and invalidate the PIN?");
-                            if (!ok) return;
+{s.customerPin ? (
+                          <button
+                            className="border rounded px-3 py-2 text-sm disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: "Disable this PIN?",
+                                description: "The current PIN will be disabled and the customer will no longer be able to access the refill app.",
+                                confirmText: "Proceed",
+                                cancelText: "Cancel",
+                                destructive: true,
+                              });
+                              if (!ok) return;
 
-                            startTransition(async () => {
-                              try {
-                                setBusyId(s.id);
-                                if (s.customerPin) {
-                                  await disablePinInRegistry({ pin: String(s.customerPin), storeId, sessionId: s.id });
-                                  await disableCustomerAccessClient({ storeId, sessionId: s.id });
-                                } else {
-                                  await disableCustomerAccessClient({ storeId, sessionId: s.id });
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in to disable a PIN.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/disable", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({
+                                      storeId,
+                                      sessionId: s.id,
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to disable PIN.");
+                                } catch (error: any) {
+                                  console.error("Disable PIN failed:", error);
+                                  window.alert(error?.message || "Failed to disable PIN.");
+                                } finally {
+                                  setBusyId(null);
                                 }
-                              } finally {
-                                setBusyId(null);
-                              }
-                            });
-                          }}
-                          type="button"
-                        >
-                          Disable
-                        </button>
+                              });
+                            }}
+                            type="button"
+                          >
+                            Disable
+                          </button>
+                        ) : (
+                          <button
+                            className="border rounded px-3 py-2 text-sm disabled:opacity-50"
+                            disabled={busyId === s.id || !archivedPinForSession || archivedPinForSession.status === "revived"}
+                            onClick={() => {
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in to extend a PIN.");
+                                  if (!archivedPinForSession) throw new Error("No archived PIN found to extend.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/revive", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({
+                                      storeId,
+                                      sessionId: s.id,
+                                      pin: archivedPinForSession.id,
+                                      dayId: todayDayId,
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to extend PIN.");
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Extend
+                          </button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -349,59 +471,73 @@ export default function PinsClient() {
 
               {view.length === 0 && (
                 <div className="p-6 text-sm opacity-70">
-                  {filter === "needs"
-                    ? "No sessions currently need a PIN."
-                    : "No active sessions found for this filter."}
+                  No active sessions found.
                 </div>
               )}
             </div>
 
-            {/* Expired pins cleanup */}
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle>Expired PINs</CardTitle>
+                <CardTitle>Archived PINs Today</CardTitle>
                 <CardDescription>
-                  These PINs have expired but have not been cleaned up. Disabling them removes them permanently from the registry.
+                  PINs finalized today are archived here and can be revived if they were disabled by mistake.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingPastPins ? (
-                  <p className="text-sm text-muted-foreground">Loading expired PINs...</p>
-                ) : paginatedPastPins.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No expired PINs to clean up.</p>
+                {isLoadingArchivedPins ? (
+                  <p className="text-sm text-muted-foreground">Loading archived PINs...</p>
+                ) : paginatedArchivedPins.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No archived PINs for today.</p>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
                     <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium bg-muted">
-                      <div className="col-span-3">Session ID</div>
-                      <div className="col-span-3">PIN</div>
-                      <div className="col-span-4">Expired At</div>
-                      <div className="col-span-2 text-right">Action</div>
+                      <div className="col-span-2">PIN</div>
+                      <div className="col-span-3">Customer</div>
+                      <div className="col-span-2">Table</div>
+                      <div className="col-span-2">Reason</div>
+                      <div className="col-span-2">Expires</div>
+                      <div className="col-span-1 text-right">Action</div>
                     </div>
-                    {paginatedPastPins.map((pin: PastPin) => (
+                    {paginatedArchivedPins.map((pin) => (
                       <div key={pin.id} className="grid grid-cols-12 gap-2 px-3 py-3 border-t items-center">
-                        <div className="col-span-3 font-mono text-xs">{pin.sessionId.slice(0, 8)}...</div>
-                        <div className="col-span-3 font-mono">{pin.id}</div>
-                        <div className="col-span-4 text-xs">{fmtExpiry(pin.expiresAtMs)}</div>
-                        <div className="col-span-2 text-right">
+                        <div className="col-span-2 font-mono">{pin.id}</div>
+                        <div className="col-span-3 text-sm truncate">{pin.customerName || "—"}</div>
+                        <div className="col-span-2 text-sm truncate">{pin.tableDisplayName || "—"}</div>
+                        <div className="col-span-2 text-xs">{pin.archiveReason || "—"}</div>
+                        <div className="col-span-2 text-xs">{fmtExpiry(pin.expiresAtMs)}</div>
+                        <div className="col-span-1 text-right">
                           <button
                             className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                            disabled={isPending || busyId === pin.id}
+                            disabled={isPending || busyId === pin.id || pin.status === "revived"}
                             onClick={() => {
                               startTransition(async () => {
                                 try {
                                   setBusyId(pin.id);
-                                  await disablePinInRegistry({
-                                    pin: pin.id,
-                                    storeId: pin.storeId,
-                                    sessionId: pin.sessionId,
+                                  if (!user) throw new Error("You must be signed in to revive a PIN.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/revive", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({
+                                      storeId,
+                                      sessionId: pin.sessionId,
+                                      pin: pin.id,
+                                      dayId: todayDayId,
+                                    }),
                                   });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
+                                  router.push(`/print/session-pin/${pin.sessionId}`);
                                 } finally {
                                   setBusyId(null);
                                 }
                               });
                             }}
                           >
-                            Disable
+                            {pin.status === "revived" ? "Revived" : "Revive"}
                           </button>
                         </div>
                       </div>
@@ -410,24 +546,24 @@ export default function PinsClient() {
                 )}
               </CardContent>
 
-              {totalPastPinPages > 1 && (
+              {totalArchivedPinPages > 1 && (
                 <div className="p-4 border-t flex items-center justify-between">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPastPinsPage((p) => Math.max(0, p - 1))}
-                    disabled={pastPinsPage === 0}
+                    onClick={() => setArchivedPinsPage((p) => Math.max(0, p - 1))}
+                    disabled={archivedPinsPage === 0}
                   >
                     Prev
                   </Button>
                   <div className="text-sm opacity-70">
-                    Page {pastPinsPage + 1} of {totalPastPinPages}
+                    Page {archivedPinsPage + 1} of {totalArchivedPinPages}
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setPastPinsPage((p) => Math.min(totalPastPinPages - 1, p + 1))}
-                    disabled={pastPinsPage >= totalPastPinPages - 1}
+                    onClick={() => setArchivedPinsPage((p) => Math.min(totalArchivedPinPages - 1, p + 1))}
+                    disabled={archivedPinsPage >= totalArchivedPinPages - 1}
                   >
                     Next
                   </Button>
