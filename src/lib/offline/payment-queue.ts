@@ -37,6 +37,18 @@ export function addToQueue(item: Omit<QueuedPayment, "id" | "queuedAtMs" | "stat
   };
   queue.push(newItem);
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+
+  // Register background sync so SW can process when reconnected (PWA only)
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      if ("sync" in reg) {
+        (reg as any).sync.register("offline-payment-sync").catch((err: any) => {
+          console.warn("[Queue] Background sync registration failed:", err);
+        });
+      }
+    }).catch(() => {});
+  }
+
   return newItem;
 }
 
