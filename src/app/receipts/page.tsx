@@ -811,7 +811,6 @@ export default function ReceiptsPage() {
                     paymentMethods={paymentMethods}
                     actor={appUser}
                     onSuccess={(refundId) => {
-                        setReceipts(prev => prev.map(r => r.id === refundTarget!.id ? { ...r } : r));
                         fetchReceipts();
                     }}
                 />

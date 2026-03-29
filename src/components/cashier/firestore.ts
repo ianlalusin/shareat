@@ -22,6 +22,7 @@ import {
   arrayUnion,
   arrayRemove,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -972,6 +973,19 @@ export async function createRefundReceipt(
     editReason: reason,
   };
 
-  await setDoc(refundRef, { ...refundPayload, createdAt: serverTs });
+  // Build refundedQtys increment map for the parent receipt
+  const parentReceiptId = parentReceipt.receiptId ?? parentReceipt.id;
+  const parentRef = doc(db, `stores/${storeId}/receipts`, parentReceiptId);
+  const qtyIncrements: Record<string, number> = {};
+  refundLines.forEach(l => { qtyIncrements[`refundedQtys.${l.id}`] = increment(l.qtyOrdered); });
+
+  const batch = writeBatch(db);
+  batch.set(refundRef, { ...refundPayload, createdAt: serverTs });
+  batch.update(parentRef, {
+    ...qtyIncrements,
+    totalRefunded: increment(refundTotal),
+    refundCount: increment(1),
+  });
+  await batch.commit();
   return refundId;
 }

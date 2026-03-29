@@ -39,14 +39,16 @@ function RefundContent({
 
   const billableLines = useMemo(() =>
     (receipt.lines || []).filter(l => {
-      const billable = l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0);
+      const refunded = refundedQtys[l.id] || 0;
+      const billable = l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - refunded;
       return billable > 0;
     }),
-    [receipt.lines]
+    [receipt.lines, refundedQtys]
   );
 
+  const refundedQtys: Record<string, number> = (receipt as any).refundedQtys ?? {};
   const getMaxQty = (l: SessionBillLine) =>
-    l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0);
+    Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - (refundedQtys[l.id] || 0));
 
   const getRefundQty = (id: string) => refundQtys[id] ?? 0;
 
@@ -116,6 +118,11 @@ function RefundContent({
   return (
     <>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {billableLines.length === 0 && (
+          <div className="text-center text-muted-foreground py-10">
+            All items on this receipt have already been fully refunded.
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">Select quantities to refund.</p>
           <div className="flex gap-2">
