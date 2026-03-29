@@ -30,6 +30,7 @@ const VOID_REASONS = {
   duplicate_entry: "Duplicate Entry Error",
   pricing_error: "Pricing Error",
   other: "Other",
+  kitchen_cancel: "Cancelled by Kitchen",
 };
 
 const formSchema = z.object({
