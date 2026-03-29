@@ -196,7 +196,7 @@ export type KitchenTicket = {
     qtyRemaining?: number;  // qtyOrdered - qtyServed - qtyCancelled
     serveLog?: {
       qty: number;
-      servedAt: any;
+      servedAt: number;
       servedAtClientMs: number;
       servedByUid: string;
       servedByName?: string;

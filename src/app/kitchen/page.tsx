@@ -480,7 +480,7 @@ export default function KitchenPage() {
         const newStatus = qtyRemaining <= 0 ? 'served' : 'partially_served';
         const startMs = getStartMs(old.createdAtClientMs ?? old.createdAt);
         const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
-        const newLogEntry = { qty: qtyToServe, servedAt: serverTimestamp(), servedAtClientMs: nowMs, servedByUid: appUser.uid };
+        const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid };
         const updatePayload: any = {
           qtyServed, qtyCancelled, qtyRemaining,
           status: newStatus,
