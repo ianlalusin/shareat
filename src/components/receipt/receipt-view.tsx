@@ -52,9 +52,11 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
         return Array.from(map.entries());
     }, [lines]);
 
+    const isRefundReceipt = !!(data.receiptNumber?.startsWith('RF-') || (data as any).isRefund);
     const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
-    const cashierName = createdByUsername || session.cashierName || session.startedByUid?.substring(0, 6) || "N/A";
+    const rawCashier = createdByUsername || session.cashierName || session.startedByUid?.substring(0, 6);
+    const cashierName = rawCashier && rawCashier !== "N/A" ? rawCashier : ((data as any).createdByEmail ? String((data as any).createdByEmail).split("@")[0] : "N/A");
 
     const getPaymentMethodName = (id: string) => {
         const fromMap = paymentMethodMap.get(id);
@@ -94,6 +96,11 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
             className={cn("receipt-view bg-white text-black mx-auto p-4 shadow-lg", widthClass)}
             style={receiptStyles}
         >
+            {isRefundReceipt && (
+                <div className="text-center font-bold border border-black rounded px-2 py-1 mb-2 text-lg tracking-widest">
+                    *** REFUND RECEIPT ***
+                </div>
+            )}
             <header className="text-center space-y-px mb-2 receipt-section">
                 {settings.showLogo && settings.logoUrl && (
                     <div className="relative mx-auto mb-1" style={{width: `${settings.logoWidthPct || 80}%`, height: 'auto', aspectRatio: '1 / 1'}}>
@@ -205,7 +212,7 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={grandTotal} isBold={true} isCurrency prefix="PHP " />
+                <ReceiptRow label="TOTAL" value={isRefundReceipt ? -Math.abs(grandTotal) : grandTotal} isBold={true} isCurrency prefix="PHP " />
              </section>
             
              <hr className="border-dashed border-black my-2" />
@@ -213,7 +220,7 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                 {paymentsFromAnalytics.map((p, i) => (
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
                 ))}
-                 <ReceiptRow label="Total Paid" value={totalPaid} isCurrency />
+                 <ReceiptRow label={isRefundReceipt ? "Total Refunded" : "Total Paid"} value={isRefundReceipt ? -Math.abs(totalPaid) : totalPaid} isCurrency />
                  <ReceiptRow label="CHANGE" value={change} isBold={true} isCurrency />
              </section>
 

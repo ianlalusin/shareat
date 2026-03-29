@@ -389,7 +389,9 @@ export default function ReceiptsPage() {
                     createdByUsername: receiptDocData.createdByUsername,
                     receiptNumber: receiptDocData.receiptNumber,
                     analytics: receiptDocData.analytics,
-                });
+                    isRefund: receiptDocData.isRefund ?? false,
+                    createdByEmail: receiptDocData.createdByEmail ?? null,
+                } as any);
                 
             } catch (err: any) {
                 toast({ variant: 'destructive', title: 'Error loading preview', description: err.message });
@@ -681,6 +683,17 @@ export default function ReceiptsPage() {
                                                             <Edit className="h-4 w-4" />
                                                         </Button>
                                                         
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRefundTarget(r); }}
+                                                            disabled={r.status === "voided" || !!r.isRefund}
+                                                            className="mr-2"
+                                                            title="Issue Refund"
+                                                            type="button"
+                                                        >
+                                                            <RotateCcw className="h-4 w-4" />
+                                                        </Button>
                                                         {(appUser?.role === "admin" || appUser?.role === "manager") && (
                                                             <Button
                                                                 variant="destructive"
