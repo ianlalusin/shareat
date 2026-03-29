@@ -5,6 +5,7 @@ import { Baloo_2, Poppins } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { Providers } from './providers';
+import { OfflineBanner } from '@/components/shared/OfflineBanner';
 
 // Define fonts
 const fontSans = Poppins({
@@ -81,6 +82,7 @@ export default function RootLayout({
       </head>
       <body>
         <Providers>
+          <OfflineBanner />
           <FirstLoginGuard>
             {children}
           </FirstLoginGuard>

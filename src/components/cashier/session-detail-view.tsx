@@ -9,6 +9,8 @@ import { useStoreContext } from "@/context/store-context";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { addToQueue } from "@/lib/offline/payment-queue";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -76,6 +78,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
+  const isOnline = useOnlineStatus();
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -395,6 +398,37 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       return;
     }
     setIsCompletingPayment(true);
+
+    // --- OFFLINE PATH ---
+    if (!isOnline) {
+      try {
+        if (!appUser || !activeStore || !session) return;
+        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
+        addToQueue({
+          storeId: activeStore.id,
+          sessionId,
+          payload: {
+            payments: normalizedPayments,
+            billLines,
+            billDiscount,
+            customAdjustments,
+            totalAmount: grandTotal,
+          },
+        });
+        toast({
+          title: "Payment queued",
+          description: "You are offline. Payment will sync automatically when reconnected.",
+        });
+        router.push('/cashier');
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "Queue failed", description: err?.message ?? "Could not queue payment." });
+      } finally {
+        setIsCompletingPayment(false);
+      }
+      return;
+    }
+
+    // --- ONLINE PATH ---
     try {
         if (!appUser || !activeStore || !session) return;
         const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
@@ -553,7 +587,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
                  <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
                     <Button type="button" className="w-full" size="lg" disabled={!canCompletePayment || isBillingLocked || isCompletingPayment} onClick={handleCompletePayment}>
-                        {isCompletingPayment ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating receipt...</> : isBillingLocked ? 'Payment Finalized' : 'Complete Payment'}
+                        {isCompletingPayment ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isOnline ? "Generating receipt..." : "Queuing payment..."}</> : isBillingLocked ? "Payment Finalized" : isOnline ? "Complete Payment" : "⚡ Queue Payment (Offline)"}
                     </Button>
                 </div>
             </div>

@@ -4,7 +4,7 @@
 
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, updateProfile } from "firebase/auth";
-import { initializeFirestore, doc, updateDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { initializeFirestore, enableIndexedDbPersistence, doc, updateDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { firebaseConfig } from "@/firebase/config";
 
@@ -12,8 +12,19 @@ import { firebaseConfig } from "@/firebase/config";
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 const auth = getAuth(app);
-// Initialize with ignoreUndefinedProperties to prevent crashes.
+// Initialize with ignoreUndefinedProperties and offline persistence.
 const db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+
+// Enable offline persistence (IndexedDB cache)
+if (typeof window !== "undefined") {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === "failed-precondition") {
+      console.warn("[Firestore] Persistence failed: multiple tabs open.");
+    } else if (err.code === "unimplemented") {
+      console.warn("[Firestore] Persistence not supported in this browser.");
+    }
+  });
+}
 const storage = getStorage(app);
 
 export async function uploadProductImage(productId: string, file: File): Promise<string> {
