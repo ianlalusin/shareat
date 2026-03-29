@@ -298,8 +298,7 @@ export async function applyAnalyticsDeltaV2(
           payload[`sales.salesAmountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.amount);
           payload[`sales.sessionCountByHour.${dayOld.peak.hourKey}`] = increment(-dayOld.peak.count);
         }
-        const newNew = dayNew as any; // temp fix for typescript
-        if(newNew.peak.hourKey && dayNew.peak.count > 0) {
+        if(dayNew.peak.hourKey && dayNew.peak.count > 0) {
           payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.amount);
           payload[`sales.sessionCountByHour.${dayNew.peak.hourKey}`] = increment(dayNew.peak.count);
         }

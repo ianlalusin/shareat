@@ -21,6 +21,7 @@ import {
   type Transaction,
   arrayUnion,
   arrayRemove,
+  setDoc,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/client';
@@ -522,7 +523,7 @@ export async function completePaymentFromUnits(
       customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
       total: amountDue, totalPaid, change, status: 'final',
       receiptSeq: nextSeq, receiptNumber, receiptNoFormatUsed: receiptNoFormat,
-      createdAtClientMs: Date.now(), lines: billLines,
+      createdAtClientMs: Date.now(), lines: billLines, billDiscount: billDiscount ?? null, customAdjustments: customAdjustments ?? [], receiptId: sessionId,
     } as Omit<Receipt, 'createdAt'>);
 
     const salesAnalytics = billLines.reduce(
@@ -919,4 +920,58 @@ export async function createKitchenTickets(
       [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id),
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// createRefundReceipt
+// Creates a refund receipt with a new UUID doc ID, referencing the original
+// via parentReceiptId. Safe to call multiple times on the same session.
+// ---------------------------------------------------------------------------
+export async function createRefundReceipt(
+  storeId: string,
+  parentReceipt: Receipt,
+  refundLines: SessionBillLine[],
+  refundPayments: Payment[],
+  actor: AppUser,
+  reason: string
+): Promise<string> {
+  const refundId = uuidv4();
+  const refundRef = doc(db, `stores/${storeId}/receipts`, refundId);
+  const serverTs = serverTimestamp();
+  const now = Date.now();
+
+  const refundTotal = refundLines.reduce((sum, l) => {
+    const netQty = Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0));
+    return sum + netQty * l.unitPrice;
+  }, 0);
+
+  const refundPayload: Omit<Receipt, 'createdAt'> = {
+    id: refundId,
+    receiptId: refundId,
+    parentReceiptId: parentReceipt.receiptId ?? parentReceipt.id,
+    isRefund: true,
+    storeId,
+    sessionId: parentReceipt.sessionId,
+    createdByUid: actor.uid,
+    createdByUsername: actor.username,
+    sessionMode: parentReceipt.sessionMode,
+    tableId: parentReceipt.tableId,
+    tableNumber: parentReceipt.tableNumber,
+    customerName: parentReceipt.customerName,
+    customerTin: parentReceipt.customerTin,
+    customerAddress: parentReceipt.customerAddress,
+    lines: refundLines,
+    total: -refundTotal,
+    totalPaid: -refundPayments.reduce((s, p) => s + p.amount, 0),
+    change: 0,
+    status: 'final',
+    receiptSeq: 0,
+    receiptNumber: `RF-${parentReceipt.receiptNumber}`,
+    receiptNoFormatUsed: parentReceipt.receiptNoFormatUsed,
+    createdAtClientMs: now,
+    editReason: reason,
+  };
+
+  await setDoc(refundRef, { ...refundPayload, createdAt: serverTs });
+  return refundId;
 }

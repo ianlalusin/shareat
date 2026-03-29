@@ -11,7 +11,6 @@ import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { addToQueue } from "@/lib/offline/payment-queue";
-import { usePaymentQueueSync } from "@/hooks/use-payment-queue-sync";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -81,17 +80,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [isCompletingPayment, setIsCompletingPayment] = useState(false);
   const isOnline = useOnlineStatus();
 
-  // Auto-sync queued offline payments when back online
-  usePaymentQueueSync(async (_queuedId, storeId, sessionId, payload) => {
-    if (!appUser) throw new Error("Not authenticated");
-    const { store: syncStore } = payload;
-    return await completePaymentFromUnits(
-      storeId, sessionId, appUser,
-      payload.payments, payload.billLines,
-      activeStore!, paymentMethods,
-      payload.billDiscount, payload.customAdjustments
-    );
-  });
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   
   const [editingLineId, setEditingLineId] = useState<string | null>(null);

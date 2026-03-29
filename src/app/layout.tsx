@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { Providers } from './providers';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
+import { PaymentQueueSyncProvider } from '@/components/shared/PaymentQueueSyncProvider';
 
 // Define fonts
 const fontSans = Poppins({
@@ -83,6 +84,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <OfflineBanner />
+            <PaymentQueueSyncProvider />
           <FirstLoginGuard>
             {children}
           </FirstLoginGuard>

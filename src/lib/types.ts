@@ -541,6 +541,12 @@ export type Receipt = {
     voidedByUid?: string;
     voidedByEmail?: string | null;
     voidReason?: string;
+  billDiscount?: Discount | null;
+  customAdjustments?: Adjustment[];
+  // Refund receipt support
+  receiptId?: string;
+  parentReceiptId?: string;
+  isRefund?: boolean;
 }
 
 export type DiscountEvent = {

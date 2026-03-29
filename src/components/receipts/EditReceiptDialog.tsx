@@ -50,8 +50,8 @@ function EditReceiptContent({
   const [customerTin, setCustomerTin] = useState(receipt.customerTin || "");
   const [customerAddress, setCustomerAddress] = useState(receipt.customerAddress || "");
   const [lines, setLines] = useState<SessionBillLine[]>(() => JSON.parse(JSON.stringify(receipt.lines || [])));
-  const [billDiscount, setBillDiscount] = useState<Discount | null>(null); // TODO: implement bill discount edit
-  const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]); // TODO: implement custom adjustments edit
+  const [billDiscount, setBillDiscount] = useState<Discount | null>(() => receipt.billDiscount ?? null);
+  const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>(() => receipt.customAdjustments ?? []);
   const [payments, setPayments] = useState<Payment[]>(() => {
     return Object.entries(receipt.analytics?.mop || {}).map(([key, value], i) => ({
       id: `payment-${i}`,
@@ -83,6 +83,26 @@ function EditReceiptContent({
       next.lineAdjustments = map;
       return next;
     }));
+  };
+
+
+  const handleAddAdjustment = (charge: Charge) => {
+    setCustomAdjustments(cur => {
+      const existing = cur.find(a => a.sourceId === charge.id);
+      if (existing) return cur;
+      const amount = charge.type === 'percent'
+        ? Math.round(billTotals.subtotal * charge.value) / 100
+        : charge.value;
+      return [...cur, { id: charge.id, note: charge.name, amount, type: charge.type, source: 'charge', sourceId: charge.id }];
+    });
+  };
+
+  const handleAddCustomAdjustment = (note: string, amount: number) => {
+    setCustomAdjustments(cur => [...cur, { id: `custom-${Date.now()}`, note, amount, type: 'fixed', source: 'custom' }]);
+  };
+
+  const handleRemoveAdjustment = (id: string) => {
+    setCustomAdjustments(cur => cur.filter(a => a.id !== id));
   };
 
   const billTotals = useMemo(() => {
@@ -195,6 +215,8 @@ function EditReceiptContent({
       customerTin,
       customerAddress,
       lines,
+      billDiscount: billDiscount ?? null,
+      customAdjustments: customAdjustments ?? [],
       total: grandTotal,
       totalPaid: totalPaid,
       change: change,
@@ -316,6 +338,17 @@ function EditReceiptContent({
             customAdjustments={customAdjustments}
             totalPaid={totalPaid}
             onRemoveLineAdjustment={handleRemoveLineAdjustment}
+          />
+          <BillAdjustments
+            appUser={appUser}
+            adjustments={customAdjustments}
+            billDiscount={billDiscount}
+            charges={charges}
+            discounts={discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"))}
+            onAddAdjustment={handleAddAdjustment}
+            onAddCustomAdjustment={handleAddCustomAdjustment}
+            onRemoveAdjustment={handleRemoveAdjustment}
+            onSetBillDiscount={setBillDiscount}
           />
           <div className="p-4 border rounded-md">
             <h3 className="font-semibold mb-2">Customer Details (for BIR)</h3>

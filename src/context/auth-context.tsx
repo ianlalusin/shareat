@@ -8,6 +8,7 @@ import { auth, db } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
 
 export type AppUser = {
+  username: string;
   uid: string;
   email?: string | null;
   displayName?: string | null;
