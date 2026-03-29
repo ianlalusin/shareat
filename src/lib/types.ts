@@ -147,7 +147,7 @@ export type MenuSchedule = {
   timezone?: string;
 };
 
-export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "void";
+export type OrderItemStatus = "preparing" | "ready" | "served" | "cancelled" | "void" | "partially_served";
 
 export type OrderItemType = "package" | "refill" | "addon";
 
@@ -189,6 +189,18 @@ export type KitchenTicket = {
     sessionLabel?: string;
     orderedByRole?: UserRole | null;
     billLineId?: string; // Link to SessionBillLine
+    // --- Batch-serve fields (addon tickets only) ---
+    qtyOrdered?: number;    // total qty ordered (e.g. 80)
+    qtyServed?: number;     // cumulative qty served across all batches
+    qtyCancelled?: number;  // qty cancelled
+    qtyRemaining?: number;  // qtyOrdered - qtyServed - qtyCancelled
+    serveLog?: {
+      qty: number;
+      servedAt: any;
+      servedAtClientMs: number;
+      servedByUid: string;
+      servedByName?: string;
+    }[];
     refillRequest?: {
         /** Extra refill counts requested via customer app buttons */
         rice?: number;   // integer

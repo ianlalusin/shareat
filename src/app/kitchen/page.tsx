@@ -279,7 +279,7 @@ export default function KitchenPage() {
     setIsLoadingHistory(true);
     
     const closedTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab, 'closedKdsTickets');
-    const q = query(closedTicketsRef, limit(25));
+    const q = query(closedTicketsRef, orderBy("closedAtClientMs", "desc"), limit(25));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const historyItems = snapshot.docs.map(doc => {
@@ -447,10 +447,10 @@ export default function KitchenPage() {
                 const closedTicketRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketId);
                 updatePayload.updatedAt = serverTimestamp(); // bump for history ordering
                 newTicketState = { ...oldTicketState, ...updatePayload };
-                transaction.set(closedTicketRef, newTicketState);
+                transaction.set(closedTicketRef, { ...newTicketState, closedAtClientMs: nowMs });
             }
             
-            await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
+            // MOVED OUT: await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
         });
 
         const ticket = ticketsWithData.find(t => t.id === ticketId);
@@ -463,7 +463,115 @@ export default function KitchenPage() {
   };
 
 
-  const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing'), [ticketsWithData]);
+  const handleServeBatch = async ({ ticketId, sessionId, qtyToServe }: { ticketId: string; sessionId: string; qtyToServe: number }) => {
+    if (!appUser || !activeStore) return;
+    const nowMs = Date.now();
+    try {
+      await runTransaction(db, async (transaction: Transaction) => {
+        const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);
+        const ticketSnap = await transaction.get(ticketRef);
+        if (!ticketSnap.exists()) throw new Error('Ticket not found.');
+        const old = ticketSnap.data() as KitchenTicket;
+        if (old.status === 'served' || old.status === 'cancelled') return;
+        const qtyOrdered = old.qtyOrdered ?? old.qty ?? 1;
+        const qtyServed = (old.qtyServed ?? 0) + qtyToServe;
+        const qtyCancelled = old.qtyCancelled ?? 0;
+        const qtyRemaining = qtyOrdered - qtyServed - qtyCancelled;
+        const newStatus = qtyRemaining <= 0 ? 'served' : 'partially_served';
+        const startMs = getStartMs(old.createdAtClientMs ?? old.createdAt);
+        const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
+        const newLogEntry = { qty: qtyToServe, servedAt: serverTimestamp(), servedAtClientMs: nowMs, servedByUid: appUser.uid };
+        const updatePayload: any = {
+          qtyServed, qtyCancelled, qtyRemaining,
+          status: newStatus,
+          serveLog: [...(old.serveLog ?? []), newLogEntry],
+          servedByUid: appUser.uid,
+          servedAtClientMs: nowMs,
+          servedAt: serverTimestamp(),
+          durationMs,
+          updatedAt: serverTimestamp(),
+        };
+        transaction.update(ticketRef, updatePayload);
+        const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
+        const sessionUpdate: Record<string, any> = {};
+        sessionUpdate[`serveCountByType.${old.type}`] = increment(1);
+        sessionUpdate[`serveTimeMsTotalByType.${old.type}`] = increment(durationMs);
+        transaction.update(sessionRef, sessionUpdate);
+        if (old.kitchenLocationId) {
+          const rtKdsDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', old.kitchenLocationId);
+          if (newStatus === 'served') {
+            const rtUpdate: Record<string, any> = {};
+            rtUpdate[`tickets.${ticketId}`] = deleteField();
+            rtUpdate['activeIds'] = arrayRemove(ticketId);
+            rtUpdate[`sessionIndex.${sessionId}`] = arrayRemove(ticketId);
+            rtUpdate['meta.updatedAt'] = serverTimestamp();
+            transaction.update(rtKdsDocRef, rtUpdate);
+            const closedRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', old.kitchenLocationId, 'closedKdsTickets', ticketId);
+            transaction.set(closedRef, { ...old, ...updatePayload, closedAtClientMs: nowMs });
+          } else {
+            const rtUpdate: Record<string, any> = {};
+            rtUpdate[`tickets.${ticketId}.qtyServed`] = qtyServed;
+            rtUpdate[`tickets.${ticketId}.qtyRemaining`] = qtyRemaining;
+            rtUpdate[`tickets.${ticketId}.status`] = newStatus;
+            rtUpdate[`tickets.${ticketId}.serveLog`] = [...(old.serveLog ?? []), newLogEntry];
+            rtUpdate['meta.updatedAt'] = serverTimestamp();
+            transaction.update(rtKdsDocRef, rtUpdate);
+          }
+        }
+      });
+      toast({ title: 'Batch served', description: `${qtyToServe} pcs marked as served.` });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Serve Failed', description: error.message });
+    }
+  };
+
+  const handleCancelRemaining = async ({ ticketId, sessionId, reason }: { ticketId: string; sessionId: string; reason: string }) => {
+    if (!appUser || !activeStore) return;
+    const nowMs = Date.now();
+    try {
+      await runTransaction(db, async (transaction: Transaction) => {
+        const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);
+        const ticketSnap = await transaction.get(ticketRef);
+        if (!ticketSnap.exists()) throw new Error('Ticket not found.');
+        const old = ticketSnap.data() as KitchenTicket;
+        if (old.status === 'served' || old.status === 'cancelled') return;
+        const qtyOrdered = old.qtyOrdered ?? old.qty ?? 1;
+        const qtyServed = old.qtyServed ?? 0;
+        const qtyRemaining = old.qtyRemaining ?? (qtyOrdered - qtyServed);
+        const qtyCancelled = (old.qtyCancelled ?? 0) + qtyRemaining;
+        const newStatus = qtyServed > 0 ? 'served' : 'cancelled';
+        const updatePayload: any = {
+          qtyCancelled, qtyRemaining: 0,
+          status: newStatus,
+          cancelledAt: serverTimestamp(),
+          cancelledAtClientMs: nowMs,
+          cancelledByUid: appUser.uid,
+          cancelReason: reason,
+          updatedAt: serverTimestamp(),
+        };
+        if (old.type === 'addon' && old.billLineId) {
+          const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', old.billLineId);
+          transaction.update(billLineRef, { voidedQty: increment(qtyRemaining) });
+        }
+        transaction.update(ticketRef, updatePayload);
+        if (old.kitchenLocationId) {
+          const rtKdsDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', old.kitchenLocationId);
+          const rtUpdate: Record<string, any> = {};
+          rtUpdate[`tickets.${ticketId}`] = deleteField();
+          rtUpdate['activeIds'] = arrayRemove(ticketId);
+          rtUpdate[`sessionIndex.${sessionId}`] = arrayRemove(ticketId);
+          rtUpdate['meta.updatedAt'] = serverTimestamp();
+          transaction.update(rtKdsDocRef, rtUpdate);
+          const closedRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', old.kitchenLocationId, 'closedKdsTickets', ticketId);
+          transaction.set(closedRef, { ...old, ...updatePayload, closedAtClientMs: nowMs });
+        }
+      });
+      toast({ title: 'Remaining cancelled', description: 'Remaining qty cancelled. Already-served qty preserved.' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Cancel Failed', description: error.message });
+    }
+  };
+  const preparingItems = useMemo(() => ticketsWithData.filter(t => t.status === 'preparing' || t.status === 'partially_served'), [ticketsWithData]);
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
@@ -524,7 +632,7 @@ export default function KitchenPage() {
                     )}
                     {stations.map((station: KitchenStation) => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} />
+                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} />
                         </TabsContent>
                     ))}
                  </Tabs>

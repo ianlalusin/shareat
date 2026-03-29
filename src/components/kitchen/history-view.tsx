@@ -58,7 +58,7 @@ export function HistoryView({ items, isLoading, activeStationId }: HistoryViewPr
                                 <div className="flex justify-between items-start">
                                     <div>
                                       <p className="font-semibold">{displayLocation}</p>
-                                      <p className="text-muted-foreground">{item.itemName}</p>
+                                      <p className="text-muted-foreground">{item.itemName}{item.qtyOrdered > 1 ? ` (${item.qtyServed ?? item.qty} served${item.qtyCancelled > 0 ? `, ${item.qtyCancelled} cancelled` : ""})` : ""}</p>
                                     </div>
                                     <Badge 
                                         variant="outline"

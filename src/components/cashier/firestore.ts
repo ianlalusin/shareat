@@ -317,6 +317,14 @@ export async function completePaymentFromUnits(
   const amountDue = finalTotals.grandTotal;
   const now = Date.now();
 
+  const kdsDeltas: { old: any; new: any }[] = [];
+  const rtKdsUpdates: { stationId: string; ticketId: string; ticketState: any }[] = [];
+
+  // Query active tickets BEFORE the transaction (getDocs not supported inside tx)
+  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
+  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
+  const activeTicketsSnap = await getDocs(activeTicketsQuery);
+
   await runTransaction(db, async (tx: Transaction) => {
     // --- READ PHASE ---
     const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
@@ -336,10 +344,6 @@ export async function completePaymentFromUnits(
     ]);
     
 
-    const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-    const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-    const activeTicketsSnap = await getDocs(activeTicketsQuery);
-    
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
 
@@ -411,20 +415,12 @@ export async function completePaymentFromUnits(
 
       const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
       
-      await applyKdsTicketDelta(db, storeId, oldTicketState, newTicketState, { tx });
+      kdsDeltas.push({ old: oldTicketState, new: newTicketState });
       tx.update(ticketRef, updatePayload);
       
       const { kitchenLocationId } = oldTicketState;
       if (kitchenLocationId) {
-          const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", kitchenLocationId);
-          tx.update(rtKdsDocRef, {
-              [`tickets.${ticketRef.id}`]: deleteField(),
-              activeIds: arrayRemove(ticketRef.id),
-              [`sessionIndex.${sessionId}`]: arrayRemove(ticketRef.id),
-              "meta.updatedAt": serverTimestamp(),
-          });
-          const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketRef.id);
-          tx.set(closedTicketRef, newTicketState);
+          rtKdsUpdates.push({ stationId: kitchenLocationId, ticketId: ticketRef.id, ticketState: newTicketState });
       }
     }
     
@@ -597,7 +593,7 @@ export async function completePaymentFromUnits(
     
     finalReceipt = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTs, analyticsApplied: true, analyticsAppliedAt: serverTs, analyticsApplyId: uuidv4() } as Receipt;
     
-    await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { tx });
+    // analytics applied separately below to avoid hitting 500-transform limit
     tx.set(receiptRef, finalReceipt);
     receiptId = receiptRef.id;
 
@@ -621,6 +617,53 @@ export async function completePaymentFromUnits(
       }
     }
   });
+
+  if (rtKdsUpdates.length > 0) {
+    const { writeBatch: wb0, deleteField: df, arrayRemove: ar } = await import("firebase/firestore");
+    const rtKdsBatch = wb0(db);
+    const byStation = new Map<string, { ticketIds: string[]; states: any[] }>();
+    for (const u of rtKdsUpdates) {
+      if (!byStation.has(u.stationId)) byStation.set(u.stationId, { ticketIds: [], states: [] });
+      byStation.get(u.stationId)!.ticketIds.push(u.ticketId);
+      byStation.get(u.stationId)!.states.push({ id: u.ticketId, state: u.ticketState });
+    }
+    for (const [stationId, { ticketIds, states }] of byStation.entries()) {
+      const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+      const mergedUpdate: Record<string, any> = {
+        activeIds: ar(...ticketIds),
+        [`sessionIndex.${sessionId}`]: ar(...ticketIds),
+        "meta.updatedAt": serverTimestamp(),
+      };
+      for (const tid of ticketIds) mergedUpdate[`tickets.${tid}`] = df();
+      rtKdsBatch.update(rtKdsDocRef, mergedUpdate);
+      for (const { id, state } of states) {
+        const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", id);
+        rtKdsBatch.set(closedTicketRef, state);
+      }
+    }
+    await rtKdsBatch.commit();
+  }
+
+  if (kdsDeltas.length > 0) {
+    const { writeBatch: wb2 } = await import("firebase/firestore");
+    const kdsBatch = wb2(db);
+    for (const d of kdsDeltas) {
+      await applyKdsTicketDelta(db, storeId, d.old, d.new, { batch: kdsBatch });
+    }
+    await kdsBatch.commit();
+  }
+
+  if (finalReceipt && receiptId) {
+    try {
+      const { writeBatch: wb } = await import("firebase/firestore");
+      const analyticsBatch = wb(db);
+      await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
+      await analyticsBatch.commit();
+      console.log("[Analytics] Delta applied successfully for receipt", receiptId);
+    } catch (analyticsErr) {
+      console.error("[Analytics] Failed to apply delta for receipt", receiptId, analyticsErr);
+    }
+  }
 
   if (receiptId) {
     await writeActivityLog({
@@ -652,6 +695,8 @@ export async function voidSession({
   const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
   const activeTicketsSnap = await getDocs(activeTicketsQuery);
 
+  const kdsDeltas: { old: any; new: any }[] = [];
+  const rtKdsUpdates: { stationId: string; ticketId: string; ticketState: any }[] = [];
   await runTransaction(db, async (tx: Transaction) => {
     // New projection paths
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
@@ -833,47 +878,50 @@ export async function createKitchenTickets(
   const now = Date.now();
   const serverTs = serverTimestamp();
   
-  const w: Writer = { kind: "tx", tx: opts.tx };
   const stationId = line.kitchenLocationId;
 
-  for (let i = 0; i < qty; i++) {
-    const ticketRef = doc(ticketsColRef);
-    const ticketPayload = stripUndefined({
-      ...(extra || {}),
-      id: ticketRef.id,
-      type: type,
-      itemId: line.itemId,
-      itemName: line.itemName,
-      billLineId: line.billLineId,
-      qty: 1, // Each ticket is for qty 1
-      kitchenLocationId: line.kitchenLocationId,
-      kitchenLocationName: line.kitchenLocationName,
-      notes: notes || null,
-      status: "preparing",
-      createdByUid: actor.uid,
-      createdAt: serverTs,
-      createdAtClientMs: now,
-      updatedAt: serverTs,
-      sessionId: sessionId, 
-      storeId,
-      tableNumber: session.tableNumber,
-      tableDisplayName: session.tableDisplayName,
-      customerName: session.customer?.name || session.customerName,
-      sessionMode: session.sessionMode,
-      sessionLabel: computeSessionLabel(session),
-      guestCount: session.guestCountFinal || session.guestCountCashierInitial,
-    });
+  // ONE ticket per line item using qtyOrdered for batch-serve flow
+  const ticketRef = doc(ticketsColRef);
+  const ticketPayload = stripUndefined({
+    ...(extra || {}),
+    id: ticketRef.id,
+    type: type,
+    itemId: line.itemId,
+    itemName: line.itemName,
+    billLineId: line.billLineId,
+    qty: qty,
+    qtyOrdered: qty,
+    qtyServed: 0,
+    qtyCancelled: 0,
+    qtyRemaining: qty,
+    serveLog: [],
+    kitchenLocationId: line.kitchenLocationId,
+    kitchenLocationName: line.kitchenLocationName,
+    notes: notes || null,
+    status: "preparing",
+    createdByUid: actor.uid,
+    createdAt: serverTs,
+    createdAtClientMs: now,
+    updatedAt: serverTs,
+    sessionId: sessionId,
+    storeId,
+    tableNumber: session.tableNumber,
+    tableDisplayName: session.tableDisplayName,
+    customerName: session.customer?.name || session.customerName,
+    sessionMode: session.sessionMode,
+    sessionLabel: computeSessionLabel(session),
+    guestCount: session.guestCountFinal || session.guestCountCashierInitial,
+  });
 
-    w.tx.set(ticketRef, ticketPayload);
-    
-    if (stationId) {
-        const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-        w.tx.set(rtKdsDocRef, { meta: { source: 'createKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
-        w.tx.update(rtKdsDocRef, {
-            [`tickets.${ticketRef.id}`]: ticketPayload,
-            activeIds: arrayUnion(ticketRef.id),
-            [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id)
-        });
-    }
+  opts.tx.set(ticketRef, ticketPayload);
+
+  if (stationId) {
+    const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+    opts.tx.set(rtKdsDocRef, { meta: { source: 'createKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
+    opts.tx.update(rtKdsDocRef, {
+      [`tickets.${ticketRef.id}`]: ticketPayload,
+      activeIds: arrayUnion(ticketRef.id),
+      [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id),
+    });
   }
 }

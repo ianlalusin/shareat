@@ -38,6 +38,9 @@ type KdsTicket = {
   durationMs?: number | null;
   refillName?: string | null;
   qty?: number | null;
+  qtyServed?: number | null;
+  qtyCancelled?: number | null;
+  qtyOrdered?: number | null;
 };
 
 function safeKey(s: string) {
@@ -85,27 +88,29 @@ export async function applyKdsTicketDelta(
   eventMs = eventMs || ticketData.createdAtClientMs || (toJsDate(Date.now())?.getTime() ?? null);
   if (!eventMs) return; // Cannot determine the day for the analytics update.
 
-  // --- Calculate Deltas ---
-  if (oldStatus !== 'served' && newStatus === 'served') { // Just became served
-    servedCountDelta = 1;
+ // --- Calculate Deltas ---
+  // For batch tickets use qtyServed/qtyCancelled delta; for legacy qty-1 tickets fall back to status change.
+  const oldQtyServed = oldTicket?.qtyServed ?? (oldStatus === 'served' ? (oldTicket?.qty ?? 1) : 0);
+  const newQtyServed = newTicket?.qtyServed ?? (newStatus === 'served' ? (newTicket?.qty ?? 1) : 0);
+  const oldQtyCancelled = oldTicket?.qtyCancelled ?? (oldStatus === 'cancelled' ? (oldTicket?.qty ?? 1) : 0);
+  const newQtyCancelled = newTicket?.qtyCancelled ?? (newStatus === 'cancelled' ? (newTicket?.qty ?? 1) : 0);
+
+  servedCountDelta = newQtyServed - oldQtyServed;
+  cancelledCountDelta = newQtyCancelled - oldQtyCancelled;
+
+  // Duration: only record when ticket fully transitions to served
+  if (oldStatus !== 'served' && newStatus === 'served') {
     const dur = Number(newTicket?.durationMs ?? 0);
     if (dur > 0) {
-        durationMsDelta = dur;
-        durationCountDelta = 1;
+      durationMsDelta = dur;
+      durationCountDelta = 1;
     }
-  } else if (oldStatus === 'served' && newStatus !== 'served') { // No longer served (correction)
-    servedCountDelta = -1;
+  } else if (oldStatus === 'served' && newStatus !== 'served') {
     const dur = Number(oldTicket?.durationMs ?? 0);
     if (dur > 0) {
-        durationMsDelta = -dur;
-        durationCountDelta = -1;
+      durationMsDelta = -dur;
+      durationCountDelta = -1;
     }
-  }
-  
-  if (oldStatus !== 'cancelled' && newStatus === 'cancelled') { // Just became cancelled
-    cancelledCountDelta = 1;
-  } else if (oldStatus === 'cancelled' && newStatus !== 'cancelled') { // No longer cancelled (correction)
-    cancelledCountDelta = -1;
   }
 
   // If no relevant analytics change occurred, exit.
@@ -123,7 +128,7 @@ export async function applyKdsTicketDelta(
   const yearRef  = doc(db, "stores", storeId, "analyticsYears", yearId);
 
   const typeKey = ticketData.type || "unknown";
-  const qty = Number(ticketData.qty ?? 1);
+  const qty = 1; // qty now tracked via servedCountDelta directly
 
   // Ensure docs exist by setting meta field. This is a safe "upsert".
   const dayStartMs = eventMs;
