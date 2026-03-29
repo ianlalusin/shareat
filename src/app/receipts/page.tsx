@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
-import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban, ArrowLeft } from "lucide-react";
+import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon, Trash2, Edit, Ban, ArrowLeft, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { ReceiptView } from "@/components/receipt/receipt-view";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
+import { RefundReceiptDialog } from "@/components/receipts/RefundReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -94,6 +95,7 @@ export default function ReceiptsPage() {
 
     const [voidOpen, setVoidOpen] = useState(false);
     const [voidTarget, setVoidTarget] = useState<ReceiptType | null>(null);
+    const [refundTarget, setRefundTarget] = useState<ReceiptType | null>(null);
 
     // --- Pagination State ---
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -660,7 +662,7 @@ export default function ReceiptsPage() {
                                                 className={cn("cursor-pointer", selectedReceiptId === r.id && "bg-muted", r.status === 'voided' && 'text-muted-foreground line-through')}
                                             >
                                                 <TableCell className="font-medium py-2">
-                                                    <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}</div>
+                                                    <div>{r.receiptNumber || `Tbl ${r.tableNumber}` || r.customerName} {r.status === 'voided' && <Badge variant="destructive">VOIDED</Badge>}{r.isRefund && <Badge variant="secondary" className="ml-1">REFUND</Badge>}</div>
                                                     <div className="text-xs">{r.createdByUsername || 'N/A'} - {format(toJsDate(r.createdAt)!, 'p')}</div>
                                                 </TableCell>
                                                 <TableCell className="font-bold py-2">₱{r.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
@@ -788,6 +790,19 @@ export default function ReceiptsPage() {
                 {selectedReceiptData && settings && <ReceiptView data={{...selectedReceiptData, settings}} paymentMethods={paymentMethods} />}
             </div>
             {ConfirmDialog}
+            {refundTarget && appUser && (
+                <RefundReceiptDialog
+                    isOpen={!!refundTarget}
+                    onClose={() => setRefundTarget(null)}
+                    receipt={refundTarget}
+                    paymentMethods={paymentMethods}
+                    actor={appUser}
+                    onSuccess={(refundId) => {
+                        setReceipts(prev => prev.map(r => r.id === refundTarget!.id ? { ...r } : r));
+                        fetchReceipts();
+                    }}
+                />
+            )}
         </RoleGuard>
     )
 }
