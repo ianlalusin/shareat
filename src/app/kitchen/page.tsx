@@ -364,7 +364,7 @@ export default function KitchenPage() {
     }
 
     const nowMs = Date.now();
-    let kdsDelta: { old: any; new: any } | null = null;
+    let kdsDelta: { old: any; new: any } | null = null as { old: any; new: any } | null;
 
     try {
         await runTransaction(db, async (transaction: Transaction) => {
