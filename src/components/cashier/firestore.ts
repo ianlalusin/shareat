@@ -494,7 +494,7 @@ export async function completePaymentFromUnits(
         mopCentsMap[key] = (mopCentsMap[key] || 0) + Math.round(Number(payment.amount || 0) * 100);
     }
     const changeCents = Math.max(0, totalPaidCents - amountDueCents);
-    if (changeCents > 0) {
+    if (changeCents > 1) { // >1 to ignore 1-cent rounding artifacts
         const cashMethod =
           paymentMethods.find((pm: any) => String(pm.type || "").toLowerCase() === "cash") ||
           paymentMethods.find((pm: any) => String(pm.name || "").toLowerCase().includes("cash"));
@@ -631,7 +631,7 @@ export async function completePaymentFromUnits(
       const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
       const mergedUpdate: Record<string, any> = {
         activeIds: ar(...ticketIds),
-        [`sessionIndex.${sessionId}`]: ar(...ticketIds),
+        [`sessionIndex.${sessionId}`]: df(), // delete empty array key
         "meta.updatedAt": serverTimestamp(),
       };
       for (const tid of ticketIds) mergedUpdate[`tickets.${tid}`] = df();
@@ -739,7 +739,7 @@ export async function voidSession({
             tx.update(rtKdsDocRef, {
                 [`tickets.${ticketRef.id}`]: deleteField(),
                 activeIds: arrayRemove(ticketRef.id),
-                [`sessionIndex.${sessionId}`]: arrayRemove(ticketRef.id),
+                [`sessionIndex.${sessionId}`]: deleteField(), // delete empty array key
                 "meta.updatedAt": serverTimestamp(),
             });
             // Add to historical view

@@ -424,7 +424,10 @@ export default function KitchenPage() {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
                     const ticketQty = oldTicketState.qty || 1;
                     transaction.update(billLineRef, {
-                        voidedQty: increment(ticketQty)
+                        voidedQty: increment(ticketQty),
+                        voidReason: reason,
+                        voidNote: "Cancelled by kitchen: " + (reason || ""),
+                        updatedAt: serverTimestamp(),
                     });
                 }
             }
@@ -551,7 +554,7 @@ export default function KitchenPage() {
         };
         if (old.type === 'addon' && old.billLineId) {
           const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', old.billLineId);
-          transaction.update(billLineRef, { voidedQty: increment(qtyRemaining) });
+          transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), voidReason: reason, voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
         }
         transaction.update(ticketRef, updatePayload);
         if (old.kitchenLocationId) {
