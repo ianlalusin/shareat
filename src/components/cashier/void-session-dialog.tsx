@@ -67,7 +67,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
         });
         if (!finalizeRes.ok) {
           const finalizeData = await finalizeRes.json().catch(() => ({}));
-          throw new Error(finalizeData?.error || "Session voided but PIN finalization failed.");
+          console.warn("[PIN] Finalization failed after void (non-fatal):", finalizeData?.error);
         }
       }
 

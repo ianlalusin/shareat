@@ -430,7 +430,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             });
             if (!finalizeRes.ok) {
                 const finalizeData = await finalizeRes.json().catch(() => ({}));
-                throw new Error(finalizeData?.error || "Payment succeeded but PIN finalization failed.");
+                console.warn("[PIN] Finalization failed after payment (non-fatal):", finalizeData?.error);
             }
         }
 
