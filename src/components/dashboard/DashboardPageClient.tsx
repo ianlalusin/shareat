@@ -31,6 +31,7 @@ import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCar
 import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
+import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
 
 
 function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
@@ -165,7 +166,10 @@ export default function DashboardPageClient() {
                         <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
                         <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
                       </div>
-                       <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
+                        <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                        <ItemAdjustmentsCard dailyMetrics={dailyMetrics} />
+                      </div>
                     </div>
                     <div className="space-y-6">
                       <Card>
