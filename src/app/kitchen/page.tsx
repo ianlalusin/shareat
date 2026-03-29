@@ -364,6 +364,7 @@ export default function KitchenPage() {
     }
 
     const nowMs = Date.now();
+    let kdsDelta: { old: any; new: any } | null = null;
 
     try {
         await runTransaction(db, async (transaction: Transaction) => {
@@ -453,9 +454,15 @@ export default function KitchenPage() {
                 transaction.set(closedTicketRef, { ...newTicketState, closedAtClientMs: nowMs });
             }
             
-            // MOVED OUT: await applyKdsTicketDelta(db, activeStore.id, oldTicketState, newTicketState, { tx: transaction });
+            kdsDelta = { old: oldTicketState, new: newTicketState };
         });
 
+        if (kdsDelta) {
+          const { writeBatch: wb } = await import('firebase/firestore');
+          const batch = wb(db);
+          await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, { batch });
+          await batch.commit();
+        }
         const ticket = ticketsWithData.find(t => t.id === ticketId);
         toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
 
