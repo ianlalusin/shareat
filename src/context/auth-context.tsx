@@ -69,6 +69,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             const data = snap.data();
             const isPlatformAdmin = data.role === 'admin';
             const baseAppUser: AppUser = {
+              username: data.username ?? u.email ?? u.uid,
               uid: u.uid,
               email: u.email,
               displayName: u.displayName || data.name,
