@@ -677,7 +677,7 @@ export default function ReceiptsPage() {
                                                             size="sm"
                                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditReceipt(r); }}
                                                             className="mr-2"
-                                                            disabled={r.status === "voided"}
+                                                            disabled={r.status === "voided" || !!r.isRefund}
                                                             type="button"
                                                         >
                                                             <Edit className="h-4 w-4" />

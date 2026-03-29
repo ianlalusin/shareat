@@ -376,7 +376,7 @@ function EditReceiptContent({
           value={editReason}
           onChange={(e) => setEditReason(e.target.value)}
           placeholder="e.g., Corrected customer TIN for official receipt."
-          className="mt-2"
+          className="mt-2 border-red-500 focus-visible:ring-red-500"
         />
       </div>
 
@@ -396,6 +396,7 @@ function EditReceiptContent({
           discounts={itemDiscounts}
           onSave={handleUpdateLine}
           onAddLineAdjustment={handleAddLineAdjustment}
+          refundedQty={(receipt as any).refundedQtys?.[editingLine?.id ?? ''] ?? 0}
         />
       )}
     </>

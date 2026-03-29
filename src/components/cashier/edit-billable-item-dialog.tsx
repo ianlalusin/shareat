@@ -66,6 +66,7 @@ interface EditBillableItemDialogProps {
     isLocked?: boolean;
     onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
     onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void;
+    refundedQty?: number;
 }
 
 function normalizeDiscountType(t: any): "fixed" | "percent" | null {
@@ -112,6 +113,7 @@ export function EditBillableItemDialog({
     isLocked,
     onSave,
     onAddLineAdjustment,
+  refundedQty = 0,
 }: EditBillableItemDialogProps) {
     const { appUser } = useAuthContext();
     const { activeStore } = useStoreContext();
@@ -188,12 +190,12 @@ export function EditBillableItemDialog({
              otherTotal = (freeQty || 0) + (voidQty || 0) + existingAdjDiscountQty;
         }
 
-        const maxAllowedForThisField = qtyOrdered - otherTotal;
+        const maxAllowedForThisField = qtyOrdered - otherTotal - refundedQty;
 
         // Special rule for voiding packages
-        if (isPackage && field === 'voidQty' && (newValue >= qtyOrdered)) {
+        if (isPackage && field === 'voidQty' && (newValue >= qtyOrdered - refundedQty)) {
              toast({ variant: 'destructive', title: 'Action Not Allowed', description: 'At least 1 package quantity must remain. Cannot void all.' });
-             newValue = qtyOrdered - 1;
+             newValue = Math.max(0, qtyOrdered - refundedQty - 1);
         }
 
         const clampedValue = Math.max(0, Math.min(newValue, maxAllowedForThisField));
@@ -211,7 +213,7 @@ export function EditBillableItemDialog({
 
     const handleQtyOrderedChange = (newQty: number) => {
         const { voidQty = 0, freeQty = 0, discountQty = 0 } = getValues();
-        const totalAllocated = voidQty + freeQty + discountQty + existingAdjDiscountQty;
+        const totalAllocated = voidQty + freeQty + discountQty + existingAdjDiscountQty + refundedQty;
         
         if (newQty < totalAllocated) {
             toast({ variant: 'destructive', title: 'Counts Adjusted', description: 'Allocations reduced to match new total quantity.'});
@@ -330,13 +332,13 @@ export function EditBillableItemDialog({
         }
     };
 
-    const remainingQty = watchedValues.qtyOrdered - (existingAdjDiscountQty + (watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0));
+    const remainingQty = watchedValues.qtyOrdered - (existingAdjDiscountQty + (watchedValues.discountQty || 0) + (watchedValues.freeQty || 0) + (watchedValues.voidQty || 0) + refundedQty);
     
     const showSyncPrice = inventoryItem && inventoryItem.sellingPrice !== watchedValues.unitPrice;
     const allowDecimal = inventoryItem ? allowsDecimalQty(inventoryItem.uom) : false;
     const canDecreaseQty = !(isPackage || isAddon);
     
-    const maxVoidQty = isPackage ? Math.max(0, watchedValues.qtyOrdered - 1) : watchedValues.qtyOrdered;
+    const maxVoidQty = isPackage ? Math.max(0, watchedValues.qtyOrdered - 1 - refundedQty) : Math.max(0, watchedValues.qtyOrdered - refundedQty);
     const voidDescription = isPackage 
       ? `of ${watchedValues.qtyOrdered} total. At least 1 must remain.`
       : `of ${watchedValues.qtyOrdered} total`;
@@ -382,6 +384,11 @@ export function EditBillableItemDialog({
                                 {!canDecreaseQty && <FormDescription className="text-xs -mt-2">Decrease not allowed. Use Void option to reduce billed items.</FormDescription>}
                                 <Alert>
                                     <AlertTitle>Remaining to Allocate: {remainingQty.toFixed(allowDecimal ? 2 : 0)}</AlertTitle>
+                                    {refundedQty > 0 && (
+                                        <AlertDescription className="text-xs text-amber-600">
+                                            {refundedQty} unit(s) already refunded and excluded from allocation.
+                                        </AlertDescription>
+                                    )}
                                 </Alert>
 
                                 <Separator />

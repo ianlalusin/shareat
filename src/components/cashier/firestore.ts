@@ -976,7 +976,7 @@ export async function createRefundReceipt(
   // Build refundedQtys increment map for the parent receipt
   const parentReceiptId = parentReceipt.receiptId ?? parentReceipt.id;
   const parentRef = doc(db, `stores/${storeId}/receipts`, parentReceiptId);
-  const qtyIncrements: Record<string, number> = {};
+  const qtyIncrements: Record<string, any> = {};
   refundLines.forEach(l => { qtyIncrements[`refundedQtys.${l.id}`] = increment(l.qtyOrdered); });
 
   const batch = writeBatch(db);
