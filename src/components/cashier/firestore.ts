@@ -987,5 +987,17 @@ export async function createRefundReceipt(
     refundCount: increment(1),
   });
   await batch.commit();
+
+  // Apply analytics delta for the refund receipt (non-fatal)
+  try {
+    const { writeBatch: wb } = await import("firebase/firestore");
+    const analyticsBatch = wb(db);
+    const refundReceiptForAnalytics = { ...refundPayload, createdAt: new Date(), isRefund: true } as any;
+    await applyAnalyticsDeltaV2(db, storeId, null, refundReceiptForAnalytics, { batch: analyticsBatch });
+    await analyticsBatch.commit();
+  } catch (analyticsErr) {
+    console.error("[Analytics] Failed to apply delta for refund receipt", refundId, analyticsErr);
+  }
+
   return refundId;
 }

@@ -27,6 +27,7 @@ import {
   getRefillContribution,
   getClosedSessionsContribution,
   getKitchenTicketContribution,
+  getItemAdjustmentContribution,
 } from "./daily";
 import { toJsDate } from "@/lib/utils/date";
 
@@ -139,6 +140,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
         },
         sessions: { closedCount: 0, totalPaid: 0 },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
+        items: { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 },
       });
     }
     return dailyAggregates.get(dayId)!;
@@ -281,6 +283,17 @@ export async function rebuildDailyAnalyticsFromReceipts(
       dayData.refills!.servedRefillsByName[refillName] =
         (dayData.refills!.servedRefillsByName[refillName] || 0) + Number(qty || 0);
     }
+    // item adjustments
+    const adjContrib = getItemAdjustmentContribution(receipt);
+    const items = (dayData as any).items ??= { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 };
+    items.voidedQty += adjContrib.voidedQty;
+    items.voidedAmount += adjContrib.voidedAmount;
+    items.freeQty += adjContrib.freeQty;
+    items.freeAmount += adjContrib.freeAmount;
+    items.discountedQty += adjContrib.discountedQty;
+    items.discountedAmount += adjContrib.discountedAmount;
+    items.refundCount += adjContrib.refundCount;
+    items.refundTotal += adjContrib.refundTotal;
   }
 
   // --- aggregate kitchen tickets ---

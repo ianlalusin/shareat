@@ -20,6 +20,7 @@ import {
   getRefillContribution,
   getClosedSessionsContribution,
   getKitchenTicketContribution,
+  getItemAdjustmentContribution,
 } from './daily';
 import { rebuildDailyAnalyticsFromReceipts } from './backfill';
 import { toJsDate } from '@/lib/utils/date';
@@ -31,6 +32,7 @@ type ContributionSet = {
   peak: ReturnType<typeof getPeakHourContribution>;
   refill: ReturnType<typeof getRefillContribution>;
   closed: ReturnType<typeof getClosedSessionsContribution>;
+  itemAdj: ReturnType<typeof getItemAdjustmentContribution>;
 };
 
 // --- Date Helpers for Presets ---
@@ -101,6 +103,7 @@ function getContributions(receipt: Receipt | null): ContributionSet {
     peak: getPeakHourContribution(receipt),
     refill: getRefillContribution(receipt),
     closed: getClosedSessionsContribution(receipt),
+    itemAdj: getItemAdjustmentContribution(receipt),
   };
 }
 
@@ -310,6 +313,18 @@ export async function applyAnalyticsDeltaV2(
     // --- Closed Sessions Delta ---
     if (dayNew.closed.closedCount !== dayOld.closed.closedCount) payload['sessions.closedCount'] = increment(dayNew.closed.closedCount - dayOld.closed.closedCount);
     if (dayNew.closed.totalPaid !== dayOld.closed.totalPaid) payload['sessions.totalPaid'] = increment(dayNew.closed.totalPaid - dayOld.closed.totalPaid);
+
+    // --- Item Adjustment Delta ---
+    const adjOld = dayOld.itemAdj;
+    const adjNew = dayNew.itemAdj;
+    if (adjNew.voidedQty !== adjOld.voidedQty) payload['items.voidedQty'] = increment(adjNew.voidedQty - adjOld.voidedQty);
+    if (adjNew.voidedAmount !== adjOld.voidedAmount) payload['items.voidedAmount'] = increment(adjNew.voidedAmount - adjOld.voidedAmount);
+    if (adjNew.freeQty !== adjOld.freeQty) payload['items.freeQty'] = increment(adjNew.freeQty - adjOld.freeQty);
+    if (adjNew.freeAmount !== adjOld.freeAmount) payload['items.freeAmount'] = increment(adjNew.freeAmount - adjOld.freeAmount);
+    if (adjNew.discountedQty !== adjOld.discountedQty) payload['items.discountedQty'] = increment(adjNew.discountedQty - adjOld.discountedQty);
+    if (adjNew.discountedAmount !== adjOld.discountedAmount) payload['items.discountedAmount'] = increment(adjNew.discountedAmount - adjOld.discountedAmount);
+    if (adjNew.refundCount !== adjOld.refundCount) payload['items.refundCount'] = increment(adjNew.refundCount - adjOld.refundCount);
+    if (adjNew.refundTotal !== adjOld.refundTotal) payload['items.refundTotal'] = increment(adjNew.refundTotal - adjOld.refundTotal);
     
     // --- Refills Delta ---
     if(dayNew.refill.packageSessionsCount !== dayOld.refill.packageSessionsCount) payload['refills.packageSessionsCount'] = increment(dayNew.refill.packageSessionsCount - dayOld.refill.packageSessionsCount);

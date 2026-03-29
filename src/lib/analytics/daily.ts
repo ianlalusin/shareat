@@ -431,3 +431,77 @@ export function getRefillContribution(receipt: Receipt | null): RefillContributi
 }
 
     
+// --- Item Adjustment Contribution ---
+export type ItemAdjustmentContribution = {
+  dayId: string;
+  voidedQty: number;
+  voidedAmount: number;
+  freeQty: number;
+  freeAmount: number;
+  discountedQty: number;
+  discountedAmount: number;
+  refundCount: number;
+  refundTotal: number;
+};
+
+export function getItemAdjustmentContribution(receipt: Receipt | null): ItemAdjustmentContribution {
+  const zero: ItemAdjustmentContribution = {
+    dayId: '',
+    voidedQty: 0, voidedAmount: 0,
+    freeQty: 0, freeAmount: 0,
+    discountedQty: 0, discountedAmount: 0,
+    refundCount: 0, refundTotal: 0,
+  };
+  if (!receipt) return zero;
+
+  const dayId = getDayIdFromTimestamp(receipt.createdAtClientMs ?? receipt.createdAt);
+
+  // Refund receipt — count as refund stat, not item adjustment
+  if ((receipt as any).isRefund) {
+    return {
+      ...zero,
+      dayId,
+      refundCount: 1,
+      refundTotal: Math.abs(receipt.total || 0),
+    };
+  }
+
+  if (isVoidReceipt(receipt)) return { ...zero, dayId };
+
+  let voidedQty = 0, voidedAmount = 0;
+  let freeQty = 0, freeAmount = 0;
+  let discountedQty = 0, discountedAmount = 0;
+
+  for (const line of (receipt.lines || [])) {
+    const ordered = line.qtyOrdered || 0;
+    const voided = line.voidedQty || 0;
+    const free = line.freeQty || 0;
+
+    voidedQty += voided;
+    voidedAmount += voided * (line.unitPrice || 0);
+
+    freeQty += free;
+    freeAmount += free * (line.unitPrice || 0);
+
+    // Discounted qty from lineAdjustments or legacy fields
+    const adjs = Object.values((line as any).lineAdjustments ?? {}) as any[];
+    const discAdjs = adjs.filter(a => a.kind === 'discount');
+    if (discAdjs.length > 0) {
+      discAdjs.forEach(a => {
+        const qty = Math.min(Number(a.qty || 0), ordered);
+        discountedQty += qty;
+        const baseUnit = line.unitPrice || 0;
+        if (a.type === 'percent') discountedAmount += qty * baseUnit * (Number(a.value || 0) / 100);
+        else discountedAmount += qty * Math.min(baseUnit, Number(a.value || 0));
+      });
+    } else if ((line.discountQty || 0) > 0 && (line.discountValue ?? 0) > 0) {
+      const dQty = Math.min(line.discountQty, ordered);
+      discountedQty += dQty;
+      const baseUnit = line.unitPrice || 0;
+      if (line.discountType === 'percent') discountedAmount += dQty * baseUnit * ((line.discountValue || 0) / 100);
+      else discountedAmount += dQty * Math.min(baseUnit, line.discountValue ?? 0);
+    }
+  }
+
+  return { dayId, voidedQty, voidedAmount, freeQty, freeAmount, discountedQty, discountedAmount, refundCount: 0, refundTotal: 0 };
+}

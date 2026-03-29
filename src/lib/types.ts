@@ -463,8 +463,17 @@ export type DailyMetric = {
         packageSessionsCount: number;
         topRefillsByQty?: TopRefillRow[];
     };
+    items?: {
+        voidedQty: number;
+        voidedAmount: number;
+        freeQty: number;
+        freeAmount: number;
+        discountedQty: number;
+        discountedAmount: number;
+        refundCount: number;
+        refundTotal: number;
+    };
 }
-
 export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;
