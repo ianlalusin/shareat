@@ -37,6 +37,10 @@ function RefundContent({
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const refundedQtys: Record<string, number> = (receipt as any).refundedQtys ?? {};
+  const getMaxQty = (l: SessionBillLine) =>
+    Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - (refundedQtys[l.id] || 0));
+
   const billableLines = useMemo(() =>
     (receipt.lines || []).filter(l => {
       const refunded = refundedQtys[l.id] || 0;
@@ -45,10 +49,6 @@ function RefundContent({
     }),
     [receipt.lines, refundedQtys]
   );
-
-  const refundedQtys: Record<string, number> = (receipt as any).refundedQtys ?? {};
-  const getMaxQty = (l: SessionBillLine) =>
-    Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - (refundedQtys[l.id] || 0));
 
   const getRefundQty = (id: string) => refundQtys[id] ?? 0;
 
