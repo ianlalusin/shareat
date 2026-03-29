@@ -19,6 +19,7 @@ function combineUser(
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
+          username: firebaseUser.email ?? firebaseUser.uid,
           status: 'pending', // Assume pending until Firestore doc loads
       };
   }
