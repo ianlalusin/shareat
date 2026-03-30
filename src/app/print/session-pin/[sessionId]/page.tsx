@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase/client';
 import { useStoreContext } from '@/context/store-context';
 import { Loader2, Printer, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePinPrint } from '@/hooks/use-print';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function PrintPinPage() {
@@ -16,6 +17,7 @@ export default function PrintPinPage() {
 
   const [pin, setPin] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
+  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +65,7 @@ export default function PrintPinPage() {
 
   useEffect(() => {
     if (pin && !isLoading && !error) {
-      const timer = setTimeout(() => window.print(), 500);
+      const timer = setTimeout(() => printPin(), 500);
       return () => clearTimeout(timer);
     }
   }, [pin, isLoading, error]);
@@ -72,7 +74,7 @@ export default function PrintPinPage() {
     try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}
   }, [paperSize]);
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => printPin();
 
   const renderContent = () => {
     if (isLoading) {
@@ -174,7 +176,7 @@ export default function PrintPinPage() {
           Back
         </Button>
 
-        <Button onClick={handlePrint} disabled={isLoading || !pin}>
+        <Button onClick={handlePrint} disabled={isLoading || !pin || isPrintingPin}>
           <Printer className="mr-2" /> Print
         </Button>
       </div>

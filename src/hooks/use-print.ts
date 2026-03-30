@@ -15,7 +15,7 @@ import { useCallback, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
-import { formatReceiptText } from '@/lib/printing/receiptFormatter';
+import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -119,4 +119,68 @@ export function usePrint({
   }, [receiptData, isPrinting, storeId, writeAudit, toast]);
 
   return { printReceipt, isPrinting, error };
+}
+
+// ─── PIN print ────────────────────────────────────────────────────────────────
+
+export interface UsePinPrintOptions {
+  pin: string | null;
+  customerName?: string | null;
+  storeName?: string;
+  storeId?: string | null;
+}
+
+export interface UsePinPrintReturn {
+  printPin: () => Promise<void>;
+  isPrintingPin: boolean;
+}
+
+export function usePinPrint({
+  pin,
+  customerName,
+  storeName,
+  storeId,
+}: UsePinPrintOptions): UsePinPrintReturn {
+  const [isPrintingPin, setIsPrintingPin] = useState(false);
+  const { toast } = useToast();
+
+  const printPin = useCallback(async () => {
+    if (!pin || isPrintingPin) return;
+    setIsPrintingPin(true);
+
+    try {
+      if (isNativeBluetoothAvailable()) {
+        const lastAddress = getLastPrinterAddress();
+        if (!lastAddress) {
+          toast({
+            variant: 'destructive',
+            title: 'No Printer',
+            description: 'Go to Settings to connect a printer.',
+          });
+          return;
+        }
+        const liveSettings = storeId
+          ? await getReceiptSettings(db, storeId)
+          : null;
+        const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        const text = formatPinText({ pin, customerName, storeName, width: paperWidth });
+        await printViaNativeBluetooth({
+          target: 'pin',
+          text,
+          widthMm: paperWidth,
+          cut: true,
+          beep: false,
+        });
+        toast({ title: 'PIN Printed', description: 'PIN slip sent to thermal printer.' });
+      } else {
+        window.print();
+      }
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Print Failed', description: e?.message ?? 'Unknown error' });
+    } finally {
+      setIsPrintingPin(false);
+    }
+  }, [pin, isPrintingPin, storeId, customerName, storeName, toast]);
+
+  return { printPin, isPrintingPin };
 }

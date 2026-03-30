@@ -106,3 +106,45 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
 
   return lines.join("\n");
 }
+
+/**
+ * Formats a customer PIN slip as plain ESC/POS text for thermal printing.
+ * No QR code on thermal — just the PIN prominently displayed.
+ */
+export function formatPinText(opts: {
+  pin: string;
+  customerName?: string | null;
+  storeName?: string;
+  width: 58 | 80;
+}): string {
+  const charsPerLine = opts.width === 58 ? 32 : 48;
+  const lines: string[] = [];
+
+  const center = (text: string) => {
+    const pad = Math.max(0, Math.floor((charsPerLine - text.length) / 2));
+    return ' '.repeat(pad) + text;
+  };
+  const hr = () => '-'.repeat(charsPerLine);
+
+  lines.push(center('WELCOME'));
+  if (opts.customerName) lines.push(center(opts.customerName));
+  lines.push('');
+  lines.push(center('We are glad you are here to'));
+  lines.push(center('SHARELEBRATE with us!'));
+  lines.push('');
+  lines.push(center('Go to customer.shareat.net'));
+  lines.push(center('and enter your PIN:'));
+  lines.push('');
+  lines.push(hr());
+  lines.push(center('YOUR PIN'));
+  lines.push(center(opts.pin));
+  lines.push(hr());
+  lines.push('');
+  lines.push(center('If you need help, call our staff.'));
+  lines.push(center('Have a nice stay!'));
+  lines.push('');
+  lines.push(center(`- ${opts.storeName || 'The SharEat Team'}`));
+  lines.push('\n\n\n\n');
+
+  return lines.join('\n');
+}
