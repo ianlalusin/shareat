@@ -75,6 +75,17 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
     <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <div className="space-y-4 p-4 border rounded-lg">
+                <h3 className="font-semibold">Store Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="businessName" render={({ field }) => <FormItem><FormLabel>Business Name</FormLabel><FormControl><Input placeholder="e.g., SharEat" {...field} /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="branchName" render={({ field }) => <FormItem><FormLabel>Branch Name</FormLabel><FormControl><Input placeholder="e.g., Malvar" {...field} /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="address" render={({ field }) => <FormItem><FormLabel>Address</FormLabel><FormControl><Input placeholder="e.g., Calle Arzobispado" {...field} /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="contact" render={({ field }) => <FormItem><FormLabel>Contact</FormLabel><FormControl><Input placeholder="e.g., +639..." {...field} /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="tin" render={({ field }) => <FormItem><FormLabel>TIN (optional)</FormLabel><FormControl><Input placeholder="000-000-000" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>} />
+                </div>
+            </div>
+
+            <div className="space-y-4 p-4 border rounded-lg">
                 <div className="flex items-center justify-between">
                     <h3 className="font-semibold">Display Options</h3>
                     {onTestPrint && (
