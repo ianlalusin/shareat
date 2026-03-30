@@ -74,7 +74,7 @@ export default function PrintPinPage() {
     try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}
   }, [paperSize]);
 
-  const handlePrint = () => printPin();
+  
 
   const renderContent = () => {
     if (isLoading) {
@@ -176,7 +176,7 @@ export default function PrintPinPage() {
           Back
         </Button>
 
-        <Button onClick={handlePrint} disabled={isLoading || !pin || isPrintingPin}>
+        <Button onClick={printPin} disabled={isLoading || !pin || isPrintingPin}>
           <Printer className="mr-2" /> Print
         </Button>
       </div>
