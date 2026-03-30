@@ -34,9 +34,10 @@ const fontOptions = [
 interface ReceiptSettingsProps {
     store: Store;
     onTestPrint?: () => void;
+    onClose?: () => void;
 }
 
-export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
+export function ReceiptSettings({ store, onTestPrint, onClose }: ReceiptSettingsProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const { settings, isLoading: settingsLoading } = useReceiptSettings(store.id);
@@ -62,6 +63,7 @@ export function ReceiptSettings({ store, onTestPrint }: ReceiptSettingsProps) {
     try {
       await setDoc(settingsRef, { ...data, updatedAt: serverTimestamp() }, { merge: true });
       toast({ title: "Receipt Settings Saved" });
+      onClose?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Save Failed", description: error.message });
     }

@@ -713,7 +713,7 @@ export default function ReceiptsPageContents() {
                         <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
                     </DialogHeader>
                      <div className="overflow-y-auto px-6">
-                        <ReceiptTemplateSettings store={activeStore} />
+                        <ReceiptTemplateSettings store={activeStore} onClose={() => setIsSettingsOpen(false)} />
                      </div>
                      <div className="p-6 pt-0">
                         <DialogClose asChild><Button type="button" variant="secondary">Close</Button></DialogClose>
