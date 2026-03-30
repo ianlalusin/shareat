@@ -81,11 +81,12 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           } else {
             // User exists in Firebase Auth, but no staff doc found.
             // This is the "needs_profile" state for new sign-ups.
-            setAppUser({ 
-              uid: u.uid, 
-              email: u.email, 
-              displayName: u.displayName, 
-              photoURL: u.photoURL, 
+            setAppUser({
+              username: u.email ?? u.uid,
+              uid: u.uid,
+              email: u.email,
+              displayName: u.displayName,
+              photoURL: u.photoURL,
               status: "needs_profile",
               isPlatformAdmin: false,
             });
