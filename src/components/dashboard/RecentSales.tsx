@@ -11,6 +11,7 @@ import { Button } from "../ui/button";
 import { Printer } from "lucide-react";
 import { doc, getDoc, collection, getDocs, query, orderBy, updateDoc, increment, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { usePrint } from "@/hooks/use-print";
 import { useAuthContext } from "@/context/auth-context";
 import { format } from "date-fns";
 
@@ -30,18 +31,12 @@ interface RecentSalesProps {
     isLoading: boolean;
 }
 
-function getUsername(appUser: any) {
-  return (appUser?.displayName?.trim())
-    || (appUser?.name?.trim())
-    || (appUser?.email ? String(appUser.email).split("@")[0] : "")
-    || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
-}
 
 export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
     const { appUser } = useAuthContext();
     const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
+    const { printReceipt, isPrinting } = usePrint({ receiptData: selectedReceipt, storeId, sessionId: selectedReceipt?.session?.id, appUser });
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-    const [isPrinting, setIsPrinting] = useState(false);
 
     const handleSelectReceipt = async (sale: Sale) => {
         const [settingsSnap, receiptSnap] = await Promise.all([
@@ -77,26 +72,6 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
         setIsDrawerOpen(true);
     };
 
-    const handlePrint = async () => {
-        if (!selectedReceipt || !storeId || !appUser) return;
-        setIsPrinting(true);
-        window.requestAnimationFrame(async () => {
-            window.print();
-            try {
-                const receiptRef = doc(db, `stores/${storeId}/receipts`, selectedReceipt.session.id);
-                await updateDoc(receiptRef, {
-                    printedCount: increment(1),
-                    lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: appUser.uid,
-                    lastPrintedByUsername: getUsername(appUser),
-                });
-            } catch (e) {
-                console.warn("Print audit tracking failed:", e);
-            } finally {
-                setIsPrinting(false);
-            }
-        });
-    };
 
     if (isLoading) {
         return (
@@ -145,7 +120,7 @@ export function RecentSales({ sales, storeId, isLoading }: RecentSalesProps) {
                         <DrawerHeader>
                             <DrawerTitle>Receipt Preview</DrawerTitle>
                             <DrawerDescription>
-                                <Button onClick={handlePrint} disabled={isPrinting} className="w-full no-print mt-2">
+                                <Button onClick={printReceipt} disabled={isPrinting} className="w-full no-print mt-2">
                                     {isPrinting ? "Printing..." : <><Printer className="mr-2"/> Reprint Receipt</>}
                                 </Button>
                             </DrawerDescription>

@@ -15,21 +15,13 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePrint } from "@/hooks/use-print";
 import type { ModeOfPayment, Store, ReceiptData, ReceiptSettings } from "@/lib/types";
-import { formatReceiptText } from "@/lib/printing/receiptFormatter";
-import { printViaNativeBluetooth, getLastPrinterAddress } from "@/lib/printing/printHub";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { getReceiptSettings } from "@/lib/receipts/receipt-settings";
 import { Capacitor } from "@capacitor/core";
 
 type StrippedReceiptData = Omit<ReceiptData, 'settings'>;
-
-function getUsername(appUser: any) {
-  return (appUser?.displayName?.trim())
-    || (appUser?.name?.trim())
-    || (appUser?.email ? String(appUser.email).split("@")[0] : "")
-    || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
-}
 
 export default function ReceiptPage() {
     const params = useParams<{ sessionId?: string }>();
@@ -44,10 +36,10 @@ export default function ReceiptPage() {
     const { settings: receiptSettings, isLoading: settingsLoading } = useReceiptSettings(activeStoreId);
 
     const [receiptData, setReceiptData] = useState<StrippedReceiptData | null>(null);
+    const { printReceipt, isPrinting } = usePrint({ receiptData: receiptData as any, storeId: activeStoreId, sessionId, appUser });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
-    const [isThermalPrinting, setIsThermalPrinting] = useState(false);
     const { toast } = useToast();
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
 
@@ -130,83 +122,13 @@ export default function ReceiptPage() {
         fetchData();
     }, [sessionId, activeStoreId, activeStore, storageKey]);
 
-    const [isPrinting, setIsPrinting] = useState(false);
-
-    const handlePrint = async () => {
-        if (!receiptData || !activeStoreId || !sessionId || settingsLoading) return;
-        if (isPrinting) return;
-    
-        setIsPrinting(true);
-    
-        // Ensure layout has applied paperWidth before printing
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        window.print();
-    
-        if (sessionId !== "PREVIEW") {
-            try {
-                const receiptRef = doc(db, "stores", activeStoreId, "receipts", sessionId);
-                const uid = appUser?.uid ?? null;
-                const username = appUser ? getUsername(appUser) : null;
-
-                await updateDoc(receiptRef, {
-                    printedCount: increment(1),
-                    lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: uid,
-                    lastPrintedByUsername: username,
-                });
-            } catch (e) {
-                console.warn("Print audit tracking failed:", e);
-            }
-        }
-    
-        setIsPrinting(false);
-    };
-
-    const handleThermalPrint = async () => {
-        if (!receiptData || isThermalPrinting || !activeStoreId || !sessionId) return;
-        
-        setIsThermalPrinting(true);
-        try {
-            const lastAddress = getLastPrinterAddress();
-            if (!lastAddress) {
-                toast({ variant: 'destructive', title: 'No Printer', description: 'Configure thermal printer in Manager Tools.' });
-                setIsThermalPrinting(false);
-                return;
-            }
-
-            // Always fetch latest settings for thermal printing
-            const liveSettings = await getReceiptSettings(db, activeStoreId);
-            const paperWidth = liveSettings.paperWidth === "58mm" ? 58 : 80;
-            const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth);
-
-            await printViaNativeBluetooth({ target: 'receipt', text, widthMm: paperWidth, cut: true, beep: true, encoding: 'CP437' });
-
-            if (sessionId !== "PREVIEW") {
-                const receiptRef = doc(db, "stores", activeStoreId, "receipts", sessionId);
-                const uid = appUser?.uid ?? null;
-                const username = appUser ? getUsername(appUser) : null;
-
-                await updateDoc(receiptRef, {
-                    printedCount: increment(1),
-                    lastPrintedAt: serverTimestamp(),
-                    lastPrintedByUid: uid,
-                    lastPrintedByUsername: username,
-                });
-            }
-            toast({ title: 'Success', description: 'Sent to thermal printer.' });
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
-        } finally {
-            setIsThermalPrinting(false);
-        }
-    };
     
     useEffect(() => {
         if (shouldAutoPrint && receiptData && !isLoading && !settingsLoading) {
             const printKey = `autoprint:${sessionId}`;
             if (sessionStorage.getItem(printKey) !== "1") {
                 sessionStorage.setItem(printKey, "1");
-                handlePrint();
+                printReceipt();
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,11 +171,8 @@ export default function ReceiptPage() {
                             </Select>
                         </div>
                         <div className="flex gap-2 w-full sm:w-auto">
-                            <Button variant="outline" onClick={handleThermalPrint} disabled={!receiptData || isThermalPrinting || !Capacitor.isNativePlatform()} className="flex-1 sm:flex-none">
-                                {isThermalPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bluetooth className="mr-2 h-4 w-4"/>}
-                                {Capacitor.isNativePlatform() ? 'Native Print' : 'Native Print (Android only)'}
-                            </Button>
-                            <Button onClick={handlePrint} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
+                            
+                            <Button onClick={printReceipt} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
                                 {isPrinting || settingsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4"/>}
                                 {printedCount > 0 ? 'Reprint' : 'Print'}
                             </Button>

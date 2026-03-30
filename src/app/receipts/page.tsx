@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
 import type { ReceiptData } from "@/lib/types";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
+import { usePrint } from "@/hooks/use-print";
 
 
 // --- Date Helpers ---
@@ -60,12 +61,6 @@ const presets: { label: string, value: DatePreset }[] = [
 ];
 
 
-function getUsername(appUser: any) {
-  return (appUser?.displayName?.trim())
-    || (appUser?.name?.trim())
-    || (appUser?.email ? String(appUser.email).split("@")[0] : "")
-    || (appUser?.uid ? String(appUser.uid).slice(0,6) : "unknown");
-}
 
 export default function ReceiptsPage() {
     const router = useRouter();
@@ -85,10 +80,10 @@ export default function ReceiptsPage() {
     const [selectedReceiptData, setSelectedReceiptData] = useState<Omit<ReceiptData, 'settings'> | null>(null);
     const [editingReceipt, setEditingReceipt] = useState<ReceiptType | null>(null);
     const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-    const [isPrinting, setIsPrinting] = useState(false);
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     
     const { settings, isLoading: settingsLoading } = useReceiptSettings(activeStore?.id);
+    const { printReceipt, isPrinting } = usePrint({ receiptData: selectedReceiptData as ReceiptData | null, storeId: activeStore?.id, sessionId: selectedReceiptId, appUser });
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -403,24 +398,6 @@ export default function ReceiptsPage() {
         fetchReceiptDetails();
     }, [selectedReceiptId, activeStore, toast]);
     
-    const handlePrint = async () => {
-        if (!selectedReceiptData || !selectedReceiptId || !appUser || !activeStore) return;
-        setIsPrinting(true);
-        window.print();
-        try {
-            const receiptRef = doc(db, `stores/${activeStore.id}/receipts`, selectedReceiptId);
-            await updateDoc(receiptRef, {
-                printedCount: increment(1),
-                lastPrintedAt: serverTimestamp(),
-                lastPrintedByUid: appUser.uid,
-                lastPrintedByUsername: getUsername(appUser),
-            });
-        } catch (e) {
-            console.warn("Print audit tracking failed:", e);
-        } finally {
-            setIsPrinting(false);
-        }
-    }
 
     const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
       if (!appUser || !activeStore) {
@@ -728,7 +705,7 @@ export default function ReceiptsPage() {
                          <Card>
                             <CardHeader className="flex flex-row items-center justify-between">
                                 <CardTitle>Preview</CardTitle>
-                                <Button onClick={handlePrint} disabled={!selectedReceiptData || isPrinting || settingsLoading}>
+                                <Button onClick={printReceipt} disabled={!selectedReceiptData || isPrinting || settingsLoading}>
                                     {isPrinting || settingsLoading ? <Loader2 className="mr-2 animate-spin" /> : <Printer className="mr-2"/>} Reprint
                                 </Button>
                             </CardHeader>
