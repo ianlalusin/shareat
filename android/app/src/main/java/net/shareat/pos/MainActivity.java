@@ -1,4 +1,4 @@
-package com.culinaryflow.app;
+package net.shareat.pos;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

@@ -1,12 +1,15 @@
 import { CapacitorConfig } from '@capacitor/cli';
-
 const config: CapacitorConfig = {
-  appId: 'com.culinaryflow.app',
-  appName: 'CulinaryFlow',
+  appId: 'net.shareat.pos',
+  appName: 'SharEat POS',
   webDir: 'out',
   server: {
-    androidScheme: 'https'
+    url: 'https://poskds.shareat.net',
+    cleartext: false,
+    androidScheme: 'https',
+  },
+  android: {
+    allowMixedContent: false,
   }
 };
-
 export default config;

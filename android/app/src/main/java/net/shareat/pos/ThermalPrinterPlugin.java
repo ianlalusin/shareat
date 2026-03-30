@@ -1,4 +1,4 @@
-package com.culinaryflow.app;
+package net.shareat.pos;
 
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
