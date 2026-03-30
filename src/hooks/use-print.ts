@@ -16,6 +16,7 @@ import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
+import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -164,13 +165,10 @@ export function usePinPrint({
           : null;
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
         const text = formatPinText({ pin, customerName, storeName, width: paperWidth });
-        await printViaNativeBluetooth({
-          target: 'pin',
-          text,
-          widthMm: paperWidth,
-          cut: true,
-          beep: false,
-        });
+        await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
+        await ThermalPrinter.printQRCode({ data: 'https://customer.shareat.net', size: 4 });
+        await ThermalPrinter.printReceipt({ text, widthMm: paperWidth, cut: true, beep: false, encoding: 'CP437' });
+        await ThermalPrinter.disconnectBluetoothPrinter();
         toast({ title: 'PIN Printed', description: 'PIN slip sent to thermal printer.' });
       } else {
         window.print();

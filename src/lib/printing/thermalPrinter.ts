@@ -11,6 +11,7 @@ export interface ThermalPrinterPlugin {
   listBluetoothPrinters(): Promise<{ devices: BluetoothDevice[] }>;
   connectBluetoothPrinter(options: { address: string }): Promise<void>;
   disconnectBluetoothPrinter(): Promise<void>;
+  printQRCode(options: { data: string; size?: number }): Promise<void>;
   printReceipt(options: { 
     text: string; 
     widthMm: 58 | 80; 

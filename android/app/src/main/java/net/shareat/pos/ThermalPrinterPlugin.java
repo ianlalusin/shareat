@@ -198,6 +198,62 @@ public class ThermalPrinterPlugin extends Plugin {
         }
     }
 
+
+    /**
+     * Prints a QR code using ESC/POS GS ( k commands.
+     * Call this before printReceipt to prepend a QR code.
+     */
+    @PluginMethod
+    public void printQRCode(PluginCall call) {
+        String data = call.getString("data");
+        int size = call.getInt("size", 4); // module size 1-16
+
+        if (outputStream == null) {
+            call.reject("Printer not connected.");
+            return;
+        }
+        if (data == null || data.isEmpty()) {
+            call.reject("QR data is required.");
+            return;
+        }
+
+        try {
+            byte[] dataBytes = data.getBytes("UTF-8");
+            int dataLen = dataBytes.length;
+
+            // Center alignment
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+
+            // Set QR model 2
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
+
+            // Set module size
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) size});
+
+            // Set error correction level M
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31});
+
+            // Store data: pL pH = (dataLen + 3) little-endian
+            int storeLen = dataLen + 3;
+            byte pL = (byte)(storeLen & 0xFF);
+            byte pH = (byte)((storeLen >> 8) & 0xFF);
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30});
+            outputStream.write(dataBytes);
+
+            // Print QR code
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
+
+            // Restore left alignment
+            outputStream.write(new byte[]{0x1B, 0x61, 0x00});
+
+            outputStream.write(new byte[]{0x0A});
+            outputStream.flush();
+            call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "QR print failed", e);
+            call.reject("QR print failed: " + e.getMessage());
+        }
+    }
     private void disconnect() {
         try {
             if (outputStream != null) {
