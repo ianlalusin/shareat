@@ -112,9 +112,18 @@ public class ThermalPrinterPlugin extends Plugin {
             return;
         }
         try {
+            // Reuse existing connection if healthy
             if (bluetoothSocket != null && bluetoothSocket.isConnected() && address.equals(bluetoothSocket.getRemoteDevice().getAddress())) {
-                call.resolve();
-                return;
+                // Verify socket is truly alive with a zero-byte write
+                try {
+                    outputStream.write(new byte[0]);
+                    outputStream.flush();
+                    call.resolve();
+                    return;
+                } catch (Exception ignored) {
+                    // Socket is dead — fall through to reconnect
+                    disconnect();
+                }
             }
             disconnect();
             if (bluetoothAdapter.isDiscovering()) {
