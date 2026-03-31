@@ -46,7 +46,7 @@ import java.util.UUID;
 public class ThermalPrinterPlugin extends Plugin {
     private static final String TAG = "ThermalPrinter";
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-    
+
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSocket bluetoothSocket;
     private OutputStream outputStream;
@@ -70,22 +70,18 @@ public class ThermalPrinterPlugin extends Plugin {
             requestPermissionForAlias(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? "bluetooth_connect" : "bluetooth", call, "permissionCallback");
             return;
         }
-
         if (bluetoothAdapter == null) {
             call.reject("Bluetooth not supported on this device.");
             return;
         }
-
         Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
         JSONArray devicesArray = new JSONArray();
-
         for (BluetoothDevice device : pairedDevices) {
             JSObject deviceObj = new JSObject();
             deviceObj.put("name", device.getName());
             deviceObj.put("address", device.getAddress());
             devicesArray.put(deviceObj);
         }
-
         JSObject ret = new JSObject();
         ret.put("devices", devicesArray);
         call.resolve(ret);
@@ -110,31 +106,24 @@ public class ThermalPrinterPlugin extends Plugin {
             requestPermissionForAlias(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? "bluetooth_connect" : "bluetooth", call, "permissionCallback");
             return;
         }
-
         String address = call.getString("address");
         if (address == null) {
             call.reject("Printer address is required.");
             return;
         }
-
         try {
             if (bluetoothSocket != null && bluetoothSocket.isConnected() && address.equals(bluetoothSocket.getRemoteDevice().getAddress())) {
                 call.resolve();
                 return;
             }
-
             disconnect();
-
-            // Stop discovery before connecting
             if (bluetoothAdapter.isDiscovering()) {
                 bluetoothAdapter.cancelDiscovery();
             }
-
             BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
             bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
             bluetoothSocket.connect();
             outputStream = bluetoothSocket.getOutputStream();
-            
             call.resolve();
         } catch (Exception e) {
             Log.e(TAG, "Connection failed", e);
@@ -154,43 +143,31 @@ public class ThermalPrinterPlugin extends Plugin {
         String text = call.getString("text");
         String encoding = call.getString("encoding", "CP437");
         Boolean skipInit = call.getBoolean("skipInit", false);
-        
+
         if (outputStream == null) {
             call.reject("Printer not connected.");
             return;
         }
-
         try {
-            // Initialize printer (ESC @) — skip if chaining after QR
-            if (!skipInit) { outputStream.write(new byte[]{0x1B, 0x40}); }
-            // Select character size normal (GS ! 0)
+            if (!skipInit) {
+                outputStream.write(new byte[]{0x1B, 0x40});
+            }
             outputStream.write(new byte[]{0x1D, 0x21, 0x00});
-            // Set left alignment (ESC a 0)
             outputStream.write(new byte[]{0x1B, 0x61, 0x00});
-            
-            // Write text with specific encoding
             try {
                 outputStream.write(text.getBytes(encoding));
             } catch (Exception e) {
-                // Fallback to UTF-8
                 outputStream.write(text.getBytes(Charset.forName("UTF-8")));
             }
-            
-            // Mandatory feeds for cutting (LF)
             outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
-            
             Boolean cut = call.getBoolean("cut", false);
             if (cut) {
-                // Full cut command (GS V 65 0)
                 outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
             }
-
             Boolean beep = call.getBoolean("beep", false);
             if (beep) {
-                // Beep command (ESC B 2 2)
                 outputStream.write(new byte[]{0x1B, 0x42, 0x02, 0x02});
             }
-
             outputStream.flush();
             call.resolve();
         } catch (Exception e) {
@@ -199,11 +176,6 @@ public class ThermalPrinterPlugin extends Plugin {
         }
     }
 
-
-
-    /**
-     * Prints a full PIN slip: top text + QR code + bottom text in one atomic write.
-     */
     @PluginMethod
     public void printPinSlip(PluginCall call) {
         String topText    = call.getString("top", "");
@@ -216,35 +188,35 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("Printer not connected.");
             return;
         }
-
         try {
             // Init
             outputStream.write(new byte[]{0x1B, 0x40});
 
-            // --- TOP TEXT ---
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+            // TOP TEXT
+            if (topText != null && !topText.isEmpty()) {
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
                 try { outputStream.write(topText.getBytes(encoding)); }
                 catch (Exception e) { outputStream.write(topText.getBytes("UTF-8")); }
                 outputStream.write(0x0A);
             }
 
-            // --- QR CODE ---
+            // QR CODE
             byte[] qrBytes = qrData.getBytes("UTF-8");
             int storeLen = qrBytes.length + 3;
             byte pL = (byte)(storeLen & 0xFF);
             byte pH = (byte)((storeLen >> 8) & 0xFF);
-
-            outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // error correction M
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize});
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31});
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30});
             outputStream.write(qrBytes);
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print QR
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
             outputStream.write(0x0A);
 
-            // --- BOTTOM TEXT ---
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+            // BOTTOM TEXT
+            if (bottomText != null && !bottomText.isEmpty()) {
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
                 try { outputStream.write(bottomText.getBytes(encoding)); }
                 catch (Exception e) { outputStream.write(bottomText.getBytes("UTF-8")); }
             }
@@ -252,7 +224,6 @@ public class ThermalPrinterPlugin extends Plugin {
             // Feed + cut
             outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
             outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
-
             outputStream.flush();
             call.resolve();
         } catch (Exception e) {
@@ -260,14 +231,11 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("printPinSlip failed: " + e.getMessage());
         }
     }
-    /**
-     * Prints a QR code using ESC/POS GS ( k commands.
-     * Call this before printReceipt to prepend a QR code.
-     */
+
     @PluginMethod
     public void printQRCode(PluginCall call) {
         String data = call.getString("data");
-        int size = call.getInt("size", 4); // module size 1-16
+        int size = call.getInt("size", 4);
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -277,36 +245,20 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("QR data is required.");
             return;
         }
-
         try {
             byte[] dataBytes = data.getBytes("UTF-8");
             int dataLen = dataBytes.length;
-
-            // Center alignment
             outputStream.write(new byte[]{0x1B, 0x61, 0x01});
-
-            // Set QR model 2
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
-
-            // Set module size
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) size});
-
-            // Set error correction level M
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31});
-
-            // Store data: pL pH = (dataLen + 3) little-endian
             int storeLen = dataLen + 3;
             byte pL = (byte)(storeLen & 0xFF);
             byte pH = (byte)((storeLen >> 8) & 0xFF);
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30});
             outputStream.write(dataBytes);
-
-            // Print QR code
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
-
-            // Restore left alignment
             outputStream.write(new byte[]{0x1B, 0x61, 0x00});
-
             outputStream.write(new byte[]{0x0A});
             outputStream.flush();
             call.resolve();
@@ -315,6 +267,7 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("QR print failed: " + e.getMessage());
         }
     }
+
     private void disconnect() {
         try {
             if (outputStream != null) {
