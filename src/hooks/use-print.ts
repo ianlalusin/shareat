@@ -164,10 +164,11 @@ export function usePinPrint({
           ? await getReceiptSettings(db, storeId)
           : null;
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
-        const text = formatPinText({ pin, customerName, storeName, width: paperWidth });
+        const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
+        if (top) await ThermalPrinter.printReceipt({ text: top, widthMm: paperWidth, cut: false, beep: false, encoding: 'CP437' });
         await ThermalPrinter.printQRCode({ data: 'https://customer.shareat.net', size: 4 });
-        await ThermalPrinter.printReceipt({ text, widthMm: paperWidth, cut: true, beep: false, encoding: 'CP437' });
+        await ThermalPrinter.printReceipt({ text: bottom, widthMm: paperWidth, cut: true, beep: false, encoding: 'CP437', skipInit: true });
         await ThermalPrinter.disconnectBluetoothPrinter();
         toast({ title: 'PIN Printed', description: 'PIN slip sent to thermal printer.' });
       } else {

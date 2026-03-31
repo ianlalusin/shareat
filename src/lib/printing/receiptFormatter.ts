@@ -6,32 +6,24 @@ import { format } from "date-fns";
 
 /**
  * Formats receipt data into plain text for thermal printing (ESC/POS).
- * 
- * @param data The shared ReceiptData object.
- * @param width The paper width in mm (58 or 80).
- * @returns A string formatted for monospaced printing.
  */
 export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): string {
   const charsPerLine = width === 58 ? 32 : 48;
   const qtyWidth = 4;
   const priceWidth = 10;
   const nameWidth = charsPerLine - qtyWidth - priceWidth;
-
   const lines: string[] = [];
 
   const center = (text: string) => {
     const padding = Math.max(0, Math.floor((charsPerLine - text.length) / 2));
     return " ".repeat(padding) + text;
   };
-
   const justify = (left: string, right: string) => {
     const space = charsPerLine - left.length - right.length;
     return left + " ".repeat(Math.max(1, space)) + right;
   };
-
   const hr = () => "-".repeat(charsPerLine);
 
-  // --- HEADER ---
   const settings = data.settings;
   if (settings.businessName) lines.push(center(settings.businessName.toUpperCase()));
   if (settings.address) lines.push(center(settings.address));
@@ -42,22 +34,21 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(data.session.closedAt);
   lines.push(justify("DATE:", receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A"));
   lines.push(justify("RECEIPT:", data.receiptNumber ?? "—"));
-  
+
   if (settings.showTableOrCustomer) {
     const label = data.session.sessionMode === 'alacarte' ? "CUSTOMER:" : "TABLE:";
-    const val = data.session.sessionMode === 'alacarte' 
-        ? (data.session.customer?.name || data.session.customerName || "N/A")
-        : (data.session.tableNumber || "N/A");
+    const val = data.session.sessionMode === 'alacarte'
+      ? (data.session.customer?.name || data.session.customerName || "N/A")
+      : (data.session.tableNumber || "N/A");
     lines.push(justify(label, val));
   }
-  
+
   if (settings.showCashierName) {
     lines.push(justify("CASHIER:", data.createdByUsername || "N/A"));
   }
 
   lines.push(hr());
 
-  // --- ITEMS ---
   const headerRow = 'Qty'.padEnd(qtyWidth) + 'Item'.padEnd(nameWidth) + 'Total'.padStart(priceWidth);
   lines.push(headerRow);
 
@@ -65,19 +56,12 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
     const lineTotal = (billableQty * line.unitPrice).toFixed(2);
-    
-    // Simple wrap for long names
     const name = line.itemName.substring(0, nameWidth - 1);
-    lines.push(
-      String(billableQty).padEnd(qtyWidth) + 
-      name.padEnd(nameWidth) + 
-      lineTotal.padStart(priceWidth)
-    );
+    lines.push(String(billableQty).padEnd(qtyWidth) + name.padEnd(nameWidth) + lineTotal.padStart(priceWidth));
   });
 
   lines.push(hr());
 
-  // --- TOTALS ---
   const analytics = data.analytics || {};
   lines.push(justify("SUBTOTAL", (analytics.subtotal || 0).toFixed(2)));
   if ((analytics.discountsTotal || 0) > 0) {
@@ -86,12 +70,11 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   if ((analytics.chargesTotal || 0) > 0) {
     lines.push(justify("CHARGES", `+${analytics.chargesTotal.toFixed(2)}`));
   }
-  
+
   lines.push(hr());
   lines.push(justify("TOTAL", `PHP ${(analytics.grandTotal || 0).toFixed(2)}`));
   lines.push(hr());
 
-  // --- PAYMENTS ---
   const mop = analytics.mop || {};
   Object.entries(mop).forEach(([method, amount]) => {
     lines.push(justify(method.toUpperCase(), (amount as number).toFixed(2)));
@@ -102,23 +85,30 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   lines.push("");
   if (settings.footerText) lines.push(center(settings.footerText));
   lines.push(center("THANK YOU!"));
-  lines.push("\n\n\n\n"); // Feed for cutter
+  lines.push("\n\n\n\n");
 
   return lines.join("\n");
 }
 
 /**
- * Formats a customer PIN slip as plain ESC/POS text for thermal printing.
- * No QR code on thermal — just the PIN prominently displayed.
+ * PIN slip split into top/bottom halves around a QR code.
+ * top    → printed before QR
+ * bottom → printed after QR
  */
+export interface PinTextParts {
+  top: string;
+  bottom: string;
+}
+
 export function formatPinText(opts: {
   pin: string;
   customerName?: string | null;
   storeName?: string;
   width: 58 | 80;
-}): string {
+  qrPosition?: "top" | "middle" | "bottom";
+}): PinTextParts {
   const charsPerLine = opts.width === 58 ? 32 : 48;
-  const lines: string[] = [];
+  const qrPos = opts.qrPosition ?? 'middle';
 
   const center = (text: string) => {
     const pad = Math.max(0, Math.floor((charsPerLine - text.length) / 2));
@@ -126,25 +116,47 @@ export function formatPinText(opts: {
   };
   const hr = () => '-'.repeat(charsPerLine);
 
-  lines.push(center('WELCOME'));
-  if (opts.customerName) lines.push(center(opts.customerName));
-  lines.push('');
-  lines.push(center('We are glad you are here to'));
-  lines.push(center('SHARELEBRATE with us!'));
-  lines.push('');
-  lines.push(center('Go to customer.shareat.net'));
-  lines.push(center('and enter your PIN:'));
-  lines.push('');
-  lines.push(hr());
-  lines.push(center('YOUR PIN'));
-  lines.push(center(opts.pin));
-  lines.push(hr());
-  lines.push('');
-  lines.push(center('If you need help, call our staff.'));
-  lines.push(center('Have a nice stay!'));
-  lines.push('');
-  lines.push(center(`- ${opts.storeName || 'The SharEat Team'}`));
-  lines.push('\n\n\n\n');
+  const headerLines: string[] = [
+    center('WELCOME'),
+    ...(opts.customerName ? [center(opts.customerName)] : []),
+    '',
+    center('We are glad you are here to'),
+    center('SHARELEBRATE with us!'),
+    '',
+    center('Scan the QR or go to'),
+    center('customer.shareat.net'),
+    center('and enter your PIN:'),
+    '',
+  ];
 
-  return lines.join('\n');
+  const footerLines: string[] = [
+    '',
+    hr(),
+    center('YOUR PIN'),
+    center(opts.pin),
+    hr(),
+    '',
+    center('If you need help, call our staff.'),
+    center('Have a nice stay!'),
+    '',
+    center(`- ${opts.storeName || 'The SharEat Team'}`),
+    '\n\n\n\n',
+  ];
+
+  let topLines: string[];
+  let bottomLines: string[];
+
+  if (qrPos === 'top') {
+    topLines = [];
+    bottomLines = [...headerLines, ...footerLines];
+  } else if (qrPos === 'bottom') {
+    topLines = [...headerLines, ...footerLines];
+    bottomLines = [];
+  } else {
+    // middle (default)
+    topLines = headerLines;
+    bottomLines = footerLines;
+  }
+
+  return { top: topLines.join('\n'), bottom: bottomLines.join('\n') };
 }

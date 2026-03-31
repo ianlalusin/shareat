@@ -153,6 +153,7 @@ public class ThermalPrinterPlugin extends Plugin {
     public void printReceipt(PluginCall call) {
         String text = call.getString("text");
         String encoding = call.getString("encoding", "CP437");
+        Boolean skipInit = call.getBoolean("skipInit", false);
         
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -160,8 +161,8 @@ public class ThermalPrinterPlugin extends Plugin {
         }
 
         try {
-            // Initialize printer (ESC @)
-            outputStream.write(new byte[]{0x1B, 0x40});
+            // Initialize printer (ESC @) — skip if chaining after QR
+            if (!skipInit) { outputStream.write(new byte[]{0x1B, 0x40}); }
             // Select character size normal (GS ! 0)
             outputStream.write(new byte[]{0x1D, 0x21, 0x00});
             // Set left alignment (ESC a 0)

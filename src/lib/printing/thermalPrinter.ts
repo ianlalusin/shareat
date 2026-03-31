@@ -18,6 +18,7 @@ export interface ThermalPrinterPlugin {
     cut?: boolean; 
     beep?: boolean;
     encoding?: string;
+    skipInit?: boolean;
   }): Promise<void>;
 }
 
