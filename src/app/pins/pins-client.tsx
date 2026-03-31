@@ -115,6 +115,13 @@ export default function PinsClient() {
   const [archivedPinsPage, setArchivedPinsPage] = useState(0);
   const autoIssueAttemptedRef = useRef<string | null>(null);
   const autoFinalizeExpiredRef = useRef<Record<string, true>>({});
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('pin_autofinalized') || '{}');
+      autoFinalizeExpiredRef.current = stored;
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const todayDayId = getManilaDayId(now);
 
   useEffect(() => {
@@ -185,7 +192,7 @@ export default function PinsClient() {
 
     const expiredSessions = sessions.filter((s) =>
       (s.sessionMode || "") !== "alacarte" &&
-      !!s.customerAccessEnabled &&
+      s.customerAccessEnabled === true &&
       !!s.customerPin &&
       !!s.customerAccessExpiresAtMs &&
       s.customerAccessExpiresAtMs <= now &&
@@ -196,6 +203,7 @@ export default function PinsClient() {
 
     expiredSessions.forEach((s) => {
       autoFinalizeExpiredRef.current[s.id] = true;
+      try { localStorage.setItem('pin_autofinalized', JSON.stringify(autoFinalizeExpiredRef.current)); } catch {}
 
       startTransition(async () => {
         try {
@@ -462,6 +470,38 @@ export default function PinsClient() {
                           >
                             Extend
                           </button>
+                        )}
+                        {!s._hasPin && (
+                          <>
+                          <button
+                            className="border rounded px-3 py-2 text-sm bg-blue-50 border-blue-300 disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={() => {
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/repair", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                    body: JSON.stringify({ storeId, sessionId: s.id }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Repair failed.");
+                                  if (data.repaired === 0) window.alert("No PIN found in registry for this session. Use Reissue instead.");
+                                } catch (error: any) {
+                                  window.alert(error?.message || "Repair failed.");
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Repair
+                          </button>
+                          </>
                         )}
                       </div>
                     </CardContent>
