@@ -107,13 +107,11 @@ export function formatPinText(opts: {
   width: 58 | 80;
   qrPosition?: "top" | "middle" | "bottom";
 }): PinTextParts {
-  const charsPerLine = opts.width === 58 ? 32 : 42;
+  const charsPerLine = opts.width === 58 ? 32 : 38;
   const qrPos = opts.qrPosition ?? 'middle';
 
-  const center = (text: string) => {
-    const pad = Math.max(0, Math.floor((charsPerLine - text.length) / 2));
-    return ' '.repeat(pad) + text;
-  };
+  // No software centering — printer handles alignment via ESC a 01
+  const center = (text: string) => text.trim();
   const hr = () => '-'.repeat(charsPerLine);
 
   const headerLines: string[] = [

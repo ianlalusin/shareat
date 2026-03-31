@@ -189,41 +189,60 @@ public class ThermalPrinterPlugin extends Plugin {
             return;
         }
         try {
-            // Init
+            // Init + slow down print speed
             outputStream.write(new byte[]{0x1B, 0x40});
+            Thread.sleep(150);
 
-            // TOP TEXT
+            // TOP TEXT — normal size, centered
             if (topText != null && !topText.isEmpty()) {
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                outputStream.write(new byte[]{0x1D, 0x21, 0x00}); // normal size
                 try { outputStream.write(topText.getBytes(encoding)); }
                 catch (Exception e) { outputStream.write(topText.getBytes("UTF-8")); }
-                outputStream.write(0x0A);
+                outputStream.write(new byte[]{0x0A});
             }
-
             outputStream.flush();
-            Thread.sleep(100);
+            Thread.sleep(200);
 
             // QR CODE
             byte[] qrBytes = qrData.getBytes("UTF-8");
             int storeLen = qrBytes.length + 3;
             byte pL = (byte)(storeLen & 0xFF);
             byte pH = (byte)((storeLen >> 8) & 0xFF);
-            outputStream.write(new byte[]{0x1B, 0x61, 0x01});
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize});
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31});
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30});
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // ECC M
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
             outputStream.write(qrBytes);
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
-            outputStream.write(0x0A);
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
+            outputStream.write(new byte[]{0x0A, 0x0A});
             outputStream.flush();
-            Thread.sleep(300);
+            Thread.sleep(500);
 
-            // BOTTOM TEXT
+            // BOTTOM TEXT — PIN line gets double height/width, rest normal
             if (bottomText != null && !bottomText.isEmpty()) {
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
-                try { outputStream.write(bottomText.getBytes(encoding)); }
-                catch (Exception e) { outputStream.write(bottomText.getBytes("UTF-8")); }
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                // Split bottom text to find PIN line (all caps, 6 chars)
+                String[] bottomLines = bottomText.split("\n");
+                for (String line : bottomLines) {
+                    String trimmed = line.trim();
+                    // Detect PIN line: 6 uppercase alphanumeric chars
+                    boolean isPinLine = trimmed.matches("[A-Z0-9]{6}");
+                    if (isPinLine) {
+                        // Double width + double height for PIN
+                        outputStream.write(new byte[]{0x1D, 0x21, 0x11});
+                        outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
+                    } else {
+                        outputStream.write(new byte[]{0x1D, 0x21, 0x00}); // normal
+                        outputStream.write(new byte[]{0x1B, 0x45, 0x00}); // bold off
+                    }
+                    try { outputStream.write((line + "\n").getBytes(encoding)); }
+                    catch (Exception e) { outputStream.write((line + "\n").getBytes("UTF-8")); }
+                }
+                // Reset to normal
+                outputStream.write(new byte[]{0x1D, 0x21, 0x00});
+                outputStream.write(new byte[]{0x1B, 0x45, 0x00});
             }
 
             // Feed + cut
