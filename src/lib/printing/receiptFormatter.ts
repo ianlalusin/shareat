@@ -107,7 +107,7 @@ export function formatPinText(opts: {
   width: 58 | 80;
   qrPosition?: "top" | "middle" | "bottom";
 }): PinTextParts {
-  const charsPerLine = opts.width === 58 ? 32 : 48;
+  const charsPerLine = opts.width === 58 ? 32 : 42;
   const qrPos = opts.qrPosition ?? 'middle';
 
   const center = (text: string) => {
@@ -117,15 +117,16 @@ export function formatPinText(opts: {
   const hr = () => '-'.repeat(charsPerLine);
 
   const headerLines: string[] = [
-    center('WELCOME'),
-    ...(opts.customerName ? [center(opts.customerName)] : []),
+    ...(opts.customerName ? [center('Welcome ' + opts.customerName + ',')] : [center('Welcome,')]),
     '',
     center('We are glad you are here to'),
-    center('SHARELEBRATE with us!'),
+    center('SHARELEBRATE'),
+    center('with us.'),
     '',
-    center('Scan the QR or go to'),
+    center('Scan the code below or go to'),
     center('customer.shareat.net'),
-    center('and enter your PIN:'),
+    center('then enter your PIN and enjoy'),
+    center('our new refilling system.'),
     '',
   ];
 

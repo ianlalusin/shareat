@@ -200,6 +200,9 @@ public class ThermalPrinterPlugin extends Plugin {
                 outputStream.write(0x0A);
             }
 
+            outputStream.flush();
+            Thread.sleep(100);
+
             // QR CODE
             byte[] qrBytes = qrData.getBytes("UTF-8");
             int storeLen = qrBytes.length + 3;
@@ -213,6 +216,8 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.write(qrBytes);
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
             outputStream.write(0x0A);
+            outputStream.flush();
+            Thread.sleep(300);
 
             // BOTTOM TEXT
             if (bottomText != null && !bottomText.isEmpty()) {
