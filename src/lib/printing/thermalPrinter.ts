@@ -12,6 +12,7 @@ export interface ThermalPrinterPlugin {
   connectBluetoothPrinter(options: { address: string }): Promise<void>;
   disconnectBluetoothPrinter(): Promise<void>;
   printQRCode(options: { data: string; size?: number }): Promise<void>;
+  printPinSlip(options: { top: string; bottom: string; qrData?: string; qrSize?: number; encoding?: string }): Promise<void>;
   printReceipt(options: { 
     text: string; 
     widthMm: 58 | 80; 

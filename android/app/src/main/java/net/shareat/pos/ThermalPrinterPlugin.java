@@ -200,6 +200,66 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
 
+
+    /**
+     * Prints a full PIN slip: top text + QR code + bottom text in one atomic write.
+     */
+    @PluginMethod
+    public void printPinSlip(PluginCall call) {
+        String topText    = call.getString("top", "");
+        String bottomText = call.getString("bottom", "");
+        String qrData     = call.getString("qrData", "https://customer.shareat.net");
+        int    qrSize     = call.getInt("qrSize", 4);
+        String encoding   = call.getString("encoding", "CP437");
+
+        if (outputStream == null) {
+            call.reject("Printer not connected.");
+            return;
+        }
+
+        try {
+            // Init
+            outputStream.write(new byte[]{0x1B, 0x40});
+
+            // --- TOP TEXT ---
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                try { outputStream.write(topText.getBytes(encoding)); }
+                catch (Exception e) { outputStream.write(topText.getBytes("UTF-8")); }
+                outputStream.write(0x0A);
+            }
+
+            // --- QR CODE ---
+            byte[] qrBytes = qrData.getBytes("UTF-8");
+            int storeLen = qrBytes.length + 3;
+            byte pL = (byte)(storeLen & 0xFF);
+            byte pH = (byte)((storeLen >> 8) & 0xFF);
+
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // error correction M
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
+            outputStream.write(qrBytes);
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print QR
+            outputStream.write(0x0A);
+
+            // --- BOTTOM TEXT ---
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                try { outputStream.write(bottomText.getBytes(encoding)); }
+                catch (Exception e) { outputStream.write(bottomText.getBytes("UTF-8")); }
+            }
+
+            // Feed + cut
+            outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+            outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
+
+            outputStream.flush();
+            call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "printPinSlip failed", e);
+            call.reject("printPinSlip failed: " + e.getMessage());
+        }
+    }
     /**
      * Prints a QR code using ESC/POS GS ( k commands.
      * Call this before printReceipt to prepend a QR code.
