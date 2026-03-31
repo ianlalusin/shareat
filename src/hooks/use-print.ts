@@ -166,7 +166,7 @@ export function usePinPrint({
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-        await ThermalPrinter.printPinSlip({ top, bottom, qrData: 'https://customer.shareat.net', qrSize: 4, encoding: 'CP437' });
+        await ThermalPrinter.printPinSlip({ top, bottom, qrData: 'https://customer.shareat.net', qrSize: 10, encoding: 'CP437' });
         await ThermalPrinter.disconnectBluetoothPrinter();
         toast({ title: 'PIN Printed', description: 'PIN slip sent to thermal printer.' });
       } else {
