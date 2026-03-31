@@ -191,7 +191,8 @@ public class ThermalPrinterPlugin extends Plugin {
         try {
             // Init + slow down print speed
             outputStream.write(new byte[]{0x1B, 0x40});
-            Thread.sleep(150);
+            outputStream.flush();
+            Thread.sleep(300);
 
             // TOP TEXT — normal size, centered
             if (topText != null && !topText.isEmpty()) {
@@ -202,7 +203,7 @@ public class ThermalPrinterPlugin extends Plugin {
                 outputStream.write(new byte[]{0x0A});
             }
             outputStream.flush();
-            Thread.sleep(200);
+            Thread.sleep(400);
 
             // QR CODE
             byte[] qrBytes = qrData.getBytes("UTF-8");
