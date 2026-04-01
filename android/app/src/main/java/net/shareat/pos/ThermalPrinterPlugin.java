@@ -50,6 +50,9 @@ public class ThermalPrinterPlugin extends Plugin {
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSocket bluetoothSocket;
     private OutputStream outputStream;
+    private String connectedAddress;
+    private static final int MAX_RETRIES = 2;
+    private static final int RETRY_DELAY_MS = 500;
 
     @Override
     public void load() {
@@ -133,6 +136,7 @@ public class ThermalPrinterPlugin extends Plugin {
             bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
             bluetoothSocket.connect();
             outputStream = bluetoothSocket.getOutputStream();
+            connectedAddress = address;
             call.resolve();
         } catch (Exception e) {
             Log.e(TAG, "Connection failed", e);
@@ -152,37 +156,54 @@ public class ThermalPrinterPlugin extends Plugin {
         String text = call.getString("text");
         String encoding = call.getString("encoding", "CP437");
         Boolean skipInit = call.getBoolean("skipInit", false);
+        Boolean cut = call.getBoolean("cut", false);
+        Boolean beep = call.getBoolean("beep", false);
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
             return;
         }
-        try {
-            if (!skipInit) {
-                outputStream.write(new byte[]{0x1B, 0x40});
-            }
-            outputStream.write(new byte[]{0x1D, 0x21, 0x00});
-            outputStream.write(new byte[]{0x1B, 0x61, 0x00});
+
+        Exception lastError = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                outputStream.write(text.getBytes(encoding));
+                if (!skipInit) {
+                    outputStream.write(new byte[]{0x1B, 0x40});
+                }
+                outputStream.write(new byte[]{0x1D, 0x21, 0x00});
+                outputStream.write(new byte[]{0x1B, 0x61, 0x00});
+                try {
+                    outputStream.write(text.getBytes(encoding));
+                } catch (Exception e) {
+                    outputStream.write(text.getBytes(Charset.forName("UTF-8")));
+                }
+                outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+                if (cut) {
+                    outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
+                }
+                if (beep) {
+                    outputStream.write(new byte[]{0x1B, 0x42, 0x02, 0x02});
+                }
+                outputStream.flush();
+                call.resolve();
+                return;
+            } catch (IOException e) {
+                lastError = e;
+                Log.w(TAG, "printReceipt attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                        reconnect();
+                    } catch (Exception re) {
+                        Log.e(TAG, "Reconnect failed", re);
+                    }
+                }
             } catch (Exception e) {
-                outputStream.write(text.getBytes(Charset.forName("UTF-8")));
+                call.reject("Print failed: " + e.getMessage());
+                return;
             }
-            outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
-            Boolean cut = call.getBoolean("cut", false);
-            if (cut) {
-                outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
-            }
-            Boolean beep = call.getBoolean("beep", false);
-            if (beep) {
-                outputStream.write(new byte[]{0x1B, 0x42, 0x02, 0x02});
-            }
-            outputStream.flush();
-            call.resolve();
-        } catch (Exception e) {
-            Log.e(TAG, "Print failed", e);
-            call.reject("Print failed: " + e.getMessage());
         }
+        call.reject("Print failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
     }
 
     @PluginMethod
@@ -197,8 +218,11 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("Printer not connected.");
             return;
         }
-        try {
-            // Init + slow down print speed
+
+        Exception lastError = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                // Init + slow down print speed
             outputStream.write(new byte[]{0x1B, 0x40});
             outputStream.flush();
             Thread.sleep(300);
@@ -260,10 +284,24 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
             outputStream.flush();
             call.resolve();
-        } catch (Exception e) {
-            Log.e(TAG, "printPinSlip failed", e);
-            call.reject("printPinSlip failed: " + e.getMessage());
+                return;
+            } catch (IOException e) {
+                lastError = e;
+                Log.w(TAG, "printPinSlip attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                        reconnect();
+                    } catch (Exception re) {
+                        Log.e(TAG, "Reconnect failed", re);
+                    }
+                }
+            } catch (Exception e) {
+                call.reject("printPinSlip failed: " + e.getMessage());
+                return;
+            }
         }
+        call.reject("printPinSlip failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
     }
 
     @PluginMethod
@@ -279,7 +317,10 @@ public class ThermalPrinterPlugin extends Plugin {
             call.reject("QR data is required.");
             return;
         }
-        try {
+
+        Exception lastError = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
             byte[] dataBytes = data.getBytes("UTF-8");
             int dataLen = dataBytes.length;
             outputStream.write(new byte[]{0x1B, 0x61, 0x01});
@@ -296,10 +337,41 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.write(new byte[]{0x0A});
             outputStream.flush();
             call.resolve();
-        } catch (Exception e) {
-            Log.e(TAG, "QR print failed", e);
-            call.reject("QR print failed: " + e.getMessage());
+                return;
+            } catch (IOException e) {
+                lastError = e;
+                Log.w(TAG, "printQRCode attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                        reconnect();
+                    } catch (Exception re) {
+                        Log.e(TAG, "Reconnect failed", re);
+                    }
+                }
+            } catch (Exception e) {
+                call.reject("QR print failed: " + e.getMessage());
+                return;
+            }
         }
+        call.reject("QR print failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    
+    private synchronized void reconnect() throws Exception {
+        if (connectedAddress == null) {
+            throw new IOException("No previous connection address");
+        }
+        disconnect();
+        if (bluetoothAdapter.isDiscovering()) {
+            bluetoothAdapter.cancelDiscovery();
+        }
+        BluetoothDevice device = bluetoothAdapter.getRemoteDevice(connectedAddress);
+        bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+        bluetoothSocket.connect();
+        outputStream = bluetoothSocket.getOutputStream();
+        Thread.sleep(100); // Let printer settle
+        Log.d(TAG, "Reconnected to " + connectedAddress);
     }
 
     private void disconnect() {
@@ -312,6 +384,7 @@ public class ThermalPrinterPlugin extends Plugin {
                 bluetoothSocket.close();
                 bluetoothSocket = null;
             }
+            connectedAddress = null;
         } catch (IOException e) {
             Log.e(TAG, "Disconnect error", e);
         }
