@@ -23,17 +23,8 @@ import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
 import type { KitchenTicket } from "@/lib/types";
 
-function formatDuration(ms: number): string {
-  if (isNaN(ms) || ms <= 0) return "-";
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
+import { formatDurationHuman } from "@/lib/utils/date";
+function formatDuration(ms: number) { return formatDurationHuman(ms, "-"); }
 
 function HistoryPageContent() {
   const { appUser } = useAuthContext();

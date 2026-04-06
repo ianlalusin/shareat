@@ -46,7 +46,7 @@ export function addToQueue(item: Omit<QueuedPayment, "id" | "queuedAtMs" | "stat
           console.warn("[Queue] Background sync registration failed:", err);
         });
       }
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[Queue] SW ready failed:", err); });
   }
 
   return newItem;

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRouter } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useState, useEffect } from "react";
-import { Clock, Ban } from "lucide-react";
+import { Clock, Ban, Scissors, Gift, Tag, Users, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { toJsDate } from "@/lib/utils/date";
@@ -29,7 +29,9 @@ export type ActiveSession = {
     guestCountCashierInitial?: number;
     guestCountServerVerified?: number | null;
     guestCountFinal?: number | null;
-    isPaid?: boolean; // Added for validation
+    isPaid?: boolean;
+    guestCountChange?: { status?: string } | null;
+    packageChange?: { status?: string } | null;
 };
 
 const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
@@ -75,7 +77,9 @@ const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: 
     );
 };
 
-export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSession[], storeId: string }) {
+type AdjustmentFlags = Record<string, { hasVoids: boolean; hasFree: boolean; hasDiscounts: boolean }>;
+
+export function ActiveSessionsGrid({ sessions, storeId, adjustmentFlags = {} }: { sessions: ActiveSession[]; storeId: string; adjustmentFlags?: AdjustmentFlags }) {
     const router = useRouter();
     const { appUser } = useAuthContext();
     const [voidingSession, setVoidingSession] = useState<ActiveSession | null>(null);
@@ -147,7 +151,34 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                                     {!isAlaCarte ? (
                                         <p className="text-sm font-medium">{guests} Guests</p>
                                     ): <div></div>}
-                                    {isPending && <Badge variant="outline" className="border-red-500 text-red-500">Pending</Badge>}
+                                    <div className="flex items-center gap-1">
+                                      {adjustmentFlags[session.id]?.hasVoids && (
+                                        <Badge variant="outline" className="border-red-400 bg-red-50 text-red-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                          <Scissors className="h-3 w-3" /> Void
+                                        </Badge>
+                                      )}
+                                      {adjustmentFlags[session.id]?.hasDiscounts && (
+                                        <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                          <Tag className="h-3 w-3" /> Disc
+                                        </Badge>
+                                      )}
+                                      {adjustmentFlags[session.id]?.hasFree && (
+                                        <Badge variant="outline" className="border-green-400 bg-green-50 text-green-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                          <Gift className="h-3 w-3" /> Free
+                                        </Badge>
+                                      )}
+                                      {session.guestCountChange?.status === 'approved' && (
+                                        <Badge variant="outline" className="border-blue-400 bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                          <Users className="h-3 w-3" /> Guest
+                                        </Badge>
+                                      )}
+                                      {session.packageChange?.status === 'approved' && (
+                                        <Badge variant="outline" className="border-violet-400 bg-violet-50 text-violet-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                          <Package className="h-3 w-3" /> Pkg
+                                        </Badge>
+                                      )}
+                                      {isPending && <Badge variant="outline" className="border-red-500 text-red-500">Pending</Badge>}
+                                    </div>
                                 </CardContent>
                             </Card>
                             {canVoid && (

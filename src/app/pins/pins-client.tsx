@@ -307,14 +307,6 @@ export default function PinsClient() {
     });
   }, [sessions, now]);
 
-  console.log("[pins-page-debug]", {
-    storeId,
-    sessionsCount: sessions.length,
-    viewCount: view.length,
-    sessions,
-    view,
-  });
-
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       {Dialog}

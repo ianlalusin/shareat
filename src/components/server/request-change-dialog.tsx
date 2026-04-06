@@ -22,6 +22,7 @@ import { doc, updateDoc, serverTimestamp, getDoc, writeBatch } from "firebase/fi
 import { useAuthContext } from "@/context/auth-context";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { writeActivityLog } from "@/components/cashier/activity-log";
 import { QuantityInput } from "../cashier/quantity-input";
 import type { PendingSession, StorePackage, MenuSchedule } from "@/lib/types";
 
@@ -142,6 +143,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
+      writeActivityLog({ action: "GUEST_COUNT_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { beforeQty: session.guestCountFinal ?? undefined, newQty: data.requestedCount, reason: data.reason }, note: `Guest count change requested: ${session.guestCountFinal} → ${data.requestedCount}` });
       toast({ title: "Request Sent", description: "Guest count change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
@@ -186,6 +188,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
+      writeActivityLog({ action: "PACKAGE_CHANGE_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedPackage.packageName }, note: `Package change requested: ${session.packageSnapshot?.name} → ${selectedPackage.packageName}` });
       toast({ title: "Request Sent", description: "Package change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {

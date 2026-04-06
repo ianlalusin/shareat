@@ -34,10 +34,7 @@ import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
 
 
-function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-}
+import { isSameDay, fmtDate } from "@/lib/utils/date";
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
     if (!active || !range) return "Custom";
     return isSameDay(range.start, range.end)

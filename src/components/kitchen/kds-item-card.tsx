@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle, XCircle, Info, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Info, Send, ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,17 +12,8 @@ import { useConfirmDialog } from "../global/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import type { KitchenTicket } from "@/lib/types";
-import { toJsDate } from "@/lib/utils/date";
+import { toJsDate, formatDuration } from "@/lib/utils/date";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
-
-function formatDuration(ms: number): string {
-    if (isNaN(ms) || ms < 0) return "00:00:00";
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return [hours, minutes, seconds].map(n => n.toString().padStart(2, '0')).join(':');
-}
 
 function getStartMs(input: any): number | null {
   if (!input) return null;
@@ -266,21 +257,46 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                     <DialogHeader>
                         <DialogTitle>Serve: {ticket.itemName}</DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-3 py-2">
-                        <p className="text-sm text-muted-foreground">{qtyRemaining} remaining · {qtyServed} already served</p>
-                        <div className="space-y-1">
-                            <Label htmlFor="serve-qty">Qty to serve now</Label>
-                            <Input
-                                id="serve-qty"
-                                type="number"
-                                min={1}
-                                max={qtyRemaining}
-                                value={serveQtyInput}
-                                onChange={e => setServeQtyInput(e.target.value)}
-                                className="text-xl text-center font-bold"
-                                autoFocus
-                            />
-                            <p className="text-xs text-muted-foreground text-center">Max: {qtyRemaining}</p>
+                    <div className="space-y-4 py-2">
+                        <p className="text-sm text-muted-foreground text-center">{qtyRemaining} remaining · {qtyServed} already served</p>
+                        <div className="space-y-2">
+                            <Label htmlFor="serve-qty" className="text-center block">Qty to serve now</Label>
+                            <div className="flex items-center justify-center gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-12 w-12 rounded-full shrink-0"
+                                    disabled={parseInt(serveQtyInput, 10) <= 1 || isNaN(parseInt(serveQtyInput, 10))}
+                                    onClick={() => {
+                                        const cur = parseInt(serveQtyInput, 10);
+                                        if (!isNaN(cur) && cur > 1) setServeQtyInput(String(cur - 1));
+                                    }}
+                                >
+                                    <Minus className="h-5 w-5" />
+                                </Button>
+                                <span className="text-4xl font-bold tabular-nums w-16 text-center select-none">{serveQtyInput || "0"}</span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-12 w-12 rounded-full shrink-0"
+                                    disabled={parseInt(serveQtyInput, 10) >= qtyRemaining}
+                                    onClick={() => {
+                                        const cur = parseInt(serveQtyInput, 10);
+                                        if (!isNaN(cur) && cur < qtyRemaining) setServeQtyInput(String(cur + 1));
+                                    }}
+                                >
+                                    <Plus className="h-5 w-5" />
+                                </Button>
+                            </div>
+                            {qtyRemaining > 1 && (
+                                <div className="flex justify-center gap-2 pt-1">
+                                    <Button variant="ghost" size="sm" className="text-xs h-7 px-3" onClick={() => setServeQtyInput("1")}>1</Button>
+                                    {qtyRemaining >= 3 && <Button variant="ghost" size="sm" className="text-xs h-7 px-3" onClick={() => setServeQtyInput(String(Math.ceil(qtyRemaining / 2)))}>Half</Button>}
+                                    <Button variant="ghost" size="sm" className="text-xs h-7 px-3" onClick={() => setServeQtyInput(String(qtyRemaining))}>All ({qtyRemaining})</Button>
+                                </div>
+                            )}
                         </div>
                     </div>
                     <DialogFooter className="gap-2">

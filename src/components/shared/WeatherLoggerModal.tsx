@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Sun, Cloudy, CloudRain, CloudLightning, Moon } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { db } from "@/lib/firebase/client";
@@ -16,23 +15,29 @@ interface WeatherLoggerModalProps {
     storeId: string;
 }
 
-const baseWeatherOptions: { label: string; value: WeatherCondition; icon: React.ElementType }[] = [
-    { label: "Sunny", value: "sunny", icon: Sun },
-    { label: "Cloudy", value: "cloudy", icon: Cloudy },
-    { label: "Light Rain", value: "light_rain", icon: CloudRain },
-    { label: "Heavy Rain", value: "heavy_rain", icon: CloudLightning },
+const baseWeatherOptions: { label: string; value: WeatherCondition; icon: React.ElementType; gradient: string; iconColor: string }[] = [
+    { label: "Sunny", value: "sunny", icon: Sun, gradient: "from-amber-400 to-orange-500", iconColor: "text-white" },
+    { label: "Cloudy", value: "cloudy", icon: Cloudy, gradient: "from-slate-300 to-slate-500", iconColor: "text-white" },
+    { label: "Light Rain", value: "light_rain", icon: CloudRain, gradient: "from-sky-400 to-blue-600", iconColor: "text-white" },
+    { label: "Heavy Rain", value: "heavy_rain", icon: CloudLightning, gradient: "from-indigo-500 to-purple-700", iconColor: "text-white" },
 ];
+
+const nightSunnyOverride = { label: "Clear", icon: Moon, gradient: "from-indigo-900 to-slate-800", iconColor: "text-amber-300" };
+
+function isNightTime(): boolean {
+    const hour = new Date().getHours();
+    return hour >= 18 || hour < 6;
+}
 
 export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerModalProps) {
     const { appUser } = useAuthContext();
 
     const weatherOptions = useMemo(() => {
-        const currentHour = new Date().getHours();
-        const isNight = currentHour >= 18 || currentHour < 6; // After 6 PM or before 6 AM
-
-        if (isNight) {
-            return baseWeatherOptions.map(option => 
-                option.value === 'sunny' ? { ...option, label: 'Clear', icon: Moon } : option
+        if (isNightTime()) {
+            return baseWeatherOptions.map(option =>
+                option.value === 'sunny'
+                    ? { ...option, ...nightSunnyOverride }
+                    : option
             );
         }
         return baseWeatherOptions;
@@ -40,25 +45,20 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
 
     const handleLogWeather = async (condition: WeatherCondition) => {
         if (!appUser || !storeId) {
-            console.warn("Weather log skipped: User or Store ID is missing.");
-            onClose(); // Still close the modal
+            onClose();
             return;
         }
 
-        // Immediately close the modal for a non-intrusive experience.
         onClose();
 
-        // Perform the data logging in the background.
         try {
             const now = new Date();
             const dayId = getDayIdFromTimestamp(now);
-            
+
             const activeSessionsRef = collection(db, 'stores', storeId, 'activeSessions');
             const snapshot = await getCountFromServer(activeSessionsRef);
             const activeSessionCount = snapshot.data().count;
-            
-            // Placeholder for guest count, as it's a more complex aggregation.
-            const activeGuestCount = 0; 
+            const activeGuestCount = 0;
 
             const newEntry: WeatherEntry = {
                 timestamp: Timestamp.fromDate(now),
@@ -69,40 +69,35 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
             };
 
             const recordRef = doc(db, 'stores', storeId, 'weatherRecords', dayId);
-
-            // Use setDoc with merge to create the doc if it doesn't exist,
-            // and arrayUnion to add the new entry.
             await setDoc(recordRef, {
                 dayId,
                 entries: arrayUnion(newEntry)
             }, { merge: true });
 
         } catch (error) {
-            // Log error to console without bothering the user.
-            console.error("Failed to log weather in the background:", error);
+            console.error("Failed to log weather:", error);
         }
     };
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent>
+            <DialogContent className="sm:max-w-sm">
                 <DialogHeader>
                     <DialogTitle>Quick Weather Update</DialogTitle>
                     <DialogDescription>
-                        How's the weather right now? Your input helps improve sales forecasting.
+                        How's the weather right now? This helps improve sales forecasting.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="grid grid-cols-2 gap-4 py-4">
-                    {weatherOptions.map(({ label, value, icon: Icon }) => (
-                        <Button
+                <div className="grid grid-cols-2 gap-3 py-3">
+                    {weatherOptions.map(({ label, value, icon: Icon, gradient, iconColor }) => (
+                        <button
                             key={value}
-                            variant="outline"
-                            className="h-20 flex flex-col gap-2"
+                            className={`relative h-24 rounded-xl bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-2 shadow-md hover:shadow-lg hover:scale-[1.03] active:scale-[0.97] transition-all duration-150 cursor-pointer border-0 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary`}
                             onClick={() => handleLogWeather(value)}
                         >
-                            <Icon className="w-8 h-8" />
-                            <span>{label}</span>
-                        </Button>
+                            <Icon className={`h-9 w-9 ${iconColor} drop-shadow-sm`} strokeWidth={1.8} />
+                            <span className="text-sm font-semibold text-white drop-shadow-sm">{label}</span>
+                        </button>
                     ))}
                 </div>
             </DialogContent>

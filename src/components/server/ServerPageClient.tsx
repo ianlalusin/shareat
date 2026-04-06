@@ -16,6 +16,7 @@ import { RequestChangeDialog } from "@/components/server/request-change-dialog";
 import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
+import { writeActivityLog } from "@/components/cashier/activity-log";
 import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
@@ -168,6 +169,7 @@ export function ServerPageClient() {
 
     try {
       await batch.commit();
+      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount: serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount }, note: `Verified with ${serverCount} guests (final: ${finalCount})`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber } });
       toast({ title: 'Session Verified' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Verification Failed', description: e.message });

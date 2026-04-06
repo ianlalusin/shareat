@@ -20,6 +20,7 @@ import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } f
 import { Separator } from "../ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { createKitchenTickets, getActorStamp } from "../cashier/firestore";
+import { writeActivityLog } from "../cashier/activity-log";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -304,6 +305,8 @@ function POSContent({
 
         });
         
+        const refillNames = [...cart.entries()].map(([id, qty]) => `${id} x${qty}`).join(", ");
+        writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) } });
         toast({ title: `Sent ${cart.size + (hasOther ? 1 : 0)} refill(s) to the kitchen.` });
         handleReset();
 

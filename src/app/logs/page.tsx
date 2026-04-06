@@ -21,25 +21,7 @@ import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
-import { toJsDate } from "@/lib/utils/date";
-
-// Helper functions for date manipulation
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-function fmtDate(d: Date) {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-}
+import { toJsDate, startOfDay, endOfDay, isSameDay, fmtDate } from "@/lib/utils/date";
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
     if (!active || !range) return "Custom";
     return isSameDay(range.start, range.end)

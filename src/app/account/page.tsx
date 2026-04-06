@@ -108,8 +108,7 @@ export default function AccountPage() {
         
             toast({ title: "Google Account Linked", description: "You can now sign in with Google." });
         } catch (error: any) {
-            // keep console.error for dev, but no Next overlay spam
-            console.log("Link Google error:", error);
+            console.warn("[Account] Link Google error:", error?.code);
 
             let description = "Could not link Google account.";
             const code = error?.code ?? "";

@@ -84,19 +84,9 @@ function getStartMs(input: any): number | null {
   return null;
 }
 
-function formatDuration(ms: number): string {
-    if (isNaN(ms) || ms < 0) return "00:00:00";
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    const paddedHours = hours.toString().padStart(2, '0');
-    const paddedMinutes = minutes.toString().padStart(2, '0');
-    const paddedSeconds = seconds.toString().padStart(2, '0');
-
-    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
-}
+import { formatDuration } from "@/lib/utils/date";
+import { KdsFlashOverlay } from "@/components/kitchen/kds-flash-overlay";
+import { writeActivityLog } from "@/components/cashier/activity-log";
 
 function requestNotifyPermission() {
   try {
@@ -137,6 +127,11 @@ export default function KitchenPage() {
   const [isLoading, setIsLoading] = useState(true);
   const prevTicketIdsRef = useRef(new Set());
   const didInitTicketsRef = useRef(false);
+
+  const [flash, setFlash] = useState<{ type: "served" | "cancelled"; message: string; subtitle?: string } | null>(null);
+  const showFlash = useCallback((type: "served" | "cancelled", message: string, subtitle?: string) => {
+    setFlash({ type, message, subtitle });
+  }, []);
 
   useEffect(() => {
     requestNotifyPermission();
@@ -464,7 +459,11 @@ export default function KitchenPage() {
           await batch.commit();
         }
         const ticket = ticketsWithData.find(t => t.id === ticketId);
-        toast({ title: `Ticket ${newStatus}`, description: `${ticket?.itemName || 'Item'} for ${ticket?.sessionLabel || 'N/A'} is ${newStatus}.` });
+        const flashType = newStatus === "cancelled" ? "cancelled" : "served";
+        showFlash(flashType, `${ticket?.itemName || 'Item'} ${newStatus}`, `${ticket?.sessionLabel || ''}`);
+        if (ticket) {
+          writeActivityLog({ action: newStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason: reason || undefined }, note: `${ticket.itemName} ${newStatus}${reason ? `: ${reason}` : ""}` });
+        }
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
@@ -529,7 +528,11 @@ export default function KitchenPage() {
           }
         }
       });
-      toast({ title: 'Batch served', description: `${qtyToServe} pcs marked as served.` });
+      const ticket = ticketsWithData.find(t => t.id === ticketId);
+      showFlash("served", `${qtyToServe} pcs served`);
+      if (ticket) {
+        writeActivityLog({ action: "TICKET_BATCH_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, qty: qtyToServe }, note: `${qtyToServe}x ${ticket.itemName} served` });
+      }
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Serve Failed', description: error.message });
     }
@@ -576,7 +579,11 @@ export default function KitchenPage() {
           transaction.set(closedRef, { ...old, ...updatePayload, closedAtClientMs: nowMs });
         }
       });
-      toast({ title: 'Remaining cancelled', description: 'Remaining qty cancelled. Already-served qty preserved.' });
+      const ticket = ticketsWithData.find(t => t.id === ticketId);
+      showFlash("cancelled", "Remaining cancelled", "Already-served qty preserved");
+      if (ticket) {
+        writeActivityLog({ action: "TICKET_REMAINING_CANCELLED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason }, note: `Remaining ${ticket.itemName} cancelled: ${reason}` });
+      }
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Cancel Failed', description: error.message });
     }
@@ -658,6 +665,12 @@ export default function KitchenPage() {
       {timelineSessionId && activeStore && (
         <SessionTimelineDrawer open={!!timelineSessionId} onOpenChange={(isOpen) => !isOpen && setTimelineSessionId(null)} storeId={activeStore.id} sessionId={timelineSessionId} />
        )}
+      <KdsFlashOverlay
+        type={flash?.type ?? null}
+        message={flash?.message ?? ""}
+        subtitle={flash?.subtitle}
+        onDone={() => setFlash(null)}
+      />
     </RoleGuard>
   );
 }

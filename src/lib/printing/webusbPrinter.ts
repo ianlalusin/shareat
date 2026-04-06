@@ -86,8 +86,8 @@ export async function webusbPrint(options: {
     await device.transferOut(epNum, chunk);
   }
 
-  try { await device.releaseInterface(ifaceNum); } catch {}
-  try { await device.close(); } catch {}
+  try { await device.releaseInterface(ifaceNum); } catch (e) { console.warn("[USB] releaseInterface:", e); }
+  try { await device.close(); } catch (e) { console.warn("[USB] close:", e); }
 
   return { vendorId: device.vendorId, productId: device.productId, interfaceNumber: ifaceNum, endpointNumber: epNum };
 }

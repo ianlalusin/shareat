@@ -14,10 +14,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
             if (!Capacitor.isNativePlatform() && !isWorkstation) {
                 navigator.serviceWorker.register('/sw.js').then(
                     (registration) => {
-                        console.log('Service Worker registration successful with scope: ', registration.scope);
+                        console.debug('[SW] Registration successful:', registration.scope);
                     },
                     (err) => {
-                        console.log('Service Worker registration failed: ', err);
+                        console.warn('[SW] Registration failed:', err);
                     }
                 );
             }

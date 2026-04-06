@@ -6,11 +6,9 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
-import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, getDoc, where, serverTimestamp, runTransaction } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { completePaymentFromUnits, updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
-import { useOnlineStatus } from "@/hooks/use-online-status";
-import { addToQueue } from "@/lib/offline/payment-queue";
+import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -18,11 +16,11 @@ import { SessionHeader } from "@/components/cashier/session-header";
 import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
 import { BillAdjustments } from "@/components/cashier/bill-adjustments";
-import { PaymentSection } from "@/components/cashier/payment-section";
+import { PaymentModal } from "@/components/cashier/payment-modal";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { ModeOfPayment, PendingSession, Payment, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import type { ModeOfPayment, PendingSession, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
@@ -34,29 +32,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-
-// Validation logic using cents
-function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
-    if (!payments || payments.length === 0) return "Add at least one payment method.";
-    for (const p of payments) {
-        if (!p.methodId) return "Select a payment method.";
-        const amountCents = Math.round(Number(p.amount || 0) * 100);
-        if (amountCents <= 0) return "Payment amounts must be greater than zero.";
-        
-        const methodDetails = paymentMethods.find(pm => pm.id === p.methodId);
-        if (methodDetails?.hasRef && (!p.reference || String(p.reference).trim().length === 0)) {
-            return `Reference is required for ${methodDetails.name}.`;
-        }
-    }
-    const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
-    
-    // Use a small tolerance for floating point comparisons
-    if (totalPaidCents < grandTotalCents - 1) { // Allow for a 1 cent rounding diff
-        return `Payment is not enough to cover the total. Balance: ₱${((grandTotalCents - totalPaidCents) / 100).toFixed(2)}`;
-    }
-    
-    return null;
-}
 
 
 export function SessionDetailView({ sessionId }: { sessionId: string }) {
@@ -74,13 +49,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  
+
   const [isLoadingSession, setIsLoadingSession] = useState(true);
-  const [isCompletingPayment, setIsCompletingPayment] = useState(false);
-  const isOnline = useOnlineStatus();
 
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
 
@@ -151,18 +124,28 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (approvedAt) {
       // A new approval has occurred. Check if we've already synced for this approval.
       if (packageLine.qtyLastSyncedApprovedAt !== approvedAt.toString()) {
-        console.log(`New approval detected. Re-syncing package qty to ${session.guestCountFinal}.`);
+        console.debug(`[GuestSync] Re-syncing package qty to ${session.guestCountFinal}.`);
+        const beforeQty = packageLine.qtyOrdered;
+        const afterQty = session.guestCountFinal || packageLine.qtyOrdered;
         updateSessionBillLine(storeId, sessionId, packageLine.id, {
-          qtyOrdered: session.guestCountFinal || packageLine.qtyOrdered,
-          qtyOverrideActive: false, // Reset the override
+          qtyOrdered: afterQty,
+          qtyOverrideActive: false,
           qtyLastSyncedApprovedAt: approvedAt.toString(),
-        }, appUser).catch(err => console.error("Failed to re-sync package qty after approval:", err));
+        }, appUser).then(() => {
+          writeActivityLog({
+            action: "PACKAGE_QTY_RESYNC_APPROVED_CHANGE",
+            meta: { itemName: packageLine.itemName, beforeQty, afterQty },
+            note: `Package qty auto-synced from ${beforeQty} to ${afterQty} (guest count approved)`,
+            storeId, sessionId, user: appUser,
+            sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber },
+          });
+        }).catch(err => console.error("Failed to re-sync package qty after approval:", err));
       }
     } else {
       // No current approval. If no override is active, ensure qty matches final count.
       // This handles initial load and any other state corrections.
       if (!packageLine.qtyOverrideActive && session.guestCountFinal !== null && packageLine.qtyOrdered !== session.guestCountFinal) {
-        console.log(`No override active. Aligning package quantity to ${session.guestCountFinal}.`);
+        console.debug(`[GuestSync] Aligning package qty to ${session.guestCountFinal}.`);
         updateSessionBillLine(storeId, sessionId, packageLine.id, {
           qtyOrdered: session.guestCountFinal
         }, appUser).catch(err => console.error("Failed to align package quantity:", err));
@@ -180,16 +163,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }, [billLines, activeStore, billDiscount, customAdjustments]);
   
   const { grandTotal } = billTotals;
-  
-  const totalPaid = useMemo(() => payments.reduce((sum, p) => sum + p.amount, 0), [payments]);
-  const grandTotalCents = Math.round(grandTotal * 100);
-  const totalPaidCents = Math.round(totalPaid * 100);
-  const remainingCents = grandTotalCents - totalPaidCents;
-  
-  const remainingBalance = remainingCents / 100;
-  const change = Math.max(0, -remainingCents) / 100;
-  
-  const canCompletePayment = grandTotalCents > 0 && remainingCents <= 1; // Allow for a 1 cent rounding diff
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
@@ -222,8 +195,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         kitchenLocationName: line.kitchenLocationName,
                     }, diffQty, actor, { tx });
                 } else {
-                    // Cannot toast inside a transaction, but we can log a warning
-                    console.warn(`Kitchen location not set for addon ${line.itemName}. Ticket not created.`);
+                    console.warn(`[Kitchen] No location set for addon "${line.itemName}" — kitchen ticket was NOT created.`);
                 }
             }
         });
@@ -381,104 +353,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   }
 
   const handleRemoveLineAdjustment = async (lineId: string, adjId: string) => {
-    if (!activeStore?.id || !sessionId || !appUser) return;
+    if (!activeStore?.id || !sessionId || !appUser || !session) return;
+    const line = billLines.find(l => l.id === lineId);
+    const adj = line ? Object.values((line as any).lineAdjustments ?? {}).find((a: any) => a.id === adjId) as any : null;
     await removeLineAdjustment(activeStore.id, sessionId, lineId, adjId, appUser);
-  };
-
-
-  const handleCompletePayment = async () => {
-    if (isCompletingPayment || isBillingLocked) return;
-
-    const paymentError = validatePayments(payments, grandTotalCents, paymentMethods);
-    if (paymentError) {
-        toast({ variant: "destructive", title: "Cannot Complete", description: paymentError });
-        return;
-    }
-    if (!canCompletePayment) {
-      toast({ variant: "destructive", title: "Cannot Complete", description: "Please ensure balance is paid." });
-      return;
-    }
-    setIsCompletingPayment(true);
-
-    // --- OFFLINE PATH ---
-    if (!isOnline) {
-      try {
-        if (!appUser || !activeStore || !session) return;
-        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
-        addToQueue({
-          storeId: activeStore.id,
-          sessionId,
-          payload: {
-            payments: normalizedPayments,
-            billLines,
-            billDiscount,
-            customAdjustments,
-            totalAmount: grandTotal,
-          },
-        });
-        toast({
-          title: "Payment queued",
-          description: "You are offline. Payment will sync automatically when reconnected.",
-        });
-        router.push('/cashier');
-      } catch (err: any) {
-        toast({ variant: "destructive", title: "Queue failed", description: err?.message ?? "Could not queue payment." });
-      } finally {
-        setIsCompletingPayment(false);
-      }
-      return;
-    }
-
-    // --- ONLINE PATH ---
-    try {
-        if (!appUser || !activeStore || !session) return;
-        const normalizedPayments = payments.map(p => ({...p, amount: Math.round(Number(p.amount || 0) * 100) / 100}));
-        const activeProjectionSnap = await getDoc(doc(db, "stores", activeStore.id, "activeSessions", sessionId));
-        const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
-        
-        const receiptId = await completePaymentFromUnits(
-            activeStore.id,
-            sessionId,
-            appUser,
-            normalizedPayments,
-            billLines,
-            activeStore,
-            paymentMethods,
-            billDiscount,
-            customAdjustments
-        );
-        
-        if (user && currentPin) {
-            const token = await user.getIdToken();
-            const finalizeRes = await fetch("/api/pins/finalize", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    storeId: activeStore.id,
-                    sessionId,
-                    pin: currentPin,
-                    reason: "payment_closed",
-                }),
-            });
-            if (!finalizeRes.ok) {
-                const finalizeData = await finalizeRes.json().catch(() => ({}));
-                console.warn("[PIN] Finalization failed after payment (non-fatal):", finalizeData?.error);
-            }
-        }
-
-        const settingsSnap = await getDoc(doc(db, "stores", activeStore.id, "receiptSettings", "main"));
-        const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
-        toast({ title: "Payment complete", description: "Session closed successfully." });
-        router.push(`/receipt/${receiptId}${autoPrint ? "?autoprint=1" : ""}`);
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Payment failed", description: err?.message ?? "Something went wrong." });
-      setIsCompletingPayment(false);
+    if (adj) {
+      writeActivityLog({
+        action: "DISCOUNT_REMOVED",
+        note: `Removed ${adj.kind ?? "adjustment"}: ${adj.name || adj.type || ""}`,
+        meta: { itemName: line?.itemName, discountName: adj.name || adj.type, discountType: adj.type, discountValue: adj.value },
+        storeId: activeStore.id, sessionId, user: appUser,
+        sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber },
+      });
     }
   };
-  
+
+
   const isLoading = isLoadingSession || isConfigLoading;
 
   const BillSummaryContent = (
@@ -490,7 +380,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           store={activeStore!}
           billDiscount={billDiscount}
           customAdjustments={customAdjustments}
-          totalPaid={totalPaid}
+          totalPaid={0}
           isLocked={isBillingLocked}
           onRemoveLineAdjustment={handleRemoveLineAdjustment}
         />
@@ -499,10 +389,27 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         appUser={appUser}
         charges={charges}
         discounts={billableDiscounts}
-        onAddAdjustment={(charge: Charge) => setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}])}
-        onAddCustomAdjustment={(note, amount) => setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}])}
-        onRemoveAdjustment={(id) => setCustomAdjustments(prev => prev.filter(adj => adj.id !== id))}
-        onSetBillDiscount={setBillDiscount}
+        onAddAdjustment={(charge: Charge) => {
+          setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}]);
+          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Charge added: ${charge.name} ₱${charge.value}`, meta: { itemName: charge.name, amount: charge.value } });
+        }}
+        onAddCustomAdjustment={(note, amount) => {
+          setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}]);
+          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Custom charge: ${note} ₱${amount}`, meta: { itemName: note, amount } });
+        }}
+        onRemoveAdjustment={(id) => {
+          const adj = customAdjustments.find(a => a.id === id);
+          setCustomAdjustments(prev => prev.filter(a => a.id !== id));
+          if (storeId && sessionId && appUser && adj) writeActivityLog({ action: "CUSTOM_CHARGE_REMOVED", storeId, sessionId, user: appUser, note: `Charge removed: ${adj.note} ₱${adj.amount}`, meta: { itemName: adj.note, amount: adj.amount } });
+        }}
+        onSetBillDiscount={(d) => {
+          const wasDiscount = !!billDiscount;
+          setBillDiscount(d);
+          if (storeId && sessionId && appUser) {
+            if (d) writeActivityLog({ action: "BILL_DISCOUNT_APPLIED", storeId, sessionId, user: appUser, note: `Bill discount: ${d.name} (${d.type === 'percent' ? d.value + '%' : '₱' + d.value})`, meta: { discountName: d.name, discountType: d.type, discountValue: d.value } });
+            else if (wasDiscount) writeActivityLog({ action: "BILL_DISCOUNT_REMOVED", storeId, sessionId, user: appUser, note: "Bill discount removed" });
+          }
+        }}
         billDiscount={billDiscount}
         adjustments={customAdjustments || []}
         isLocked={isBillingLocked}
@@ -585,10 +492,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         });
                     }}
                 />
-                <PaymentSection paymentMethods={paymentMethods} payments={payments} setPayments={setPayments} totalPaid={totalPaid} remainingBalance={remainingBalance} change={change} isLocked={isBillingLocked} />
-                 <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
-                    <Button type="button" className="w-full" size="lg" disabled={!canCompletePayment || isBillingLocked || isCompletingPayment} onClick={handleCompletePayment}>
-                        {isCompletingPayment ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isOnline ? "Generating receipt..." : "Queuing payment..."}</> : isBillingLocked ? "Payment Finalized" : isOnline ? "Complete Payment" : "⚡ Queue Payment (Offline)"}
+                <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
+                    <Button type="button" className="w-full" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={() => setIsPaymentOpen(true)}>
+                        {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </Button>
                 </div>
             </div>
@@ -611,6 +517,24 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         />
       )}
       {Dialog}
+
+      {session && appUser && activeStore && storeId && (
+        <PaymentModal
+          open={isPaymentOpen}
+          onOpenChange={setIsPaymentOpen}
+          grandTotal={grandTotal}
+          sessionId={sessionId}
+          storeId={storeId}
+          session={session}
+          activeStore={activeStore}
+          appUser={appUser}
+          firebaseUser={user ?? null}
+          paymentMethods={paymentMethods}
+          billLines={billLines}
+          billDiscount={billDiscount}
+          customAdjustments={customAdjustments}
+        />
+      )}
     </div>
   )
 }

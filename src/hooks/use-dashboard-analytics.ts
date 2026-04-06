@@ -5,8 +5,8 @@ import { useState, useEffect, useMemo } from "react";
 import { collection, doc, getDoc, query, where, getDocs, onSnapshot, limit, orderBy, type DocumentReference } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { DailyMetric } from "@/lib/types";
-import { mergeWith } from "lodash";
 import { differenceInDays, addDays } from 'date-fns';
+import { startOfDay, endOfDay, isSameDay, fmtDate } from '@/lib/utils/date';
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "last30" | "lastMonth" | "ytd" | "custom";
 export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
@@ -16,12 +16,6 @@ export type TopRefillRow = { name: string; qty: number };
 export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
 
 const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
-
-// --- Date Helpers ---
-function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
-function endOfDay(d: Date) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
-function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function fmtDate(d: Date) { return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }); }
 
 // --- Data Aggregation Helpers ---
 function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {

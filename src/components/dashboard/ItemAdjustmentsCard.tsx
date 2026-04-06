@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { DailyMetric } from "@/lib/types";
-import { Scissors, Gift, Tag, RotateCcw } from "lucide-react";
+import { Scissors, Gift, Tag, RotateCcw, ArrowRight } from "lucide-react";
 
 interface ItemAdjustmentsCardProps {
   dailyMetrics: DailyMetric[];
@@ -38,6 +39,7 @@ function StatRow({ icon, label, qty, amount, color }: {
 }
 
 export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) {
+  const router = useRouter();
   const stats = useMemo(() => {
     const totals = {
       voidedQty: 0, voidedAmount: 0,
@@ -63,10 +65,15 @@ export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) 
   const hasData = stats.voidedQty > 0 || stats.freeQty > 0 || stats.discountedQty > 0 || stats.refundCount > 0;
 
   return (
-    <Card>
+    <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => router.push("/logs")}>
       <CardHeader>
-        <CardTitle>Item Adjustments</CardTitle>
-        <CardDescription>Voided, discounted, free, and refunded items for the period.</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Item Adjustments</CardTitle>
+            <CardDescription>Voided, discounted, free, and refunded items for the period.</CardDescription>
+          </div>
+          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        </div>
       </CardHeader>
       <CardContent>
         {!hasData ? (

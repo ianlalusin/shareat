@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
 import { collection, query, where, orderBy, getDocs, Timestamp, doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { db, auth } from "@/lib/firebase/client";
 import { addDays, format, startOfWeek } from "date-fns";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { Loader2, Sparkles } from "lucide-react";
@@ -214,9 +214,12 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           upcomingHolidays,
         };
         
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error("Not authenticated");
+
         const res = await fetch('/api/forecast-weekly-sales', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(forecastInput),
         });
 

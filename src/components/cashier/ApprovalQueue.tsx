@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Check, X, Package, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { writeActivityLog } from "@/components/cashier/activity-log";
 
 type ChangeRequest = {
   sessionId: string;
@@ -238,6 +239,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
     if (!(await confirm({ title: `Approve this ${req.type} change?`, confirmText: "Yes, Approve", destructive: false }))) return;
     try {
       await req.onApprove();
+      const action = req.type === 'guest' ? "GUEST_COUNT_APPROVED" : "PACKAGE_CHANGE_APPROVED";
+      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, meta: { beforeQty: Number(req.currentValue) || undefined, afterQty: Number(req.requestedValue) || undefined, itemName: req.type === 'package' ? String(req.requestedValue) : undefined }, note: `${req.type === 'guest' ? 'Guest count' : 'Package'} change approved: ${req.currentValue} → ${req.requestedValue}` });
       toast({ title: "Request Approved" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Approval Failed", description: e.message });
@@ -252,6 +255,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
     if (!(await confirm({ title: `Reject this ${req.type} change?`, confirmText: "Yes, Reject", destructive: true }))) return;
     try {
       await req.onReject();
+      const action = req.type === 'guest' ? "GUEST_COUNT_REJECTED" : "PACKAGE_CHANGE_REJECTED";
+      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, note: `${req.type === 'guest' ? 'Guest count' : 'Package'} change rejected` });
       toast({ title: "Request Rejected" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Rejection Failed", description: e.message });

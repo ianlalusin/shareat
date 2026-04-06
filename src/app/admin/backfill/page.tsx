@@ -19,8 +19,7 @@ import CompactCalendar from "@/components/ui/CompactCalendar";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { RoleGuard } from "@/components/guards/RoleGuard";
-
-function isSameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+import { isSameDay } from "@/lib/utils/date";
 
 export default function BackfillPage() {
   const router = useRouter();

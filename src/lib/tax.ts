@@ -14,6 +14,7 @@ export interface TaxAndTotals {
   vatExemptSales: number;
 }
 
+/** Rounds to 2 decimal places using standard half-up rounding. EPSILON avoids floating-point edge cases (e.g., 1.005 -> 1.01). */
 function round(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -35,6 +36,7 @@ export function calculateBillTotals(
 ): TaxAndTotals {
 
   if (!store) {
+    console.warn("[Tax] calculateBillTotals called with null store — returning zero totals. This may indicate a loading race.");
     return {
       subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
       billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
@@ -53,13 +55,20 @@ export function calculateBillTotals(
   let vatExemptSales = 0;
   let taxTotal = 0;
 
-  const activeLines = billLines.filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0);
+  const activeLines = billLines.filter(line => {
+    const qty = line.qtyOrdered - (line.voidedQty || 0);
+    if (qty < 0) {
+      console.warn(`[Tax] Line "${line.itemName}" has voidedQty (${line.voidedQty}) > qtyOrdered (${line.qtyOrdered}). Skipping.`);
+      return false;
+    }
+    return qty > 0;
+  });
 
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
     if (billableQty <= 0) return;
 
-    const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+    const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Math.max(0, Number(line.unitPrice)) : 0;
     
     grossSubtotal += billableQty * unitPrice;
     

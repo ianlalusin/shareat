@@ -23,6 +23,7 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
 import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
+import { writeActivityLog } from "../cashier/activity-log";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -294,10 +295,10 @@ function POSContent({
           onAddLine(newLine);
       }
 
+      writeActivityLog({ action: "ADDON_ADDED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedAddon.displayName, qty: quantity, amount: safeUnitPrice * quantity }, note: `Addon: ${selectedAddon.displayName} x${quantity}` });
       toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
       setSelectedAddon(null);
       setQuantity(1);
-      onClose();
 
     } catch (e: any) {
       console.error("[AddonsPOSModal] add failed:", e);

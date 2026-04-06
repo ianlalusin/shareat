@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, updateDoc, setDoc, serverTimestamp, writeBatch, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase/client';
+import { db, auth } from '@/lib/firebase/client';
 import { format, addDays, subDays } from 'date-fns';
 import { forecastWeeklySales, type ForecastInput } from '@/ai/flows/forecast-weekly-sales';
 import type { DailyMetric, SalesForecast } from '@/lib/types';
@@ -68,9 +68,12 @@ async function runForecastAnalytics(storeId: string, storeAddress: string) {
         storeLocation: storeAddress,
       };
       
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not authenticated");
+
       const res = await fetch('/api/forecast-weekly-sales', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(forecastInput),
       });
 

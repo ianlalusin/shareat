@@ -10,22 +10,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { ArrowLeft, ArrowRight, Clock, Loader2 } from "lucide-react";
 import Link from "next/link";
-
-function formatDuration(ms: number): string {
-    if (isNaN(ms) || ms <= 0) return "";
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${seconds}s`;
-    }
-    if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
-}
+import { formatDurationHuman as formatDuration } from "@/lib/utils/date";
 
 interface HistoryViewProps {
     items: any[];

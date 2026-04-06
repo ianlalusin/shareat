@@ -77,21 +77,6 @@ export type StartSessionPayload = {
   sessionMode: 'package_dinein' | 'alacarte';
 };
 
-/**
- * Helper to disable customer PIN access within a transaction.
- * It finds the PIN from the session projection, deletes it from the pinRegistry,
- * and updates the active projection itself to reflect the disabled state.
- * @param tx The Firestore transaction object.
- * @param activeProjectionRef Reference to the active session projection document.
- * @param projectionSnap The DocumentSnapshot of the active session projection.
- */
-function _disableCustomerPinInTx(
-  tx: Transaction,
-  projectionSnap: DocumentSnapshot<DocumentData>
-) {
-  if (!projectionSnap.exists()) return;
-}
-
 
 /**
  * Formats a receipt number based on a template and a sequence number.
@@ -271,23 +256,20 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   });
 
 
-  // For package dine-in, this is the definitive start log.
-  if (payload.sessionMode !== 'alacarte') {
-    await writeActivityLog({
-      storeId,
-      sessionId: newSessionRef.id,
-      user,
-      action: 'SESSION_STARTED',
-      note: 'Session started',
-      sessionContext: {
-        sessionStatus: sessionPayload.status as any,
-        sessionStartedAt: sessionPayload.startedAt,
-        sessionMode: sessionPayload.sessionMode ?? undefined,
-        customerName: sessionPayload.customerName,
-        tableNumber: sessionPayload.tableNumber,
-      }
-    });
-  }
+  await writeActivityLog({
+    storeId,
+    sessionId: newSessionRef.id,
+    user,
+    action: 'SESSION_STARTED',
+    note: `Session started (${payload.sessionMode === 'alacarte' ? 'Ala Carte' : 'Package'})`,
+    sessionContext: {
+      sessionStatus: sessionPayload.status as any,
+      sessionStartedAt: sessionPayload.startedAt,
+      sessionMode: sessionPayload.sessionMode ?? undefined,
+      customerName: sessionPayload.customerName,
+      tableNumber: sessionPayload.tableNumber,
+    }
+  });
 
   return newSessionRef.id;
 }
@@ -374,9 +356,6 @@ export async function completePaymentFromUnits(
       tableSnap = await tx.get(tableRef);
     }
 
-    
-    // Disable any active PIN associated with this session (WRITE PHASE starts after all reads).
-    _disableCustomerPinInTx(tx, activeProjectionSnap);
     
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
     const amountDueCents = Math.round(Number(amountDue || 0) * 100);
@@ -591,7 +570,7 @@ export async function completePaymentFromUnits(
       guestCountSnapshot,
     };
     
-    finalReceipt = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTs, analyticsApplied: true, analyticsAppliedAt: serverTs, analyticsApplyId: uuidv4() } as Receipt;
+    finalReceipt = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTs, analyticsApplied: false, analyticsApplyId: uuidv4() } as Receipt;
     
     // analytics applied separately below to avoid hitting 500-transform limit
     tx.set(receiptRef, finalReceipt);
@@ -619,29 +598,33 @@ export async function completePaymentFromUnits(
   });
 
   if (rtKdsUpdates.length > 0) {
-    const { writeBatch: wb0, deleteField: df, arrayRemove: ar } = await import("firebase/firestore");
-    const rtKdsBatch = wb0(db);
-    const byStation = new Map<string, { ticketIds: string[]; states: any[] }>();
-    for (const u of rtKdsUpdates) {
-      if (!byStation.has(u.stationId)) byStation.set(u.stationId, { ticketIds: [], states: [] });
-      byStation.get(u.stationId)!.ticketIds.push(u.ticketId);
-      byStation.get(u.stationId)!.states.push({ id: u.ticketId, state: u.ticketState });
-    }
-    for (const [stationId, { ticketIds, states }] of byStation.entries()) {
-      const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-      const mergedUpdate: Record<string, any> = {
-        activeIds: ar(...ticketIds),
-        [`sessionIndex.${sessionId}`]: df(), // delete empty array key
-        "meta.updatedAt": serverTimestamp(),
-      };
-      for (const tid of ticketIds) mergedUpdate[`tickets.${tid}`] = df();
-      rtKdsBatch.update(rtKdsDocRef, mergedUpdate);
-      for (const { id, state } of states) {
-        const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", id);
-        rtKdsBatch.set(closedTicketRef, state);
+    try {
+      const { writeBatch: wb0, deleteField: df, arrayRemove: ar } = await import("firebase/firestore");
+      const rtKdsBatch = wb0(db);
+      const byStation = new Map<string, { ticketIds: string[]; states: any[] }>();
+      for (const u of rtKdsUpdates) {
+        if (!byStation.has(u.stationId)) byStation.set(u.stationId, { ticketIds: [], states: [] });
+        byStation.get(u.stationId)!.ticketIds.push(u.ticketId);
+        byStation.get(u.stationId)!.states.push({ id: u.ticketId, state: u.ticketState });
       }
+      for (const [stationId, { ticketIds, states }] of byStation.entries()) {
+        const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
+        const mergedUpdate: Record<string, any> = {
+          activeIds: ar(...ticketIds),
+          [`sessionIndex.${sessionId}`]: df(), // delete empty array key
+          "meta.updatedAt": serverTimestamp(),
+        };
+        for (const tid of ticketIds) mergedUpdate[`tickets.${tid}`] = df();
+        rtKdsBatch.update(rtKdsDocRef, mergedUpdate);
+        for (const { id, state } of states) {
+          const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", id);
+          rtKdsBatch.set(closedTicketRef, state);
+        }
+      }
+      await rtKdsBatch.commit();
+    } catch (kdsErr) {
+      console.error("[KDS] Failed to update rtKdsTickets for session", sessionId, kdsErr);
     }
-    await rtKdsBatch.commit();
   }
 
   if (kdsDeltas.length > 0) {
@@ -654,23 +637,37 @@ export async function completePaymentFromUnits(
   }
 
   if (finalReceipt && receiptId) {
-    try {
-      const { writeBatch: wb } = await import("firebase/firestore");
-      const analyticsBatch = wb(db);
-      await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
-      await analyticsBatch.commit();
-      console.log("[Analytics] Delta applied successfully for receipt", receiptId);
-    } catch (analyticsErr) {
-      console.error("[Analytics] Failed to apply delta for receipt", receiptId, analyticsErr);
+    const MAX_ANALYTICS_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_ANALYTICS_RETRIES; attempt++) {
+      try {
+        const { writeBatch: wb, doc: docRef, updateDoc: ud, serverTimestamp: st } = await import("firebase/firestore");
+        const analyticsBatch = wb(db);
+        await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
+        await analyticsBatch.commit();
+        // Mark receipt as analytics-applied only after successful commit
+        const rRef = docRef(db, `stores/${storeId}/receipts`, receiptId);
+        await ud(rRef, { analyticsApplied: true, analyticsAppliedAt: st() });
+        console.log("[Analytics] Delta applied successfully for receipt", receiptId);
+        break;
+      } catch (analyticsErr) {
+        console.error(`[Analytics] Attempt ${attempt + 1} failed for receipt ${receiptId}:`, analyticsErr);
+        if (attempt === MAX_ANALYTICS_RETRIES) {
+          console.error("[Analytics] All retries exhausted. Receipt", receiptId, "needs manual analytics reconciliation.");
+        }
+      }
     }
   }
 
   if (receiptId) {
-    await writeActivityLog({
-      storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
-      sessionContext: sessionContextForLog,
-      meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
-    });
+    try {
+      await writeActivityLog({
+        storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
+        sessionContext: sessionContextForLog,
+        meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
+      });
+    } catch (logErr) {
+      console.error("[ActivityLog] Failed to write payment log for session", sessionId, logErr);
+    }
   }
 
   return receiptId;
@@ -707,9 +704,6 @@ export async function voidSession({
         tx.get(activeProjectionRef),
     ]);
     
-    _disableCustomerPinInTx(tx, activeProjectionSnap);
-
-
     if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
     const sessionData = sessionSnap.data() as any;
     if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {

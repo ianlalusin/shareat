@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Scissors, Tag, Gift, Users, Package } from "lucide-react";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
@@ -22,17 +23,38 @@ function actionLabel(a: ActivityLog['action']) {
   switch (a) {
     case "SESSION_STARTED": return "Session Started";
     case "SESSION_VOIDED": return "Session Voided";
+    case "SESSION_VERIFIED": return "Verified";
     case "PAYMENT_COMPLETED": return "Payment";
     case "DISCOUNT_APPLIED": return "Discount Applied";
     case "DISCOUNT_REMOVED": return "Discount Removed";
     case "DISCOUNT_EDITED": return "Discount Edited";
+    case "BILL_DISCOUNT_APPLIED": return "Bill Discount";
+    case "BILL_DISCOUNT_REMOVED": return "Bill Disc. Removed";
+    case "CUSTOM_CHARGE_ADDED": return "Charge Added";
+    case "CUSTOM_CHARGE_REMOVED": return "Charge Removed";
     case "MARK_FREE": return "Marked Free";
     case "UNMARK_FREE": return "Unmarked Free";
     case "VOID_TICKETS": return "Void";
     case "UNVOID": return "Un-void";
     case "PRICE_OVERRIDE": return "Price Override";
     case "edit_line": return "Bill Edit";
-    default: return a;
+    case "PACKAGE_QTY_OVERRIDE_SET": return "Qty Override";
+    case "PACKAGE_QTY_RESYNC_APPROVED_CHANGE": return "Qty Synced";
+    case "ADDON_ADDED": return "Addon Added";
+    case "REFILL_ADDED": return "Refill";
+    case "GUEST_COUNT_REQUESTED": return "Guest Change Req";
+    case "GUEST_COUNT_APPROVED": return "Guest Approved";
+    case "GUEST_COUNT_REJECTED": return "Guest Rejected";
+    case "PACKAGE_CHANGE_REQUESTED": return "Pkg Change Req";
+    case "PACKAGE_CHANGE_APPROVED": return "Pkg Approved";
+    case "PACKAGE_CHANGE_REJECTED": return "Pkg Rejected";
+    case "TICKET_SERVED": return "Served";
+    case "TICKET_CANCELLED": return "Cancelled";
+    case "TICKET_BATCH_SERVED": return "Batch Served";
+    case "TICKET_REMAINING_CANCELLED": return "Remaining Cancelled";
+    case "RECEIPT_EDITED": return "Receipt Edited";
+    case "RECEIPT_VOIDED": return "Receipt Voided";
+    default: return a.replace(/_/g, " ");
   }
 }
 
@@ -122,6 +144,17 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
         return Array.from(new Map(sorted.map((l, i) => [(l.id ?? `__${i}`), l])).values());
     }, [initialLogs]);
 
+    const adjustmentFlags = useMemo(() => {
+        const actions = new Set(initialLogs.map(l => l.action));
+        return {
+            hasVoids: actions.has("VOID_TICKETS") || actions.has("SESSION_VOIDED") || actions.has("TICKET_CANCELLED") || actions.has("TICKET_REMAINING_CANCELLED"),
+            hasDiscounts: actions.has("DISCOUNT_APPLIED") || actions.has("DISCOUNT_EDITED") || actions.has("BILL_DISCOUNT_APPLIED"),
+            hasFree: actions.has("MARK_FREE"),
+            hasGuestChange: actions.has("GUEST_COUNT_APPROVED") || actions.has("GUEST_COUNT_REQUESTED"),
+            hasPackageChange: actions.has("PACKAGE_CHANGE_APPROVED") || actions.has("PACKAGE_CHANGE_REQUESTED"),
+        };
+    }, [initialLogs]);
+
 
     return (
         <AccordionItem value={session.id}>
@@ -134,7 +167,34 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                                 {sessionStarted ? format(sessionStarted, 'MMM d, h:mm a') : 'N/A'} - Status: <span className="capitalize">{session.status}</span>
                             </p>
                         </div>
-                        <Badge variant={session.status === 'closed' || session.status === 'voided' ? 'outline' : 'default'} className="capitalize">{session.status}</Badge>
+                        <div className="flex items-center gap-1 shrink-0">
+                            {adjustmentFlags.hasVoids && (
+                                <Badge variant="outline" className="border-red-400 bg-red-50 text-red-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                    <Scissors className="h-3 w-3" /> Void
+                                </Badge>
+                            )}
+                            {adjustmentFlags.hasDiscounts && (
+                                <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                    <Tag className="h-3 w-3" /> Disc
+                                </Badge>
+                            )}
+                            {adjustmentFlags.hasFree && (
+                                <Badge variant="outline" className="border-green-400 bg-green-50 text-green-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                    <Gift className="h-3 w-3" /> Free
+                                </Badge>
+                            )}
+                            {adjustmentFlags.hasGuestChange && (
+                                <Badge variant="outline" className="border-blue-400 bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                    <Users className="h-3 w-3" /> Guest
+                                </Badge>
+                            )}
+                            {adjustmentFlags.hasPackageChange && (
+                                <Badge variant="outline" className="border-violet-400 bg-violet-50 text-violet-600 text-[10px] px-1.5 py-0 gap-0.5">
+                                    <Package className="h-3 w-3" /> Pkg
+                                </Badge>
+                            )}
+                            <Badge variant={session.status === 'voided' ? 'destructive' : session.status === 'closed' ? 'outline' : 'default'} className="capitalize">{session.status}</Badge>
+                        </div>
                     </div>
                 </AccordionTrigger>
                 <AccordionContent>

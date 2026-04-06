@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, orderBy, collectionGroup } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Loader2, AlertCircle } from "lucide-react";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
@@ -107,7 +107,38 @@ export function SessionListView() {
         return () => unsubscribe();
 
     }, [activeStore, appUser, isSigningOut]);
-    
+
+    // Listen to billLines for all active sessions to compute adjustment badges
+    const [adjustmentFlags, setAdjustmentFlags] = useState<Record<string, { hasVoids: boolean; hasFree: boolean; hasDiscounts: boolean }>>({});
+
+    useEffect(() => {
+        if (!activeStore?.id || sessions.length === 0) {
+            setAdjustmentFlags({});
+            return;
+        }
+        const unsubs: (() => void)[] = [];
+        for (const s of sessions) {
+            const linesRef = collection(db, "stores", activeStore.id, "sessions", s.id, "sessionBillLines");
+            const unsub = onSnapshot(linesRef, (snap) => {
+                let hasVoids = false, hasFree = false, hasDiscounts = false;
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    if ((data.voidedQty ?? 0) > 0) hasVoids = true;
+                    if ((data.freeQty ?? 0) > 0) hasFree = true;
+                    if ((data.discountQty ?? 0) > 0 || (data.discountValue ?? 0) > 0) hasDiscounts = true;
+                    // Check lineAdjustments for discounts
+                    const adjs = data.lineAdjustments ?? {};
+                    for (const adj of Object.values(adjs) as any[]) {
+                        if (adj.kind === "discount") hasDiscounts = true;
+                    }
+                });
+                setAdjustmentFlags(prev => ({ ...prev, [s.id]: { hasVoids, hasFree, hasDiscounts } }));
+            }, (err) => { console.warn("[BillLines] Listener error for session", s.id, err); });
+            unsubs.push(unsub);
+        }
+        return () => unsubs.forEach(u => u());
+    }, [activeStore?.id, sessions]);
+
     const schedulesMap = useMemo(() => {
         if (!storeConfig?.schedules) return new Map<string, MenuSchedule>();
         return new Map(storeConfig.schedules.map(s => [s.id, s]));
@@ -185,7 +216,7 @@ export function SessionListView() {
                             </Accordion>
                         </div>
                         <div className="lg:col-span-2 space-y-8">
-                            <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} />
+                            <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} adjustmentFlags={adjustmentFlags} />
                             <PastSessionsCard />
                         </div>
                     </div>
