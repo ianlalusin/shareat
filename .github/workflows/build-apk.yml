@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [sev6]
+    branches: [sev5_advanced, sev6]
   workflow_dispatch:
 
 jobs:
