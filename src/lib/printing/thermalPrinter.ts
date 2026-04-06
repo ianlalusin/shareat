@@ -11,6 +11,7 @@ export interface ThermalPrinterPlugin {
   listBluetoothPrinters(): Promise<{ devices: BluetoothDevice[] }>;
   connectBluetoothPrinter(options: { address: string }): Promise<void>;
   disconnectBluetoothPrinter(): Promise<void>;
+  forgetPrinter(): Promise<void>;
   printQRCode(options: { data: string; size?: number }): Promise<void>;
   printPinSlip(options: { top: string; bottom: string; qrData?: string; qrSize?: number; encoding?: string }): Promise<void>;
   printReceipt(options: { 

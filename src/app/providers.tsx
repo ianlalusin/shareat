@@ -5,6 +5,8 @@ import { StoreContextProvider } from '@/context/store-context';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Capacitor } from '@capacitor/core';
 import { useEffect } from 'react';
+import { getLastPrinterAddress } from '@/lib/printing/printHub';
+import ThermalPrinter from '@/lib/printing/thermalPrinter';
 
 export function Providers({ children }: { children: React.ReactNode }) {
     useEffect(() => {
@@ -21,6 +23,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
                     }
                 );
             }
+        }
+
+        // On native: reconnect BT printer when app resumes from background
+        if (Capacitor.isNativePlatform()) {
+            const onResume = () => {
+                const addr = getLastPrinterAddress();
+                if (addr) {
+                    ThermalPrinter.connectBluetoothPrinter({ address: addr }).catch((err: any) => {
+                        console.warn('[BT] Resume reconnect failed:', err?.message);
+                    });
+                }
+            };
+            document.addEventListener('resume', onResume);
+            return () => document.removeEventListener('resume', onResume);
         }
     }, []);
     

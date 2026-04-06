@@ -384,9 +384,38 @@ public class ThermalPrinterPlugin extends Plugin {
                 bluetoothSocket.close();
                 bluetoothSocket = null;
             }
-            connectedAddress = null;
+            // Keep connectedAddress so reconnect() can find the printer
         } catch (IOException e) {
             Log.e(TAG, "Disconnect error", e);
+        }
+    }
+
+    /** Explicit user-initiated disconnect — clears stored address too. */
+    @PluginMethod
+    public void forgetPrinter(PluginCall call) {
+        disconnect();
+        connectedAddress = null;
+        call.resolve();
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        // Proactively check and reconnect when app returns to foreground
+        if (connectedAddress != null && bluetoothSocket != null) {
+            try {
+                outputStream.write(new byte[0]);
+                outputStream.flush();
+                Log.d(TAG, "onResume: socket still alive");
+            } catch (Exception e) {
+                Log.w(TAG, "onResume: socket dead, reconnecting...");
+                try {
+                    reconnect();
+                    Log.d(TAG, "onResume: reconnected successfully");
+                } catch (Exception re) {
+                    Log.w(TAG, "onResume: reconnect failed, will retry on next print", re);
+                }
+            }
         }
     }
 }
