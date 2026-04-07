@@ -100,6 +100,8 @@ export function usePrint({
           cut: true,
           beep: true,
           encoding: 'CP437',
+          showLogo: liveSettings.showLogo ?? false,
+          storeId,
         });
         await writeAudit();
         toast({ title: 'Printed', description: 'Receipt sent to thermal printer.' });

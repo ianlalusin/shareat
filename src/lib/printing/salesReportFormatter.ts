@@ -47,9 +47,7 @@ export function formatSalesReportText(data: SalesReportData, width: 58 | 80 = 80
 
   // --- Store Header ---
   if (data.storeName) lines.push(center(data.storeName.toUpperCase()));
-  if (data.branchName && data.branchName.toLowerCase() !== data.storeName?.toLowerCase()) {
-    lines.push(center(data.branchName));
-  }
+  if (data.branchName) lines.push(center(data.branchName));
   if (data.address) lines.push(center(data.address));
   lines.push("");
 
