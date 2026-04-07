@@ -21,6 +21,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
+import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -223,11 +224,14 @@ export function SessionListView() {
                 </div>
             )}
             {activeStore?.id && (
-                <WeatherLoggerModal 
+                <WeatherLoggerModal
                     isOpen={isModalOpen}
                     onClose={closeModal}
                     storeId={activeStore.id}
                 />
+            )}
+            {activeStore?.id && (
+                <WeatherLogFloatingButton storeId={activeStore.id} />
             )}
         </>
     );
