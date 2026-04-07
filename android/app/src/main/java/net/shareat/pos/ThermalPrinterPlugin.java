@@ -4,7 +4,14 @@ import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
 import android.os.Build;
+import android.util.Base64;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -18,6 +25,7 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 import org.json.JSONArray;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -357,7 +365,165 @@ public class ThermalPrinterPlugin extends Plugin {
         call.reject("QR print failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
     }
 
-    
+    @PluginMethod
+    public void printImage(PluginCall call) {
+        String base64 = call.getString("base64");
+        int widthMm = call.getInt("widthMm", 80);
+        String align = call.getString("align", "center");
+
+        if (outputStream == null) {
+            call.reject("Printer not connected.");
+            return;
+        }
+        if (base64 == null || base64.isEmpty()) {
+            call.reject("base64 image data is required.");
+            return;
+        }
+
+        Exception lastError = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                // Decode base64 to bitmap
+                byte[] imageBytes = Base64.decode(base64, Base64.DEFAULT);
+                Bitmap original = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+                if (original == null) {
+                    call.reject("Failed to decode image.");
+                    return;
+                }
+
+                // Max print width in dots (203 dpi): 58mm ≈ 384 dots, 80mm ≈ 576 dots
+                int maxWidthPx = widthMm == 58 ? 384 : 576;
+
+                // Scale image to fit printer width while keeping aspect ratio
+                int scaledWidth = Math.min(original.getWidth(), maxWidthPx);
+                float ratio = (float) scaledWidth / original.getWidth();
+                int scaledHeight = Math.round(original.getHeight() * ratio);
+                Bitmap scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true);
+                original.recycle();
+
+                // Convert to monochrome (1-bit) using Floyd-Steinberg dithering
+                Bitmap mono = toMonochrome(scaled, scaledWidth, scaledHeight);
+                scaled.recycle();
+
+                // Build ESC/POS raster data
+                byte[] rasterData = bitmapToEscPosRaster(mono, maxWidthPx);
+                mono.recycle();
+
+                // Set alignment
+                byte alignByte = 0x01; // center
+                if ("left".equals(align)) alignByte = 0x00;
+                else if ("right".equals(align)) alignByte = 0x02;
+                outputStream.write(new byte[]{0x1B, 0x61, alignByte});
+
+                // Write raster data
+                outputStream.write(rasterData);
+
+                // Reset alignment to left
+                outputStream.write(new byte[]{0x1B, 0x61, 0x00});
+                outputStream.flush();
+                call.resolve();
+                return;
+            } catch (IOException e) {
+                lastError = e;
+                Log.w(TAG, "printImage attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                        reconnect();
+                    } catch (Exception re) {
+                        Log.e(TAG, "Reconnect failed", re);
+                    }
+                }
+            } catch (Exception e) {
+                call.reject("printImage failed: " + e.getMessage());
+                return;
+            }
+        }
+        call.reject("printImage failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    /**
+     * Convert a bitmap to monochrome using simple threshold with ordered dithering.
+     */
+    private Bitmap toMonochrome(Bitmap src, int w, int h) {
+        // Convert to grayscale
+        Bitmap grayscale = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(grayscale);
+        Paint paint = new Paint();
+        ColorMatrix cm = new ColorMatrix();
+        cm.setSaturation(0);
+        paint.setColorFilter(new ColorMatrixColorFilter(cm));
+        canvas.drawBitmap(src, 0, 0, paint);
+
+        // Threshold to 1-bit
+        int[] pixels = new int[w * h];
+        grayscale.getPixels(pixels, 0, w, 0, 0, w, h);
+        grayscale.recycle();
+
+        Bitmap mono = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        int[] monoPixels = new int[w * h];
+        for (int i = 0; i < pixels.length; i++) {
+            int gray = pixels[i] & 0xFF; // blue channel (same as R and G after desaturation)
+            monoPixels[i] = gray < 128 ? 0xFF000000 : 0xFFFFFFFF;
+        }
+        mono.setPixels(monoPixels, 0, w, 0, 0, w, h);
+        return mono;
+    }
+
+    /**
+     * Convert a monochrome bitmap to ESC/POS GS v 0 raster bit-image format.
+     * Each row is padded to maxWidthPx (printer's full dot width).
+     */
+    private byte[] bitmapToEscPosRaster(Bitmap mono, int maxWidthPx) {
+        int imgWidth = mono.getWidth();
+        int imgHeight = mono.getHeight();
+
+        // Bytes per row — must cover full printer width for proper centering
+        int bytesPerRow = (maxWidthPx + 7) / 8;
+        int imgBytesPerRow = (imgWidth + 7) / 8;
+        int leftPadBytes = (bytesPerRow - imgBytesPerRow) / 2;
+
+        // GS v 0: 1D 76 30 m xL xH yL yH [data]
+        // m=0 (normal), xL/xH = bytes per row, yL/yH = rows
+        byte xL = (byte) (bytesPerRow & 0xFF);
+        byte xH = (byte) ((bytesPerRow >> 8) & 0xFF);
+        byte yL = (byte) (imgHeight & 0xFF);
+        byte yH = (byte) ((imgHeight >> 8) & 0xFF);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // Command header
+        baos.write(0x1D); // GS
+        baos.write(0x76); // v
+        baos.write(0x30); // 0
+        baos.write(0x00); // m = normal density
+        baos.write(xL);
+        baos.write(xH);
+        baos.write(yL);
+        baos.write(yH);
+
+        // Pixel data, row by row
+        int[] rowPixels = new int[imgWidth];
+        for (int y = 0; y < imgHeight; y++) {
+            mono.getPixels(rowPixels, 0, imgWidth, 0, y, imgWidth, 1);
+
+            byte[] rowBytes = new byte[bytesPerRow]; // zero-filled = white padding
+
+            for (int x = 0; x < imgWidth; x++) {
+                // Black pixel = bit set to 1
+                if ((rowPixels[x] & 0xFF) == 0) { // black
+                    int byteIndex = leftPadBytes + (x / 8);
+                    int bitIndex = 7 - (x % 8);
+                    if (byteIndex < bytesPerRow) {
+                        rowBytes[byteIndex] |= (1 << bitIndex);
+                    }
+                }
+            }
+            baos.write(rowBytes, 0, bytesPerRow);
+        }
+
+        return baos.toByteArray();
+    }
+
     private synchronized void reconnect() throws Exception {
         if (connectedAddress == null) {
             throw new IOException("No previous connection address");

@@ -14,6 +14,8 @@ export type PrintJob = {
   cut?: boolean;
   beep?: boolean;
   encoding?: string;
+  showLogo?: boolean;
+  storeId?: string | null;
 };
 
 export function isNativeBluetoothAvailable() {
@@ -26,6 +28,111 @@ export function getLastPrinterAddress() {
 
 export function setLastPrinterAddress(address: string) {
   try { localStorage.setItem('last_printer_address', address); } catch {}
+}
+
+// ─── Logo Cache ──────────────────────────────────────────────────────────────
+
+const LOGO_CACHE_PREFIX = 'logoCacheBase64:';
+const LOGO_URL_PREFIX = 'logoCacheUrl:';
+
+/**
+ * Fetches an image URL and returns its base64 (without data URI prefix).
+ */
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(',')[1] ?? null;
+        resolve(base64);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cache the logo base64 in localStorage for a given store.
+ * Called when receipt settings load/change so the logo is ready for offline printing.
+ */
+export async function cacheLogoForStore(storeId: string, logoUrl: string | null | undefined): Promise<void> {
+  if (!logoUrl) {
+    // Clear cache if logo was removed
+    try {
+      localStorage.removeItem(LOGO_CACHE_PREFIX + storeId);
+      localStorage.removeItem(LOGO_URL_PREFIX + storeId);
+    } catch {}
+    return;
+  }
+
+  try {
+    const cachedUrl = localStorage.getItem(LOGO_URL_PREFIX + storeId);
+    // Skip re-fetch if the URL hasn't changed
+    if (cachedUrl === logoUrl && localStorage.getItem(LOGO_CACHE_PREFIX + storeId)) {
+      return;
+    }
+
+    const base64 = await fetchImageAsBase64(logoUrl);
+    if (base64) {
+      localStorage.setItem(LOGO_CACHE_PREFIX + storeId, base64);
+      localStorage.setItem(LOGO_URL_PREFIX + storeId, logoUrl);
+    }
+  } catch (e) {
+    console.warn('Logo cache write failed:', e);
+  }
+}
+
+/**
+ * Get the cached logo base64 for a store. Returns null if not cached.
+ */
+function getCachedLogo(storeId: string): string | null {
+  try {
+    return localStorage.getItem(LOGO_CACHE_PREFIX + storeId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the logo base64 for printing:
+ * 1. Try localStorage cache
+ * 2. Fallback: fetch logoUrl from receipt settings, download image, cache it
+ * 3. If all fails, return null (logo won't print, but printing continues)
+ */
+async function resolveLogoBase64(storeId: string): Promise<string | null> {
+  // 1. Try cache first
+  const cached = getCachedLogo(storeId);
+  if (cached) return cached;
+
+  // 2. Fallback: load settings and fetch the logo
+  try {
+    const { getReceiptSettings } = await import('@/lib/receipts/receipt-settings');
+    const { db } = await import('@/lib/firebase/client');
+    const settings = await getReceiptSettings(db, storeId);
+
+    if (!settings.showLogo || !settings.logoUrl) return null;
+
+    const base64 = await fetchImageAsBase64(settings.logoUrl);
+    if (base64) {
+      // Cache for next time
+      try {
+        localStorage.setItem(LOGO_CACHE_PREFIX + storeId, base64);
+        localStorage.setItem(LOGO_URL_PREFIX + storeId, settings.logoUrl);
+      } catch {}
+      return base64;
+    }
+  } catch (e) {
+    console.warn('Logo fallback fetch failed:', e);
+  }
+
+  return null;
 }
 
 /**
@@ -42,13 +149,36 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
     throw new Error('No printer connected. Please configure printer in Settings.');
   }
 
+  const widthMm = (job.widthMm ?? 80) as 58 | 80;
+  let logoPrinted = false;
+
   await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
+
+  // Print logo if enabled — cache → fetch fallback → skip gracefully
+  if (job.showLogo && job.storeId) {
+    try {
+      const base64 = await resolveLogoBase64(job.storeId);
+      if (base64) {
+        await ThermalPrinter.printImage({
+          base64,
+          widthMm,
+          align: 'center',
+        });
+        logoPrinted = true;
+      }
+    } catch (e) {
+      // Logo print failed — continue with text-only receipt
+      console.warn('Logo print failed, continuing without logo:', e);
+    }
+  }
+
   await ThermalPrinter.printReceipt({
     text: job.text,
-    widthMm: (job.widthMm ?? 80) as 58 | 80,
+    widthMm,
     cut: job.cut ?? true,
     beep: job.beep ?? true,
     encoding: job.encoding ?? 'CP437',
+    skipInit: logoPrinted,
   });
 }
 

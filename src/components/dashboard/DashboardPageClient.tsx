@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { PaymentMix } from "@/components/dashboard/PaymentMix";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Printer } from "lucide-react";
+import { useAuthContext } from "@/context/auth-context";
+import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportDialog";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
@@ -54,6 +56,8 @@ const presets: { label: string, value: DatePreset }[] = [
 
 export default function DashboardPageClient() {
     const { activeStore } = useStoreContext();
+    const { appUser } = useAuthContext();
+    const [reportDialogOpen, setReportDialogOpen] = useState(false);
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -121,6 +125,12 @@ export default function DashboardPageClient() {
             <PageHeader title="Dashboard" description={`Analytics for ${activeStore.name}`} className="mb-4">
                  <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-4">
+                        {(appUser?.role === "cashier" || appUser?.role === "manager" || appUser?.isPlatformAdmin) && (
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => setReportDialogOpen(true)}>
+                                <Printer className="mr-2 h-4 w-4" />
+                                Print Sales Report
+                            </Button>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-1">
                             {presets.map(p => (
                                 <Button key={p.value} variant={datePreset === p.value ? 'default' : 'ghost'} size="sm" onClick={() => { setDatePreset(p.value); setCustomRange(null); }} className="h-8">{p.label}</Button>
@@ -206,6 +216,8 @@ export default function DashboardPageClient() {
             {activeStore?.id && (
                 <WeatherLogFloatingButton storeId={activeStore.id} />
             )}
+
+            <PrintSalesReportDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen} />
         </RoleGuard>
     );
 }
