@@ -12,7 +12,7 @@ import type { ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { Loader2, Sparkles } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
-import type { WeatherRecord, DailyMetric } from "@/lib/types";
+import type { DailyContext, WeatherRecord, DailyMetric } from "@/lib/types";
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
 
 // --- Caching Constants ---
@@ -87,10 +87,17 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const weatherQuery = collection(db, "stores", storeId, "weatherRecords");
         const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
 
-        const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap] = await Promise.all([
+        const dailyContextQuery = query(
+          collection(db, "stores", storeId, "dailyContext"),
+          where("dayId", ">=", format(startDate, "yyyyMMdd")),
+          where("dayId", "<=", todayDayId)
+        );
+
+        const [salesSnapshot, weatherSnapshot, todayAnalyticsSnap, dailyContextSnapshot] = await Promise.all([
             getDocs(salesQuery),
             getDocs(query(weatherQuery, where("dayId", ">=", format(startDate, "yyyyMMdd")), where("dayId", "<=", format(endDate, "yyyyMMdd")))),
-            getDoc(todayAnalyticsDocRef)
+            getDoc(todayAnalyticsDocRef),
+            getDocs(dailyContextQuery),
         ]);
 
         const todayLiveSales = todayAnalyticsSnap.exists() ? (todayAnalyticsSnap.data() as DailyMetric).payments?.totalGross ?? 0 : 0;
@@ -142,10 +149,21 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           return;
         }
 
+        // Enrich with daily context
+        const dailyContextDocs = dailyContextSnapshot.docs.map(d => d.data() as DailyContext);
+        const loggedHolidays = dailyContextDocs
+          .filter(dc => dc.holiday && dc.holiday.name !== "None")
+          .map(dc => {
+            const dateStr = dc.dayId.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+            return `${dc.holiday!.name} on ${dateStr}`;
+          });
+        const todayContext = dailyContextDocs.find(dc => dc.dayId === todayDayId);
+
         // Use shared helpers with store's forecast config
         const config = activeStore.forecastConfig;
         const upcomingPayrollDates = getUpcomingPayrollDates(config);
-        const upcomingHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
+        const configHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
+        const upcomingHolidays = [...new Set([...configHolidays, ...loggedHolidays])];
         const dayOfWeekAverages = computeDayOfWeekAverages(historicalSales);
         const { direction: trendDirection, ratio: recentVsHistoricalRatio } = computeTrendDirection(historicalSales);
 
@@ -158,7 +176,13 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           dayOfWeekAverages,
           trendDirection,
           recentVsHistoricalRatio,
-          storeContext: config?.storeContext,
+          storeContext: [
+            config?.storeContext,
+            todayContext?.isPayday?.value ? "Today is confirmed as a payday by staff." : undefined,
+            todayContext?.holiday && todayContext.holiday.name !== "None"
+              ? `Today is ${todayContext.holiday.name} (confirmed by staff).`
+              : undefined,
+          ].filter(Boolean).join(" ") || undefined,
         };
 
         const token = await auth.currentUser?.getIdToken();

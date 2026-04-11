@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { useStoreContext } from "@/context/store-context";
+import { DailyContextFloatingButton } from "@/components/cashier/DailyContextFloatingButton";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -27,10 +29,12 @@ const SessionListView = dynamic(
 function CashierPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get('sessionId') ?? null;
+  const { activeStore } = useStoreContext();
 
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView />}
+      {activeStore?.id && <DailyContextFloatingButton storeId={activeStore.id} />}
     </RoleGuard>
   );
 }

@@ -4,7 +4,7 @@ const config: CapacitorConfig = {
   appName: 'SharEat POS',
   webDir: 'out',
   server: {
-    url: 'https://poskds.shareat.net',
+    url: 'https://app.shareat.net',
     cleartext: false,
     androidScheme: 'https',
   },

@@ -714,6 +714,20 @@ export type WeatherRecord = {
   entries: WeatherEntry[];
 };
 
+export type DailyContext = {
+  dayId: string; // YYYYMMDD
+  holiday?: {
+    name: string;
+    loggedByUid: string;
+    loggedAt: Timestamp;
+  } | null;
+  isPayday?: {
+    value: boolean;
+    loggedByUid: string;
+    loggedAt: Timestamp;
+  } | null;
+};
+
 export type SalesForecast = {
   date: string; // YYYY-MM-DD
   projectedSales: number;

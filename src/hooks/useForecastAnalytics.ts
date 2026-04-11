@@ -6,7 +6,7 @@ import { collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, set
 import { db, auth } from '@/lib/firebase/client';
 import { format, addDays, subDays } from 'date-fns';
 import type { ForecastInput } from '@/ai/flows/forecast-weekly-sales';
-import type { DailyMetric, SalesForecast, Store, WeatherRecord } from '@/lib/types';
+import type { DailyContext, DailyMetric, SalesForecast, Store, WeatherRecord } from '@/lib/types';
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from '@/lib/utils/forecast-helpers';
 
 const FORECAST_ANALYTICS_LAST_RUN_DATE_KEY = 'forecast-analytics-last-run-date';
@@ -61,9 +61,17 @@ async function runForecastAnalytics(storeId: string, store: Store) {
       where("dayId", "<=", format(historyEndDate, "yyyyMMdd"))
     );
 
-    const [salesSnapshot, weatherSnapshot] = await Promise.all([
+    // Fetch daily context (last 28 days)
+    const dailyContextQuery = query(
+      collection(db, "stores", storeId, "dailyContext"),
+      where("dayId", ">=", format(historyStartDate, "yyyyMMdd")),
+      where("dayId", "<=", format(now, "yyyyMMdd"))
+    );
+
+    const [salesSnapshot, weatherSnapshot, dailyContextSnapshot] = await Promise.all([
       getDocs(salesQuery),
       getDocs(weatherQuery),
+      getDocs(dailyContextQuery),
     ]);
 
     const historicalSales = salesSnapshot.docs.map(d => {
@@ -90,10 +98,21 @@ async function runForecastAnalytics(storeId: string, store: Store) {
         };
       });
 
+      // Enrich with daily context (logged holidays/paydays)
+      const dailyContextDocs = dailyContextSnapshot.docs.map(d => d.data() as DailyContext);
+      const loggedHolidays = dailyContextDocs
+        .filter(dc => dc.holiday && dc.holiday.name !== "None")
+        .map(dc => {
+          const dateStr = dc.dayId.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+          return `${dc.holiday!.name} on ${dateStr}`;
+        });
+      const todayContext = dailyContextDocs.find(dc => dc.dayId === format(now, "yyyyMMdd"));
+
       // Compute analytics
       const config = store.forecastConfig;
       const upcomingPayrollDates = getUpcomingPayrollDates(config);
-      const upcomingHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
+      const configHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
+      const upcomingHolidays = [...new Set([...configHolidays, ...loggedHolidays])];
       const dayOfWeekAverages = computeDayOfWeekAverages(historicalSales);
       const { direction: trendDirection, ratio: recentVsHistoricalRatio } = computeTrendDirection(historicalSales);
 
@@ -106,7 +125,13 @@ async function runForecastAnalytics(storeId: string, store: Store) {
         dayOfWeekAverages,
         trendDirection,
         recentVsHistoricalRatio,
-        storeContext: config?.storeContext,
+        storeContext: [
+          config?.storeContext,
+          todayContext?.isPayday?.value ? "Today is confirmed as a payday by staff." : undefined,
+          todayContext?.holiday && todayContext.holiday.name !== "None"
+            ? `Today is ${todayContext.holiday.name} (confirmed by staff).`
+            : undefined,
+        ].filter(Boolean).join(" ") || undefined,
       };
 
       const token = await auth.currentUser?.getIdToken();
