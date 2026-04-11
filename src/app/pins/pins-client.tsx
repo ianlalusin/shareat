@@ -493,6 +493,46 @@ export default function PinsClient() {
                           >
                             Repair
                           </button>
+                          <button
+                            className="border rounded px-3 py-2 text-sm bg-green-50 border-green-300 text-green-800 disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: "Issue new PIN?",
+                                description: "A brand-new PIN will be generated for this session. Any previously archived PIN will remain in the archive.",
+                                confirmText: "Issue PIN",
+                                cancelText: "Cancel",
+                              });
+                              if (!ok) return;
+
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in to issue a PIN.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/issue", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ storeId, sessionId: s.id }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
+                                  router.push(`/print/session-pin/${s.id}`);
+                                } catch (error: any) {
+                                  console.error("Reissue PIN failed:", error);
+                                  window.alert(error?.message || "Failed to issue PIN.");
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Reissue
+                          </button>
                           </>
                         )}
                       </div>
