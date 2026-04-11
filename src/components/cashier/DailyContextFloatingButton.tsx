@@ -41,7 +41,7 @@ export function DailyContextFloatingButton({ storeId }: DailyContextFloatingButt
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 left-6 h-12 w-12 rounded-full shadow-lg z-50 bg-zinc-800 flex items-center justify-center hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-150 border-0 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
+        className="fixed bottom-[5.5rem] right-6 h-12 w-12 rounded-full shadow-lg z-50 bg-zinc-800 flex items-center justify-center hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-150 border-0 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
         aria-label="Log daily context"
       >
         <ClipboardEdit className="h-5 w-5 text-white" strokeWidth={1.8} />
