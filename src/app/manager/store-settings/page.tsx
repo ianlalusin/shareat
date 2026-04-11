@@ -13,6 +13,7 @@ import { StorePackagesSettings } from "@/components/manager/store-settings/store
 import { SchedulesSettings } from "@/components/manager/store-settings/schedules-settings";
 import { StoreFlavorsSettings } from "@/components/manager/store-settings/store-flavors-settings";
 import { StoreRefillsSettings } from "@/components/manager/store-settings/store-refills-settings";
+import { ForecastSettings } from "@/components/manager/store-settings/forecast-settings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
@@ -27,6 +28,7 @@ const TABS = [
     { value: "schedules", label: "Schedules" },
     { value: "kitchen", label: "Kitchen" },
     { value: "tables", label: "Tables" },
+    { value: "forecast", label: "Forecast" },
 ]
 
 export default function StoreSettingsPage() {
@@ -71,7 +73,7 @@ export default function StoreSettingsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-6">
+                    <TabsList className="grid w-full grid-cols-7">
                         {TABS.map(tab => (
                              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -95,6 +97,9 @@ export default function StoreSettingsPage() {
                 </TabsContent>
                  <TabsContent value="tables">
                     <TablesSettings store={activeStore} />
+                </TabsContent>
+                <TabsContent value="forecast">
+                    <ForecastSettings store={activeStore} />
                 </TabsContent>
             </Tabs>
         </RoleGuard>

@@ -345,6 +345,14 @@ export type ModeOfPayment = {
   updatedBy: string;
 };
 
+export type ForecastConfig = {
+  customHolidays?: { name: string; date: string }[]; // date in YYYY-MM-DD
+  payrollScheduleType?: 'semi_monthly_15_eom' | 'weekly' | 'bi_weekly' | 'custom';
+  customPayrollDates?: number[]; // day-of-month for custom, e.g. [5, 20]
+  payrollWeekday?: number; // 0=Sun..6=Sat for weekly/bi-weekly
+  storeContext?: string; // free-text AI context, e.g. "near a university"
+};
+
 export type Store = {
   id: string;
   name: string;
@@ -361,6 +369,7 @@ export type Store = {
   closingTime?: string;
   contactNumber?: string;
   email?: string;
+  forecastConfig?: ForecastConfig;
   createdAt: any;
   updatedAt: any;
 };
@@ -710,6 +719,7 @@ export type SalesForecast = {
   projectedSales: number;
   actualSales?: number;
   accuracy?: number;
+  confidence?: 'high' | 'medium' | 'low';
   createdAt: Timestamp;
 };
 

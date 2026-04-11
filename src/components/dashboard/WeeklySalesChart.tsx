@@ -2,17 +2,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
-import { collection, query, where, orderBy, getDocs, Timestamp, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase/client";
-import { addDays, format, startOfWeek } from "date-fns";
-import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
+import { addDays, format } from "date-fns";
+import type { ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { Loader2, Sparkles } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
 import type { WeatherRecord, DailyMetric } from "@/lib/types";
+import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
 
 // --- Caching Constants ---
 const CACHE_KEY_PREFIX = 'weeklySalesChartData';
@@ -34,72 +35,12 @@ function atStartOfDay(d: Date) {
   return x;
 }
 
-function getUpcomingPayrollDates(): string[] {
-    const dates: Date[] = [];
-    const today = atStartOfDay(new Date());
-
-    for (let i = 0; i < 3; i++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-        const year = d.getFullYear();
-        const month = d.getMonth();
-
-        let midMonthPayday = new Date(year, month, 15);
-        if (midMonthPayday.getDay() === 6) { 
-            midMonthPayday.setDate(midMonthPayday.getDate() - 1);
-        } else if (midMonthPayday.getDay() === 0) {
-            midMonthPayday.setDate(midMonthPayday.getDate() - 2);
-        }
-
-        let endOfMonthPayday = new Date(year, month + 1, 0);
-        if (endOfMonthPayday.getDay() === 6) {
-            endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 1);
-        } else if (endOfMonthPayday.getDay() === 0) {
-            endOfMonthPayday.setDate(endOfMonthPayday.getDate() - 2);
-        }
-
-        if (midMonthPayday >= today) dates.push(midMonthPayday);
-        if (endOfMonthPayday >= today) dates.push(endOfMonthPayday);
-    }
-    
-    return [...new Set(dates.map(d => d.getTime()))]
-        .map(time => new Date(time))
-        .sort((a,b) => a.getTime() - b.getTime())
-        .map(date => format(date, "yyyy-MM-dd"));
+// Confidence → band width multiplier
+function confidenceBandPct(confidence?: string): number {
+  if (confidence === "high") return 0.05;
+  if (confidence === "low") return 0.25;
+  return 0.15; // medium or unknown
 }
-
-// Helper to find e.g., the 2nd Sunday of a month
-function getNthDayOfMonth(n: number, day: number, month: number, year: number) {
-    const d = new Date(year, month, 1);
-    let count = 0;
-    while (count < n) {
-        if (d.getDay() === day) {
-            count++;
-            if (count === n) break;
-        }
-        d.setDate(d.getDate() + 1);
-    }
-    return d;
-}
-
-// Helper function to get upcoming holidays
-function getUpcomingHolidays(year: number): { name: string; date: string }[] {
-    const holidays = [
-        { name: "New Year's Day", date: new Date(year, 0, 1) },
-        { name: "Valentine's Day", date: new Date(year, 1, 14) },
-        // Mother's Day: 2nd Sunday in May
-        { name: "Mother's Day", date: getNthDayOfMonth(2, 0, 4, year) },
-        // Father's Day: 3rd Sunday in June
-        { name: "Father's Day", date: getNthDayOfMonth(3, 0, 5, year) },
-        { name: "Christmas Day", date: new Date(year, 11, 25) },
-        { name: "New Year's Eve", date: new Date(year, 11, 31) },
-    ];
-
-    const today = atStartOfDay(new Date());
-    return holidays
-        .filter(h => h.date >= today) // Only future holidays
-        .map(h => ({ name: h.name, date: format(h.date, 'yyyy-MM-dd') }));
-}
-
 
 export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
@@ -115,7 +56,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
       }
       setIsLoading(true);
       setError(null);
-      
+
       const cacheKey = `${CACHE_KEY_PREFIX}:${storeId}`;
       try {
         const cachedItem = localStorage.getItem(cacheKey);
@@ -151,7 +92,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             getDocs(query(weatherQuery, where("dayId", ">=", format(startDate, "yyyyMMdd")), where("dayId", "<=", format(endDate, "yyyyMMdd")))),
             getDoc(todayAnalyticsDocRef)
         ]);
-        
+
         const todayLiveSales = todayAnalyticsSnap.exists() ? (todayAnalyticsSnap.data() as DailyMetric).payments?.totalGross ?? 0 : 0;
 
         const historicalSales = salesSnapshot.docs.map((doc) => {
@@ -171,7 +112,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             netSales: netSales,
           };
         });
-        
+
         const hasTodayData = historicalSales.some(s => s.date === format(today, 'yyyy-MM-dd'));
         if (!hasTodayData && todayLiveSales > 0) {
             historicalSales.push({
@@ -179,9 +120,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 netSales: todayLiveSales,
             });
         }
-        
-        const historicalWeather = weatherSnapshot.docs.map(doc => {
-            const data = doc.data() as WeatherRecord;
+
+        const historicalWeather = weatherSnapshot.docs.map(d => {
+            const data = d.data() as WeatherRecord;
             const conditions = data.entries.map(e => e.condition);
             const conditionCounts = conditions.reduce((acc, cond) => {
                 acc[cond] = (acc[cond] || 0) + 1;
@@ -201,10 +142,12 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           return;
         }
 
-        const upcomingPayrollDates = getUpcomingPayrollDates();
-
-        // NEW: Get upcoming holidays
-        const upcomingHolidays = getUpcomingHolidays(today.getFullYear()).map(h => `${h.name} on ${h.date}`);
+        // Use shared helpers with store's forecast config
+        const config = activeStore.forecastConfig;
+        const upcomingPayrollDates = getUpcomingPayrollDates(config);
+        const upcomingHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
+        const dayOfWeekAverages = computeDayOfWeekAverages(historicalSales);
+        const { direction: trendDirection, ratio: recentVsHistoricalRatio } = computeTrendDirection(historicalSales);
 
         const forecastInput: ForecastInput = {
           historicalSales,
@@ -212,8 +155,12 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           storeLocation: activeStore.address,
           upcomingPayrollDates,
           upcomingHolidays,
+          dayOfWeekAverages,
+          trendDirection,
+          recentVsHistoricalRatio,
+          storeContext: config?.storeContext,
         };
-        
+
         const token = await auth.currentUser?.getIdToken();
         if (!token) throw new Error("Not authenticated");
 
@@ -231,7 +178,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         const forecastResult = await res.json();
 
         const salesByDate = new Map(historicalSales.map(s => [s.date, s.netSales]));
-        const forecastByDay = new Map(forecastResult.forecast.map((f: any) => [f.day, f.forecastedSales]));
+        const forecastByDay = new Map<string, { sales: number; confidence?: string }>(
+          forecastResult.forecast.map((f: any) => [f.day, { sales: f.forecastedSales, confidence: f.confidence }])
+        );
 
         const chartData = [];
 
@@ -244,23 +193,32 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 thisWeek: salesByDate.get(format(currentDay, "yyyy-MM-dd")) ?? 0,
                 lastWeek: salesByDate.get(format(lastWeekDay, "yyyy-MM-dd")) ?? 0,
                 forecast: 0,
+                forecastRange: [0, 0] as [number, number],
             });
         }
-        
+
         for (let i = 1; i <= 7; i++) {
             const forecastDay = addDays(today, i);
             const dayName = format(forecastDay, 'EEEE');
             const dayAbbr = format(forecastDay, 'E');
-            
+
+            const fData = forecastByDay.get(dayName);
+            const forecastVal = fData?.sales ?? 0;
+            const bandPct = confidenceBandPct(fData?.confidence);
+            const lower = Math.round(forecastVal * (1 - bandPct));
+            const upper = Math.round(forecastVal * (1 + bandPct));
+
             const existingIndex = chartData.findIndex(d => d.name === dayAbbr);
             if (existingIndex !== -1) {
-                chartData[existingIndex].forecast = forecastByDay.get(dayName) ?? 0;
+                chartData[existingIndex].forecast = forecastVal;
+                chartData[existingIndex].forecastRange = [lower, upper];
             } else {
                  chartData.push({
                     name: dayAbbr,
                     thisWeek: 0,
                     lastWeek: 0,
-                    forecast: forecastByDay.get(dayName) ?? 0,
+                    forecast: forecastVal,
+                    forecastRange: [lower, upper],
                 });
             }
         }
@@ -284,7 +242,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
 
     fetchDataAndForecast();
   }, [storeId, activeStore]);
-  
+
   const chartConfig = {
       thisWeek: { label: "Current Week", color: "hsl(var(--primary))" },
       lastWeek: { label: "Last Week", color: "hsl(var(--secondary-foreground))" },
@@ -298,7 +256,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             <Sparkles />
             Weekly Sales
         </CardTitle>
-        <CardDescription>A rolling 7-day view of sales performance and a 7-day forecast. <span className="text-xs text-muted-foreground/80">(powered by AI)</span></CardDescription>
+        <CardDescription>A rolling 7-day view of sales performance and a 7-day forecast. Shaded area shows confidence range. <span className="text-xs text-muted-foreground/80">(powered by AI)</span></CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -312,7 +270,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
             </Alert>
         ) : (
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
-              <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+              <ComposedChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" />
                 <YAxis tickFormatter={(value) => formatCurrency(value)} />
@@ -324,7 +282,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                                 <div className="min-w-[8rem] rounded-lg border bg-background p-2 text-sm shadow-sm">
                                     <div className="font-bold">{label}</div>
                                     <div className="mt-2 grid gap-1.5">
-                                        {payload.map((item) => (
+                                        {payload
+                                            .filter((item) => item.dataKey !== "forecastRange")
+                                            .map((item) => (
                                             (typeof item.value === 'number' && item.value > 0) && <div
                                                 key={item.dataKey}
                                                 className="flex items-center gap-2"
@@ -349,10 +309,19 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                     }}
                 />
                 <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="forecastRange"
+                  fill="hsl(var(--destructive))"
+                  fillOpacity={0.1}
+                  stroke="none"
+                  legendType="none"
+                  tooltipType="none"
+                />
                 <Line type="monotone" dataKey="thisWeek" stroke="var(--color-thisWeek)" strokeWidth={2} name="Current Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="lastWeek" stroke="var(--color-lastWeek)" strokeWidth={2} strokeDasharray="5 5" name="Last Week" dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={3} name="Forecast" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-              </LineChart>
+              </ComposedChart>
             </ChartContainer>
         )}
       </CardContent>

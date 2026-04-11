@@ -29,7 +29,7 @@ import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-c
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
-import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
+import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
 import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
@@ -82,11 +82,12 @@ export default function DashboardPageClient() {
         customRange,
     });
     
-    const { 
-        accuracy, 
-        todaysProjectedSales, 
-        isLoading: isForecastLoading 
-    } = useForecastAnalytics(activeStore?.id, activeStore?.address);
+    const {
+        accuracy,
+        todaysProjectedSales,
+        todaysConfidence,
+        isLoading: isForecastLoading
+    } = useForecastAnalytics(activeStore?.id, activeStore ?? undefined);
     
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
@@ -170,8 +171,13 @@ export default function DashboardPageClient() {
                     <div className="lg:col-span-2 space-y-6">
                       <WeeklySalesChart storeId={activeStore.id} />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
-                        <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
+                        <ForecastAccuracyTrendCard storeId={activeStore.id} />
+                        <TodayForecastCard
+                          projectedSales={todaysProjectedSales}
+                          confidence={todaysConfidence}
+                          actualSalesToday={stats?.netSales ?? null}
+                          isLoading={isForecastLoading}
+                        />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
                         <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
