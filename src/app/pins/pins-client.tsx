@@ -10,6 +10,8 @@ import { useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CustomersAdmin } from "@/components/pins/customers-admin";
 
 type ActiveSession = {
   id: string;
@@ -313,7 +315,7 @@ export default function PinsClient() {
       <div className="p-6 space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold">PINs</h1>
+            <h1 className="text-xl font-semibold">PINs & Customers</h1>
             <p className="text-sm opacity-70">
               Store: <span className="font-medium">{activeStore?.name || "—"}</span>
             </p>
@@ -324,7 +326,17 @@ export default function PinsClient() {
         {!storeId ? (
           <div className="text-sm opacity-70">No store selected.</div>
         ) : (
-          <div className="space-y-4">
+          <Tabs defaultValue="pins" className="w-full">
+            <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+              <TabsTrigger value="pins">PINs</TabsTrigger>
+              <TabsTrigger value="customers">Customers</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="customers">
+              <CustomersAdmin />
+            </TabsContent>
+
+            <TabsContent value="pins" className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {view.map((s) => {
                 const pinLabel = s.customerPin ? String(s.customerPin) : "WAITING FOR PIN";
@@ -642,7 +654,8 @@ export default function PinsClient() {
                 </div>
               )}
             </Card>
-          </div>
+            </TabsContent>
+          </Tabs>
         )}
       </div>
     </RoleGuard>
