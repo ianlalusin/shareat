@@ -173,7 +173,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
   const pacingColor = todayRow?.onTrack ? "text-green-600" : "text-red-600";
 
   const chartConfig = {
-    past: { label: "Actual", color: "#dc2626" },
+    past: { label: "Actual", color: "#16a34a" },
     forecast: { label: "Projection", color: "#dc2626" },
   };
 
@@ -192,9 +192,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           )}
         </CardTitle>
         <CardDescription>
-          3 days past · today · 3 days projection. Today pulses{" "}
-          <span className="text-red-600 font-semibold">red</span> when behind,{" "}
-          <span className="text-green-600 font-semibold">green</span> when on pace.
+          <span className="text-green-600 font-semibold">Green</span> = actual sales ·{" "}
+          <span className="text-red-600 font-semibold">red dashed</span> = projection. Today pulses
+          red when behind, green when on pace.
           <span className="text-xs text-muted-foreground/80"> (AI forecast updated daily at noon)</span>
         </CardDescription>
       </CardHeader>
@@ -242,13 +242,13 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
               <Line
                 type="monotone"
                 dataKey="past"
-                stroke="#dc2626"
+                stroke="#16a34a"
                 strokeWidth={2.5}
                 connectNulls={false}
                 dot={(props: any) => {
                   const { key, ...rest } = props;
                   if (props.payload?.isToday) return <TodayDot key={key} {...rest} />;
-                  return <circle key={key} cx={props.cx} cy={props.cy} r={4} fill="#dc2626" />;
+                  return <circle key={key} cx={props.cx} cy={props.cy} r={4} fill="#16a34a" />;
                 }}
                 activeDot={{ r: 6 }}
                 isAnimationActive={false}
@@ -258,7 +258,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                   position="top"
                   offset={12}
                   formatter={(v: number) => (v > 0 ? formatCurrency(v) : "")}
-                  style={{ fontSize: 11, fontWeight: 600, fill: "#dc2626" }}
+                  style={{ fontSize: 11, fontWeight: 600, fill: "#16a34a" }}
                 />
               </Line>
               <Line
