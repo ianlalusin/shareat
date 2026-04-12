@@ -36,6 +36,11 @@ service cloud.firestore {
     function customerStoreId() { return request.auth.token.storeId; }
     function customerSessionId() { return request.auth.token.sessionId; }
 
+    function isLoyaltyCustomer() {
+      return isSignedIn() && request.auth.token.loyaltyCustomer == true;
+    }
+    function loyaltyPhone() { return request.auth.token.phone; }
+
     function isCustomerForSession(storeId, sessionId) {
       return isCustomer()
         && customerStoreId() == storeId
@@ -121,6 +126,21 @@ service cloud.firestore {
     // Store scoped (everything else)
     match /stores/{storeId}/{docPath=**} {
       allow read, write, delete: if hasStoreAccess(storeId);
+    }
+
+    // -----------------------------
+    // SHARELEBRATOR LOYALTY CUSTOMERS
+    // Top-level (cross-branch). Server-only writes via Admin SDK.
+    // -----------------------------
+    match /customers/{phone} {
+      allow get: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+      allow list: if isActiveStaff();
+      allow create, update, delete: if false;
+
+      match /pointsLedger/{ledgerId} {
+        allow get, list: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+        allow create, update, delete: if false;
+      }
     }
 
     // Root (non-store) - keep as-is, but note: pinRegistry is now explicitly handled above

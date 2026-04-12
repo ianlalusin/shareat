@@ -430,6 +430,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         <SessionHeader session={{
             id: session.id, tableNumber: session.tableNumber, guestCount: session.guestCountFinal || 0,
             packageName: session.packageSnapshot?.name ?? "N/A", sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName,
+            linkedCustomerName: (session as any).linkedCustomerName ?? null,
         }} />
         <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>

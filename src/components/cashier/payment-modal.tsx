@@ -296,6 +296,7 @@ export function PaymentModal({
     try {
       const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", sessionId));
       const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
+      const linkedPhone = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.linkedCustomerPhone || "") : "";
 
       const receiptId = await completePaymentFromUnits(
         storeId, sessionId, appUser, normalizedPayments,
@@ -321,6 +322,16 @@ export function PaymentModal({
             body: JSON.stringify({ storeId, sessionId }),
           }).catch(() => console.error("[PIN] Fallback disable also failed for session", sessionId));
         });
+      }
+
+      // Sharelebrator loyalty earn (fire-and-forget)
+      if (firebaseUser && linkedPhone) {
+        const token = await firebaseUser.getIdToken();
+        fetch("/api/loyalty/earn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ storeId, sessionId, phone: linkedPhone, amount: grandTotal, receiptId }),
+        }).catch((err) => console.error("[Loyalty] earn failed for session", sessionId, err));
       }
     } catch (e: any) {
       toast({ variant: "destructive", title: "Payment failed", description: e?.message ?? "Something went wrong." });

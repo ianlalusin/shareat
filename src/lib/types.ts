@@ -353,6 +353,17 @@ export type ForecastConfig = {
   storeContext?: string; // free-text AI context, e.g. "near a university"
 };
 
+export type LoyaltyConfig = {
+  isEnabled: boolean;
+  pointsPerPeso: number; // e.g. 0.01 = 1 point per ₱100
+};
+
+export type SharelebratorLink = {
+  linkedCustomerPhone?: string | null;
+  linkedCustomerName?: string | null;
+  linkedCustomerLockedAt?: any; // Timestamp when session closed
+};
+
 export type Store = {
   id: string;
   name: string;
@@ -370,6 +381,7 @@ export type Store = {
   contactNumber?: string;
   email?: string;
   forecastConfig?: ForecastConfig;
+  loyaltyConfig?: LoyaltyConfig;
   createdAt: any;
   updatedAt: any;
 };
