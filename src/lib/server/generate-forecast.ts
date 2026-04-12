@@ -37,11 +37,14 @@ async function updateYesterdayAccuracy(storeId: string, now: Date): Promise<void
   if (actualSales <= 0) return;
 
   const projected = forecastData.projectedSales ?? 0;
-  const accuracy = 1 - Math.abs(actualSales - projected) / actualSales;
+  // Symmetric accuracy: |error| / max(actual, projected)
+  // Gives identical scores for mirrored under/over-forecasts and is bounded [0,1].
+  const denom = Math.max(actualSales, projected);
+  const accuracy = denom > 0 ? 1 - Math.abs(actualSales - projected) / denom : 0;
 
   await forecastRef.update({
     actualSales,
-    accuracy: Math.max(0, accuracy),
+    accuracy: Math.max(0, Math.min(1, accuracy)),
   });
 }
 
