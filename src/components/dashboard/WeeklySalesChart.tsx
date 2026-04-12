@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
@@ -215,7 +215,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           </Alert>
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
-            <LineChart data={data} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
+            <LineChart data={data} margin={{ top: 28, right: 24, left: -10, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 11 }} />
@@ -252,7 +252,15 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 }}
                 activeDot={{ r: 6 }}
                 isAnimationActive={false}
-              />
+              >
+                <LabelList
+                  dataKey="past"
+                  position="top"
+                  offset={12}
+                  formatter={(v: number) => (v > 0 ? formatCurrency(v) : "")}
+                  style={{ fontSize: 11, fontWeight: 600, fill: "#dc2626" }}
+                />
+              </Line>
               <Line
                 type="monotone"
                 dataKey="forecast"
@@ -267,7 +275,15 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 }}
                 activeDot={{ r: 6 }}
                 isAnimationActive={false}
-              />
+              >
+                <LabelList
+                  dataKey="forecast"
+                  position="bottom"
+                  offset={12}
+                  formatter={(v: number) => (v > 0 ? formatCurrency(v) : "")}
+                  style={{ fontSize: 11, fontWeight: 500, fill: "#dc2626", opacity: 0.75 }}
+                />
+              </Line>
             </LineChart>
           </ChartContainer>
         )}
