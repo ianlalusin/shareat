@@ -100,6 +100,48 @@ export interface PinTextParts {
   bottom: string;
 }
 
+export function formatSharelebratorPasswordText(opts: {
+  name: string;
+  phone: string;
+  tempPassword: string;
+  resetAtMs?: number;
+  width: 58 | 80;
+}): string {
+  const charsPerLine = opts.width === 58 ? 32 : 38;
+  const center = (text: string) => text.trim();
+  const hr = () => '-'.repeat(charsPerLine);
+  const dashed = () => '='.repeat(charsPerLine);
+
+  const lines: string[] = [
+    center('* SHARELEBRATOR *'),
+    center('Password Reset'),
+    hr(),
+    '',
+    center('Cardholder:'),
+    center(opts.name),
+    '',
+    center('Phone:'),
+    center(opts.phone),
+    '',
+    dashed(),
+    center('TEMPORARY PASSWORD'),
+    '',
+    center(opts.tempPassword),
+    '',
+    dashed(),
+    '',
+    center('Use this to log in to your'),
+    center('Sharelebrator account.'),
+    center('Please change it after login.'),
+    '',
+    hr(),
+    center(new Date(opts.resetAtMs ?? Date.now()).toLocaleString()),
+    '\n\n\n\n',
+  ];
+
+  return lines.join('\n');
+}
+
 export function formatPinText(opts: {
   pin: string;
   customerName?: string | null;

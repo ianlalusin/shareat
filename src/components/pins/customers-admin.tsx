@@ -12,6 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, KeyRound, Copy, Printer, Sparkles } from "lucide-react";
 import { format } from "date-fns";
+import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
+import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
 
 type LedgerEntry = {
   id: string;
@@ -113,8 +115,51 @@ export function CustomersAdmin() {
     toast({ title: "Copied", description: "Temporary password copied to clipboard." });
   }
 
-  function printPassword() {
+  async function printPassword() {
     if (!tempPassword || !customer) return;
+
+    // Native Android (Capacitor) → Bluetooth thermal printer
+    if (isNativeBluetoothAvailable()) {
+      const addr = getLastPrinterAddress();
+      if (!addr) {
+        toast({
+          title: "No printer",
+          description: "Connect a printer in Settings first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const paperWidth = ((): 58 | 80 => {
+          try {
+            return localStorage.getItem("receiptPaperWidth:global") === "58mm" ? 58 : 80;
+          } catch {
+            return 80;
+          }
+        })();
+        const text = formatSharelebratorPasswordText({
+          name: customer.name,
+          phone: customer.phone,
+          tempPassword,
+          resetAtMs: Date.now(),
+          width: paperWidth,
+        });
+        await printViaNativeBluetooth({
+          target: "pin",
+          text,
+          widthMm: paperWidth,
+          cut: true,
+          beep: true,
+          encoding: "CP437",
+        });
+        toast({ title: "Printed", description: "Slip sent to thermal printer." });
+      } catch (err: any) {
+        toast({ title: "Print failed", description: err.message || "Unknown error", variant: "destructive" });
+      }
+      return;
+    }
+
+    // Web fallback → browser print via pop-up window
     const resetDate = format(new Date(), "MMM d, yyyy h:mm a");
     const html = `<!DOCTYPE html>
 <html>
