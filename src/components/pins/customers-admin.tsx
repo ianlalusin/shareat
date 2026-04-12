@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, KeyRound, Copy, Sparkles } from "lucide-react";
+import { Loader2, Search, KeyRound, Copy, Printer, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 
 type LedgerEntry = {
@@ -113,6 +113,61 @@ export function CustomersAdmin() {
     toast({ title: "Copied", description: "Temporary password copied to clipboard." });
   }
 
+  function printPassword() {
+    if (!tempPassword || !customer) return;
+    const resetDate = format(new Date(), "MMM d, yyyy h:mm a");
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Sharelebrator Password Reset</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; max-width: 380px; margin: 0 auto; color: #1a1a1a; }
+    .brand { text-align: center; font-weight: 900; font-size: 20px; letter-spacing: 2px; margin-bottom: 4px; }
+    .tagline { text-align: center; font-size: 11px; color: #666; margin-bottom: 24px; letter-spacing: 3px; text-transform: uppercase; }
+    .section { margin-bottom: 16px; }
+    .label { font-size: 10px; text-transform: uppercase; color: #666; letter-spacing: 1px; margin-bottom: 2px; }
+    .value { font-size: 15px; font-weight: 600; }
+    .pw-box { border: 2px dashed #000; padding: 16px; text-align: center; margin: 20px 0; border-radius: 8px; }
+    .pw-label { font-size: 10px; text-transform: uppercase; color: #666; letter-spacing: 1px; margin-bottom: 8px; }
+    .pw-value { font-family: 'Courier New', monospace; font-size: 28px; font-weight: 900; letter-spacing: 4px; }
+    .footer { font-size: 10px; color: #666; text-align: center; margin-top: 24px; line-height: 1.5; border-top: 1px solid #ddd; padding-top: 12px; }
+    .date { font-size: 10px; color: #999; text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="brand">★ SHARELEBRATOR ★</div>
+  <div class="tagline">Password Reset</div>
+  <div class="section">
+    <div class="label">Cardholder</div>
+    <div class="value">${customer.name}</div>
+  </div>
+  <div class="section">
+    <div class="label">Phone</div>
+    <div class="value">${customer.phone}</div>
+  </div>
+  <div class="pw-box">
+    <div class="pw-label">Temporary Password</div>
+    <div class="pw-value">${tempPassword}</div>
+  </div>
+  <div class="footer">
+    Use this password to log in to your Sharelebrator account.
+    Please change your password after logging in for security.
+  </div>
+  <div class="date">Reset on ${resetDate}</div>
+  <script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };</script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "width=420,height=600");
+    if (!w) {
+      toast({ title: "Pop-up blocked", description: "Allow pop-ups to print the password.", variant: "destructive" });
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
   return (
     <div className="space-y-4">
       {Dialog}
@@ -200,8 +255,11 @@ export function CustomersAdmin() {
                         <code className="font-mono text-lg font-bold bg-white px-3 py-1.5 rounded border flex-1">
                           {tempPassword}
                         </code>
-                        <Button size="sm" variant="outline" onClick={copyPassword}>
+                        <Button size="sm" variant="outline" onClick={copyPassword} title="Copy">
                           <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={printPassword} title="Print">
+                          <Printer className="h-4 w-4" />
                         </Button>
                       </div>
                       <p className="text-[11px] text-green-700">
