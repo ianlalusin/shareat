@@ -246,8 +246,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 strokeWidth={2.5}
                 connectNulls={false}
                 dot={(props: any) => {
-                  if (props.payload?.isToday) return <TodayDot key={props.index} {...props} />;
-                  return <circle key={props.index} cx={props.cx} cy={props.cy} r={4} fill="#dc2626" />;
+                  const { key, ...rest } = props;
+                  if (props.payload?.isToday) return <TodayDot key={key} {...rest} />;
+                  return <circle key={key} cx={props.cx} cy={props.cy} r={4} fill="#dc2626" />;
                 }}
                 activeDot={{ r: 6 }}
                 isAnimationActive={false}
@@ -260,8 +261,9 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
                 strokeDasharray="6 4"
                 connectNulls={false}
                 dot={(props: any) => {
-                  if (props.payload?.isToday) return <g key={props.index} />;
-                  return <circle key={props.index} cx={props.cx} cy={props.cy} r={4} fill="#dc2626" opacity={0.6} />;
+                  const { key } = props;
+                  if (props.payload?.isToday) return <g key={key} />;
+                  return <circle key={key} cx={props.cx} cy={props.cy} r={4} fill="#dc2626" opacity={0.6} />;
                 }}
                 activeDot={{ r: 6 }}
                 isAnimationActive={false}
