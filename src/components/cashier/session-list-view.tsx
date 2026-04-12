@@ -62,7 +62,7 @@ export function SessionListView() {
 
 
     const sortedTables = useMemo(() => {
-        return [...cachedTables]
+        const available = [...cachedTables]
             .filter(t => t.status === 'available' && t.isActive !== false)
             .sort((a, b) => {
                 const numA = parseInt(a.tableNumber, 10);
@@ -72,7 +72,24 @@ export function SessionListView() {
                 }
                 return (a.tableNumber || '').localeCompare(b.tableNumber || '');
             });
-    }, [cachedTables]);
+
+        // Find anchor: most recently started active session's table number
+        // sessions are ordered asc by startedAtClientMs, so last element is most recent
+        const lastSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
+        const anchorRaw = lastSession?.tableNumber;
+        const anchorNum = anchorRaw != null ? parseInt(String(anchorRaw), 10) : NaN;
+        if (isNaN(anchorNum)) return available;
+
+        // Rotate: tables with number > anchor come first, then tables with number <= anchor
+        const after: typeof available = [];
+        const before: typeof available = [];
+        for (const t of available) {
+            const n = parseInt(t.tableNumber, 10);
+            if (!isNaN(n) && n > anchorNum) after.push(t);
+            else before.push(t);
+        }
+        return [...after, ...before];
+    }, [cachedTables, sessions]);
 
     useEffect(() => {
         if (!activeStore) {
