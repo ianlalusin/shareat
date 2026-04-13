@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader, PlusCircle, Save, Trash2 } from "lucide-react";
@@ -20,8 +19,6 @@ interface ForecastSettingsProps {
   store: Store;
 }
 
-const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
 export function ForecastSettings({ store }: ForecastSettingsProps) {
   const { toast } = useToast();
   const config = store.forecastConfig ?? {};
@@ -30,8 +27,6 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
   const [newHolidayName, setNewHolidayName] = useState("");
   const [newHolidayDate, setNewHolidayDate] = useState("");
 
-  const [payrollType, setPayrollType] = useState<string>(config.payrollScheduleType ?? "semi_monthly_15_eom");
-  const [payrollWeekday, setPayrollWeekday] = useState(config.payrollWeekday ?? 5);
   const [customPayrollDates, setCustomPayrollDates] = useState(
     (config.customPayrollDates ?? []).join(", ")
   );
@@ -64,8 +59,7 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
 
       const forecastConfig: ForecastConfig = {
         customHolidays: holidays,
-        payrollScheduleType: payrollType as ForecastConfig["payrollScheduleType"],
-        payrollWeekday,
+        payrollScheduleType: "custom",
         customPayrollDates: parsedCustomDates,
         storeContext: storeContext.trim().slice(0, 500),
       };
@@ -144,57 +138,26 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
         </CardContent>
       </Card>
 
-      {/* Payroll Schedule */}
+      {/* Paydays */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Payroll Schedule</CardTitle>
+          <CardTitle className="text-base">Paydays</CardTitle>
           <CardDescription>
-            Sales tend to spike around paydays. Configure the payroll cycle for more accurate forecasts.
+            Days of the month that are paydays. Sales tend to spike around these days, which helps the forecast.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            <Label>Schedule Type</Label>
-            <Select value={payrollType} onValueChange={setPayrollType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="semi_monthly_15_eom">Semi-monthly (15th & end of month)</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="bi_weekly">Bi-weekly</SelectItem>
-                <SelectItem value="custom">Custom dates</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>Days of the month</Label>
+            <Input
+              placeholder="e.g. 5, 20"
+              value={customPayrollDates}
+              onChange={(e) => setCustomPayrollDates(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Comma-separated day numbers (1–31). For example, <code>15, 30</code> means the 15th and 30th of every month.
+            </p>
           </div>
-
-          {(payrollType === "weekly" || payrollType === "bi_weekly") && (
-            <div className="space-y-1">
-              <Label>Payday Weekday</Label>
-              <Select value={String(payrollWeekday)} onValueChange={(v) => setPayrollWeekday(Number(v))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WEEKDAY_LABELS.map((label, i) => (
-                    <SelectItem key={i} value={String(i)}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {payrollType === "custom" && (
-            <div className="space-y-1">
-              <Label>Days of Month</Label>
-              <Input
-                placeholder="e.g. 5, 20"
-                value={customPayrollDates}
-                onChange={(e) => setCustomPayrollDates(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">Comma-separated day numbers (1-31).</p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
