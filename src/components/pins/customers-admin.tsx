@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot, orderBy, query, limit as qLimit } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, KeyRound, Copy, Printer, Sparkles } from "lucide-react";
+import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins } from "lucide-react";
 import { format } from "date-fns";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
@@ -49,11 +51,59 @@ export function CustomersAdmin() {
   const [notFound, setNotFound] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
+  // All accounts (live subscription)
+  const [allAccounts, setAllAccounts] = useState<
+    { phone: string; name: string; pointsBalance: number; createdAtMs: number | null }[]
+  >([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "customers"), orderBy("createdAt", "desc"), qLimit(500));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            phone: d.id,
+            name: data.name ?? "",
+            pointsBalance: data.pointsBalance ?? 0,
+            createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
+          };
+        });
+        setAllAccounts(rows);
+        setAccountsLoading(false);
+      },
+      (err) => {
+        console.error("Failed to fetch accounts:", err);
+        setAccountsLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const totalPointsOutstanding = useMemo(
+    () => allAccounts.reduce((sum, a) => sum + (a.pointsBalance || 0), 0),
+    [allAccounts]
+  );
+
   const canReset =
     appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
 
-  async function handleSearch() {
-    if (!phoneInput.trim() || !user) return;
+  function handlePickAccount(phone: string) {
+    setPhoneInput(phone);
+    // fire search on next tick to avoid race
+    setTimeout(() => {
+      const inputEl = document.querySelector<HTMLInputElement>('input[type="tel"]');
+      if (inputEl) inputEl.value = phone;
+    }, 0);
+    // use the phone directly to search — doesn't rely on state
+    searchByPhone(phone);
+  }
+
+  async function searchByPhone(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed || !user) return;
     setLoading(true);
     setNotFound(false);
     setCustomer(null);
@@ -62,14 +112,13 @@ export function CustomersAdmin() {
     try {
       const token = await user.getIdToken();
       const res = await fetch(
-        `/api/loyalty/lookup?phone=${encodeURIComponent(phoneInput.trim())}`,
+        `/api/loyalty/lookup?phone=${encodeURIComponent(trimmed)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Lookup failed.");
-      if (!json.found) {
-        setNotFound(true);
-      } else {
+      if (!json.found) setNotFound(true);
+      else {
         setCustomer(json.customer);
         setLedger(json.ledger || []);
       }
@@ -78,6 +127,10 @@ export function CustomersAdmin() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSearch() {
+    return searchByPhone(phoneInput);
   }
 
   async function handleResetPassword() {
@@ -329,6 +382,75 @@ export function CustomersAdmin() {
           </CardContent>
         </Card>
       </div>
+
+      {/* All accounts list + stats */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                All Sharelebrator Accounts
+              </CardTitle>
+              <CardDescription>Tap a row to load the cardholder above.</CardDescription>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
+                <p className="text-2xl font-black">{allAccounts.length.toLocaleString()}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 justify-end">
+                  <Coins className="h-3 w-3" /> Points outstanding
+                </p>
+                <p className="text-2xl font-black">{totalPointsOutstanding.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {accountsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : allAccounts.length === 0 ? (
+            <p className="px-6 py-8 text-sm text-center text-muted-foreground">
+              No Sharelebrator accounts yet.
+            </p>
+          ) : (
+            <div className="max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead className="text-xs">Name</TableHead>
+                    <TableHead className="text-xs">Phone</TableHead>
+                    <TableHead className="text-xs">Member since</TableHead>
+                    <TableHead className="text-xs text-right">Balance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allAccounts.map((a) => (
+                    <TableRow
+                      key={a.phone}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handlePickAccount(a.phone)}
+                    >
+                      <TableCell className="text-sm font-medium">{a.name || "—"}</TableCell>
+                      <TableCell className="text-xs font-mono">{a.phone}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {a.createdAtMs ? format(new Date(a.createdAtMs), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-right font-mono font-bold">
+                        {a.pointsBalance.toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Full-width transactions (only when a customer is loaded) */}
       {customer && (
