@@ -140,14 +140,47 @@ export function CustomersAdmin() {
     [allAccounts]
   );
 
-  // Client-side filter (name or phone substring, case-insensitive)
+  // Accounts filter — only show results when user has typed a query
+  const accountQuery = phoneInput.trim().toLowerCase();
   const filteredAccounts = useMemo(() => {
-    const q = phoneInput.trim().toLowerCase();
-    if (!q) return allAccounts;
+    if (!accountQuery) return [];
     return allAccounts.filter(
-      (a) => a.phone.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+      (a) => a.phone.toLowerCase().includes(accountQuery) || a.name.toLowerCase().includes(accountQuery)
     );
-  }, [allAccounts, phoneInput]);
+  }, [allAccounts, accountQuery]);
+
+  // Pagination state
+  const ACCOUNTS_PAGE_SIZE = 10;
+  const TRANSACTIONS_PAGE_SIZE = 10;
+  const LOGS_PAGE_SIZE = 20;
+  const [accountsPage, setAccountsPage] = useState(0);
+  const [txnsPage, setTxnsPage] = useState(0);
+  const [logsPage, setLogsPage] = useState(0);
+
+  // Reset to first page when data or filter changes
+  useEffect(() => {
+    setAccountsPage(0);
+  }, [accountQuery]);
+  useEffect(() => {
+    setTxnsPage(0);
+  }, [customer?.phone]);
+
+  const accountsTotalPages = Math.max(1, Math.ceil(filteredAccounts.length / ACCOUNTS_PAGE_SIZE));
+  const txnsTotalPages = Math.max(1, Math.ceil(ledger.length / TRANSACTIONS_PAGE_SIZE));
+  const logsTotalPages = Math.max(1, Math.ceil(logs.length / LOGS_PAGE_SIZE));
+
+  const accountsPageRows = useMemo(
+    () => filteredAccounts.slice(accountsPage * ACCOUNTS_PAGE_SIZE, (accountsPage + 1) * ACCOUNTS_PAGE_SIZE),
+    [filteredAccounts, accountsPage]
+  );
+  const txnsPageRows = useMemo(
+    () => ledger.slice(txnsPage * TRANSACTIONS_PAGE_SIZE, (txnsPage + 1) * TRANSACTIONS_PAGE_SIZE),
+    [ledger, txnsPage]
+  );
+  const logsPageRows = useMemo(
+    () => logs.slice(logsPage * LOGS_PAGE_SIZE, (logsPage + 1) * LOGS_PAGE_SIZE),
+    [logs, logsPage]
+  );
 
   const canReset =
     appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
@@ -333,10 +366,11 @@ export function CustomersAdmin() {
       {Dialog}
 
       <div className="grid gap-4 lg:grid-cols-2 items-start">
-      {/* Left column wrapper (Accounts + Logs stacked) is rendered after the right card below */}
+      {/* LEFT COLUMN WRAPPER — will hold Cardholder+Transactions on top and All Accounts below */}
+      <div className="space-y-4 lg:order-1">
 
-      {/* Cardholder details + Recent transactions (single card) — RIGHT COLUMN */}
-      <Card className="lg:order-2">
+      {/* Cardholder details + Recent transactions (single card) */}
+      <Card>
         <CardContent className="p-6 h-full">
           {!customer ? (
             <div className="flex items-center justify-center min-h-[160px] text-sm text-muted-foreground">
@@ -435,41 +469,66 @@ export function CustomersAdmin() {
                 {ledger.length === 0 ? (
                   <p className="py-4 text-sm text-center text-muted-foreground">No transactions yet.</p>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Date</TableHead>
-                          <TableHead className="text-xs">Type</TableHead>
-                          <TableHead className="text-xs">Store</TableHead>
-                          <TableHead className="text-xs text-right">Amount</TableHead>
-                          <TableHead className="text-xs text-right">Points</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {ledger.map((e) => (
-                          <TableRow key={e.id}>
-                            <TableCell className="text-xs">
-                              {e.createdAtMs ? format(new Date(e.createdAtMs), "MMM d, h:mma") : "—"}
-                            </TableCell>
-                            <TableCell className="text-xs capitalize">{e.type}</TableCell>
-                            <TableCell className="text-xs">{e.storeName || e.storeId.substring(0, 8)}</TableCell>
-                            <TableCell className="text-xs text-right font-mono">
-                              ₱{e.amount.toLocaleString()}
-                            </TableCell>
-                            <TableCell
-                              className={`text-xs text-right font-mono font-bold ${
-                                e.points > 0 ? "text-green-600" : e.points < 0 ? "text-red-600" : ""
-                              }`}
-                            >
-                              {e.points > 0 ? "+" : ""}
-                              {e.points}
-                            </TableCell>
+                  <>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Date</TableHead>
+                            <TableHead className="text-xs">Type</TableHead>
+                            <TableHead className="text-xs">Store</TableHead>
+                            <TableHead className="text-xs text-right">Amount</TableHead>
+                            <TableHead className="text-xs text-right">Points</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {txnsPageRows.map((e) => (
+                            <TableRow key={e.id}>
+                              <TableCell className="text-xs">
+                                {e.createdAtMs ? format(new Date(e.createdAtMs), "MMM d, h:mma") : "—"}
+                              </TableCell>
+                              <TableCell className="text-xs capitalize">{e.type}</TableCell>
+                              <TableCell className="text-xs">{e.storeName || e.storeId.substring(0, 8)}</TableCell>
+                              <TableCell className="text-xs text-right font-mono">
+                                ₱{e.amount.toLocaleString()}
+                              </TableCell>
+                              <TableCell
+                                className={`text-xs text-right font-mono font-bold ${
+                                  e.points > 0 ? "text-green-600" : e.points < 0 ? "text-red-600" : ""
+                                }`}
+                              >
+                                {e.points > 0 ? "+" : ""}
+                                {e.points}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {txnsTotalPages > 1 && (
+                      <div className="flex items-center justify-between mt-2 text-xs">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTxnsPage((p) => Math.max(0, p - 1))}
+                          disabled={txnsPage === 0}
+                        >
+                          Prev
+                        </Button>
+                        <span className="text-muted-foreground">
+                          Page {txnsPage + 1} of {txnsTotalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTxnsPage((p) => Math.min(txnsTotalPages - 1, p + 1))}
+                          disabled={txnsPage >= txnsTotalPages - 1}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -477,8 +536,6 @@ export function CustomersAdmin() {
         </CardContent>
       </Card>
 
-      {/* LEFT COLUMN: Accounts (with search) on top, Activity Log below */}
-      <div className="space-y-4 lg:order-1">
         {/* Accounts — with built-in search */}
         <Card>
           <CardHeader className="pb-3 space-y-3">
@@ -515,14 +572,18 @@ export function CustomersAdmin() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
+            ) : !accountQuery ? (
+              <p className="px-6 py-8 text-sm text-center text-muted-foreground">
+                Type a name or phone above to search.
+              </p>
             ) : filteredAccounts.length === 0 ? (
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
-                {phoneInput.trim() ? "No accounts match." : "No Sharelebrator accounts yet."}
+                No accounts match.
               </p>
             ) : (
-              <div className="max-h-[400px] overflow-y-auto">
+              <>
                 <Table>
-                  <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Name</TableHead>
                       <TableHead className="text-xs">Phone</TableHead>
@@ -530,7 +591,7 @@ export function CustomersAdmin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAccounts.map((a) => (
+                    {accountsPageRows.map((a) => (
                       <TableRow
                         key={a.phone}
                         className={`cursor-pointer hover:bg-muted/50 ${
@@ -547,11 +608,38 @@ export function CustomersAdmin() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                {accountsTotalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-2 border-t text-xs">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAccountsPage((p) => Math.max(0, p - 1))}
+                      disabled={accountsPage === 0}
+                    >
+                      Prev
+                    </Button>
+                    <span className="text-muted-foreground">
+                      Page {accountsPage + 1} of {accountsTotalPages} · {filteredAccounts.length} matches
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAccountsPage((p) => Math.min(accountsTotalPages - 1, p + 1))}
+                      disabled={accountsPage >= accountsTotalPages - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
+      </div>
+      {/* END LEFT COLUMN */}
 
+      {/* RIGHT COLUMN: Activity Log only */}
+      <div className="space-y-4 lg:order-2">
         {/* Logs */}
         <Card>
           <CardHeader className="pb-3">
@@ -573,9 +661,9 @@ export function CustomersAdmin() {
                 No activity yet.
               </p>
             ) : (
-              <div className="max-h-[400px] overflow-y-auto">
+              <>
                 <Table>
-                  <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">When</TableHead>
                       <TableHead className="text-xs">Event</TableHead>
@@ -585,7 +673,7 @@ export function CustomersAdmin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {logs.map((log) => {
+                    {logsPageRows.map((log) => {
                       const icon =
                         log.type === "account_created" ? (
                           <UserPlus className="h-3 w-3 text-blue-600" />
@@ -635,7 +723,30 @@ export function CustomersAdmin() {
                     })}
                   </TableBody>
                 </Table>
-              </div>
+                {logsTotalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-2 border-t text-xs">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLogsPage((p) => Math.max(0, p - 1))}
+                      disabled={logsPage === 0}
+                    >
+                      Prev
+                    </Button>
+                    <span className="text-muted-foreground">
+                      Page {logsPage + 1} of {logsTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLogsPage((p) => Math.min(logsTotalPages - 1, p + 1))}
+                      disabled={logsPage >= logsTotalPages - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
