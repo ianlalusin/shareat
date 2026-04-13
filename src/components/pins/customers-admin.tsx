@@ -332,8 +332,11 @@ export function CustomersAdmin() {
     <div className="space-y-4">
       {Dialog}
 
-      {/* Cardholder details + Recent transactions (single card) */}
-      <Card>
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
+      {/* Left column wrapper (Accounts + Logs stacked) is rendered after the right card below */}
+
+      {/* Cardholder details + Recent transactions (single card) — RIGHT COLUMN */}
+      <Card className="lg:order-2">
         <CardContent className="p-6 h-full">
           {!customer ? (
             <div className="flex items-center justify-center min-h-[160px] text-sm text-muted-foreground">
@@ -474,8 +477,8 @@ export function CustomersAdmin() {
         </CardContent>
       </Card>
 
-      {/* Side-by-side: Accounts (with search) + Logs */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* LEFT COLUMN: Accounts (with search) on top, Activity Log below */}
+      <div className="space-y-4 lg:order-1">
         {/* Accounts — with built-in search */}
         <Card>
           <CardHeader className="pb-3 space-y-3">
@@ -636,6 +639,7 @@ export function CustomersAdmin() {
             )}
           </CardContent>
         </Card>
+      </div>
       </div>
     </div>
   );
