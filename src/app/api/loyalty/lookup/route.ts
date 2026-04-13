@@ -60,6 +60,7 @@ export async function GET(req: Request) {
       points: data.points,
       amount: data.amount,
       storeId: data.storeId,
+      storeName: data.storeName ?? null,
       sessionId: data.sessionId,
       createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
     };

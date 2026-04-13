@@ -23,11 +23,12 @@ type LedgerEntry = {
   points: number;
   amount: number;
   storeId: string;
+  storeName?: string;
   sessionId: string;
   createdAtMs: number | null;
 };
 
-type StoreVisit = { visits: number; pointsEarned: number; lastVisitAtMs: number };
+type StoreVisit = { visits: number; pointsEarned: number; lastVisitAtMs: number; storeName?: string };
 
 type Customer = {
   phone: string;
@@ -70,6 +71,7 @@ export function CustomersAdmin() {
       customerName: string;
       actorUid: string;
       storeId?: string;
+      storeName?: string;
       points?: number;
       amount?: number;
       createdAtMs: number | null;
@@ -91,6 +93,7 @@ export function CustomersAdmin() {
             customerName: data.customerName ?? "",
             actorUid: data.actorUid ?? "",
             storeId: data.storeId ?? undefined,
+            storeName: data.storeName ?? undefined,
             points: data.points ?? undefined,
             amount: data.amount ?? undefined,
             createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
@@ -136,6 +139,15 @@ export function CustomersAdmin() {
     () => allAccounts.reduce((sum, a) => sum + (a.pointsBalance || 0), 0),
     [allAccounts]
   );
+
+  // Client-side filter (name or phone substring, case-insensitive)
+  const filteredAccounts = useMemo(() => {
+    const q = phoneInput.trim().toLowerCase();
+    if (!q) return allAccounts;
+    return allAccounts.filter(
+      (a) => a.phone.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+    );
+  }, [allAccounts, phoneInput]);
 
   const canReset =
     appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
@@ -320,156 +332,158 @@ export function CustomersAdmin() {
     <div className="space-y-4">
       {Dialog}
 
-      {/* Side-by-side: Lookup | Cardholder */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Left: Lookup */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Sharelebrator Customer Lookup
-            </CardTitle>
-            <CardDescription>
-              Search by phone number. Admins and managers can reset forgotten passwords.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-2">
-              <div className="flex-1 space-y-1">
-                <Label>Phone Number</Label>
-                <Input
-                  type="tel"
-                  placeholder="09XXXXXXXXX or +63XXXXXXXXXX"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                />
-              </div>
-              <Button onClick={handleSearch} disabled={loading || !phoneInput.trim()}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                <span className="ml-2">Search</span>
-              </Button>
+      {/* Cardholder details + Recent transactions (single card) */}
+      <Card>
+        <CardContent className="p-6 h-full">
+          {!customer ? (
+            <div className="flex items-center justify-center min-h-[160px] text-sm text-muted-foreground">
+              No card to display
             </div>
-            {notFound && (
-              <p className="text-sm text-amber-700 mt-3">
-                No Sharelebrator account found for that phone number.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Right: Cardholder details */}
-        <Card>
-          <CardContent className="p-6 h-full">
-            {!customer ? (
-              <div className="flex items-center justify-center h-full min-h-[140px] text-sm text-muted-foreground">
-                No card to display
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Cardholder</p>
-                    <p className="text-2xl font-bold">{customer.name}</p>
-                    <p className="text-sm font-mono">{customer.phone}</p>
-                    {customer.bday && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Birthday: {format(new Date(customer.bday), "MMMM d, yyyy")}
-                      </p>
-                    )}
-                    {customer.email && <p className="text-xs text-muted-foreground">{customer.email}</p>}
-                    <p className="text-xs text-muted-foreground">{customer.address}</p>
-                    {customer.createdAtMs && (
-                      <p className="text-[11px] text-muted-foreground mt-2">
-                        Member since {format(new Date(customer.createdAtMs), "MMM d, yyyy")}
-                      </p>
-                    )}
-                    {customer.passwordResetAtMs && (
-                      <Badge variant="outline" className="mt-1 text-[10px]">
-                        Password reset {format(new Date(customer.passwordResetAtMs), "MMM d, yyyy")}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Balance</p>
-                    <p className="text-3xl font-black text-foreground">{customer.pointsBalance.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">points</p>
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                      Visits: <span className="font-bold text-foreground">{customer.visitCount ?? 0}</span>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Cardholder</p>
+                  <p className="text-2xl font-bold">{customer.name}</p>
+                  <p className="text-sm font-mono">{customer.phone}</p>
+                  {customer.bday && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Birthday: {format(new Date(customer.bday), "MMMM d, yyyy")}
                     </p>
+                  )}
+                  {customer.email && <p className="text-xs text-muted-foreground">{customer.email}</p>}
+                  <p className="text-xs text-muted-foreground">{customer.address}</p>
+                  {customer.createdAtMs && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Member since {format(new Date(customer.createdAtMs), "MMM d, yyyy")}
+                    </p>
+                  )}
+                  {customer.passwordResetAtMs && (
+                    <Badge variant="outline" className="mt-1 text-[10px]">
+                      Password reset {format(new Date(customer.passwordResetAtMs), "MMM d, yyyy")}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Balance</p>
+                  <p className="text-3xl font-black text-foreground">{customer.pointsBalance.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">points</p>
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    Visits: <span className="font-bold text-foreground">{customer.visitCount ?? 0}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Stores visited */}
+              {customer.storeVisits && Object.keys(customer.storeVisits).length > 0 && (
+                <div className="pt-3 border-t">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-2">
+                    <MapPin className="h-3 w-3" /> Stores Visited
+                  </p>
+                  <div className="space-y-1">
+                    {Object.entries(customer.storeVisits)
+                      .sort((a, b) => b[1].visits - a[1].visits)
+                      .map(([sid, v]) => (
+                        <div key={sid} className="flex items-center justify-between text-xs">
+                          <span className="font-medium">{v.storeName || sid}</span>
+                          <span className="text-muted-foreground">
+                            {v.visits} visit{v.visits === 1 ? "" : "s"} · +{v.pointsEarned} pts
+                          </span>
+                        </div>
+                      ))}
                   </div>
                 </div>
+              )}
 
-                {/* Stores visited */}
-                {customer.storeVisits && Object.keys(customer.storeVisits).length > 0 && (
-                  <div className="pt-3 border-t">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-2">
-                      <MapPin className="h-3 w-3" /> Stores Visited
-                    </p>
-                    <div className="space-y-1">
-                      {Object.entries(customer.storeVisits)
-                        .sort((a, b) => b[1].visits - a[1].visits)
-                        .map(([sid, v]) => (
-                          <div key={sid} className="flex items-center justify-between text-xs">
-                            <span className="font-mono truncate">{sid.substring(0, 10)}</span>
-                            <span className="text-muted-foreground">
-                              {v.visits} visit{v.visits === 1 ? "" : "s"} · +{v.pointsEarned} pts
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {canReset && (
-                  <div className="pt-4 border-t flex flex-col gap-2">
-                    {tempPassword ? (
-                      <div className="rounded-lg border-2 border-green-300 bg-green-50 p-3 space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-green-800">
-                          <KeyRound className="h-4 w-4" /> Temporary password (share with customer)
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code className="font-mono text-lg font-bold bg-white px-3 py-1.5 rounded border flex-1">
-                            {tempPassword}
-                          </code>
-                          <Button size="sm" variant="outline" onClick={copyPassword} title="Copy">
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={printPassword} title="Print">
-                            <Printer className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <p className="text-[11px] text-green-700">
-                          This password is shown only once. The customer should change it after logging in.
-                        </p>
+              {canReset && (
+                <div className="pt-4 border-t flex flex-col gap-2">
+                  {tempPassword ? (
+                    <div className="rounded-lg border-2 border-green-300 bg-green-50 p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-green-800">
+                        <KeyRound className="h-4 w-4" /> Temporary password (share with customer)
                       </div>
-                    ) : (
-                      <Button variant="outline" onClick={handleResetPassword} disabled={resetting} className="w-full">
-                        {resetting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
-                        Reset Password
-                      </Button>
-                    )}
+                      <div className="flex items-center gap-2">
+                        <code className="font-mono text-lg font-bold bg-white px-3 py-1.5 rounded border flex-1">
+                          {tempPassword}
+                        </code>
+                        <Button size="sm" variant="outline" onClick={copyPassword} title="Copy">
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={printPassword} title="Print">
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-green-700">
+                        This password is shown only once. The customer should change it after logging in.
+                      </p>
+                    </div>
+                  ) : (
+                    <Button variant="outline" onClick={handleResetPassword} disabled={resetting} className="w-full">
+                      {resetting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
+                      Reset Password
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Recent transactions (inside same card) */}
+              <div className="pt-4 border-t">
+                <p className="text-sm font-semibold mb-2">Recent Transactions</p>
+                {ledger.length === 0 ? (
+                  <p className="py-4 text-sm text-center text-muted-foreground">No transactions yet.</p>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Date</TableHead>
+                          <TableHead className="text-xs">Type</TableHead>
+                          <TableHead className="text-xs">Store</TableHead>
+                          <TableHead className="text-xs text-right">Amount</TableHead>
+                          <TableHead className="text-xs text-right">Points</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {ledger.map((e) => (
+                          <TableRow key={e.id}>
+                            <TableCell className="text-xs">
+                              {e.createdAtMs ? format(new Date(e.createdAtMs), "MMM d, h:mma") : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs capitalize">{e.type}</TableCell>
+                            <TableCell className="text-xs">{e.storeName || e.storeId.substring(0, 8)}</TableCell>
+                            <TableCell className="text-xs text-right font-mono">
+                              ₱{e.amount.toLocaleString()}
+                            </TableCell>
+                            <TableCell
+                              className={`text-xs text-right font-mono font-bold ${
+                                e.points > 0 ? "text-green-600" : e.points < 0 ? "text-red-600" : ""
+                              }`}
+                            >
+                              {e.points > 0 ? "+" : ""}
+                              {e.points}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Side-by-side: All Accounts + Logs */}
+      {/* Side-by-side: Accounts (with search) + Logs */}
       <div className="grid gap-4 xl:grid-cols-2">
-        {/* All accounts */}
+        {/* Accounts — with built-in search */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 space-y-3">
             <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" />
-                  All Accounts
-                </CardTitle>
-                <CardDescription>Tap a row to load the cardholder above.</CardDescription>
-              </div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                All Accounts
+              </CardTitle>
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
@@ -483,15 +497,24 @@ export function CustomersAdmin() {
                 </div>
               </div>
             </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or phone..."
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                className="pl-8"
+              />
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {accountsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            ) : allAccounts.length === 0 ? (
+            ) : filteredAccounts.length === 0 ? (
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
-                No Sharelebrator accounts yet.
+                {phoneInput.trim() ? "No accounts match." : "No Sharelebrator accounts yet."}
               </p>
             ) : (
               <div className="max-h-[400px] overflow-y-auto">
@@ -504,10 +527,12 @@ export function CustomersAdmin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {allAccounts.map((a) => (
+                    {filteredAccounts.map((a) => (
                       <TableRow
                         key={a.phone}
-                        className="cursor-pointer hover:bg-muted/50"
+                        className={`cursor-pointer hover:bg-muted/50 ${
+                          customer?.phone === a.phone ? "bg-muted/70" : ""
+                        }`}
                         onClick={() => handlePickAccount(a.phone)}
                       >
                         <TableCell className="text-sm font-medium">{a.name || "—"}</TableCell>
@@ -552,6 +577,7 @@ export function CustomersAdmin() {
                       <TableHead className="text-xs">When</TableHead>
                       <TableHead className="text-xs">Event</TableHead>
                       <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs">Store</TableHead>
                       <TableHead className="text-xs text-right">Detail</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -586,14 +612,15 @@ export function CustomersAdmin() {
                               {label}
                             </span>
                           </TableCell>
-                          <TableCell className="text-xs truncate max-w-[140px]">
+                          <TableCell className="text-xs truncate max-w-[120px]">
                             {log.customerName || log.phone}
+                          </TableCell>
+                          <TableCell className="text-xs truncate max-w-[100px]">
+                            {log.storeName || (log.storeId ? log.storeId.substring(0, 8) : "—")}
                           </TableCell>
                           <TableCell className="text-xs text-right font-mono">
                             {log.type === "points_earned" ? (
-                              <span className="text-green-600 font-bold">
-                                +{log.points} pts
-                              </span>
+                              <span className="text-green-600 font-bold">+{log.points}</span>
                             ) : log.type === "password_reset" ? (
                               <span className="text-red-600">reset</span>
                             ) : (
@@ -610,54 +637,6 @@ export function CustomersAdmin() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Full-width transactions (only when a customer is loaded) */}
-      {customer && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Recent Transactions</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {ledger.length === 0 ? (
-              <p className="px-6 py-8 text-sm text-center text-muted-foreground">No transactions yet.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Type</TableHead>
-                    <TableHead className="text-xs">Store</TableHead>
-                    <TableHead className="text-xs text-right">Amount</TableHead>
-                    <TableHead className="text-xs text-right">Points</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ledger.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell className="text-xs">
-                        {e.createdAtMs ? format(new Date(e.createdAtMs), "MMM d, h:mma") : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs capitalize">{e.type}</TableCell>
-                      <TableCell className="text-xs font-mono">{e.storeId.substring(0, 6)}</TableCell>
-                      <TableCell className="text-xs text-right font-mono">
-                        ₱{e.amount.toLocaleString()}
-                      </TableCell>
-                      <TableCell
-                        className={`text-xs text-right font-mono font-bold ${
-                          e.points > 0 ? "text-green-600" : e.points < 0 ? "text-red-600" : ""
-                        }`}
-                      >
-                        {e.points > 0 ? "+" : ""}
-                        {e.points}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

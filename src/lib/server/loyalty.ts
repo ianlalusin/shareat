@@ -27,9 +27,11 @@ export async function writeLoyaltyEarn({
   const db = getAdminDb();
 
   try {
-    // Read store's loyaltyConfig
+    // Read store's loyaltyConfig and name
     const storeSnap = await db.doc(`stores/${storeId}`).get();
-    const loyaltyConfig = storeSnap.exists ? (storeSnap.data()?.loyaltyConfig as any) : null;
+    const storeData = storeSnap.exists ? (storeSnap.data() as any) : null;
+    const loyaltyConfig = storeData?.loyaltyConfig as any;
+    const storeName: string = storeData?.name || storeId;
 
     if (loyaltyConfig && loyaltyConfig.isEnabled === false) {
       return { ok: false, error: "Loyalty disabled for this store" };
@@ -54,6 +56,7 @@ export async function writeLoyaltyEarn({
         points,
         amount,
         storeId,
+        storeName,
         sessionId,
         receiptId: receiptId ?? null,
         createdAt: FieldValue.serverTimestamp(),
@@ -62,6 +65,7 @@ export async function writeLoyaltyEarn({
       tx.update(customerRef, {
         pointsBalance: FieldValue.increment(points),
         visitCount: FieldValue.increment(1),
+        [`storeVisits.${storeId}.storeName`]: storeName,
         [`storeVisits.${storeId}.visits`]: FieldValue.increment(1),
         [`storeVisits.${storeId}.pointsEarned`]: FieldValue.increment(points),
         [`storeVisits.${storeId}.lastVisitAtMs`]: Date.now(),
@@ -73,6 +77,7 @@ export async function writeLoyaltyEarn({
         customerName,
         actorUid: staffUid,
         storeId,
+        storeName,
         sessionId,
         points,
         amount,
