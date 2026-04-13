@@ -535,7 +535,11 @@ export function CustomersAdmin() {
           )}
         </CardContent>
       </Card>
+      </div>
+      {/* END LEFT COLUMN */}
 
+      {/* RIGHT COLUMN: All Accounts + Activity Log */}
+      <div className="space-y-4 lg:order-2">
         {/* Accounts — with built-in search */}
         <Card>
           <CardHeader className="pb-3 space-y-3">
@@ -635,11 +639,6 @@ export function CustomersAdmin() {
             )}
           </CardContent>
         </Card>
-      </div>
-      {/* END LEFT COLUMN */}
-
-      {/* RIGHT COLUMN: Activity Log only */}
-      <div className="space-y-4 lg:order-2">
         {/* Logs */}
         <Card>
           <CardHeader className="pb-3">
