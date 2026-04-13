@@ -75,6 +75,8 @@ export async function GET(req: Request) {
       email: c.email ?? null,
       bday: c.bday,
       pointsBalance: c.pointsBalance ?? 0,
+      visitCount: c.visitCount ?? 0,
+      storeVisits: c.storeVisits ?? {},
       createdAtMs: c.createdAt?.toMillis ? c.createdAt.toMillis() : null,
       passwordResetAtMs: c.passwordResetAt?.toMillis ? c.passwordResetAt.toMillis() : null,
     },

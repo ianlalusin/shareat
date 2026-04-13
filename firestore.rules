@@ -129,6 +129,14 @@ service cloud.firestore {
     }
 
     // -----------------------------
+    // SHARELEBRATOR AUDIT LOG (server-only writes)
+    // -----------------------------
+    match /loyaltyLogs/{logId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------------
     // SHARELEBRATOR LOYALTY CUSTOMERS
     // Top-level (cross-branch). Server-only writes via Admin SDK.
     // -----------------------------

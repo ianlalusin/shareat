@@ -43,7 +43,10 @@ export async function writeLoyaltyEarn({
     const customerSnap = await customerRef.get();
     if (!customerSnap.exists) return { ok: false, error: "Customer not found" };
 
+    const customerName = (customerSnap.data() as any)?.name || "";
+
     const ledgerRef = customerRef.collection("pointsLedger").doc();
+    const logRef = db.collection("loyaltyLogs").doc();
 
     await db.runTransaction(async (tx) => {
       tx.set(ledgerRef, {
@@ -58,7 +61,22 @@ export async function writeLoyaltyEarn({
       });
       tx.update(customerRef, {
         pointsBalance: FieldValue.increment(points),
+        visitCount: FieldValue.increment(1),
+        [`storeVisits.${storeId}.visits`]: FieldValue.increment(1),
+        [`storeVisits.${storeId}.pointsEarned`]: FieldValue.increment(points),
+        [`storeVisits.${storeId}.lastVisitAtMs`]: Date.now(),
         updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(logRef, {
+        type: "points_earned",
+        phone,
+        customerName,
+        actorUid: staffUid,
+        storeId,
+        sessionId,
+        points,
+        amount,
+        createdAt: FieldValue.serverTimestamp(),
       });
     });
 

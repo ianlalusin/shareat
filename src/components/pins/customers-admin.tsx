@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins } from "lucide-react";
+import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin } from "lucide-react";
 import { format } from "date-fns";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
@@ -27,9 +27,13 @@ type LedgerEntry = {
   createdAtMs: number | null;
 };
 
+type StoreVisit = { visits: number; pointsEarned: number; lastVisitAtMs: number };
+
 type Customer = {
   phone: string;
   name: string;
+  visitCount?: number;
+  storeVisits?: Record<string, StoreVisit>;
   address: string;
   email: string | null;
   bday: string;
@@ -56,6 +60,52 @@ export function CustomersAdmin() {
     { phone: string; name: string; pointsBalance: number; createdAtMs: number | null }[]
   >([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
+
+  // Audit logs (live subscription)
+  const [logs, setLogs] = useState<
+    Array<{
+      id: string;
+      type: "account_created" | "points_earned" | "password_reset";
+      phone: string;
+      customerName: string;
+      actorUid: string;
+      storeId?: string;
+      points?: number;
+      amount?: number;
+      createdAtMs: number | null;
+    }>
+  >([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "loyaltyLogs"), orderBy("createdAt", "desc"), qLimit(200));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            type: data.type,
+            phone: data.phone ?? "",
+            customerName: data.customerName ?? "",
+            actorUid: data.actorUid ?? "",
+            storeId: data.storeId ?? undefined,
+            points: data.points ?? undefined,
+            amount: data.amount ?? undefined,
+            createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
+          };
+        });
+        setLogs(rows);
+        setLogsLoading(false);
+      },
+      (err) => {
+        console.error("Failed to fetch loyalty logs:", err);
+        setLogsLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "customers"), orderBy("createdAt", "desc"), qLimit(500));
@@ -344,8 +394,32 @@ export function CustomersAdmin() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Balance</p>
                     <p className="text-3xl font-black text-foreground">{customer.pointsBalance.toLocaleString()}</p>
                     <p className="text-xs text-muted-foreground">points</p>
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Visits: <span className="font-bold text-foreground">{customer.visitCount ?? 0}</span>
+                    </p>
                   </div>
                 </div>
+
+                {/* Stores visited */}
+                {customer.storeVisits && Object.keys(customer.storeVisits).length > 0 && (
+                  <div className="pt-3 border-t">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-2">
+                      <MapPin className="h-3 w-3" /> Stores Visited
+                    </p>
+                    <div className="space-y-1">
+                      {Object.entries(customer.storeVisits)
+                        .sort((a, b) => b[1].visits - a[1].visits)
+                        .map(([sid, v]) => (
+                          <div key={sid} className="flex items-center justify-between text-xs">
+                            <span className="font-mono truncate">{sid.substring(0, 10)}</span>
+                            <span className="text-muted-foreground">
+                              {v.visits} visit{v.visits === 1 ? "" : "s"} · +{v.pointsEarned} pts
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
 
                 {canReset && (
                   <div className="pt-4 border-t flex flex-col gap-2">
@@ -383,74 +457,159 @@ export function CustomersAdmin() {
         </Card>
       </div>
 
-      {/* All accounts list + stats */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" />
-                All Sharelebrator Accounts
-              </CardTitle>
-              <CardDescription>Tap a row to load the cardholder above.</CardDescription>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
-                <p className="text-2xl font-black">{allAccounts.length.toLocaleString()}</p>
+      {/* Side-by-side: All Accounts + Logs */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {/* All accounts */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  All Accounts
+                </CardTitle>
+                <CardDescription>Tap a row to load the cardholder above.</CardDescription>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 justify-end">
-                  <Coins className="h-3 w-3" /> Points outstanding
-                </p>
-                <p className="text-2xl font-black">{totalPointsOutstanding.toLocaleString()}</p>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
+                  <p className="text-xl font-black">{allAccounts.length.toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 justify-end">
+                    <Coins className="h-3 w-3" /> Points out
+                  </p>
+                  <p className="text-xl font-black">{totalPointsOutstanding.toLocaleString()}</p>
+                </div>
               </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {accountsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : allAccounts.length === 0 ? (
-            <p className="px-6 py-8 text-sm text-center text-muted-foreground">
-              No Sharelebrator accounts yet.
-            </p>
-          ) : (
-            <div className="max-h-[400px] overflow-y-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead className="text-xs">Name</TableHead>
-                    <TableHead className="text-xs">Phone</TableHead>
-                    <TableHead className="text-xs">Member since</TableHead>
-                    <TableHead className="text-xs text-right">Balance</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allAccounts.map((a) => (
-                    <TableRow
-                      key={a.phone}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handlePickAccount(a.phone)}
-                    >
-                      <TableCell className="text-sm font-medium">{a.name || "—"}</TableCell>
-                      <TableCell className="text-xs font-mono">{a.phone}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {a.createdAtMs ? format(new Date(a.createdAtMs), "MMM d, yyyy") : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-right font-mono font-bold">
-                        {a.pointsBalance.toLocaleString()}
-                      </TableCell>
+          </CardHeader>
+          <CardContent className="p-0">
+            {accountsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : allAccounts.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-center text-muted-foreground">
+                No Sharelebrator accounts yet.
+              </p>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Phone</TableHead>
+                      <TableHead className="text-xs text-right">Balance</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {allAccounts.map((a) => (
+                      <TableRow
+                        key={a.phone}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => handlePickAccount(a.phone)}
+                      >
+                        <TableCell className="text-sm font-medium">{a.name || "—"}</TableCell>
+                        <TableCell className="text-xs font-mono">{a.phone}</TableCell>
+                        <TableCell className="text-sm text-right font-mono font-bold">
+                          {a.pointsBalance.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Logs */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ScrollText className="h-4 w-4 text-primary" />
+              Activity Log
+            </CardTitle>
+            <CardDescription>
+              Account creations, points earned, and password resets across all stores.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : logs.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-center text-muted-foreground">
+                No activity yet.
+              </p>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="text-xs">When</TableHead>
+                      <TableHead className="text-xs">Event</TableHead>
+                      <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs text-right">Detail</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((log) => {
+                      const icon =
+                        log.type === "account_created" ? (
+                          <UserPlus className="h-3 w-3 text-blue-600" />
+                        ) : log.type === "password_reset" ? (
+                          <KeyIcon className="h-3 w-3 text-red-600" />
+                        ) : (
+                          <CoinIcon className="h-3 w-3 text-green-600" />
+                        );
+                      const label =
+                        log.type === "account_created"
+                          ? "New account"
+                          : log.type === "password_reset"
+                            ? "Password reset"
+                            : "Earned";
+                      return (
+                        <TableRow
+                          key={log.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => handlePickAccount(log.phone)}
+                        >
+                          <TableCell className="text-xs text-muted-foreground">
+                            {log.createdAtMs ? format(new Date(log.createdAtMs), "MMM d, h:mma") : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <span className="inline-flex items-center gap-1">
+                              {icon}
+                              {label}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs truncate max-w-[140px]">
+                            {log.customerName || log.phone}
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-mono">
+                            {log.type === "points_earned" ? (
+                              <span className="text-green-600 font-bold">
+                                +{log.points} pts
+                              </span>
+                            ) : log.type === "password_reset" ? (
+                              <span className="text-red-600">reset</span>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Full-width transactions (only when a customer is loaded) */}
       {customer && (

@@ -81,9 +81,18 @@ export async function POST(req: Request) {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  // Audit log
+  await db.collection("loyaltyLogs").add({
+    type: "password_reset",
+    phone,
+    customerName: snap.data()?.name || "",
+    actorUid: uid,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
   return NextResponse.json({
     ok: true,
     phone,
-    newPassword, // returned once so admin can share with customer
+    newPassword,
   });
 }
