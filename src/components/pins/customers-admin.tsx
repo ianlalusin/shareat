@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query, limit as qLimit } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, limit as qLimit } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -135,10 +135,41 @@ export function CustomersAdmin() {
     return () => unsub();
   }, []);
 
+  // Live aggregate stats (projection doc) — O(1) read regardless of account count
+  const [stats, setStats] = useState<{
+    totalAccounts: number;
+    totalPointsOutstanding: number;
+    totalPointsEarnedEver?: number;
+  } | null>(null);
+  useEffect(() => {
+    const ref = doc(db, "loyaltyStats/global");
+    return onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data() as any;
+          setStats({
+            totalAccounts: Number(d.totalAccounts) || 0,
+            totalPointsOutstanding: Number(d.totalPointsOutstanding) || 0,
+            totalPointsEarnedEver: Number(d.totalPointsEarnedEver) || 0,
+          });
+        } else {
+          setStats(null);
+        }
+      },
+      () => setStats(null)
+    );
+  }, []);
+
+  // Fallback: if the aggregate doc doesn't exist yet, fall back to summing
+  // client-side from the subscribed accounts list so the stats card stays useful.
   const totalPointsOutstanding = useMemo(
-    () => allAccounts.reduce((sum, a) => sum + (a.pointsBalance || 0), 0),
-    [allAccounts]
+    () =>
+      stats?.totalPointsOutstanding ??
+      allAccounts.reduce((sum, a) => sum + (a.pointsBalance || 0), 0),
+    [stats, allAccounts]
   );
+  const totalAccounts = stats?.totalAccounts ?? allAccounts.length;
 
   // Accounts filter — only show results when user has typed a query
   const accountQuery = phoneInput.trim().toLowerCase();
@@ -556,7 +587,7 @@ export function CustomersAdmin() {
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
-                  <p className="text-xl font-black">{allAccounts.length.toLocaleString()}</p>
+                  <p className="text-xl font-black">{totalAccounts.toLocaleString()}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1 justify-end">

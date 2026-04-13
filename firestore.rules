@@ -137,6 +137,15 @@ service cloud.firestore {
     }
 
     // -----------------------------
+    // SHARELEBRATOR AGGREGATES (server-only writes)
+    // Single projection doc: loyaltyStats/global
+    // -----------------------------
+    match /loyaltyStats/{docId} {
+      allow read: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------------
     // SHARELEBRATOR LOYALTY CUSTOMERS
     // Top-level (cross-branch). Server-only writes via Admin SDK.
     // -----------------------------

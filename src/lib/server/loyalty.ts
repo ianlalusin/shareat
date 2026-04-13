@@ -53,6 +53,7 @@ export async function writeLoyaltyEarn({
       ? customerRef.collection("pointsLedger").doc(receiptId)
       : customerRef.collection("pointsLedger").doc();
     const logRef = db.collection("loyaltyLogs").doc();
+    const statsRef = db.doc("loyaltyStats/global");
 
     const wasIdempotentNoop = await db.runTransaction(async (tx) => {
       // If this earn has already been recorded (same receiptId), short-circuit.
@@ -92,6 +93,12 @@ export async function writeLoyaltyEarn({
         amount,
         createdAt: FieldValue.serverTimestamp(),
       });
+      // Global aggregate projection — replaces a 500-doc client-side scan
+      tx.set(statsRef, {
+        totalPointsOutstanding: FieldValue.increment(points),
+        totalPointsEarnedEver: FieldValue.increment(points),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
       return false;
     });
 
