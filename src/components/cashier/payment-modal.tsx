@@ -324,14 +324,31 @@ export function PaymentModal({
         });
       }
 
-      // Sharelebrator loyalty earn (fire-and-forget)
+      // Sharelebrator loyalty earn (awaited so cashier sees failures)
       if (firebaseUser && linkedPhone) {
-        const token = await firebaseUser.getIdToken();
-        fetch("/api/loyalty/earn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ storeId, sessionId, phone: linkedPhone, amount: grandTotal, receiptId }),
-        }).catch((err) => console.error("[Loyalty] earn failed for session", sessionId, err));
+        try {
+          const token = await firebaseUser.getIdToken();
+          const res = await fetch("/api/loyalty/earn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ storeId, sessionId, phone: linkedPhone, amount: grandTotal, receiptId }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            toast({
+              variant: "destructive",
+              title: "Loyalty earn failed",
+              description: data?.error || "Points were not awarded — please notify admin.",
+            });
+          }
+        } catch (err: any) {
+          console.error("[Loyalty] earn failed for session", sessionId, err);
+          toast({
+            variant: "destructive",
+            title: "Loyalty earn failed",
+            description: "Network error — points were not awarded. Admin can adjust manually.",
+          });
+        }
       }
     } catch (e: any) {
       toast({ variant: "destructive", title: "Payment failed", description: e?.message ?? "Something went wrong." });

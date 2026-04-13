@@ -47,10 +47,19 @@ export async function writeLoyaltyEarn({
 
     const customerName = (customerSnap.data() as any)?.name || "";
 
-    const ledgerRef = customerRef.collection("pointsLedger").doc();
+    // Idempotency: when receiptId is provided, use it as the deterministic
+    // ledger doc ID so a retry of the same earn is a no-op.
+    const ledgerRef = receiptId
+      ? customerRef.collection("pointsLedger").doc(receiptId)
+      : customerRef.collection("pointsLedger").doc();
     const logRef = db.collection("loyaltyLogs").doc();
 
-    await db.runTransaction(async (tx) => {
+    const wasIdempotentNoop = await db.runTransaction(async (tx) => {
+      // If this earn has already been recorded (same receiptId), short-circuit.
+      if (receiptId) {
+        const existing = await tx.get(ledgerRef);
+        if (existing.exists) return true;
+      }
       tx.set(ledgerRef, {
         type: "earn",
         points,
@@ -83,7 +92,12 @@ export async function writeLoyaltyEarn({
         amount,
         createdAt: FieldValue.serverTimestamp(),
       });
+      return false;
     });
+
+    if (wasIdempotentNoop) {
+      // Still stamp lock to guarantee the session can't be re-linked. Safe to re-apply.
+    }
 
     // Stamp link lock on session projections
     const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);

@@ -82,6 +82,9 @@ export function StartShiftModal({ isOpen, onClose, storeId }: StartShiftModalPro
   async function writeHoliday(name: string) {
     if (!appUser || !storeId) return;
     setStep("saving");
+    // Safety timeout: if Firestore stalls, fall back to picker so the
+    // cashier isn't stuck staring at a spinner on a blocking modal.
+    const timeoutId = setTimeout(() => setStep("picker"), 20_000);
     try {
       await setDoc(
         doc(db, "stores", storeId, "dailyContext", dayId),
@@ -95,9 +98,11 @@ export function StartShiftModal({ isOpen, onClose, storeId }: StartShiftModalPro
         },
         { merge: true }
       );
+      clearTimeout(timeoutId);
       setStep("saved");
       setTimeout(() => onClose(), 900);
     } catch {
+      clearTimeout(timeoutId);
       setStep("picker");
     }
   }
@@ -105,6 +110,7 @@ export function StartShiftModal({ isOpen, onClose, storeId }: StartShiftModalPro
   async function handleNo() {
     if (!appUser || !storeId) return;
     setStep("saving");
+    const timeoutId = setTimeout(() => setStep("prompt"), 20_000);
     try {
       await setDoc(
         doc(db, "stores", storeId, "dailyContext", dayId),
@@ -118,8 +124,10 @@ export function StartShiftModal({ isOpen, onClose, storeId }: StartShiftModalPro
         },
         { merge: true }
       );
+      clearTimeout(timeoutId);
       onClose();
     } catch {
+      clearTimeout(timeoutId);
       setStep("prompt");
     }
   }

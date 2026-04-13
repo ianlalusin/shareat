@@ -75,6 +75,14 @@
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "salesForecasts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "accuracy", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

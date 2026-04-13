@@ -164,6 +164,16 @@ export function CustomersAdmin() {
   useEffect(() => {
     setTxnsPage(0);
   }, [customer?.phone]);
+  // Clamp pages if total shrinks underneath the user
+  useEffect(() => {
+    setLogsPage((p) => Math.min(p, Math.max(0, Math.ceil(logs.length / LOGS_PAGE_SIZE) - 1)));
+  }, [logs.length]);
+  useEffect(() => {
+    setAccountsPage((p) => Math.min(p, Math.max(0, Math.ceil(filteredAccounts.length / ACCOUNTS_PAGE_SIZE) - 1)));
+  }, [filteredAccounts.length]);
+  useEffect(() => {
+    setTxnsPage((p) => Math.min(p, Math.max(0, Math.ceil(ledger.length / TRANSACTIONS_PAGE_SIZE) - 1)));
+  }, [ledger.length]);
 
   const accountsTotalPages = Math.max(1, Math.ceil(filteredAccounts.length / ACCOUNTS_PAGE_SIZE));
   const txnsTotalPages = Math.max(1, Math.ceil(ledger.length / TRANSACTIONS_PAGE_SIZE));
@@ -187,12 +197,7 @@ export function CustomersAdmin() {
 
   function handlePickAccount(phone: string) {
     setPhoneInput(phone);
-    // fire search on next tick to avoid race
-    setTimeout(() => {
-      const inputEl = document.querySelector<HTMLInputElement>('input[type="tel"]');
-      if (inputEl) inputEl.value = phone;
-    }, 0);
-    // use the phone directly to search — doesn't rely on state
+    // Pass phone directly so we don't race the React state update.
     searchByPhone(phone);
   }
 

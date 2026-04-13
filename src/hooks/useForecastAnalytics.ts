@@ -47,10 +47,12 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
     );
 
     const unsubAccuracy = onSnapshot(accuracyQuery, (snapshot) => {
-      if (snapshot.empty) {
+      const accuracies = snapshot.docs
+        .map((doc) => doc.data().accuracy)
+        .filter((a): a is number => typeof a === "number" && !isNaN(a));
+      if (accuracies.length === 0) {
         setAccuracy(null);
       } else {
-        const accuracies = snapshot.docs.map(doc => doc.data().accuracy as number);
         const avgAccuracy = accuracies.reduce((sum, acc) => sum + acc, 0) / accuracies.length;
         setAccuracy(avgAccuracy);
       }
