@@ -17,6 +17,7 @@ import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SyncSessionsTool } from "./SyncSessionsTool";
+import { CashierSummaryCard } from "./cashier-summary-card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
@@ -192,7 +193,10 @@ export function SessionListView() {
     return (
         <>
             <PageHeader title="Cashier" description="Start a new session or manage active ones.">
-                <SyncSessionsTool />
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <CashierSummaryCard storeId={activeStore.id} />
+                    <SyncSessionsTool />
+                </div>
             </PageHeader>
             
             {isLoading ? <Loader2 className="animate-spin" /> : (

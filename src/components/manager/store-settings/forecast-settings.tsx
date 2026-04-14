@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader, PlusCircle, Save, Trash2 } from "lucide-react";
+import { Loader, PlusCircle, Save, Target, Trash2 } from "lucide-react";
 
 import type { Store, ForecastConfig } from "@/lib/types";
 
@@ -19,9 +20,82 @@ interface ForecastSettingsProps {
   store: Store;
 }
 
+function todayDateString(): string {
+  const manila = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+  const y = manila.getFullYear();
+  const m = String(manila.getMonth() + 1).padStart(2, "0");
+  const d = String(manila.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function ForecastSettings({ store }: ForecastSettingsProps) {
   const { toast } = useToast();
+  const { appUser } = useAuthContext();
   const config = store.forecastConfig ?? {};
+
+  // Sales target override state
+  const [targetDate, setTargetDate] = useState(todayDateString());
+  const [targetAmount, setTargetAmount] = useState<string>("");
+  const [currentTarget, setCurrentTarget] = useState<{ amount: number; setAt?: any } | null>(null);
+  const [isSavingTarget, setIsSavingTarget] = useState(false);
+  const [isClearingTarget, setIsClearingTarget] = useState(false);
+
+  // Live read of today's target for status display
+  useEffect(() => {
+    if (!store?.id) return;
+    const today = todayDateString();
+    const ref = doc(db, "stores", store.id, "salesTargets", today);
+    return onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        setCurrentTarget({ amount: Number(data.amount) || 0, setAt: data.setAt });
+      } else {
+        setCurrentTarget(null);
+      }
+    });
+  }, [store?.id]);
+
+  async function handleSaveTarget() {
+    const amount = parseFloat(targetAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a positive number.", variant: "destructive" });
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      toast({ title: "Invalid date", description: "Pick a valid date.", variant: "destructive" });
+      return;
+    }
+    setIsSavingTarget(true);
+    try {
+      const ref = doc(db, "stores", store.id, "salesTargets", targetDate);
+      await setDoc(ref, {
+        date: targetDate,
+        amount,
+        setByUid: appUser?.uid ?? null,
+        setAt: serverTimestamp(),
+      }, { merge: true });
+      toast({ title: "Target saved", description: `₱${amount.toLocaleString()} target for ${targetDate}.` });
+      setTargetAmount("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to save.", variant: "destructive" });
+    } finally {
+      setIsSavingTarget(false);
+    }
+  }
+
+  async function handleClearTodayTarget() {
+    setIsClearingTarget(true);
+    try {
+      const today = todayDateString();
+      const ref = doc(db, "stores", store.id, "salesTargets", today);
+      await setDoc(ref, { amount: 0, clearedAt: serverTimestamp() }, { merge: true });
+      toast({ title: "Target cleared", description: "Cashier will now see the forecasted amount." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to clear.", variant: "destructive" });
+    } finally {
+      setIsClearingTarget(false);
+    }
+  }
 
   const [holidays, setHolidays] = useState<{ name: string; date: string }[]>(config.customHolidays ?? []);
   const [newHolidayName, setNewHolidayName] = useState("");
@@ -158,6 +232,64 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
               Comma-separated day numbers (1–31). For example, <code>15, 30</code> means the 15th and 30th of every month.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Sales Target Override */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            Sales Target Override
+          </CardTitle>
+          <CardDescription>
+            Set a daily sales target that replaces the AI forecast on the cashier page. If you don't set one, the cashier sees the AI forecast.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {currentTarget && currentTarget.amount > 0 ? (
+            <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Today's target (active)</p>
+                <p className="text-2xl font-black text-primary">
+                  ₱{currentTarget.amount.toLocaleString()}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleClearTodayTarget} disabled={isClearingTarget}>
+                {isClearingTarget ? <Loader className="h-4 w-4 animate-spin" /> : "Clear"}
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+              No target set for today. Cashier is showing the AI forecast.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+            <div className="space-y-1">
+              <Label>Date</Label>
+              <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} disabled={isSavingTarget} />
+            </div>
+            <div className="space-y-1">
+              <Label>Target amount (₱)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 15000"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
+                disabled={isSavingTarget}
+              />
+            </div>
+            <Button onClick={handleSaveTarget} disabled={isSavingTarget || !targetAmount}>
+              {isSavingTarget ? <Loader className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Target
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Targets for future dates are allowed — set the whole week's goals in advance if you want.
+          </p>
         </CardContent>
       </Card>
 
