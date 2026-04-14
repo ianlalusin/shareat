@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin } from "lucide-react";
+import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin, LogIn, ShieldAlert } from "lucide-react";
 import { format } from "date-fns";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
@@ -66,7 +66,7 @@ export function CustomersAdmin() {
   const [logs, setLogs] = useState<
     Array<{
       id: string;
-      type: "account_created" | "points_earned" | "password_reset";
+      type: "account_created" | "points_earned" | "password_reset" | "login" | "login_failed";
       phone: string;
       customerName: string;
       actorUid: string;
@@ -714,6 +714,10 @@ export function CustomersAdmin() {
                           <UserPlus className="h-3 w-3 text-blue-600" />
                         ) : log.type === "password_reset" ? (
                           <KeyIcon className="h-3 w-3 text-red-600" />
+                        ) : log.type === "login" ? (
+                          <LogIn className="h-3 w-3 text-slate-600" />
+                        ) : log.type === "login_failed" ? (
+                          <ShieldAlert className="h-3 w-3 text-amber-600" />
                         ) : (
                           <CoinIcon className="h-3 w-3 text-green-600" />
                         );
@@ -722,7 +726,11 @@ export function CustomersAdmin() {
                           ? "New account"
                           : log.type === "password_reset"
                             ? "Password reset"
-                            : "Earned";
+                            : log.type === "login"
+                              ? "Login"
+                              : log.type === "login_failed"
+                                ? "Login failed"
+                                : "Earned";
                       return (
                         <TableRow
                           key={log.id}
@@ -749,6 +757,10 @@ export function CustomersAdmin() {
                               <span className="text-green-600 font-bold">+{log.points}</span>
                             ) : log.type === "password_reset" ? (
                               <span className="text-red-600">reset</span>
+                            ) : log.type === "login" ? (
+                              <span className="text-slate-600">ok</span>
+                            ) : log.type === "login_failed" ? (
+                              <span className="text-amber-600">failed</span>
                             ) : (
                               "—"
                             )}

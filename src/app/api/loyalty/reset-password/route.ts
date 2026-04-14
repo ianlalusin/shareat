@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
+import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 
 export const runtime = "nodejs";
 
@@ -81,13 +82,12 @@ export async function POST(req: Request) {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  // Audit log
-  await db.collection("loyaltyLogs").add({
+  // Audit log (individual doc + daily projection)
+  await writeLoyaltyLog({
     type: "password_reset",
     phone,
     customerName: snap.data()?.name || "",
     actorUid: uid,
-    createdAt: FieldValue.serverTimestamp(),
   });
 
   return NextResponse.json({

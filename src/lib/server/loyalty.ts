@@ -2,6 +2,7 @@ import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { appendLogToProjection } from "@/lib/server/loyaltyLog";
 
 const DEFAULT_POINTS_PER_PESO = 0.01; // 1 point per ₱100
 
@@ -104,6 +105,22 @@ export async function writeLoyaltyEarn({
 
     if (wasIdempotentNoop) {
       // Still stamp lock to guarantee the session can't be re-linked. Safe to re-apply.
+    } else {
+      // Best-effort projection append — source of truth already committed in tx.
+      await appendLogToProjection(
+        {
+          type: "points_earned",
+          phone,
+          customerName,
+          actorUid: staffUid,
+          storeId,
+          storeName,
+          sessionId,
+          points,
+          amount,
+        },
+        logRef.id
+      );
     }
 
     // Stamp link lock on session projections

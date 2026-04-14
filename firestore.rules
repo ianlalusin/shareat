@@ -136,6 +136,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Daily projection for the audit log (server-only writes)
+    // Doc ID shape: {dayId}_{partIndex} or {dayId}_meta
+    match /loyaltyLogsDaily/{docId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
     // -----------------------------
     // SHARELEBRATOR AGGREGATES (server-only writes)
     // Single projection doc: loyaltyStats/global
