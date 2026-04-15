@@ -83,9 +83,13 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
 
     const isAlaCarte = ticket.sessionMode === 'alacarte';
     const isPackage = ticket.type === 'package';
-    const identifier = isAlaCarte
+    const tableLabel = isAlaCarte
         ? (ticket.sessionLabel ?? (ticket.customerName || "Ala Carte"))
         : ((ticket as any).tableDisplayName || ticket.sessionLabel || `Table ${ticket.tableNumber}`);
+    const paxCount = Number((ticket as any).guestCount ?? 0);
+    const identifier = !isAlaCarte && paxCount > 0
+        ? `${tableLabel} (${paxCount} pax)`
+        : tableLabel;
 
     const handleCancel = async (reason: string) => {
         if (!reason) return;
