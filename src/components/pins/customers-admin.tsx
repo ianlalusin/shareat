@@ -183,7 +183,7 @@ export function CustomersAdmin() {
   // Pagination state
   const ACCOUNTS_PAGE_SIZE = 10;
   const TRANSACTIONS_PAGE_SIZE = 10;
-  const LOGS_PAGE_SIZE = 20;
+  const LOGS_PAGE_SIZE = 10;
   const [accountsPage, setAccountsPage] = useState(0);
   const [txnsPage, setTxnsPage] = useState(0);
   const [logsPage, setLogsPage] = useState(0);
