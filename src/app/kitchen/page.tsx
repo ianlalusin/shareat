@@ -42,6 +42,7 @@ type Session = {
     initialFlavorIds?: string[];
     customerName?: string | null;
     tableNumber?: string | null;
+    tableDisplayName?: string | null;
     sessionMode?: 'package_dinein' | 'alacarte';
     guestCountFinal?: number | null;
     guestCountCashierInitial?: number;
@@ -339,14 +340,21 @@ export default function KitchenPage() {
             ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];
         const finalGuestCount = session?.guestCountFinal ?? session?.guestCountCashierInitial ?? ticket.guestCount;
+        // Live session is the source of truth for the table display name —
+        // it carries any rename done by the cashier mid-session and is set
+        // for both POS- and customer-app-created tickets.
+        const tableDisplayName =
+          session?.tableDisplayName ?? (ticket as any).tableDisplayName ?? null;
         return {
             ...ticket,
+            tableDisplayName,
             guestCount: finalGuestCount,
             initialFlavorNames: flavorNames,
-            sessionLabel: computeSessionLabel({ 
-              sessionMode: ticket.sessionMode, 
-              customerName: ticket.customerName, 
-              tableNumber: ticket.tableNumber 
+            sessionLabel: computeSessionLabel({
+              sessionMode: ticket.sessionMode,
+              customerName: ticket.customerName,
+              tableNumber: ticket.tableNumber,
+              tableDisplayName,
             }),
         };
     });
