@@ -17,7 +17,8 @@ import type { StorePackage, MenuSchedule } from "@/lib/types";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SyncSessionsTool } from "./SyncSessionsTool";
-import { CashierSummaryCard } from "./cashier-summary-card";
+import { CashierTargetProgressCard } from "./CashierTargetProgressCard";
+import { CashierTipController } from "./CashierTipController";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
@@ -194,7 +195,7 @@ export function SessionListView() {
         <>
             <PageHeader title="Cashier" description="Start a new session or manage active ones.">
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <CashierSummaryCard storeId={activeStore.id} />
+                    <CashierTargetProgressCard storeId={activeStore.id} />
                     <SyncSessionsTool />
                 </div>
             </PageHeader>
@@ -242,6 +243,9 @@ export function SessionListView() {
                             <PastSessionsCard />
                         </div>
                     </div>
+
+                    {/* Idle tip controller (renders nothing inline; opens a portal modal) */}
+                    <CashierTipController storeId={activeStore.id} />
                 </div>
             )}
             {activeStore?.id && (

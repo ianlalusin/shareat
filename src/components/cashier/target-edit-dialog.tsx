@@ -1,33 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Settings, ShoppingBasket, Target, Save } from "lucide-react";
-
-interface Props {
-  storeId: string;
-}
+import { Loader2, Target, Save } from "lucide-react";
 
 export function fmtPeso(n: number): string {
   if (n >= 1_000_000) return `₱${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `₱${(n / 1_000).toFixed(1)}k`;
   return `₱${Math.round(n).toLocaleString()}`;
-}
-
-function getTodayDayId(): string {
-  const manila = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-  const y = manila.getFullYear();
-  const m = String(manila.getMonth() + 1).padStart(2, "0");
-  const d = String(manila.getDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
 }
 
 function getTodayDate(): string {
@@ -38,126 +24,16 @@ function getTodayDate(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function CashierSummaryCard({ storeId }: Props) {
-  const { appUser } = useAuthContext();
-  const { toast } = useToast();
-  const [avgBasket, setAvgBasket] = useState<number | null>(null);
-  const [forecastedSales, setForecastedSales] = useState<number | null>(null);
-  const [targetSales, setTargetSales] = useState<number | null>(null);
-  const [targetDialogOpen, setTargetDialogOpen] = useState(false);
-
-  const canEditTarget =
-    appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
-
-  // Today's analytics — avg basket computed per-head from dine-in sales only
-  // (matches the dashboard's DashboardStats.avgBasket)
-  useEffect(() => {
-    if (!storeId) return;
-    const dayId = getTodayDayId();
-    const ref = doc(db, "stores", storeId, "analytics", dayId);
-    return onSnapshot(ref, (snap) => {
-      const data = snap.data() as any;
-      const packageSalesByName: Record<string, number> = data?.sales?.packageSalesAmountByName || {};
-      const packageSales = Object.values(packageSalesByName).reduce((s, v) => s + (Number(v) || 0), 0);
-      const addonSales = Number(data?.sales?.dineInAddonSalesAmount ?? 0);
-      const guestCount = Number(data?.guests?.guestCountFinalTotal ?? 0);
-      const dineInSales = packageSales + addonSales;
-      setAvgBasket(guestCount > 0 ? dineInSales / guestCount : 0);
-    });
-  }, [storeId]);
-
-  // Today's forecast (live)
-  useEffect(() => {
-    if (!storeId) return;
-    const today = getTodayDate();
-    const ref = doc(db, "stores", storeId, "salesForecasts", today);
-    return onSnapshot(ref, (snap) => {
-      const data = snap.data() as any;
-      setForecastedSales(data?.projectedSales ?? null);
-    });
-  }, [storeId]);
-
-  // Today's manager target override (live)
-  useEffect(() => {
-    if (!storeId) return;
-    const today = getTodayDate();
-    const ref = doc(db, "stores", storeId, "salesTargets", today);
-    return onSnapshot(ref, (snap) => {
-      const data = snap.data() as any;
-      const amt = Number(data?.amount ?? 0);
-      setTargetSales(amt > 0 ? amt : null);
-    });
-  }, [storeId]);
-
-  const displayTarget = targetSales ?? forecastedSales ?? null;
-  const targetLabel = targetSales != null ? "TARGET" : "FORECAST";
-
-  return (
-    <>
-      <Card className="h-auto">
-        <CardContent className="p-2 px-3 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <ShoppingBasket className="h-4 w-4 text-muted-foreground" />
-            <div className="leading-tight">
-              <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Avg basket</p>
-              <p className="text-sm font-bold tabular-nums">
-                {avgBasket == null ? "—" : fmtPeso(avgBasket)}
-              </p>
-            </div>
-          </div>
-          <div className="h-8 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <Target className={`h-4 w-4 ${targetSales != null ? "text-primary" : "text-muted-foreground"}`} />
-            <div className="leading-tight">
-              <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{targetLabel} today</p>
-              <p className={`text-sm font-bold tabular-nums ${targetSales != null ? "text-primary" : ""}`}>
-                {displayTarget == null ? "—" : fmtPeso(displayTarget)}
-              </p>
-            </div>
-          </div>
-          {canEditTarget && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 ml-1 text-muted-foreground hover:text-foreground"
-              onClick={() => setTargetDialogOpen(true)}
-              aria-label="Edit sales target"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      {canEditTarget && (
-        <TargetEditDialog
-          open={targetDialogOpen}
-          onOpenChange={setTargetDialogOpen}
-          storeId={storeId}
-          userUid={appUser?.uid ?? null}
-          currentTargetAmount={targetSales}
-          toast={toast}
-        />
-      )}
-    </>
-  );
-}
-
-function TargetEditDialog({
-  open,
-  onOpenChange,
-  storeId,
-  userUid,
-  currentTargetAmount,
-  toast,
-}: {
+interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   storeId: string;
   userUid: string | null;
   currentTargetAmount: number | null;
-  toast: ReturnType<typeof useToast>["toast"];
-}) {
+}
+
+export function TargetEditDialog({ open, onOpenChange, storeId, userUid, currentTargetAmount }: Props) {
+  const { toast } = useToast();
   const [date, setDate] = useState(getTodayDate());
   const [amountStr, setAmountStr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -170,10 +46,8 @@ function TargetEditDialog({
     }
   }, [open]);
 
-  // Accept digits only; show a live preview
   function onAmountChange(raw: string) {
-    const cleaned = raw.replace(/[^\d]/g, "");
-    setAmountStr(cleaned);
+    setAmountStr(raw.replace(/[^\d]/g, ""));
   }
 
   const previewNumber = amountStr ? Number(amountStr) : NaN;
