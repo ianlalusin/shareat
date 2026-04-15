@@ -256,12 +256,24 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   });
 
 
+  const packageName = payload.package?.packageName || null;
+  const guestCount = payload.guestCount ?? 0;
+  const startedNote = payload.sessionMode === 'alacarte'
+    ? `Session started (Ala Carte)`
+    : `Started: ${packageName || 'Package'} · ${guestCount} pax (cashier)`;
+
   await writeActivityLog({
     storeId,
     sessionId: newSessionRef.id,
     user,
     action: 'SESSION_STARTED',
-    note: `Session started (${payload.sessionMode === 'alacarte' ? 'Ala Carte' : 'Package'})`,
+    note: startedNote,
+    qty: guestCount,
+    meta: {
+      itemName: packageName ?? undefined,
+      qty: guestCount,
+      cashierGuestCount: guestCount,
+    } as any,
     sessionContext: {
       sessionStatus: sessionPayload.status as any,
       sessionStartedAt: sessionPayload.startedAt,

@@ -28,6 +28,7 @@ interface RefillPOSModalProps {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 type CartItem = {
@@ -39,15 +40,17 @@ type CartItem = {
 const OTHER_REFILLS_ID = "__OTHER_REFILLS__";
 
 function POSContent({
-    storeId, 
-    session, 
-    sessionIsLocked, 
-    onClose
+    storeId,
+    session,
+    sessionIsLocked,
+    onClose,
+    serverProfile,
 }: {
     storeId: string;
     session: PendingSession;
     sessionIsLocked?: boolean;
     onClose: () => void;
+    serverProfile?: { id: string; name: string } | null;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -306,7 +309,7 @@ function POSContent({
         });
         
         const refillNames = [...cart.entries()].map(([id, qty]) => `${id} x${qty}`).join(", ");
-        writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) } });
+        writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) }, serverProfile });
         toast({ title: `Sent ${cart.size + (hasOther ? 1 : 0)} refill(s) to the kitchen.` });
         handleReset();
 

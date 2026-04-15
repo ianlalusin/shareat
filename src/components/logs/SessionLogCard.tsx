@@ -92,7 +92,15 @@ function formatDescription(log: ActivityLog): string {
         return `Paid via ${Object.keys(meta.mopSummary || {}).join(', ')}`;
     }
     if (log.action === "SESSION_STARTED") {
-        return "Session created by cashier.";
+        const pkg = (meta as any).itemName as string | undefined;
+        const pax = (meta as any).cashierGuestCount ?? (meta as any).qty;
+        if (pkg || typeof pax === "number") {
+            const parts: string[] = [];
+            if (pkg) parts.push(pkg);
+            if (typeof pax === "number") parts.push(`${pax} pax (cashier)`);
+            return parts.join(" · ");
+        }
+        return log.note || "Session created by cashier.";
     }
     if (log.action === "SESSION_VOIDED" || log.action === "RECEIPT_VOIDED") {
         const reason = log.reason || meta.reason || "N/A";
@@ -119,6 +127,7 @@ export function formatLogForExport(log: ActivityLog) {
     "Date": d ? format(d, 'yyyy-MM-dd') : 'N/A',
     "Time": d ? format(d, 'HH:mm:ss') : 'N/A',
     "Action": actionLabel(log.action),
+    "Server": log.serverProfileName || "",
     "Actor": log.actorName || log.actorUid,
     "Description": formatDescription(log),
     "Amount": formatAmount(log),
@@ -215,7 +224,16 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                                 {logs.map(log => (
                                     <TableRow key={log.id}>
                                         <TableCell><Badge variant="secondary" className="whitespace-nowrap">{actionLabel(log.action)}</Badge></TableCell>
-                                        <TableCell>{log.actorName || log.actorRole || 'System'}</TableCell>
+                                        <TableCell>
+                                            {log.serverProfileName ? (
+                                                <div className="leading-tight">
+                                                    <p className="font-medium">{log.serverProfileName}</p>
+                                                    <p className="text-[10px] text-muted-foreground">{log.actorName || log.actorRole || "—"}</p>
+                                                </div>
+                                            ) : (
+                                                <span>{log.actorName || log.actorRole || 'System'}</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell>{formatDescription(log)}</TableCell>
                                         <TableCell className="text-right font-mono">{formatAmount(log)}</TableCell>
                                         <TableCell className="text-right text-muted-foreground">{fmtTime(log.createdAt)}</TableCell>

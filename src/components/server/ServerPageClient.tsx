@@ -20,6 +20,10 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
+import { useServerProfile } from "@/hooks/useServerProfile";
+import { ServerSignInGate } from "@/components/server/ServerSignInGate";
+import { ServerUserCard } from "@/components/server/ServerUserCard";
+import { useIdleTimer } from "@/hooks/useIdleTimer";
 
 type GCC = PendingSession["guestCountChange"];
 
@@ -36,6 +40,16 @@ export function ServerPageClient() {
   const { appUser } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const { toast } = useToast();
+  const { currentProfile, signIn, signOut, isReady: profileReady } = useServerProfile(activeStore?.id ?? null);
+
+  // Idle auto sign-out (30 minutes). Any click/key/scroll resets the timer.
+  const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
+  useEffect(() => {
+    if (isIdle && currentProfile) {
+      signOut();
+      toast({ title: "Signed out", description: "Inactive for 30 minutes." });
+    }
+  }, [isIdle, currentProfile, signOut, toast]);
 
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [activeSessions, setActiveSessions] = useState<PendingSession[]>([]);
@@ -149,6 +163,8 @@ export function ServerPageClient() {
       status: "active",
       verifiedAt: serverTimestamp(),
       verifiedByUid: appUser.uid,
+      verifiedByServerProfileId: currentProfile?.profileId ?? null,
+      verifiedByServerProfileName: currentProfile?.name ?? null,
       updatedAt: serverTimestamp(),
     });
 
@@ -169,7 +185,7 @@ export function ServerPageClient() {
 
     try {
       await batch.commit();
-      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount: serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount }, note: `Verified with ${serverCount} guests (final: ${finalCount})`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber } });
+      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount: serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount }, note: `Verified with ${serverCount} guests (final: ${finalCount})`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
       toast({ title: 'Session Verified' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Verification Failed', description: e.message });
@@ -199,9 +215,39 @@ export function ServerPageClient() {
       onAddAddon: handleOpenAddonDialog,
   };
 
+  if (!profileReady || storeLoading) {
+    return (
+      <RoleGuard allow={["admin", "manager", "server"]}>
+        <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader className="h-5 w-5 animate-spin" />
+        </div>
+      </RoleGuard>
+    );
+  }
+
+  if (!currentProfile && activeStore) {
+    return (
+      <RoleGuard allow={["admin", "manager", "server"]}>
+        <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
+        <ServerSignInGate storeId={activeStore.id} onSignIn={signIn} />
+      </RoleGuard>
+    );
+  }
+
   return (
     <RoleGuard allow={["admin", "manager", "server"]}>
-      <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
+      <PageHeader title="Server Station" description="Verify guest sessions and track items for serving.">
+        {activeStore && currentProfile && (
+          <ServerUserCard
+            storeId={activeStore.id}
+            profileId={currentProfile.profileId}
+            name={currentProfile.name}
+            onSignIn={signIn}
+            onSignOut={signOut}
+          />
+        )}
+      </PageHeader>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2">
             <ActiveSessionsGrid
@@ -210,7 +256,7 @@ export function ServerPageClient() {
             />
         </div>
         <div className="lg:col-span-1 space-y-6">
-           <PendingVerificationCard 
+           <PendingVerificationCard
                 sessions={pendingSessions}
                 {...sharedProps}
            />
@@ -232,6 +278,7 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 storePackages={storePackages}
                 schedules={schedules}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
          {isAddonDialogOpen && sessionForRequestWithStore && activeStore && (
@@ -241,6 +288,7 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 session={sessionForRequestWithStore}
                 sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
         {isRefillDialogOpen && sessionForRequestWithStore && activeStore && (
@@ -250,6 +298,7 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 session={sessionForRequestWithStore}
                 sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
     </RoleGuard>

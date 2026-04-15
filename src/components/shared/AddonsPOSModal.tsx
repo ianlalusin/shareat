@@ -32,6 +32,7 @@ interface AddonsPOSModalProps {
   session: PendingSession;
   sessionIsLocked?: boolean;
   onAddLine?: (line: SessionBillLine) => void;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 type EnrichedStoreAddon = InventoryItem & {
@@ -123,12 +124,14 @@ function POSContent({
   sessionIsLocked,
   onClose,
   onAddLine,
+  serverProfile,
 }: {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
   onClose: () => void;
   onAddLine?: (line: SessionBillLine) => void;
+  serverProfile?: { id: string; name: string } | null;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -295,7 +298,7 @@ function POSContent({
           onAddLine(newLine);
       }
 
-      writeActivityLog({ action: "ADDON_ADDED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedAddon.displayName, qty: quantity, amount: safeUnitPrice * quantity }, note: `Addon: ${selectedAddon.displayName} x${quantity}` });
+      writeActivityLog({ action: "ADDON_ADDED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedAddon.displayName, qty: quantity, amount: safeUnitPrice * quantity }, note: `Addon: ${selectedAddon.displayName} x${quantity}`, serverProfile });
       toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
       setSelectedAddon(null);
       setQuantity(1);
@@ -411,7 +414,7 @@ function POSContent({
   );
 }
 
-export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine }: AddonsPOSModalProps) {
+export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine, serverProfile }: AddonsPOSModalProps) {
   const isMobile = useIsMobile();
 
   const content = (
@@ -421,6 +424,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
       sessionIsLocked={sessionIsLocked}
       onClose={() => onOpenChange(false)}
       onAddLine={onAddLine}
+      serverProfile={serverProfile}
     />
   );
 

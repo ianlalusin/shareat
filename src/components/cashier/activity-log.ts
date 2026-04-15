@@ -28,6 +28,7 @@ type ActivityLogPayload = {
     reason?: string | null;
     note?: string | null;
     meta?: ActivityLog['meta'];
+    serverProfile?: { id: string; name: string } | null;
 };
 
 /**
@@ -36,7 +37,7 @@ type ActivityLogPayload = {
  * This is a "best-effort" fire-and-forget operation.
  */
 export async function writeActivityLog(payload: ActivityLogPayload): Promise<void> {
-  const { storeId, sessionId, user, action, qty, sessionContext, ...rest } = payload;
+  const { storeId, sessionId, user, action, qty, sessionContext, serverProfile, ...rest } = payload;
 
   if (!user) {
     console.warn("Activity log skipped: User is not authenticated.");
@@ -61,7 +62,10 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorUid: user.uid,
       actorRole: user.role || null,
       actorName: user.displayName || user.name || null,
-      
+
+      serverProfileId: serverProfile?.id ?? null,
+      serverProfileName: serverProfile?.name ?? null,
+
       // Denormalized session context
       sessionStatus: sessionContext?.sessionStatus,
       sessionStartedAt: sessionContext?.sessionStartedAt,

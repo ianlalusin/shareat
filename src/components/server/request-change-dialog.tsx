@@ -62,6 +62,7 @@ interface RequestChangeDialogProps {
   storeId: string;
   storePackages: StorePackage[];
   schedules: Map<string, MenuSchedule>;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 const DIALOG_TABS = [
@@ -69,7 +70,7 @@ const DIALOG_TABS = [
     { value: "package", label: "Package" },
 ]
 
-function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose }: RequestChangeDialogProps) {
+function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose, serverProfile }: RequestChangeDialogProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -143,7 +144,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
-      writeActivityLog({ action: "GUEST_COUNT_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { beforeQty: session.guestCountFinal ?? undefined, newQty: data.requestedCount, reason: data.reason }, note: `Guest count change requested: ${session.guestCountFinal} → ${data.requestedCount}` });
+      writeActivityLog({ action: "GUEST_COUNT_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { beforeQty: session.guestCountFinal ?? undefined, newQty: data.requestedCount, reason: data.reason }, note: `Guest count change requested: ${session.guestCountFinal} → ${data.requestedCount}`, serverProfile });
       toast({ title: "Request Sent", description: "Guest count change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
@@ -188,7 +189,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
-      writeActivityLog({ action: "PACKAGE_CHANGE_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedPackage.packageName }, note: `Package change requested: ${session.packageSnapshot?.name} → ${selectedPackage.packageName}` });
+      writeActivityLog({ action: "PACKAGE_CHANGE_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedPackage.packageName }, note: `Package change requested: ${session.packageSnapshot?.name} → ${selectedPackage.packageName}`, serverProfile });
       toast({ title: "Request Sent", description: "Package change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {

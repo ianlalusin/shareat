@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ServerProfilesManagerCard } from "@/components/manager/ServerProfilesManagerCard";
 
 export default function DataManagementPage() {
     const router = useRouter();
@@ -112,7 +113,7 @@ export default function DataManagementPage() {
                 </Button>
             </PageHeader>
             
-            <div className="grid gap-6 mt-6 max-w-4xl">
+            <div className="grid gap-6 mt-6 md:grid-cols-2 lg:grid-cols-3 items-start">
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -172,6 +173,8 @@ export default function DataManagementPage() {
                         </Button>
                     </CardContent>
                 </Card>
+
+                {activeStore && <ServerProfilesManagerCard storeId={activeStore.id} />}
             </div>
             {ConfirmDialog}
         </RoleGuard>

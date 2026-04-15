@@ -620,7 +620,11 @@ export type ActivityLog = {
   actorUid: string;
   actorRole?: string | null;
   actorName?: string | null;
-  
+
+  // Device-local server profile (present on server-page writes)
+  serverProfileId?: string | null;
+  serverProfileName?: string | null;
+
   lineId?: string;
   
   before?: any;

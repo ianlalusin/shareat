@@ -27,7 +27,7 @@ const TABS = [
     { value: "refills", label: "Refills" },
     { value: "flavors", label: "Flavors" },
     { value: "schedules", label: "Schedules" },
-    { value: "kitchen", label: "Kitchen" },
+    { value: "kitchen", label: "Location" },
     { value: "tables", label: "Tables" },
     { value: "forecast", label: "Forecast" },
     { value: "loyalty", label: "Loyalty" },
