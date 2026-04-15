@@ -49,6 +49,7 @@ export function CashierTipController({ storeId }: Props) {
   const [recentlyShown, setRecentlyShown] = useState<string[]>([]);
   const [tipShownThisIdle, setTipShownThisIdle] = useState(false);
   const prevActivityRef = useRef<number>(0);
+  const milestoneInitRef = useRef(false);
 
   const { isIdle, lastActivityAt } = useIdleTimer({ idleMs: IDLE_MS });
 
@@ -92,11 +93,22 @@ export function CashierTipController({ storeId }: Props) {
   const goal = targetSales ?? forecastedSales ?? 0;
   const percent = goal > 0 ? (actualSales / goal) * 100 : 0;
 
+  // On first load, catch up lastMilestone silently so we don't re-celebrate
+  // a milestone that was already crossed before the page opened. Only true
+  // crossings (subsequent ticks) will trigger the celebratory tip.
+  useEffect(() => {
+    if (milestoneInitRef.current) return;
+    if (goal <= 0) return; // wait until we have a real target/forecast
+    milestoneInitRef.current = true;
+    const cur = currentMilestone(percent);
+    if (cur > 0) setLastMilestone(cur);
+  }, [goal, percent]);
+
   // Independent watcher: as actual crosses a fresh milestone, immediately
   // surface a tip even if the cashier is mid-action — these are celebratory
   // and time-sensitive. Idle path covers behavior nudges.
   useEffect(() => {
-    if (open) return;
+    if (open || !milestoneInitRef.current) return;
     const cur = currentMilestone(percent);
     if (cur > lastMilestone && cur !== 0) {
       const result = pickTip({ percent, lastMilestone, recentlyShown });
