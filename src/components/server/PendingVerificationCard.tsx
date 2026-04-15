@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
@@ -18,29 +18,12 @@ interface PendingVerificationCardProps {
 }
 
 export function PendingVerificationCard({ sessions, onVerify, onRequestChange, onViewTimeline, onAddRefill, onAddAddon }: PendingVerificationCardProps) {
-    const [guestCounts, setGuestCounts] = useState<Record<string, number | string>>({});
+    const tableSessions = useMemo(
+        () => sessions.filter(s => s.sessionMode !== 'alacarte'),
+        [sessions]
+    );
 
-    useEffect(() => {
-        const initialCounts: Record<string, number | string> = {};
-        sessions.forEach(session => {
-            const cashierCount = Number(session.guestCountCashierInitial ?? 0);
-            if (guestCounts[session.id] === undefined) {
-                initialCounts[session.id] = cashierCount;
-            }
-        });
-        if (Object.keys(initialCounts).length > 0) {
-            setGuestCounts(prev => ({ ...initialCounts, ...prev }));
-        }
-    }, [sessions, guestCounts]);
-
-    const handleCountChange = (sessionId: string, value: string | number) => {
-        setGuestCounts(prev => ({
-            ...prev,
-            [sessionId]: value
-        }));
-    };
-    
-    if (sessions.length === 0) {
+    if (tableSessions.length === 0) {
         return (
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between p-6">
@@ -53,7 +36,7 @@ export function PendingVerificationCard({ sessions, onVerify, onRequestChange, o
             </Card>
         );
     }
-    
+
     return (
         <Accordion type="single" collapsible defaultValue="pending" className="w-full">
             <AccordionItem value="pending">
@@ -64,12 +47,12 @@ export function PendingVerificationCard({ sessions, onVerify, onRequestChange, o
                                 <CardTitle>Pending Verification</CardTitle>
                                 <CardDescription>Sessions waiting for server confirmation.</CardDescription>
                             </div>
-                            <Badge variant="destructive">{sessions.length}</Badge>
+                            <Badge variant="destructive">{tableSessions.length}</Badge>
                          </AccordionTrigger>
                     </CardHeader>
                     <AccordionContent>
-                        <CardContent className="grid sm:grid-cols-1 gap-4 pt-4">
-                            {sessions.map(session => (
+                        <CardContent className="flex flex-col gap-4 pt-4">
+                            {tableSessions.map(session => (
                                 <SessionCard
                                     key={session.id}
                                     session={session}
@@ -78,8 +61,6 @@ export function PendingVerificationCard({ sessions, onVerify, onRequestChange, o
                                     onViewTimeline={onViewTimeline}
                                     onAddRefill={onAddRefill}
                                     onAddAddon={onAddAddon}
-                                    guestCounts={guestCounts}
-                                    handleCountChange={handleCountChange}
                                 />
                             ))}
                         </CardContent>

@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, X, Loader2, CheckCircle2, Delete } from "lucide-react";
+import { PlusCircle, X, Loader2, CheckCircle2 } from "lucide-react";
+import { Numpad } from "@/components/shared/Numpad";
 import { useToast } from "@/hooks/use-toast";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -17,56 +18,6 @@ import { addToQueue } from "@/lib/offline/payment-queue";
 import type { Payment, ModeOfPayment, SessionBillLine, Store, Discount, Adjustment, PendingSession } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
-
-// --- Numpad ---
-function Numpad({ onKey, onBackspace, onClear, onConfirm, confirmDisabled, confirmLabel, isProcessing }: {
-  onKey: (key: string) => void;
-  onBackspace: () => void;
-  onClear: () => void;
-  onConfirm: () => void;
-  confirmDisabled: boolean;
-  confirmLabel: React.ReactNode;
-  isProcessing: boolean;
-}) {
-  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
-
-  return (
-    <div className="grid grid-cols-3 gap-1.5 select-none">
-      {keys.map((key) => (
-        <Button
-          key={key}
-          type="button"
-          variant="outline"
-          className="h-12 text-lg font-medium tabular-nums"
-          disabled={isProcessing}
-          onClick={() => {
-            if (key === "⌫") onBackspace();
-            else onKey(key);
-          }}
-        >
-          {key === "⌫" ? <Delete className="h-5 w-5" /> : key}
-        </Button>
-      ))}
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-12 text-sm text-muted-foreground"
-        disabled={isProcessing}
-        onClick={onClear}
-      >
-        Clear
-      </Button>
-      <Button
-        type="button"
-        className="h-12 col-span-2 text-base font-semibold"
-        disabled={confirmDisabled || isProcessing}
-        onClick={onConfirm}
-      >
-        {confirmLabel}
-      </Button>
-    </div>
-  );
-}
 
 // --- Validation ---
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {

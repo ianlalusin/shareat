@@ -36,8 +36,6 @@ export function ActiveSessionsGrid({ sessions, onVerify, onRequestChange, onView
                         onViewTimeline={onViewTimeline}
                         onAddRefill={onAddRefill}
                         onAddAddon={onAddAddon}
-                        guestCounts={{}} // Not needed for active sessions
-                        handleCountChange={() => {}} // Not needed for active sessions
                     />
                 ))}
             </CardContent>
