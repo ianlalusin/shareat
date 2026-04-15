@@ -24,6 +24,9 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
+import { WaitlistCard, type WaitlistEntry } from "./WaitlistCard";
+import type { PendingSeat } from "./start-session-form";
+import { deleteDoc, doc } from "firebase/firestore";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -34,11 +37,31 @@ export function SessionListView() {
 
     const [isLoadingSessions, setIsLoadingSessions] = useState(true);
     const [sessions, setSessions] = useState<ActiveSession[]>([]);
-    
+
     const [cachedTables, setCachedTables] = useState<any[]>([]);
     const [isLoadingTables, setIsLoadingTables] = useState(true);
 
+    const [pendingSeat, setPendingSeat] = useState<PendingSeat | null>(null);
+    const [newSessionAccordion, setNewSessionAccordion] = useState<string>("");
+
     const { isModalOpen, closeModal } = useWeatherLogger();
+
+    const handleRequestSeat = (entry: WaitlistEntry) => {
+        setPendingSeat({ id: entry.id, name: entry.name, partySize: entry.partySize, phone: entry.phone });
+        setNewSessionAccordion("new-session");
+    };
+    const handleClearSeat = () => setPendingSeat(null);
+    const handleSeatCompleted = async (_sessionId: string) => {
+        if (!activeStore || !pendingSeat) return;
+        try {
+            await deleteDoc(doc(db, "stores", activeStore.id, "waitlist", pendingSeat.id));
+        } catch (err) {
+            console.warn("[Waitlist] Failed to delete entry after seating", err);
+        } finally {
+            setPendingSeat(null);
+            setNewSessionAccordion("");
+        }
+    };
 
     useEffect(() => {
         if (!activeStore?.id) {
@@ -215,16 +238,20 @@ export function SessionListView() {
                     )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-                        <div className="lg:col-span-1 space-y-8">
-                             <Accordion type="single" collapsible className="w-full" defaultValue="new-session">
+                        <div className="lg:col-span-1 space-y-4">
+                             <Accordion type="single" collapsible className="w-full" value={newSessionAccordion} onValueChange={setNewSessionAccordion}>
                                 <AccordionItem value="new-session" className="border-b-0">
                                     <Card>
-                                        <AccordionTrigger className="p-6 hover:no-underline">
+                                        <div className="flex items-center justify-between p-4 gap-3">
                                             <CardHeader className="p-0 text-left">
                                                 <CardTitle>New Session</CardTitle>
                                                 <CardDescription>Start a new billing session for a table.</CardDescription>
                                             </CardHeader>
-                                        </AccordionTrigger>
+                                            <AccordionTrigger
+                                                className="h-12 w-12 shrink-0 rounded-full border-2 border-primary/40 bg-primary/5 hover:bg-primary/10 hover:no-underline flex items-center justify-center p-0 [&>svg]:h-6 [&>svg]:w-6 [&>svg]:text-primary"
+                                                aria-label={newSessionAccordion === "new-session" ? "Collapse new session" : "Expand new session"}
+                                            />
+                                        </div>
                                         <AccordionContent>
                                             <StartSessionForm
                                                 tables={sortedTables}
@@ -232,11 +259,20 @@ export function SessionListView() {
                                                 flavors={enabledFlavors}
                                                 user={appUser}
                                                 storeId={activeStore.id}
+                                                pendingSeat={pendingSeat}
+                                                onSeatCompleted={handleSeatCompleted}
+                                                onSeatCleared={handleClearSeat}
                                             />
                                         </AccordionContent>
                                     </Card>
                                 </AccordionItem>
                             </Accordion>
+
+                            <WaitlistCard
+                                storeId={activeStore.id}
+                                onSeat={handleRequestSeat}
+                                activeSeatingId={pendingSeat?.id ?? null}
+                            />
                         </div>
                         <div className="lg:col-span-2 space-y-8">
                             <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} adjustmentFlags={adjustmentFlags} />

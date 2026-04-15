@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, PlusCircle, Minus, Plus, MessageSquarePlus } from "lucide-react";
+import { Loader2, PlusCircle, Minus, Plus, MessageSquarePlus, X, Users } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -58,15 +58,25 @@ type AlaCarteFormValues = z.infer<typeof alacarteSchema>;
 
 
 // --- PROPS ---
+export interface PendingSeat {
+    id: string;
+    name: string;
+    partySize: number;
+    phone?: string | null;
+}
+
 interface StartSessionFormProps {
     tables: Table[];
     packages: StorePackage[];
     flavors: StoreFlavor[];
     user: AppUser | null;
     storeId: string;
+    pendingSeat?: PendingSeat | null;
+    onSeatCompleted?: (sessionId: string) => void;
+    onSeatCleared?: () => void;
 }
 
-export function StartSessionForm({ tables, packages, flavors, user, storeId }: StartSessionFormProps) {
+export function StartSessionForm({ tables, packages, flavors, user, storeId, pendingSeat, onSeatCompleted, onSeatCleared }: StartSessionFormProps) {
     const { toast } = useToast();
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,6 +112,27 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     const guestCount = unlimitedForm.watch("guestCount");
     const riceQty = unlimitedForm.watch("riceQty");
     const cheeseQty = unlimitedForm.watch("cheeseQty");
+
+    // Seat-from-waitlist: prefill form when parent sets a pending seat.
+    const formRef = useRef<HTMLDivElement>(null);
+    const lastSeatIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!pendingSeat) {
+            lastSeatIdRef.current = null;
+            return;
+        }
+        if (lastSeatIdRef.current === pendingSeat.id) return;
+        lastSeatIdRef.current = pendingSeat.id;
+        setMode("unlimited");
+        unlimitedForm.setValue("customerName", pendingSeat.name);
+        if (pendingSeat.partySize > 0) {
+            unlimitedForm.setValue("guestCount", pendingSeat.partySize);
+        }
+        // Defer scroll so the tab change and setValue commit first.
+        setTimeout(() => {
+            formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+    }, [pendingSeat, unlimitedForm]);
 
     // Effect to sync rice/cheese with guest count if not manually touched
     useEffect(() => {
@@ -175,6 +206,10 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
         try {
             const newSessionId = await startSession(storeId, sessionPayload, user);
 
+            if (pendingSeat) {
+                onSeatCompleted?.(newSessionId);
+            }
+
             toast({ title: 'Session Created!', description: `Table ${chosenTable.tableNumber} is now pending server verification.` });
             router.push(`/pins?sessionId=${newSessionId}`);
 
@@ -228,7 +263,26 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     }
     
     return (
-        <CardContent className="px-4 pt-0">
+        <CardContent className="px-4 pt-0" ref={formRef}>
+            {pendingSeat && (
+                <div className="mb-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0 text-sm">
+                        <span className="font-semibold">Seating: {pendingSeat.name}</span>
+                        <span className="text-muted-foreground"> · {pendingSeat.partySize} pax</span>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => onSeatCleared?.()}
+                        aria-label="Clear seating"
+                    >
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+            )}
             <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
