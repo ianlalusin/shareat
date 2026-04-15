@@ -140,23 +140,23 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     return (
         <>
             <Card className={cn("flex flex-col", statusColor)}>
-                <CardHeader className="p-3">
+                <CardHeader className="p-2">
                     <div className="flex justify-between items-center gap-2">
-                        <p className="text-2xl font-bold text-destructive">{identifier}</p>
+                        <p className="text-lg font-bold text-destructive truncate">{identifier}</p>
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
-                    <CardTitle className="text-xl">{ticket.itemName}</CardTitle>
+                    <CardTitle className="text-base leading-tight">{ticket.itemName}</CardTitle>
 
                     {/* Qty progress for batch tickets */}
                     {isBatchTicket && (
                         <div className="mt-1 space-y-1">
-                            <div className="flex gap-3 text-sm flex-wrap">
-                                <span className="font-semibold">Ordered: <span className="text-foreground">{qtyOrdered}</span></span>
-                                <span className="text-green-700 font-semibold">Served: {qtyServed}</span>
-                                {qtyCancelled > 0 && <span className="text-destructive font-semibold">Cancelled: {qtyCancelled}</span>}
-                                {qtyRemaining > 0 && <span className="text-amber-600 font-semibold">Remaining: {qtyRemaining}</span>}
+                            <div className="flex gap-2 text-[11px] flex-wrap">
+                                <span className="font-semibold">Ord: <span className="text-foreground">{qtyOrdered}</span></span>
+                                <span className="text-green-700 font-semibold">Srv: {qtyServed}</span>
+                                {qtyCancelled > 0 && <span className="text-destructive font-semibold">Cxl: {qtyCancelled}</span>}
+                                {qtyRemaining > 0 && <span className="text-amber-600 font-semibold">Rem: {qtyRemaining}</span>}
                             </div>
-                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden flex">
+                            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden flex">
                                 <div className="bg-green-500 h-full transition-all" style={{ width: `${(qtyServed/qtyOrdered)*100}%` }} />
                                 <div className="bg-destructive h-full transition-all" style={{ width: `${(qtyCancelled/qtyOrdered)*100}%` }} />
                             </div>
@@ -164,42 +164,42 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                     )}
                 </CardHeader>
 
-                <CardContent className="flex-grow space-y-2 p-3 pt-0">
+                <CardContent className="flex-grow space-y-1.5 p-2 pt-0">
                     {ticket.type === 'refill' && (ticket as any).refillRequest && (
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                             {Object.entries((ticket as any).refillRequest as Record<string, any>)
                               .filter(([, v]) => Number(v || 0) > 0)
                               .map(([k, v]) => (
-                                <p key={k} className="text-lg font-semibold">{String(k).replace(/_/g, " ")} {Number(v)}</p>
+                                <p key={k} className="text-sm font-semibold">{String(k).replace(/_/g, " ")} {Number(v)}</p>
                               ))}
                         </div>
                     )}
                     {ticket.initialFlavorNames && ticket.initialFlavorNames.length > 0 && (
-                        <div className="text-base flex items-baseline gap-2 flex-wrap">
-                            <span className="font-semibold">Flavors:</span>
-                            {ticket.initialFlavorNames.map(name => <Badge key={name} variant="secondary" className="text-base">{name}</Badge>)}
+                        <div className="text-xs flex items-baseline gap-1 flex-wrap">
+                            <span className="font-semibold">Flv:</span>
+                            {ticket.initialFlavorNames.map(name => <Badge key={name} variant="secondary" className="text-[10px] px-1.5 py-0">{name}</Badge>)}
                         </div>
                     )}
                     {ticket.notes && (
-                        <div className="text-sm p-2 bg-yellow-50 border border-yellow-200 rounded-md dark:bg-yellow-900/20 dark:border-yellow-800">
-                            <p className="font-semibold flex items-center gap-1"><Info size={14}/> Notes:</p>
-                            <p className="text-muted-foreground pl-2">{ticket.notes}</p>
+                        <div className="text-xs p-1.5 bg-yellow-50 border border-yellow-200 rounded dark:bg-yellow-900/20 dark:border-yellow-800">
+                            <p className="font-semibold flex items-center gap-1"><Info size={10}/> Notes</p>
+                            <p className="text-muted-foreground pl-1">{ticket.notes}</p>
                         </div>
                     )}
 
                     {/* Serve log */}
                     {serveLog.length > 0 && (
                         <div>
-                            <button onClick={() => setShowServeLog(v => !v)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                                {showServeLog ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
-                                Serve log ({serveLog.length} batch{serveLog.length > 1 ? 'es' : ''})
+                            <button onClick={() => setShowServeLog(v => !v)} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">
+                                {showServeLog ? <ChevronUp size={10}/> : <ChevronDown size={10}/>}
+                                Log ({serveLog.length})
                             </button>
                             {showServeLog && (
-                                <div className="mt-1 space-y-0.5 text-xs text-muted-foreground border rounded p-2">
+                                <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground border rounded p-1.5">
                                     {serveLog.map((log, i) => (
                                         <div key={i} className="flex justify-between">
-                                            <span>Batch {i+1}: <strong className="text-green-700">{log.qty} served</strong></span>
-                                            <span>{log.servedAtClientMs ? format(new Date(log.servedAtClientMs), 'HH:mm:ss') : ''}</span>
+                                            <span>#{i+1}: <strong className="text-green-700">{log.qty}</strong></span>
+                                            <span>{log.servedAtClientMs ? format(new Date(log.servedAtClientMs), 'HH:mm') : ''}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -208,24 +208,24 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                     )}
                 </CardContent>
 
-                <CardFooter className="flex justify-between items-center gap-2 p-3 pt-2 flex-wrap">
+                <CardFooter className="flex justify-between items-center gap-1 p-2 pt-1 flex-wrap">
                     <div>
                         {ticket.status === 'served' ? (
-                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-sm"><CheckCircle className="mr-1" />Served</Badge>
+                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-[10px] px-1.5 py-0"><CheckCircle className="h-3 w-3 mr-0.5" />Served</Badge>
                         ) : ticket.status === 'cancelled' ? (
-                            <Badge variant="destructive" className="text-sm">Cancelled</Badge>
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Cancelled</Badge>
                         ) : (
-                            <Badge variant="outline" className="capitalize text-sm">{ticket.status}</Badge>
+                            <Badge variant="outline" className="capitalize text-[10px] px-1.5 py-0">{ticket.status}</Badge>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <div className="flex items-center gap-3 flex-wrap justify-end">
                         {(ticket.status === 'preparing' || ticket.status === 'partially_served') && (
                             <>
                                 {/* Cancel — full cancel or cancel remaining */}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="destructive" size="sm">
-                                            <XCircle className="mr-2" /> {qtyServed > 0 ? 'Cancel Remaining' : 'Cancel'}
+                                        <Button variant="destructive" size="sm" className="h-7 px-2 text-xs">
+                                            <XCircle className="h-3 w-3 mr-1" /> {qtyServed > 0 ? 'Cancel Rem' : 'Cancel'}
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent>
@@ -241,12 +241,12 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
 
                                 {/* Serve button */}
                                 {isBatchTicket ? (
-                                    <Button size="sm" onClick={openServeBatch}>
-                                        <Send className="mr-2" /> Serve ({qtyRemaining})
+                                    <Button size="sm" className="h-7 px-2 text-xs" onClick={openServeBatch}>
+                                        <Send className="h-3 w-3 mr-1" /> Serve ({qtyRemaining})
                                     </Button>
                                 ) : (
-                                    <Button size="sm" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
-                                        <Send className="mr-2" /> Served
+                                    <Button size="sm" className="h-7 px-2 text-xs" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                                        <Send className="h-3 w-3 mr-1" /> Served
                                     </Button>
                                 )}
                             </>

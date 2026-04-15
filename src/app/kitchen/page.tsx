@@ -621,7 +621,7 @@ export default function KitchenPage() {
             </div>
         </div>
       </PageHeader>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
             <div className="lg:col-span-3">
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     {isMobile ? (
