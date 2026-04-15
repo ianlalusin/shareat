@@ -15,6 +15,7 @@ type SessionContext = {
     sessionMode?: 'package_dinein' | 'alacarte' | null;
     customerName?: string | null;
     tableNumber?: string | null;
+    tableDisplayName?: string | null;
 };
 
 type ActivityLogPayload = {
@@ -72,10 +73,12 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       sessionMode: sessionContext?.sessionMode ?? undefined,
       customerName: sessionContext?.customerName,
       tableNumber: sessionContext?.tableNumber,
+      tableDisplayName: sessionContext?.tableDisplayName ?? null,
       sessionLabel: computeSessionLabel({
         sessionMode: sessionContext?.sessionMode,
         customerName: sessionContext?.customerName,
         tableNumber: sessionContext?.tableNumber,
+        tableDisplayName: sessionContext?.tableDisplayName,
       }),
 
       ...rest,

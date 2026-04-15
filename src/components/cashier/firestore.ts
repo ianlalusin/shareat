@@ -280,6 +280,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       sessionMode: sessionPayload.sessionMode ?? undefined,
       customerName: sessionPayload.customerName,
       tableNumber: sessionPayload.tableNumber,
+      tableDisplayName: tableDisplayName ?? null,
     }
   });
 
@@ -347,6 +348,7 @@ export async function completePaymentFromUnits(
       sessionMode: sessionData.sessionMode,
       customerName: sessionData.customer?.name ?? sessionData.customerName,
       tableNumber: sessionData.tableNumber,
+      tableDisplayName: sessionData.tableDisplayName ?? null,
     };
 
     if (receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) {
@@ -801,6 +803,7 @@ export async function voidSession({
           sessionMode: initialSessionData.sessionMode ?? undefined,
           customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
           tableNumber: initialSessionData.tableNumber,
+          tableDisplayName: initialSessionData.tableDisplayName ?? null,
       },
       meta: { sessionLabel: computeSessionLabel(initialSessionData) }
     });

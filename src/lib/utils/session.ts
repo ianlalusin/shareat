@@ -14,5 +14,9 @@ export function computeSessionLabel({
   if (sessionMode === 'alacarte') {
     return (customerName || 'Ala Carte').trim();
   }
-  return (tableDisplayName || `Table ${tableNumber ?? ''}`).trim();
+  if (tableDisplayName && tableDisplayName.trim()) return tableDisplayName.trim();
+  const num = (tableNumber ?? '').toString().trim();
+  if (num) return `Table ${num}`;
+  if (customerName && customerName.trim()) return customerName.trim();
+  return 'Session';
 }

@@ -5,10 +5,33 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, PlusCircle } from "lucide-react";
+import { Clock, PlusCircle, AlarmClock } from "lucide-react";
 import { toJsDate } from "@/lib/utils/date";
 import type { PendingSession } from "@/lib/types";
 import { GuestCountModal } from "./GuestCountModal";
+
+export function formatElapsedShort(ms: number): string {
+    if (!Number.isFinite(ms) || ms < 0) return "0s";
+    const totalSec = Math.floor(ms / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m ${s}s`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return `${h}h ${remM}m`;
+}
+
+export const PendingTimer = ({ startMs }: { startMs: number | null }) => {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (startMs == null) return;
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, [startMs]);
+    if (startMs == null) return <span>—</span>;
+    return <span className="tabular-nums">{formatElapsedShort(Math.max(0, now - startMs))}</span>;
+};
 
 export const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
     const [elapsed, setElapsed] = useState("...");
@@ -98,6 +121,10 @@ export function SessionCard({ session, onVerify, onRequestChange, onViewTimeline
                     <CardContent className="p-4 text-center">
                         <p className="text-2xl font-black text-red-600 tracking-tight truncate">{tableLabel}</p>
                         <p className="mt-1 text-sm font-semibold text-red-900/80 truncate">{session.packageName}</p>
+                        <p className="mt-1 flex items-center justify-center gap-1 text-xs font-semibold text-red-700">
+                            <AlarmClock className="h-3.5 w-3.5" />
+                            Waiting <PendingTimer startMs={session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime() ?? null} />
+                        </p>
                         <p className="mt-1 text-[10px] uppercase tracking-wider text-red-700/70">Tap to count guests</p>
                     </CardContent>
                 </Card>

@@ -40,8 +40,8 @@ function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAt
   const elapsedMs = Math.max(0, now - (startMs as number));
   const totalMinutes = Math.floor(elapsedMs / 60000);
   return (
-    <div className={cn("flex items-center gap-1.5 text-base font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
-      <Clock size={14} />
+    <div className={cn("flex items-center gap-1.5 text-lg font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
+      <Clock size={18} />
       <span>{Number.isFinite(startMs as number) ? formatDuration(elapsedMs) : "00:00:00"}</span>
     </div>
   );
@@ -140,23 +140,23 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     return (
         <>
             <Card className={cn("flex flex-col", statusColor)}>
-                <CardHeader className="p-2">
+                <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-center gap-2">
-                        <p className="text-lg font-bold text-destructive truncate">{identifier}</p>
+                        <p className="text-2xl font-bold text-destructive truncate">{identifier}</p>
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
-                    <CardTitle className="text-base leading-tight">{ticket.itemName}</CardTitle>
+                    <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
 
                     {/* Qty progress for batch tickets */}
                     {isBatchTicket && (
-                        <div className="mt-1 space-y-1">
-                            <div className="flex gap-2 text-[11px] flex-wrap">
+                        <div className="mt-2 space-y-1.5">
+                            <div className="flex gap-3 text-sm flex-wrap">
                                 <span className="font-semibold">Ord: <span className="text-foreground">{qtyOrdered}</span></span>
                                 <span className="text-green-700 font-semibold">Srv: {qtyServed}</span>
                                 {qtyCancelled > 0 && <span className="text-destructive font-semibold">Cxl: {qtyCancelled}</span>}
                                 {qtyRemaining > 0 && <span className="text-amber-600 font-semibold">Rem: {qtyRemaining}</span>}
                             </div>
-                            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden flex">
+                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden flex">
                                 <div className="bg-green-500 h-full transition-all" style={{ width: `${(qtyServed/qtyOrdered)*100}%` }} />
                                 <div className="bg-destructive h-full transition-all" style={{ width: `${(qtyCancelled/qtyOrdered)*100}%` }} />
                             </div>
@@ -164,25 +164,25 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                     )}
                 </CardHeader>
 
-                <CardContent className="flex-grow space-y-1.5 p-2 pt-0">
+                <CardContent className="flex-grow space-y-2 p-4 pt-0">
                     {ticket.type === 'refill' && (ticket as any).refillRequest && (
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                             {Object.entries((ticket as any).refillRequest as Record<string, any>)
                               .filter(([, v]) => Number(v || 0) > 0)
                               .map(([k, v]) => (
-                                <p key={k} className="text-sm font-semibold">{String(k).replace(/_/g, " ")} {Number(v)}</p>
+                                <p key={k} className="text-lg font-semibold">{String(k).replace(/_/g, " ")} {Number(v)}</p>
                               ))}
                         </div>
                     )}
                     {ticket.initialFlavorNames && ticket.initialFlavorNames.length > 0 && (
-                        <div className="text-xs flex items-baseline gap-1 flex-wrap">
+                        <div className="text-sm flex items-baseline gap-1.5 flex-wrap">
                             <span className="font-semibold">Flv:</span>
-                            {ticket.initialFlavorNames.map(name => <Badge key={name} variant="secondary" className="text-[10px] px-1.5 py-0">{name}</Badge>)}
+                            {ticket.initialFlavorNames.map(name => <Badge key={name} variant="secondary" className="text-xs px-2 py-0.5">{name}</Badge>)}
                         </div>
                     )}
                     {ticket.notes && (
-                        <div className="text-xs p-1.5 bg-yellow-50 border border-yellow-200 rounded dark:bg-yellow-900/20 dark:border-yellow-800">
-                            <p className="font-semibold flex items-center gap-1"><Info size={10}/> Notes</p>
+                        <div className="text-sm p-2 bg-yellow-50 border border-yellow-200 rounded dark:bg-yellow-900/20 dark:border-yellow-800">
+                            <p className="font-semibold flex items-center gap-1"><Info size={14}/> Notes</p>
                             <p className="text-muted-foreground pl-1">{ticket.notes}</p>
                         </div>
                     )}
@@ -208,14 +208,14 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                     )}
                 </CardContent>
 
-                <CardFooter className="flex justify-between items-center gap-1 p-2 pt-1 flex-wrap">
+                <CardFooter className="flex justify-between items-center gap-2 p-4 pt-2 flex-wrap">
                     <div>
                         {ticket.status === 'served' ? (
-                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-[10px] px-1.5 py-0"><CheckCircle className="h-3 w-3 mr-0.5" />Served</Badge>
+                            <Badge variant="default" className="bg-green-600 whitespace-nowrap text-sm px-2.5 py-0.5"><CheckCircle className="h-4 w-4 mr-1" />Served</Badge>
                         ) : ticket.status === 'cancelled' ? (
-                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Cancelled</Badge>
+                            <Badge variant="destructive" className="text-sm px-2.5 py-0.5">Cancelled</Badge>
                         ) : (
-                            <Badge variant="outline" className="capitalize text-[10px] px-1.5 py-0">{ticket.status}</Badge>
+                            <Badge variant="outline" className="capitalize text-sm px-2.5 py-0.5">{ticket.status}</Badge>
                         )}
                     </div>
                     <div className="flex items-center gap-3 flex-wrap justify-end">
@@ -224,8 +224,8 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                                 {/* Cancel — full cancel or cancel remaining */}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="destructive" size="sm" className="h-7 px-2 text-xs">
-                                            <XCircle className="h-3 w-3 mr-1" /> {qtyServed > 0 ? 'Cancel Rem' : 'Cancel'}
+                                        <Button variant="destructive" className="h-11 px-4 text-base">
+                                            <XCircle className="h-5 w-5 mr-1.5" /> {qtyServed > 0 ? 'Cancel Rem' : 'Cancel'}
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent>
@@ -241,12 +241,12 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
 
                                 {/* Serve button */}
                                 {isBatchTicket ? (
-                                    <Button size="sm" className="h-7 px-2 text-xs" onClick={openServeBatch}>
-                                        <Send className="h-3 w-3 mr-1" /> Serve ({qtyRemaining})
+                                    <Button className="h-11 px-4 text-base" onClick={openServeBatch}>
+                                        <Send className="h-5 w-5 mr-1.5" /> Serve ({qtyRemaining})
                                     </Button>
                                 ) : (
-                                    <Button size="sm" className="h-7 px-2 text-xs" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
-                                        <Send className="h-3 w-3 mr-1" /> Served
+                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                                        <Send className="h-5 w-5 mr-1.5" /> Served
                                     </Button>
                                 )}
                             </>

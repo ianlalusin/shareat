@@ -24,6 +24,8 @@ import { useServerProfile } from "@/hooks/useServerProfile";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
 import { ServerUserCard } from "@/components/server/ServerUserCard";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
+import { formatElapsedShort } from "@/components/server/SessionCard";
+import { VerifyAverageCard } from "@/components/server/VerifyAverageCard";
 
 type GCC = PendingSession["guestCountChange"];
 
@@ -149,10 +151,12 @@ export function ServerPageClient() {
   
   const handleVerify = async (session: PendingSession, serverCount: number) => {
     if (!activeStore || !appUser || !session.tableId) return;
-    
+
     const cashierInitial = session.guestCountCashierInitial ?? 0;
     const finalCount = Math.max(cashierInitial, serverCount);
-    
+    const startedMs = (session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime()) ?? null;
+    const verifyDurationMs = startedMs != null ? Math.max(0, Date.now() - startedMs) : null;
+
     const batch = writeBatch(db);
     const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', session.id);
     
@@ -162,6 +166,7 @@ export function ServerPageClient() {
       guestCountVerifyLocked: true,
       status: "active",
       verifiedAt: serverTimestamp(),
+      verifyDurationMs,
       verifiedByUid: appUser.uid,
       verifiedByServerProfileId: currentProfile?.profileId ?? null,
       verifiedByServerProfileName: currentProfile?.name ?? null,
@@ -185,7 +190,8 @@ export function ServerPageClient() {
 
     try {
       await batch.commit();
-      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount: serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount }, note: `Verified with ${serverCount} guests (final: ${finalCount})`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
+      const durationStr = verifyDurationMs != null ? formatElapsedShort(verifyDurationMs) : "unknown";
+      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount, verifyDurationMs } as any, note: `Verified ${finalCount} guests after ${durationStr}`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
       toast({ title: 'Session Verified' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Verification Failed', description: e.message });
@@ -239,13 +245,16 @@ export function ServerPageClient() {
     <RoleGuard allow={["admin", "manager", "server"]}>
       <PageHeader title="Server Station" description="Verify guest sessions and track items for serving.">
         {activeStore && currentProfile && (
-          <ServerUserCard
-            storeId={activeStore.id}
-            profileId={currentProfile.profileId}
-            name={currentProfile.name}
-            onSignIn={signIn}
-            onSignOut={signOut}
-          />
+          <>
+            <VerifyAverageCard storeId={activeStore.id} />
+            <ServerUserCard
+              storeId={activeStore.id}
+              profileId={currentProfile.profileId}
+              name={currentProfile.name}
+              onSignIn={signIn}
+              onSignOut={signOut}
+            />
+          </>
         )}
       </PageHeader>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">

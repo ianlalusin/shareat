@@ -137,7 +137,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             meta: { itemName: packageLine.itemName, beforeQty, afterQty },
             note: `Package qty auto-synced from ${beforeQty} to ${afterQty} (guest count approved)`,
             storeId, sessionId, user: appUser,
-            sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber },
+            sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null },
           });
         }).catch(err => console.error("Failed to re-sync package qty after approval:", err));
       }
@@ -334,6 +334,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         sessionMode: session.sessionMode,
                         customerName: session.customer?.name ?? session.customerName,
                         tableNumber: session.tableNumber,
+                        tableDisplayName: session.tableDisplayName ?? null,
                     },
                     meta: {
                         itemId: line.id,
@@ -363,7 +364,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         note: `Removed ${adj.kind ?? "adjustment"}: ${adj.name || adj.type || ""}`,
         meta: { itemName: line?.itemName, discountName: adj.name || adj.type, discountType: adj.type, discountValue: adj.value },
         storeId: activeStore.id, sessionId, user: appUser,
-        sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber },
+        sessionContext: { sessionStatus: session.status, sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null },
       });
     }
   };

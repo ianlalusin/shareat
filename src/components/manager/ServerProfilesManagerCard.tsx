@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,11 +34,18 @@ export function ServerProfilesManagerCard({ storeId }: Props) {
 
   useEffect(() => {
     if (!storeId) return;
-    const q = query(collection(db, "stores", storeId, "serverProfiles"), orderBy("name", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setProfiles(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    const ref = collection(db, "stores", storeId, "serverProfiles");
+    const unsub = onSnapshot(ref, (snap) => {
+      const rows = snap.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter(p => typeof p.name === "string" && p.name.trim().length > 0);
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+      setProfiles(rows);
       setIsLoading(false);
-    }, () => setIsLoading(false));
+    }, (err) => {
+      console.error("[ServerProfilesManagerCard] snapshot error:", err);
+      setIsLoading(false);
+    });
     return () => unsub();
   }, [storeId]);
 

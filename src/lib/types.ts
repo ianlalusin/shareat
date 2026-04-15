@@ -640,6 +640,7 @@ export type ActivityLog = {
   sessionMode?: 'package_dinein' | 'alacarte';
   customerName?: string | null;
   tableNumber?: string | null;
+  tableDisplayName?: string | null;
 
   meta?: {
     itemId?: string;

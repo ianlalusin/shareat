@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -102,7 +102,13 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   }, [storePackages, schedules]);
 
 
+  const lastSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
+    // Reset only when the session actually changes. Parent spreads into a
+    // fresh object each snapshot tick, so depending on `session` directly
+    // would wipe typed input. Guard with the id instead.
+    if (lastSessionIdRef.current === session.id) return;
+    lastSessionIdRef.current = session.id;
     guestForm.reset({ requestedCount: session.guestCountFinal || 0, reasonNote: "" });
     packageForm.reset({ requestedPackageId: session.packageOfferingId, reasonNote: "" });
   }, [session, guestForm, packageForm]);

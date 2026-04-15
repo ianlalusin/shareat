@@ -155,6 +155,7 @@ export default function LogsPage() {
                     status: newestLog.sessionStatus ?? 'closed',
                     startedAt: newestLog.sessionStartedAt,
                     tableNumber: newestLog.tableNumber || '',
+                    tableDisplayName: newestLog.tableDisplayName ?? null,
                     sessionMode: newestLog.sessionMode || 'package_dinein',
                     customerName: newestLog.customerName,
                     // Dummy data to satisfy the PendingSession type for the card

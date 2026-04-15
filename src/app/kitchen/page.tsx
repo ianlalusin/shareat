@@ -621,8 +621,8 @@ export default function KitchenPage() {
             </div>
         </div>
       </PageHeader>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
-            <div className="lg:col-span-3">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+            <div className="xl:col-span-3">
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     {isMobile ? (
                         <Select value={activeTab} onValueChange={setActiveTab}>
@@ -662,8 +662,8 @@ export default function KitchenPage() {
                     ))}
                  </Tabs>
             </div>
-            <div className="lg:col-span-1 space-y-4">
-                <HistoryView 
+            <div className="xl:col-span-1 space-y-4">
+                <HistoryView
                   items={historyPreview}
                   isLoading={isLoadingHistory}
                   activeStationId={activeTab}

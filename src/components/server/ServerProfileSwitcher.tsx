@@ -5,8 +5,6 @@ import {
   collection,
   doc,
   onSnapshot,
-  orderBy,
-  query,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -51,12 +49,19 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
 
   useEffect(() => {
     if (!storeId) return;
-    const q = query(collection(db, "stores", storeId, "serverProfiles"), orderBy("name", "asc"));
     setIsLoading(true);
-    const unsub = onSnapshot(q, (snap) => {
-      setProfiles(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    const ref = collection(db, "stores", storeId, "serverProfiles");
+    const unsub = onSnapshot(ref, (snap) => {
+      const rows = snap.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter(p => typeof p.name === "string" && p.name.trim().length > 0);
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+      setProfiles(rows);
       setIsLoading(false);
-    }, () => setIsLoading(false));
+    }, (err) => {
+      console.error("[ServerProfileSwitcher] snapshot error:", err);
+      setIsLoading(false);
+    });
     return () => unsub();
   }, [storeId]);
 
@@ -113,7 +118,7 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
                     <button
                       key={p.id}
                       onClick={() => { setSelected(p); setResetToken(t => t + 1); }}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition text-left"
+                      className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-yellow-100 hover:border-yellow-300 hover:text-foreground transition text-left"
                     >
                       <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
                         {p.name.slice(0, 1).toUpperCase()}
