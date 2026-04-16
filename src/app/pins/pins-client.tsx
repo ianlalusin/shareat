@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
@@ -113,7 +113,9 @@ export default function PinsClient() {
   const [now, setNow] = useState(() => Date.now());
 
   const [archivedPins, setArchivedPins] = useState<ArchivedPin[]>([]);
+  const [closedWithPins, setClosedWithPins] = useState<ArchivedPin[]>([]);
   const [isLoadingArchivedPins, setIsLoadingArchivedPins] = useState(true);
+  const [isLoadingClosedPins, setIsLoadingClosedPins] = useState(true);
   const [archivedPinsPage, setArchivedPinsPage] = useState(0);
   const autoIssueAttemptedRef = useRef<string | null>(null);
   const autoFinalizeExpiredRef = useRef<Record<string, true>>({});
@@ -260,8 +262,52 @@ export default function PinsClient() {
     return () => unsub();
   }, [storeId, todayDayId]);
 
+  // Also read today's closedSessions that still have a customerPin (missed by finalize)
+  useEffect(() => {
+    if (!storeId) {
+      setIsLoadingClosedPins(false);
+      setClosedWithPins([]);
+      return;
+    }
+    setIsLoadingClosedPins(true);
+    const ref = collection(db, `stores/${storeId}/closedSessions`);
+    const unsub = onSnapshot(ref, (snap) => {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayMs = todayStart.getTime();
+      const rows: ArchivedPin[] = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((s: any) => {
+          if (!s.customerPin) return false;
+          const closedMs = s.closedAtClientMs ?? (s.closedAt?.toMillis?.() || 0);
+          return closedMs >= todayMs;
+        })
+        .map((s: any) => ({
+          id: s.customerPin,
+          pin: s.customerPin,
+          sessionId: s.id,
+          storeId: storeId,
+          customerName: s.customerName ?? null,
+          tableDisplayName: s.tableDisplayName ?? null,
+          tableNumber: s.tableNumber ?? null,
+          status: s.status === "voided" ? "voided" : "closed",
+          expiresAtMs: s.customerAccessExpiresAtMs ?? undefined,
+          archiveReason: s.status === "voided" ? "session_voided" : "payment_closed",
+        }));
+      setClosedWithPins(rows);
+      setIsLoadingClosedPins(false);
+    }, () => setIsLoadingClosedPins(false));
+    return () => unsub();
+  }, [storeId]);
+
+  const mergedArchivedPins = useMemo(() => {
+    const archiveIds = new Set(archivedPins.map(p => p.id));
+    const extras = closedWithPins.filter(p => !archiveIds.has(p.id));
+    return [...archivedPins, ...extras];
+  }, [archivedPins, closedWithPins]);
+
   const { paginatedArchivedPins, totalArchivedPinPages } = useMemo(() => {
-    const allArchived = [...archivedPins].sort((a, b) => {
+    const allArchived = [...mergedArchivedPins].sort((a, b) => {
       const aMs = typeof a.expiresAtMs === "number" ? a.expiresAtMs : 0;
       const bMs = typeof b.expiresAtMs === "number" ? b.expiresAtMs : 0;
       return bMs - aMs;
@@ -274,7 +320,7 @@ export default function PinsClient() {
     const totalPages = Math.ceil(allArchived.length / PAST_PINS_PAGE_SIZE);
 
     return { paginatedArchivedPins: paginated, totalArchivedPinPages: totalPages };
-  }, [archivedPins, archivedPinsPage]);
+  }, [mergedArchivedPins, archivedPinsPage]);
 
   const latestArchivedPinBySession = useMemo(() => {
     const sorted = [...archivedPins].sort((a, b) => {
@@ -568,7 +614,7 @@ export default function PinsClient() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingArchivedPins ? (
+                {(isLoadingArchivedPins || isLoadingClosedPins) ? (
                   <p className="text-sm text-muted-foreground">Loading archived PINs...</p>
                 ) : paginatedArchivedPins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No archived PINs for today.</p>

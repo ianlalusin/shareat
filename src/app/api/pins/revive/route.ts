@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         throw new Error("PINs are only allowed for dine-in unlimited/package sessions.");
       }
 
-      if (livePinSnap.exists) {
+      if (livePinSnap.exists && livePinSnap.data()?.status === "active") {
         throw new Error("PIN is already active.");
       }
 
@@ -87,7 +87,13 @@ export async function POST(request: Request) {
             },
             { merge: true }
           );
-          tx.delete(oldPinRef);
+          tx.update(oldPinRef, {
+            status: "archived",
+            archivedAtMs: nowMs,
+            archivedAt: FieldValue.serverTimestamp(),
+            archivedByUid: actorUid,
+            archiveReason: "revive_replaced_existing",
+          });
         }
       }
 

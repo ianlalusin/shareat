@@ -100,7 +100,14 @@ export async function POST(request: Request) {
             { merge: true }
           );
         }
-        tx.delete(oldPinRef);
+        tx.update(oldPinRef, {
+          status: "archived",
+          archivedAtMs: nowMs,
+          archivedAt: FieldValue.serverTimestamp(),
+          archivedByUid: actorUid,
+          archiveReason: "reissued",
+          replacedByPin: reservedPin,
+        });
       }
 
       tx.set(pinRef, {

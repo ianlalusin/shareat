@@ -449,21 +449,19 @@ export async function completePaymentFromUnits(
         ...projectionData,
         status: 'closed',
         customerAccessEnabled: false,
-        customerPin: null,
-        customerAccessExpiresAtMs: null,
         updatedAt: serverTimestamp(),
         closedAt: serverTimestamp(),
+        closedAtClientMs: now,
       });
       tx.delete(activeProjectionRef);
-    } else { // Fallback if projection was missing
+    } else {
         tx.set(closedProjectionRef, {
             ...sessionData,
             status: 'closed',
             customerAccessEnabled: false,
-            customerPin: null,
-            customerAccessExpiresAtMs: null,
             updatedAt: serverTimestamp(),
             closedAt: serverTimestamp(),
+            closedAtClientMs: now,
         })
     }
 
@@ -765,8 +763,6 @@ export async function voidSession({
         ...projectionData,
         status: 'voided',
         customerAccessEnabled: false,
-        customerPin: null,
-        customerAccessExpiresAtMs: null,
         updatedAt: serverTimestamp(),
         closedAt: serverTimestamp(),
       });

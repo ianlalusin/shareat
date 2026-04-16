@@ -87,7 +87,13 @@ export async function POST(request: Request) {
             },
             { merge: true }
           );
-          tx.delete(pinRef);
+          tx.update(pinRef, {
+            status: "archived",
+            archivedAtMs: nowMs,
+            archivedAt: FieldValue.serverTimestamp(),
+            archivedByUid: actorUid,
+            archiveReason: reason,
+          });
         }
       }
 
