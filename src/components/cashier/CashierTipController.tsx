@@ -48,10 +48,10 @@ export function CashierTipController({ storeId }: Props) {
   const [lastMilestone, setLastMilestone] = useState<Milestone>(0);
   const [recentlyShown, setRecentlyShown] = useState<string[]>([]);
   const [tipShownThisIdle, setTipShownThisIdle] = useState(false);
-  const [tipsSinceMilestone, setTipsSinceMilestone] = useState(0);
   const prevActivityRef = useRef<number>(0);
   const milestoneInitRef = useRef(false);
   const pendingMilestoneRef = useRef<Milestone>(0);
+  const tipsSinceMilestoneRef = useRef(0);
 
   const { isIdle, lastActivityAt } = useIdleTimer({ idleMs: IDLE_MS });
 
@@ -124,23 +124,23 @@ export function CashierTipController({ storeId }: Props) {
     if (!isIdle || tipShownThisIdle || open) return;
 
     const MILESTONE_INTERVAL = 10;
-    if (pendingMilestoneRef.current && tipsSinceMilestone >= MILESTONE_INTERVAL) {
+    if (pendingMilestoneRef.current && tipsSinceMilestoneRef.current >= MILESTONE_INTERVAL) {
       const ms = pendingMilestoneRef.current;
       pendingMilestoneRef.current = 0;
       const msg = pickTip({ percent, lastMilestone: (ms - 1) as any, recentlyShown }).message;
       setMessage(msg);
       setRecentlyShown((prev) => [msg, ...prev].slice(0, RECENT_DEPTH));
-      setTipsSinceMilestone(0);
+      tipsSinceMilestoneRef.current = 0;
     } else {
       // Force a behavior tip (skip milestone logic by passing lastMilestone = current)
       const result = pickTip({ percent, lastMilestone: currentMilestone(percent), recentlyShown });
       setMessage(result.message);
       setRecentlyShown((prev) => [result.message, ...prev].slice(0, RECENT_DEPTH));
-      setTipsSinceMilestone((c) => c + 1);
+      tipsSinceMilestoneRef.current += 1;
     }
     setOpen(true);
     setTipShownThisIdle(true);
-  }, [isIdle, tipShownThisIdle, open, percent, lastMilestone, recentlyShown, tipsSinceMilestone]);
+  }, [isIdle, tipShownThisIdle, open, percent, lastMilestone, recentlyShown]);
 
   return <CashierTipModal open={open} message={message} onClose={() => setOpen(false)} />;
 }
