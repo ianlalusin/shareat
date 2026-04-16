@@ -48,8 +48,10 @@ export function CashierTipController({ storeId }: Props) {
   const [lastMilestone, setLastMilestone] = useState<Milestone>(0);
   const [recentlyShown, setRecentlyShown] = useState<string[]>([]);
   const [tipShownThisIdle, setTipShownThisIdle] = useState(false);
+  const [tipsSinceMilestone, setTipsSinceMilestone] = useState(0);
   const prevActivityRef = useRef<number>(0);
   const milestoneInitRef = useRef(false);
+  const pendingMilestoneRef = useRef<Milestone>(0);
 
   const { isIdle, lastActivityAt } = useIdleTimer({ idleMs: IDLE_MS });
 
@@ -104,32 +106,41 @@ export function CashierTipController({ storeId }: Props) {
     if (cur > 0) setLastMilestone(cur);
   }, [goal, percent]);
 
-  // Independent watcher: as actual crosses a fresh milestone, immediately
-  // surface a tip even if the cashier is mid-action — these are celebratory
-  // and time-sensitive. Idle path covers behavior nudges.
+  // Independent watcher: when a new milestone is crossed, queue it.
+  // It will be shown once 10 behavior tips have been displayed since
+  // the last milestone tip (or immediately if already past 10).
   useEffect(() => {
-    if (open || !milestoneInitRef.current) return;
+    if (!milestoneInitRef.current) return;
     const cur = currentMilestone(percent);
     if (cur > lastMilestone && cur !== 0) {
-      const result = pickTip({ percent, lastMilestone, recentlyShown });
-      setMessage(result.message);
-      if (result.milestone) setLastMilestone(result.milestone);
-      setRecentlyShown((prev) => [result.message, ...prev].slice(0, RECENT_DEPTH));
-      setOpen(true);
-      setTipShownThisIdle(true);
+      pendingMilestoneRef.current = cur;
+      setLastMilestone(cur);
     }
-  }, [percent, lastMilestone, recentlyShown, open]);
+  }, [percent, lastMilestone]);
 
-  // Idle path — fire one behavior tip after IDLE_MS, no stacking.
+  // Idle path — fire one tip after IDLE_MS, no stacking.
+  // Show a pending milestone tip only after 10 behavior tips have been shown.
   useEffect(() => {
     if (!isIdle || tipShownThisIdle || open) return;
-    const result = pickTip({ percent, lastMilestone, recentlyShown });
-    setMessage(result.message);
-    if (result.milestone) setLastMilestone(result.milestone);
-    setRecentlyShown((prev) => [result.message, ...prev].slice(0, RECENT_DEPTH));
+
+    const MILESTONE_INTERVAL = 10;
+    if (pendingMilestoneRef.current && tipsSinceMilestone >= MILESTONE_INTERVAL) {
+      const ms = pendingMilestoneRef.current;
+      pendingMilestoneRef.current = 0;
+      const msg = pickTip({ percent, lastMilestone: (ms - 1) as any, recentlyShown }).message;
+      setMessage(msg);
+      setRecentlyShown((prev) => [msg, ...prev].slice(0, RECENT_DEPTH));
+      setTipsSinceMilestone(0);
+    } else {
+      // Force a behavior tip (skip milestone logic by passing lastMilestone = current)
+      const result = pickTip({ percent, lastMilestone: currentMilestone(percent), recentlyShown });
+      setMessage(result.message);
+      setRecentlyShown((prev) => [result.message, ...prev].slice(0, RECENT_DEPTH));
+      setTipsSinceMilestone((c) => c + 1);
+    }
     setOpen(true);
     setTipShownThisIdle(true);
-  }, [isIdle, tipShownThisIdle, open, percent, lastMilestone, recentlyShown]);
+  }, [isIdle, tipShownThisIdle, open, percent, lastMilestone, recentlyShown, tipsSinceMilestone]);
 
   return <CashierTipModal open={open} message={message} onClose={() => setOpen(false)} />;
 }
