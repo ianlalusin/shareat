@@ -195,3 +195,120 @@ export async function generateForecastsForAllActiveStores(): Promise<{
   const results = await Promise.all(stores.map(generateForecastForStore));
   return { totalStores: stores.length, results };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Standalone accuracy update (decoupled from forecast generation)   */
+/* ------------------------------------------------------------------ */
+
+export async function updateAccuracyForAllActiveStores(): Promise<{
+  totalStores: number;
+  results: { storeId: string; ok: boolean; error?: string }[];
+}> {
+  const db = getAdminDb();
+  const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
+  const now = new Date();
+
+  const results = await Promise.all(
+    storesSnap.docs.map(async (d) => {
+      try {
+        await updateYesterdayAccuracy(d.id, now);
+        return { storeId: d.id, ok: true };
+      } catch (err: any) {
+        console.error(`[updateAccuracy] store=${d.id} failed:`, err);
+        return { storeId: d.id, ok: false, error: err.message || String(err) };
+      }
+    }),
+  );
+
+  return { totalStores: storesSnap.size, results };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Cron run-log helpers  (retry-on-failure tracking)                 */
+/* ------------------------------------------------------------------ */
+
+/** Returns today's date string in Asia/Manila timezone (YYYY-MM-DD). */
+function getManilaDateStr(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Manila",
+  }).format(new Date());
+}
+
+type DayRunLog = {
+  status: "success" | "failed";
+  attempts: number;
+  lastAttemptAt: Timestamp;
+  successAt: Timestamp | null;
+};
+
+const CRON_LOG_DOC = "system/forecastCronLog";
+
+async function getTodayRunLog(dateStr: string): Promise<DayRunLog | null> {
+  const db = getAdminDb();
+  const doc = await db.doc(CRON_LOG_DOC).get();
+  if (!doc.exists) return null;
+  const runs = doc.data()?.runs ?? {};
+  return runs[dateStr] ?? null;
+}
+
+async function writeDayRunLog(dateStr: string, log: DayRunLog): Promise<void> {
+  const db = getAdminDb();
+  await db.doc(CRON_LOG_DOC).set({ runs: { [dateStr]: log } }, { merge: true });
+}
+
+const MAX_DAILY_ATTEMPTS = 5;
+
+export async function shouldRunForecast(): Promise<{
+  shouldRun: boolean;
+  reason: string;
+  currentLog: DayRunLog | null;
+}> {
+  const dateStr = getManilaDateStr();
+  const log = await getTodayRunLog(dateStr);
+
+  if (!log) return { shouldRun: true, reason: "No runs today yet.", currentLog: null };
+  if (log.status === "success") return { shouldRun: false, reason: "Already succeeded today.", currentLog: log };
+  if (log.attempts >= MAX_DAILY_ATTEMPTS) return { shouldRun: false, reason: `Max ${MAX_DAILY_ATTEMPTS} failed attempts reached.`, currentLog: log };
+  return { shouldRun: true, reason: `Retrying after ${log.attempts} failed attempt(s).`, currentLog: log };
+}
+
+export async function runForecastWithTracking(): Promise<{
+  skipped: boolean;
+  reason: string;
+  result?: Awaited<ReturnType<typeof generateForecastsForAllActiveStores>>;
+}> {
+  const { shouldRun, reason, currentLog } = await shouldRunForecast();
+  if (!shouldRun) return { skipped: true, reason };
+
+  const dateStr = getManilaDateStr();
+  const attempts = (currentLog?.attempts ?? 0) + 1;
+
+  try {
+    const result = await generateForecastsForAllActiveStores();
+    const allOk = result.results.every((r) => r.ok);
+
+    await writeDayRunLog(dateStr, {
+      status: allOk ? "success" : "failed",
+      attempts,
+      lastAttemptAt: Timestamp.now(),
+      successAt: allOk ? Timestamp.now() : null,
+    });
+
+    return {
+      skipped: false,
+      reason: allOk ? "Forecast succeeded." : "Forecast partially failed.",
+      result,
+    };
+  } catch (err) {
+    await writeDayRunLog(dateStr, {
+      status: "failed",
+      attempts,
+      lastAttemptAt: Timestamp.now(),
+      successAt: null,
+    });
+    throw err;
+  }
+}

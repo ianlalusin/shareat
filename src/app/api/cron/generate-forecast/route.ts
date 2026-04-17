@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateForecastsForAllActiveStores } from "@/lib/server/generate-forecast";
+import { runForecastWithTracking } from "@/lib/server/generate-forecast";
 
 export const runtime = "nodejs";
 // Allow up to 5 minutes (Vercel Pro default max is 300s; free is 60s but upgrade if needed)
@@ -20,13 +20,20 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await generateForecastsForAllActiveStores();
+    const { skipped, reason, result } = await runForecastWithTracking();
+
+    if (skipped) {
+      return NextResponse.json({ ok: true, skipped: true, reason });
+    }
+
     return NextResponse.json({
       ok: true,
-      totalStores: result.totalStores,
-      successCount: result.results.filter(r => r.ok).length,
-      failureCount: result.results.filter(r => !r.ok).length,
-      results: result.results,
+      skipped: false,
+      reason,
+      totalStores: result!.totalStores,
+      successCount: result!.results.filter((r) => r.ok).length,
+      failureCount: result!.results.filter((r) => !r.ok).length,
+      results: result!.results,
     });
   } catch (err: any) {
     console.error("[cron/generate-forecast] failed:", err);
