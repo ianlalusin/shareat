@@ -4,3 +4,7 @@ env:
     secret: GEMINI_API_KEY
     availability:
       - RUNTIME
+  - variable: POS_EXTERNAL_API_KEY
+    secret: POS_EXTERNAL_API_KEY
+    availability:
+      - RUNTIME
