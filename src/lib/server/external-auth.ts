@@ -3,8 +3,8 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 export function validateExternalApiKey(request: Request): NextResponse | null {
-  const apiKey = request.headers.get("x-api-key");
-  const expected = process.env.POS_EXTERNAL_API_KEY;
+  const apiKey = request.headers.get("x-api-key")?.trim();
+  const expected = process.env.POS_EXTERNAL_API_KEY?.trim();
 
   if (!expected) {
     console.error("[external-auth] POS_EXTERNAL_API_KEY env var not set");
