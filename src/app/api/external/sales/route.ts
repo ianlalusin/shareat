@@ -41,11 +41,14 @@ export async function GET(request: Request) {
     const totalGross = payments.totalGross ?? 0;
     const byMethod: Record<string, number> = payments.byMethod ?? {};
 
-    // Dine-in sales = package sales (net) + dine-in addon sales (net)
-    const packageSalesNet = Object.values(sales.packageSalesAmountByName ?? {})
-      .reduce((sum: number, v: any) => sum + (Number(v) || 0), 0);
-    const dineInAddonSalesNet = Number(sales.dineInAddonSalesAmount ?? 0);
-    const dineInSales = packageSalesNet + dineInAddonSalesNet;
+    // Dine-in sales = gross (before discounts/charges)
+    const dineInSalesGross = Number(sales.dineInSalesGross ?? 0);
+    // Fallback to net if gross not yet backfilled
+    const dineInSales = dineInSalesGross > 0
+      ? dineInSalesGross
+      : Object.values(sales.packageSalesAmountByName ?? {})
+          .reduce((sum: number, v: any) => sum + (Number(v) || 0), 0)
+        + Number(sales.dineInAddonSalesAmount ?? 0);
     const takeOutSales = Math.max(0, totalGross - dineInSales);
 
     // Categorize payment methods
