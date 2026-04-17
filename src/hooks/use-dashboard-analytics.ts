@@ -48,13 +48,9 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     const netSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
     const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
     
-    const totalDineInSales = dailyMetrics.reduce((sum, metric) => {
-        const packageSales = Object.values(metric.sales?.packageSalesAmountByName || {}).reduce((pkgSum, amount) => pkgSum + amount, 0);
-        const addonSales = metric.sales?.dineInAddonSalesAmount || 0;
-        return sum + packageSales + addonSales;
-    }, 0);
+    const totalDineInSalesGross = dailyMetrics.reduce((sum, metric) => sum + (metric.sales?.dineInSalesGross || 0), 0);
     const totalDineInGuests = dailyMetrics.reduce((sum, metric) => sum + (metric.guests?.guestCountFinalTotal || 0), 0);
-    const avgSpending = totalDineInGuests > 0 ? totalDineInSales / totalDineInGuests : 0;
+    const avgSpending = totalDineInGuests > 0 ? totalDineInSalesGross / totalDineInGuests : 0;
     
     const mop: Record<string, number> = {};
     dailyMetrics.forEach(metric => {

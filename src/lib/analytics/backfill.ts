@@ -127,6 +127,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           addonSalesQtyByCategory: {},
           addonSalesByItem: {},
           dineInAddonSalesAmount: 0,
+          dineInSalesGross: 0,
           salesAmountByHour: {},
           sessionCountByHour: {},
         },
@@ -232,6 +233,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     // sales
     dayData.sales ??= { packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, salesAmountByHour: {}, sessionCountByHour: {} };
     dayData.sales.dineInAddonSalesAmount = (dayData.sales.dineInAddonSalesAmount || 0) + Number(salesContrib.dineInAddonSalesAmount || 0);
+    dayData.sales.dineInSalesGross = (dayData.sales.dineInSalesGross || 0) + Number(salesContrib.dineInSalesGross || 0);
     
     for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName || {})) {
       dayData.sales.packageSalesAmountByName[pkgName] =

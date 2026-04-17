@@ -48,7 +48,7 @@ async function updateYesterdayAccuracy(storeId: string, now: Date): Promise<void
   });
 }
 
-async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; forecastsWritten?: number }> {
+export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; forecastsWritten?: number }> {
   const db = getAdminDb();
   const now = new Date();
 
@@ -152,7 +152,7 @@ async function generateForecastForStore(store: StoreData): Promise<{ storeId: st
       if (forecastDayIndex === -1) continue;
 
       let dayDiff = forecastDayIndex - todayDayIndex;
-      if (dayDiff <= 0) dayDiff += 7;
+      if (dayDiff < 0) dayDiff += 7;
 
       const forecastDate = addDays(now, dayDiff);
       const forecastDateStr = format(forecastDate, "yyyy-MM-dd");

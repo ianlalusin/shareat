@@ -15,6 +15,7 @@ import type { DailyMetric } from "@/lib/types";
 
 interface WeeklySalesChartProps {
   storeId: string;
+  refreshKey?: number;
 }
 
 type ChartRow = {
@@ -65,7 +66,7 @@ function TodayDot(props: any) {
   );
 }
 
-export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
+export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps) {
   const { activeStore } = useStoreContext();
   const [data, setData] = useState<ChartRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,7 +167,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
     }
 
     fetchData();
-  }, [storeId, activeStore]);
+  }, [storeId, activeStore, refreshKey]);
 
   const todayRow = data.find(d => d.isToday);
   const pacingLabel = todayRow ? (todayRow.onTrack ? "On pace" : "Behind") : null;
@@ -195,7 +196,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
           <span className="text-green-600 font-semibold">Green</span> = actual sales ·{" "}
           <span className="text-red-600 font-semibold">red dashed</span> = projection. Today pulses
           red when behind, green when on pace.
-          <span className="text-xs text-muted-foreground/80"> (AI forecast updated daily at noon)</span>
+          <span className="text-xs text-muted-foreground/80"> (AI forecast updated daily at 5 AM)</span>
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -211,7 +212,7 @@ export function WeeklySalesChart({ storeId }: WeeklySalesChartProps) {
         ) : !hasAnyForecast ? (
           <Alert>
             <AlertTitle>Forecast not yet available</AlertTitle>
-            <AlertDescription>Forecasts are generated once daily at noon. Check back after 12:00 PM.</AlertDescription>
+            <AlertDescription>Forecasts are generated daily starting at 5 AM. Check back later.</AlertDescription>
           </Alert>
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">

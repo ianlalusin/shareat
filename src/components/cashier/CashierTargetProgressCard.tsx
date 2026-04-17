@@ -50,12 +50,9 @@ export function CashierTargetProgressCard({ storeId }: Props) {
       const totalGross = Number(data?.payments?.totalGross ?? 0);
       setActualSales(totalGross);
 
-      const packageSalesByName: Record<string, number> = data?.sales?.packageSalesAmountByName || {};
-      const packageSales = Object.values(packageSalesByName).reduce((s, v) => s + (Number(v) || 0), 0);
-      const addonSales = Number(data?.sales?.dineInAddonSalesAmount ?? 0);
       const guestCount = Number(data?.guests?.guestCountFinalTotal ?? 0);
-      const dineInSales = packageSales + addonSales;
-      setAvgBasket(guestCount > 0 ? dineInSales / guestCount : 0);
+      const dineInSalesGross = Number(data?.sales?.dineInSalesGross ?? 0);
+      setAvgBasket(guestCount > 0 ? dineInSalesGross / guestCount : 0);
     });
   }, [storeId]);
 

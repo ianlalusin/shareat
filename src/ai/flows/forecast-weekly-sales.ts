@@ -110,7 +110,7 @@ Your analysis must consider multiple factors:
     *   None specified.
 {{/if}}
 
-Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday"), a 'forecastedSales' property, and a 'confidence' property ('high', 'medium', or 'low'). Set confidence to 'high' when the day has strong consistent patterns, 'medium' for moderate certainty, and 'low' when data is sparse or unusual factors (holidays, weather changes) introduce uncertainty. Do not include any other text or reasoning in your response.
+Provide the forecast for the next 7 days, starting from today. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday"), a 'forecastedSales' property, and a 'confidence' property ('high', 'medium', or 'low'). Set confidence to 'high' when the day has strong consistent patterns, 'medium' for moderate certainty, and 'low' when data is sparse or unusual factors (holidays, weather changes) introduce uncertainty. Do not include any other text or reasoning in your response.
 `,
 });
 

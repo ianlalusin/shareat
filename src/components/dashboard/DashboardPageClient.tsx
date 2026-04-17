@@ -34,7 +34,8 @@ import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
-
+import { useToast } from "@/hooks/use-toast";
+import { getAuth } from "firebase/auth";
 
 import { isSameDay, fmtDate } from "@/lib/utils/date";
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
@@ -63,6 +64,33 @@ export default function DashboardPageClient() {
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
 
     const { isModalOpen, closeModal } = useWeatherLogger();
+    const { toast } = useToast();
+    const [isRefreshingForecast, setIsRefreshingForecast] = useState(false);
+    const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
+
+    const isAdmin = appUser?.isPlatformAdmin || appUser?.role === "admin";
+
+    const handleRefreshForecast = async () => {
+        if (!activeStore?.id) return;
+        setIsRefreshingForecast(true);
+        try {
+            const idToken = await getAuth().currentUser?.getIdToken();
+            if (!idToken) throw new Error("Not authenticated.");
+            const res = await fetch("/api/admin/refresh-forecast", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+                body: JSON.stringify({ storeId: activeStore.id }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Refresh failed.");
+            toast({ title: "Forecast refreshed", description: `${data.forecastsWritten ?? 0} days updated.` });
+            setForecastRefreshKey((k) => k + 1);
+        } catch (err: any) {
+            toast({ title: "Forecast refresh failed", description: err.message, variant: "destructive" });
+        } finally {
+            setIsRefreshingForecast(false);
+        }
+    };
 
     const {
         isLoading,
@@ -169,7 +197,7 @@ export default function DashboardPageClient() {
                 
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     <div className="lg:col-span-2 space-y-6">
-                      <WeeklySalesChart storeId={activeStore.id} />
+                      <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <ForecastAccuracyTrendCard storeId={activeStore.id} />
                         <TodayForecastCard
@@ -177,6 +205,9 @@ export default function DashboardPageClient() {
                           confidence={todaysConfidence}
                           actualSalesToday={stats?.netSales ?? null}
                           isLoading={isForecastLoading}
+                          isAdmin={isAdmin}
+                          onRefresh={handleRefreshForecast}
+                          isRefreshing={isRefreshingForecast}
                         />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">

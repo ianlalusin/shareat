@@ -3,8 +3,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, Target } from 'lucide-react';
+import { Loader2, RefreshCw, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function formatCurrency(value: number) {
@@ -18,6 +19,9 @@ interface TodayForecastCardProps {
     confidence?: string | null;
     actualSalesToday?: number | null;
     isLoading: boolean;
+    isAdmin?: boolean;
+    onRefresh?: () => Promise<void>;
+    isRefreshing?: boolean;
 }
 
 function getTimeOfDayFraction(): number {
@@ -50,7 +54,7 @@ function confidenceBadge(confidence?: string | null) {
   );
 }
 
-export function TodayForecastCard({ projectedSales, confidence, actualSalesToday, isLoading }: TodayForecastCardProps) {
+export function TodayForecastCard({ projectedSales, confidence, actualSalesToday, isLoading, isAdmin, onRefresh, isRefreshing }: TodayForecastCardProps) {
     const timeFraction = getTimeOfDayFraction();
     const actual = actualSalesToday ?? 0;
     const pacing = projectedSales ? getPacingLabel(actual, projectedSales, timeFraction) : null;
@@ -63,6 +67,18 @@ export function TodayForecastCard({ projectedSales, confidence, actualSalesToday
                     <Target />
                     Today's Forecast
                     {confidenceBadge(confidence)}
+                    {isAdmin && onRefresh && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="ml-auto h-7 w-7"
+                            onClick={onRefresh}
+                            disabled={isRefreshing}
+                            title="Refresh forecast"
+                        >
+                            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                        </Button>
+                    )}
                 </CardTitle>
                 <CardDescription>
                     Projected net sales for today.

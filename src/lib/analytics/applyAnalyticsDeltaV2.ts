@@ -247,8 +247,10 @@ export async function applyAnalyticsDeltaV2(
     // --- Sales Delta ---
     const salesDelta = {
         dineInAddonSalesAmount: (dayNew.sales.dineInAddonSalesAmount || 0) - (dayOld.sales.dineInAddonSalesAmount || 0),
+        dineInSalesGross: (dayNew.sales.dineInSalesGross || 0) - (dayOld.sales.dineInSalesGross || 0),
     };
     if (salesDelta.dineInAddonSalesAmount !== 0) payload['sales.dineInAddonSalesAmount'] = increment(salesDelta.dineInAddonSalesAmount);
+    if (salesDelta.dineInSalesGross !== 0) payload['sales.dineInSalesGross'] = increment(salesDelta.dineInSalesGross);
 
     const allSalesPkgNames = new Set([
       ...Object.keys(dayOld.sales.packageSalesAmountByName || {}),

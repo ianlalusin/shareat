@@ -462,6 +462,7 @@ export type DailyMetric = {
         addonSalesQtyByCategory: Record<string, number>;
         addonSalesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
         dineInAddonSalesAmount?: number;
+        dineInSalesGross?: number;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
         topAddonsByQty?: TopAddonRow[];
