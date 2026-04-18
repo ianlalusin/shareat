@@ -38,6 +38,8 @@ import ReasonModal from "@/components/shared/ReasonModal";
 import type { ReceiptData } from "@/lib/types";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { usePrint } from "@/hooks/use-print";
+import { subscribeApplicableGlobalDiscounts, subscribeApplicableGlobalCharges, isDiscountDateActive } from "@/lib/collections/globalCollections";
+import type { GlobalDiscount, GlobalCharge } from "@/lib/types";
 
 
 import { startOfDay, endOfDay, isSameDay, fmtDate } from "@/lib/utils/date";
@@ -208,29 +210,104 @@ export default function ReceiptsPage() {
         return () => unsubPm();
     }, [activeStore?.id, appUser, isSigningOut]);
     
-    const [discounts, setDiscounts] = React.useState<Discount[]>([]);
-    const [charges, setCharges] = React.useState<Charge[]>([]);
+    const [storeDiscounts, setStoreDiscounts] = React.useState<Discount[]>([]);
+    const [storeCharges, setStoreCharges] = React.useState<Charge[]>([]);
+    const [globalDiscounts, setGlobalDiscounts] = React.useState<GlobalDiscount[]>([]);
+    const [globalCharges, setGlobalCharges] = React.useState<GlobalCharge[]>([]);
      useEffect(() => {
         if (!activeStore?.id) return;
         const handleError = (err: any) => {
             if(isSigningOut || !appUser) return;
             console.error("Collections listener error:", err);
         }
+        // Store-scoped: include enabled + not-archived; also include entries the admin hasn't suspended.
         const unsubDiscounts = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setDiscounts(snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount)),
+            snap => setStoreDiscounts(
+              snap.docs
+                .map(d => ({id: d.id, ...d.data()}) as Discount)
+                .filter(d => !d.adminSuspended)
+            ),
             handleError
         );
          const unsubCharges = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setCharges(snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge)),
+            snap => setStoreCharges(
+              snap.docs
+                .map(d => ({id: d.id, ...d.data()}) as Charge)
+                .filter(c => !c.adminSuspended)
+            ),
             handleError
+        );
+        const unsubGlobalDiscounts = subscribeApplicableGlobalDiscounts(
+            db,
+            activeStore.id,
+            (items) => setGlobalDiscounts(items.filter(g => g.isEnabled)),
+            handleError,
+        );
+        const unsubGlobalCharges = subscribeApplicableGlobalCharges(
+            db,
+            activeStore.id,
+            (items) => setGlobalCharges(items.filter(g => g.isEnabled)),
+            handleError,
         );
         return () => {
             unsubDiscounts();
             unsubCharges();
+            unsubGlobalDiscounts();
+            unsubGlobalCharges();
         };
     }, [activeStore?.id, appUser, isSigningOut]);
+
+    const discounts = useMemo<Discount[]>(() => {
+      const merged: Discount[] = [
+        ...storeDiscounts.map(d => ({ ...d, source: "store" as const })),
+        ...globalDiscounts.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          scope: g.scope,
+          stackable: g.stackable,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          startDate: g.startDate,
+          endDate: g.endDate,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged.filter(d => isDiscountDateActive(d));
+    }, [storeDiscounts, globalDiscounts]);
+
+    const charges = useMemo<Charge[]>(() => {
+      const merged: Charge[] = [
+        ...storeCharges.map(c => ({ ...c, source: "store" as const })),
+        ...globalCharges.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          appliesTo: g.appliesTo,
+          scope: g.scope,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged;
+    }, [storeCharges, globalCharges]);
 
     const filteredReceipts = useMemo(() => {
         if (!debouncedSearchTerm) return receipts;

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { isDiscountDateActive } from "@/lib/collections/globalCollections";
 import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, where, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
@@ -74,9 +75,32 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     return storeConfig.charges.filter(c => c.isEnabled && !(c as any).isArchived);
   }, [storeConfig]);
 
+  const billCharges = useMemo(
+    () =>
+      charges.filter(c => {
+        const scope = (c as any).scope;
+        if (!scope) return true; // legacy charges default to bill
+        const arr = Array.isArray(scope) ? scope : [scope];
+        return arr.includes("bill");
+      }),
+    [charges],
+  );
+  const itemCharges = useMemo(
+    () =>
+      charges.filter(c => {
+        const scope = (c as any).scope;
+        if (!scope) return false; // legacy defaults to bill-only → not in item list
+        const arr = Array.isArray(scope) ? scope : [scope];
+        return arr.includes("item");
+      }),
+    [charges],
+  );
+
   const discounts = useMemo(() => {
     if (!storeConfig?.discounts) return [];
-    return storeConfig.discounts.filter(d => d.isEnabled && !(d as any).isArchived);
+    return storeConfig.discounts.filter(d =>
+      d.isEnabled && !(d as any).isArchived && isDiscountDateActive(d as any),
+    );
   }, [storeConfig]);
 
 
@@ -388,7 +412,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       </div>
       <BillAdjustments
         appUser={appUser}
-        charges={charges}
+        charges={billCharges}
         discounts={billableDiscounts}
         onAddAdjustment={(charge: Charge) => {
           setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}]);
@@ -513,6 +537,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             onClose={() => setEditingLineId(null)}
             line={editingLine}
             discounts={itemDiscounts}
+            charges={itemCharges}
             isLocked={isBillingLocked}
             onSave={handleUpdateLine}
             onAddLineAdjustment={handleAddLineAdjustment}

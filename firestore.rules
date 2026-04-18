@@ -167,6 +167,19 @@ service cloud.firestore {
       }
     }
 
+    // -----------------------------
+    // PLATFORM-WIDE (UNIVERSAL) DISCOUNTS & CHARGES
+    // Admins create/update/delete; any active staff can read (POS/manager views need them).
+    // -----------------------------
+    match /globalDiscounts/{discountId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /globalCharges/{chargeId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Root (non-store) - keep as-is, but note: pinRegistry is now explicitly handled above
     match /{collection}/{docId} {
       allow read, create, update: if isActiveStaff();

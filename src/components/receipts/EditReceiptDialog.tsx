@@ -278,6 +278,18 @@ function EditReceiptContent({
   };
 
   const itemDiscounts = useMemo(() => discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item")), [discounts]);
+  const billCharges = useMemo(() => charges.filter(c => {
+    const s = (c as any).scope;
+    if (!s) return true; // legacy charges default to bill
+    const arr = Array.isArray(s) ? s : [s];
+    return arr.includes("bill");
+  }), [charges]);
+  const itemCharges = useMemo(() => charges.filter(c => {
+    const s = (c as any).scope;
+    if (!s) return false;
+    const arr = Array.isArray(s) ? s : [s];
+    return arr.includes("item");
+  }), [charges]);
 
   // Mock session object for components that expect it
   const mockSession = {
@@ -343,7 +355,7 @@ function EditReceiptContent({
             appUser={appUser}
             adjustments={customAdjustments}
             billDiscount={billDiscount}
-            charges={charges}
+            charges={billCharges}
             discounts={discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"))}
             onAddAdjustment={handleAddAdjustment}
             onAddCustomAdjustment={handleAddCustomAdjustment}
@@ -394,6 +406,7 @@ function EditReceiptContent({
           onClose={() => setEditingLine(null)}
           line={editingLine}
           discounts={itemDiscounts}
+          charges={itemCharges}
           onSave={handleUpdateLine}
           onAddLineAdjustment={handleAddLineAdjustment}
           refundedQty={(receipt as any).refundedQtys?.[editingLine?.id ?? ''] ?? 0}

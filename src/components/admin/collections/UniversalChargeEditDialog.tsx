@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect } from "react";
@@ -12,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { Charge } from "@/lib/types";
+import type { GlobalCharge, Store } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
@@ -24,22 +23,23 @@ const formSchema = z.object({
   }),
   sortOrder: z.coerce.number().int().default(1000),
   isEnabled: z.boolean().default(true),
+  applicableStoreIds: z.array(z.string()).min(1, "Select at least one store."),
 }).refine(data => !(data.type === 'percent' && data.value > 100), {
   message: "Percentage cannot exceed 100.",
   path: ["value"],
 });
 
-
 type FormValues = z.infer<typeof formSchema>;
 
-interface ChargeEditDialogProps {
+interface UniversalChargeEditDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: FormValues, isCreating: boolean) => void;
-  item: Charge | null;
+  item: GlobalCharge | null;
+  stores: Store[];
 }
 
-export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDialogProps) {
+export function UniversalChargeEditDialog({ isOpen, onClose, onSave, item, stores }: UniversalChargeEditDialogProps) {
   const isCreating = item === null;
 
   const form = useForm<FormValues>({
@@ -52,12 +52,13 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
       scope: ["bill"],
       sortOrder: 1000,
       isEnabled: true,
+      applicableStoreIds: [],
     },
   });
 
   useEffect(() => {
     if (item) {
-      const raw = item.scope;
+      const raw = (item as any).scope;
       const normalizedScope = (Array.isArray(raw)
         ? raw
         : typeof raw === "string"
@@ -71,6 +72,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
         scope: normalizedScope.length > 0 ? normalizedScope : ["bill"],
         sortOrder: item.sortOrder,
         isEnabled: item.isEnabled,
+        applicableStoreIds: Array.isArray(item.applicableStoreIds) ? item.applicableStoreIds : [],
       });
     } else {
       form.reset({
@@ -81,6 +83,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
         scope: ["bill"],
         sortOrder: 1000,
         isEnabled: true,
+        applicableStoreIds: [],
       });
     }
   }, [item, form, isOpen]);
@@ -91,23 +94,25 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isCreating ? "Add New Charge" : "Edit Charge"}</DialogTitle>
+          <DialogTitle>{isCreating ? "Add Universal Charge" : "Edit Universal Charge"}</DialogTitle>
           <DialogDescription>
-            {isCreating ? "Create a new charge to apply to bills." : `Editing "${item?.name}"`}
+            {isCreating
+              ? "Create a charge that applies across the stores you select."
+              : `Editing "${item?.name}"`}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} id="charge-form" className="space-y-4 py-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} id="universal-charge-form" className="space-y-4 py-4">
             <FormField control={form.control} name="name" render={({ field }) => (
               <FormItem>
                 <FormLabel>Charge Name</FormLabel>
-                <FormControl><Input placeholder="e.g., Service Charge" {...field} /></FormControl>
+                <FormControl><Input placeholder="e.g., Platform Service Charge" {...field} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
-            
+
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="type" render={({ field }) => (
                 <FormItem>
@@ -125,22 +130,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                 <FormItem>
                   <FormLabel>Value</FormLabel>
                   <FormControl>
-                    <Input 
-                      type="number" 
-                      step="0.01" 
-                      {...field}
-                      onFocus={(e) => {
-                        if (parseFloat(e.target.value) === 0) {
-                          e.target.value = '';
-                        }
-                      }}
-                      onBlur={(e) => {
-                         if (e.target.value === '') {
-                           e.target.value = '0';
-                         }
-                         field.onBlur();
-                      }}
-                    />
+                    <Input type="number" step="0.01" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -148,7 +138,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-               <FormField control={form.control} name="appliesTo" render={({ field }) => (
+              <FormField control={form.control} name="appliesTo" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Applies To (bill-level)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
@@ -160,13 +150,13 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                   </Select>
                 </FormItem>
               )} />
-               <FormField control={form.control} name="sortOrder" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sort Order</FormLabel>
-                    <FormControl><Input type="number" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+              <FormField control={form.control} name="sortOrder" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sort Order</FormLabel>
+                  <FormControl><Input type="number" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
 
             <FormField control={form.control} name="scope" render={() => (
@@ -214,11 +204,48 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />
+
+            <FormField
+              control={form.control}
+              name="applicableStoreIds"
+              render={() => (
+                <FormItem>
+                  <FormLabel>Applies to Stores</FormLabel>
+                  <div className="rounded-lg border p-3 max-h-64 overflow-y-auto space-y-2">
+                    {stores.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No stores available.</p>
+                    ) : stores.map(store => (
+                      <FormField
+                        key={store.id}
+                        control={form.control}
+                        name="applicableStoreIds"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value?.includes(store.id)}
+                                onCheckedChange={(checked) => {
+                                  return checked
+                                    ? field.onChange([...(field.value || []), store.id])
+                                    : field.onChange(field.value?.filter((v) => v !== store.id));
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="font-normal cursor-pointer">{store.name}</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </form>
         </Form>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="charge-form">Save</Button>
+          <Button type="submit" form="universal-charge-form">Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

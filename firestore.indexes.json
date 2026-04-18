@@ -83,6 +83,22 @@
         { "fieldPath": "accuracy", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "globalDiscounts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "applicableStoreIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "isArchived", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "globalCharges",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "applicableStoreIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "isArchived", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

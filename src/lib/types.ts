@@ -306,6 +306,10 @@ export type Charge = {
   type: "fixed" | "percent";
   value: number;
   appliesTo: "subtotal" | "total";
+  // Scope controls WHERE the charge can be applied: at the bill level, at the
+  // item line level, or both. Missing on legacy docs; consumers must coalesce
+  // a missing value to ["bill"] for backward compatibility.
+  scope?: ("bill" | "item")[];
   isEnabled: boolean;
   sortOrder: number;
   isArchived: boolean;
@@ -313,6 +317,12 @@ export type Charge = {
   updatedAt: any;
   createdBy: string;
   updatedBy: string;
+  // Admin-override fields (set by platform admin on store-scoped charges)
+  adminSuspended?: boolean;
+  adminSuspendedAt?: any;
+  adminSuspendedBy?: string;
+  // UI-runtime marker (not persisted) — added when merging global entries client-side
+  source?: "store" | "global";
 };
 
 export type Discount = {
@@ -329,6 +339,26 @@ export type Discount = {
   updatedAt: any;
   createdBy: string;
   updatedBy: string;
+  // Optional date-gated availability window. Interpreted as local YYYY-MM-DD
+  // strings, inclusive on both ends. Only populated on universal (global)
+  // discounts today — store-scoped ones leave these undefined.
+  startDate?: string;
+  endDate?: string;
+  // Admin-override fields (set by platform admin on store-scoped discounts)
+  adminSuspended?: boolean;
+  adminSuspendedAt?: any;
+  adminSuspendedBy?: string;
+  // UI-runtime marker (not persisted) — added when merging global entries client-side
+  source?: "store" | "global";
+};
+
+// Platform-scoped universal discount/charge configured by admin
+export type GlobalDiscount = Omit<Discount, "source" | "adminSuspended" | "adminSuspendedAt" | "adminSuspendedBy"> & {
+  applicableStoreIds: string[];
+};
+
+export type GlobalCharge = Omit<Charge, "source" | "adminSuspended" | "adminSuspendedAt" | "adminSuspendedBy"> & {
+  applicableStoreIds: string[];
 };
 
 export type ModeOfPayment = {
@@ -463,6 +493,8 @@ export type DailyMetric = {
         addonSalesByItem?: Record<string, { qty: number; amount: number; categoryName: string; }>;
         dineInAddonSalesAmount?: number;
         dineInSalesGross?: number;
+        dineInDiscountsTotal?: number;
+        dineInChargesTotal?: number;
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
         topAddonsByQty?: TopAddonRow[];
