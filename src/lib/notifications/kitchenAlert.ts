@@ -20,6 +20,30 @@ import { Capacitor } from "@capacitor/core";
 
 let audioCtx: AudioContext | null = null;
 let primed = false;
+let nativeChannelEnsured = false;
+
+const KITCHEN_CHANNEL_ID = "kitchen-alerts";
+
+/** Create (idempotent) the high-importance Android notification channel we use for kitchen alerts. */
+async function ensureKitchenChannel(): Promise<void> {
+  if (nativeChannelEnsured) return;
+  try {
+    const { LocalNotifications } = await import("@capacitor/local-notifications");
+    await LocalNotifications.createChannel({
+      id: KITCHEN_CHANNEL_ID,
+      name: "Kitchen Alerts",
+      description: "Plays a sound when a new kitchen ticket arrives.",
+      importance: 5,            // HIGH — enables heads-up banner + sound even when app is foreground
+      visibility: 1,            // PUBLIC
+      sound: "default",         // use the user-picked system default
+      vibration: true,
+      lights: true,
+    } as any);
+    nativeChannelEnsured = true;
+  } catch {
+    // Plugin absent or platform unsupported — caller will fall back to web path.
+  }
+}
 
 /** Must be called inside a user gesture (click / tap / keydown). Safe to call repeatedly. */
 export function primeKitchenAudio(): void {
@@ -78,6 +102,9 @@ export async function requestKitchenAlertPermission(): Promise<void> {
       if (state.display !== "granted") {
         await LocalNotifications.requestPermissions();
       }
+      // Create (or update) the dedicated HIGH-importance channel so sound plays
+      // even while the kitchen page is the foreground app.
+      await ensureKitchenChannel();
     } catch {
       // plugin missing or platform unsupported — ignore, web fallback will run
     }
@@ -108,6 +135,8 @@ export async function fireKitchenAlert(opts: { title: string; body?: string }): 
         import("@capacitor/local-notifications"),
         import("@capacitor/haptics"),
       ]);
+      // Make sure the HIGH-importance channel exists before scheduling.
+      await ensureKitchenChannel();
       // Fire-and-forget both; failures are non-fatal.
       void LocalNotifications.schedule({
         notifications: [
@@ -115,12 +144,13 @@ export async function fireKitchenAlert(opts: { title: string; body?: string }): 
             id: Date.now() % 2147483647,
             title,
             body,
-            schedule: { at: new Date(Date.now() + 50) },
-            smallIcon: "ic_stat_icon_config_sample",
-            sound: undefined, // use Android channel default
+            channelId: KITCHEN_CHANNEL_ID,   // route through HIGH channel
+            sound: "default",                 // redundant with channel, kept for <O versions
+            // no `schedule` → posts immediately instead of via AlarmManager
+            // no `smallIcon` → plugin uses the app icon (avoids missing-resource silent failure)
           },
         ],
-      }).catch(() => {});
+      } as any).catch(() => {});
       void Haptics.notification({ type: NotificationType.Success }).catch(() => {});
       return;
     } catch {
