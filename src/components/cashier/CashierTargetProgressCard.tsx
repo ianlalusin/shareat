@@ -52,7 +52,10 @@ export function CashierTargetProgressCard({ storeId }: Props) {
 
       const guestCount = Number(data?.guests?.guestCountFinalTotal ?? 0);
       const dineInSalesGross = Number(data?.sales?.dineInSalesGross ?? 0);
-      setAvgBasket(guestCount > 0 ? dineInSalesGross / guestCount : 0);
+      const dineInDiscounts = Number(data?.sales?.dineInDiscountsTotal ?? 0);
+      const dineInCharges = Number(data?.sales?.dineInChargesTotal ?? 0);
+      const dineInNet = dineInSalesGross - dineInDiscounts - dineInCharges;
+      setAvgBasket(guestCount > 0 ? dineInNet / guestCount : 0);
     });
   }, [storeId]);
 

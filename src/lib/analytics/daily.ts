@@ -189,10 +189,12 @@ type SalesContribution = {
     addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }>;
     dineInAddonSalesAmount: number;
     dineInSalesGross: number;
+    dineInDiscountsTotal: number;
+    dineInChargesTotal: number;
 };
 
 export function getSalesContribution(receipt: Receipt | null, store?: Store | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0, dineInSalesGross: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0, dineInSalesGross: 0, dineInDiscountsTotal: 0, dineInChargesTotal: 0 };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
@@ -272,6 +274,10 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
         ? Object.values(addonSalesAmountByCategory).reduce((sum, amount) => sum + amount, 0)
         : 0;
 
+    const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
+    const dineInDiscountsTotal = isDineIn ? Number(analytics?.discountsTotal ?? 0) : 0;
+    const dineInChargesTotal = isDineIn ? Number(analytics?.chargesTotal ?? 0) : 0;
+
     return {
         dayId,
         dayStartMs,
@@ -282,6 +288,8 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
         addonSalesByItem,
         dineInAddonSalesAmount,
         dineInSalesGross,
+        dineInDiscountsTotal,
+        dineInChargesTotal,
     };
 }
 
