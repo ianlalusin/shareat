@@ -88,30 +88,11 @@ function getStartMs(input: any): number | null {
 import { formatDuration } from "@/lib/utils/date";
 import { KdsFlashOverlay } from "@/components/kitchen/kds-flash-overlay";
 import { writeActivityLog } from "@/components/cashier/activity-log";
-
-function requestNotifyPermission() {
-  try {
-    if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "default") {
-      void Notification.requestPermission().catch(() => {});
-    }
-  } catch {}
-}
-
-function notifyNewTicket(opts: { title: string; body?: string }) {
-  try {
-    if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (Notification.permission !== "granted") return;
-
-    // Foreground notification (PWA). Background requires Push; this is best-effort.
-    new Notification(opts.title, {
-      body: opts.body || "",
-      silent: false,
-    });
-  } catch {}
-}
+import {
+  fireKitchenAlert,
+  primeKitchenAudio,
+  requestKitchenAlertPermission,
+} from "@/lib/notifications/kitchenAlert";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -135,7 +116,20 @@ export default function KitchenPage() {
   }, []);
 
   useEffect(() => {
-    requestNotifyPermission();
+    void requestKitchenAlertPermission();
+    // Prime the Web Audio beep on the first user gesture so browser autoplay
+    // policy lets us play sounds later. On native platforms this is a no-op.
+    const unlock = () => {
+      primeKitchenAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
   }, []);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
@@ -227,7 +221,7 @@ export default function KitchenPage() {
           const prev = prevTicketIdsRef.current;
           const hasNew = ids.some((id) => !prev.has(id));
           if (hasNew) {
-            notifyNewTicket({
+            void fireKitchenAlert({
               title: "New Kitchen Ticket",
               body: `${activeStationName || "Station"}: ${ids.length} active`,
             });
