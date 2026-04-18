@@ -8,3 +8,9 @@ env:
     secret: POS_EXTERNAL_API_KEY
     availability:
       - RUNTIME
+  # Shared secret required by /api/cron/* routes. Consumed by Cloud Scheduler
+  # jobs as `Authorization: Bearer <CRON_SECRET>`.
+  - variable: CRON_SECRET
+    secret: CRON_SECRET
+    availability:
+      - RUNTIME
