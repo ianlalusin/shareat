@@ -420,11 +420,16 @@ export default function KitchenPage() {
 
                 if (oldTicketState.type === 'addon' && oldTicketState.billLineId) {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
+                    const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                     const ticketQty = oldTicketState.qty || 1;
                     transaction.update(billLineRef, {
                         voidedQty: increment(ticketQty),
                         voidReason: "kitchen_cancel",
                         voidNote: "Cancelled by kitchen: " + (reason || ""),
+                        updatedAt: serverTimestamp(),
+                    });
+                    transaction.update(sessionRef, {
+                        billingRevision: increment(1),
                         updatedAt: serverTimestamp(),
                     });
                 }

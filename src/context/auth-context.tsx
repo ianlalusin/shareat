@@ -47,7 +47,11 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
+    let unsubStaff: (() => void) | null = null;
+
     const unsubAuth = onAuthStateChanged(auth, (u) => {
+      unsubStaff?.();
+      unsubStaff = null;
       setUser(u);
       setAppUser(null);
       setAuthLoading(false); // Firebase auth state is now resolved.
@@ -62,7 +66,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       setStaffLoading(true);
 
       const staffDocRef = doc(db, "staff", u.uid);
-      const unsubUser = onSnapshot(
+      unsubStaff = onSnapshot(
         staffDocRef,
         (snap) => {
           if (snap.exists()) {
@@ -103,13 +107,12 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           setAppUser(null);
         }
       );
-      
-      // Return the unsubscribe function for the staff listener.
-      return () => unsubUser();
     });
 
-    // Return the unsubscribe function for the auth state listener.
-    return () => unsubAuth();
+    return () => {
+      unsubStaff?.();
+      unsubAuth();
+    };
   }, []);
 
   const signOut = useCallback(async () => {

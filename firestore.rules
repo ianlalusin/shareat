@@ -180,14 +180,47 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Root (non-store) - keep as-is, but note: pinRegistry is now explicitly handled above
+    // -----------------------------
+    // PLATFORM-WIDE MENU CATALOGS
+    // POS clients read these directly; writes are admin-only.
+    // Customer-app backends using Admin SDK bypass these rules.
+    // -----------------------------
+    match /packages/{packageId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /refills/{refillId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /flavors/{flavorId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /products/{productId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /addonCategories/{categoryId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Legacy user profiles can be read only by admins for migration tools.
+    match /users/{userId} {
+      allow read, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Root fallback: read-only for authenticated staff. Do not grant writes here,
+    // otherwise this fallback can override server-only collection rules above.
     match /{collection}/{docId} {
-      allow read, create, update: if isActiveStaff();
-      allow delete: if isAdmin();
+      allow read: if isActiveStaff();
+      allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
-      allow read, create, update: if isActiveStaff();
-      allow delete: if isAdmin();
+      allow read: if isActiveStaff();
+      allow create, update, delete: if false;
     }
   }
 }
