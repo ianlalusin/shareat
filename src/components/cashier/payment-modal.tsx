@@ -15,7 +15,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
 import { addToQueue } from "@/lib/offline/payment-queue";
-import type { Payment, ModeOfPayment, SessionBillLine, Store, Discount, Adjustment } from "@/lib/types";
+import type { Payment, ModeOfPayment, Store } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
 
@@ -35,6 +35,20 @@ function validatePayments(payments: Payment[], grandTotalCents: number, paymentM
   const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
   if (totalPaidCents < grandTotalCents - 1) {
     return `Payment is not enough. Balance: ₱${((grandTotalCents - totalPaidCents) / 100).toFixed(2)}`;
+  }
+  const changeCents = Math.max(0, totalPaidCents - grandTotalCents);
+  if (changeCents > 1) {
+    const cashIds = new Set(
+      paymentMethods
+        .filter(pm => String(pm.type || "").toLowerCase() === "cash" || String(pm.name || "").toLowerCase().includes("cash"))
+        .map(pm => pm.id)
+    );
+    const cashPaidCents = payments
+      .filter(p => cashIds.has(p.methodId))
+      .reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
+    if (cashPaidCents < changeCents) {
+      return "Overpayment must be covered by Cash so change can be issued.";
+    }
   }
   return null;
 }
@@ -72,9 +86,6 @@ interface PaymentModalProps {
   appUser: AppUser;
   firebaseUser: User | null;
   paymentMethods: ModeOfPayment[];
-  billLines: SessionBillLine[];
-  billDiscount: Discount | null;
-  customAdjustments: Adjustment[];
 }
 
 export function PaymentModal({
@@ -87,9 +98,6 @@ export function PaymentModal({
   appUser,
   firebaseUser,
   paymentMethods,
-  billLines,
-  billDiscount,
-  customAdjustments,
 }: PaymentModalProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -230,7 +238,7 @@ export function PaymentModal({
         addToQueue({
           storeId,
           sessionId,
-          payload: { payments: normalizedPayments, billLines, billDiscount, customAdjustments, totalAmount: grandTotal },
+          payload: { payments: normalizedPayments, totalAmount: grandTotal },
         });
         setShowSuccess(true);
         setPendingRedirect("/cashier");
@@ -249,7 +257,7 @@ export function PaymentModal({
 
       const receiptId = await completePaymentFromUnits(
         storeId, sessionId, appUser, normalizedPayments,
-        billLines, activeStore, paymentMethods, billDiscount, customAdjustments,
+        activeStore, paymentMethods, grandTotal,
       );
 
       const settingsSnap = await getDoc(doc(db, "stores", storeId, "receiptSettings", "main"));

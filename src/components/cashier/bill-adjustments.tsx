@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "../ui/separator";
 import type { Discount, Charge, Adjustment } from "@/lib/types";
 import { type AppUser } from "@/context/auth-context";
+import { useToast } from "@/hooks/use-toast";
 
 interface BillAdjustmentsProps {
   appUser: AppUser | null;
@@ -18,10 +19,10 @@ interface BillAdjustmentsProps {
   billDiscount: Discount | null;
   charges: Charge[];
   discounts: Discount[];
-  onAddAdjustment: (charge: Charge) => void;
-  onAddCustomAdjustment: (note: string, amount: number) => void;
-  onRemoveAdjustment: (id: string) => void;
-  onSetBillDiscount: (discount: Discount | null) => void;
+  onAddAdjustment: (charge: Charge) => void | Promise<void>;
+  onAddCustomAdjustment: (note: string, amount: number) => void | Promise<void>;
+  onRemoveAdjustment: (id: string) => void | Promise<void>;
+  onSetBillDiscount: (discount: Discount | null) => void | Promise<void>;
   isLocked?: boolean;
 }
 
@@ -113,6 +114,8 @@ export function BillAdjustments({
   isLocked = false,
 }: BillAdjustmentsProps) {
   const [mode, setMode] = useState<EditorMode>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const { toast } = useToast();
 
   // State for the discount editor
   const [isCustomDiscount, setIsCustomDiscount] = useState(true);
@@ -156,7 +159,18 @@ export function BillAdjustments({
     }
   }
 
-  const handleApplyDiscount = () => {
+  const runBillingMutation = async (action: () => void | Promise<void>) => {
+    setIsSaving(true);
+    try {
+      await action();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Billing update failed", description: err?.message ?? "Could not update the bill." });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleApplyDiscount = async () => {
     let discountToApply: Discount;
     if (isCustomDiscount) {
          discountToApply = {
@@ -176,33 +190,39 @@ export function BillAdjustments({
             value: Number(selected.value) || 0,
         };
     }
-    onSetBillDiscount(discountToApply);
-    setMode(null);
+    await runBillingMutation(async () => {
+      await onSetBillDiscount(discountToApply);
+      setMode(null);
+    });
   };
   
-  const handleClearDiscount = () => {
-    onSetBillDiscount(null);
-    setMode(null);
+  const handleClearDiscount = async () => {
+    await runBillingMutation(async () => {
+      await onSetBillDiscount(null);
+      setMode(null);
+    });
   }
 
-  const handleChargeSelect = (id: string) => {
+  const handleChargeSelect = async (id: string) => {
     if (id === 'other') {
         setShowCustomCharge(true);
     } else {
         setShowCustomCharge(false);
         const selected = charges.find(c => c.id === id);
         if (selected) {
-            onAddAdjustment(selected);
+            await runBillingMutation(() => onAddAdjustment(selected));
         }
     }
   }
 
-  const handleApplyCustomCharge = () => {
-    onAddCustomAdjustment(customChargeNote, customChargeAmount);
-    setCustomChargeNote("");
-    setCustomChargeAmount(0);
-    setShowCustomCharge(false);
-    setMode(null);
+  const handleApplyCustomCharge = async () => {
+    await runBillingMutation(async () => {
+      await onAddCustomAdjustment(customChargeNote, customChargeAmount);
+      setCustomChargeNote("");
+      setCustomChargeAmount(0);
+      setShowCustomCharge(false);
+      setMode(null);
+    });
   };
 
   const handleModeChange = (newMode: EditorMode) => {
@@ -223,9 +243,9 @@ export function BillAdjustments({
     <div className="p-3 border-t bg-background space-y-2">
         <div className={cn("grid gap-2", canSeeDiscountButton ? "grid-cols-2" : "grid-cols-1")}>
             {canSeeDiscountButton && (
-                <Button variant={mode === 'discount' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('discount')}>Bill Discount</Button>
+                <Button variant={mode === 'discount' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('discount')} disabled={isSaving || isLocked}>Bill Discount</Button>
             )}
-            <Button variant={mode === 'charge' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('charge')}>Add Charge</Button>
+            <Button variant={mode === 'charge' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('charge')} disabled={isSaving || isLocked}>Add Charge</Button>
         </div>
         
         {/* --- ADJUSTMENTS DISPLAY --- */}
@@ -235,8 +255,8 @@ export function BillAdjustments({
                     <div key={adj.id} className="flex justify-between items-center">
                         <span className="text-muted-foreground">{adj.note}</span>
                          <div className="flex items-center gap-2">
-                            <span>+ ₱{adj.amount.toFixed(2)}</span>
-                            {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => onRemoveAdjustment(adj.id)}><Trash2 size={12} /></Button>}
+                            <span>+ {adj.type === 'percent' ? `${adj.amount}%` : `₱${adj.amount.toFixed(2)}`}</span>
+                            {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => runBillingMutation(() => onRemoveAdjustment(adj.id))} disabled={isSaving}><Trash2 size={12} /></Button>}
                         </div>
                     </div>
                 ))}
@@ -245,7 +265,7 @@ export function BillAdjustments({
 
         {mode === 'discount' && (
             <EditorPanel title="Bill Discount" onClose={() => setMode(null)}>
-                <Select onValueChange={handleDiscountSelect} disabled={isLocked} value={selectedDiscountId}>
+                <Select onValueChange={handleDiscountSelect} disabled={isLocked || isSaving} value={selectedDiscountId}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="Select discount..." /></SelectTrigger>
                     <SelectContent>
                         {discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -256,7 +276,7 @@ export function BillAdjustments({
                     <Select 
                         value={tempDiscountType}
                         onValueChange={(type: 'percent' | 'fixed') => setTempDiscountType(type)}
-                        disabled={isLocked || !isCustomDiscount}
+                        disabled={isLocked || isSaving || !isCustomDiscount}
                     >
                         <SelectTrigger className="h-9 w-16"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -267,19 +287,19 @@ export function BillAdjustments({
                     <CurrencyInput
                         value={tempDiscountValue}
                         onChange={setTempDiscountValue}
-                        disabled={isLocked || !isCustomDiscount}
+                        disabled={isLocked || isSaving || !isCustomDiscount}
                     />
                 </div>
                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked}><Trash2 size={16} /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked}><Check size={16} /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked || isSaving}><Trash2 size={16} /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving}><Check size={16} /></Button>
                 </div>
             </EditorPanel>
         )}
         
         {mode === 'charge' && (
              <EditorPanel title="Add Charge" onClose={() => setMode(null)}>
-                <Select onValueChange={handleChargeSelect} disabled={isLocked}>
+                <Select onValueChange={(value) => void handleChargeSelect(value)} disabled={isLocked || isSaving}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="Select a charge to add..." /></SelectTrigger>
                     <SelectContent>
                         {charges.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.type === 'fixed' ? `₱${c.value}` : `${c.value}%`})</SelectItem>)}
@@ -293,12 +313,14 @@ export function BillAdjustments({
                             value={customChargeNote}
                             onChange={(e) => setCustomChargeNote(e.target.value)}
                             className="h-9"
+                            disabled={isSaving}
                         />
                         <CurrencyInput 
                             value={customChargeAmount}
                             onChange={setCustomChargeAmount}
+                            disabled={isSaving}
                         />
-                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={!customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
+                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || !customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
                     </div>
                 )}
              </EditorPanel>

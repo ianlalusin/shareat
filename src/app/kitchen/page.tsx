@@ -566,7 +566,9 @@ export default function KitchenPage() {
         };
         if (old.type === 'addon' && old.billLineId) {
           const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', old.billLineId);
+          const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
           transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), voidReason: "kitchen_cancel", voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
+          transaction.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
         }
         transaction.update(ticketRef, updatePayload);
         if (old.kitchenLocationId) {

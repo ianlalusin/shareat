@@ -24,11 +24,9 @@ export function PaymentQueueSyncProvider() {
       sessionId,
       appUser,
       payload.payments,
-      payload.billLines,
       activeStore,
       paymentMethods,
-      payload.billDiscount,
-      payload.customAdjustments,
+      payload.totalAmount,
     );
   });
 

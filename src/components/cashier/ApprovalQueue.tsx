@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -109,6 +109,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 "guestCountChange.status": "approved",
                 "guestCountChange.approvedByUid": appUser?.uid,
                 "guestCountChange.approvedAt": serverTimestamp(),
+                billingRevision: increment(1),
+                updatedAt: serverTimestamp(),
               });
               
               batch.update(sessionProjectionRef, {
@@ -191,6 +193,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     "packageChange.status": "approved",
                     "packageChange.approvedByUid": appUser?.uid,
                     "packageChange.approvedAt": serverTimestamp(),
+                    billingRevision: increment(1),
+                    updatedAt: serverTimestamp(),
                 });
                 
                  batch.update(sessionProjectionRef, {

@@ -170,6 +170,7 @@ export function ServerPageClient() {
       verifiedByUid: appUser.uid,
       verifiedByServerProfileId: currentProfile?.profileId ?? null,
       verifiedByServerProfileName: currentProfile?.name ?? null,
+      billingRevision: increment(1),
       updatedAt: serverTimestamp(),
     });
 

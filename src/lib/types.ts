@@ -95,8 +95,6 @@ export type Refill = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
-
-
 export type StorePackage = {
     packageId: string;
     packageName: string;
@@ -298,6 +296,7 @@ export type Adjustment = {
   type: 'fixed' | 'percent';
   source: 'charge' | 'custom';
   sourceId?: string;
+  appliesTo?: "subtotal" | "total";
 };
 
 export type Charge = {
@@ -451,6 +450,9 @@ export type PendingSession = {
   guestCountChange?: { status: "none" | "pending" | "approved" | "rejected", approvedAt?: any };
   packageChange?: { status: string };
   customer?: { name?: string | null, tin?: string | null, address?: string | null };
+  billDiscount?: Discount | null;
+  customAdjustments?: Adjustment[];
+  billingRevision?: number;
 };
 
 export type TopRefillRow = { name: string; qty: number };
@@ -641,8 +643,6 @@ export type DiscountEvent = {
   createdByName: string;
   createdByRole: string;
 };
-
-
 export type ActivityLog = {
   id: string;
   sessionId: string;
@@ -835,5 +835,3 @@ export type ReceiptData = {
     receiptNumber?: string;
     analytics?: any;
 };
-
-    

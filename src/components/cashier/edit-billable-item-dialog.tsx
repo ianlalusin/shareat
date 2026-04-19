@@ -74,8 +74,8 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     charges?: Charge[];
     isLocked?: boolean;
-    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
-    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void;
+    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void | Promise<void>;
+    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void | Promise<void>;
     refundedQty?: number;
 }
 
@@ -345,7 +345,7 @@ export function EditBillableItemDialog({
                 (after as any).qtyOverrideAt = new Date();
             }
 
-            onSave(line.id, before, after);
+            await onSave(line.id, before, after);
 
             // Part 2: Add new discount adjustment if applicable
             if (data.applyDiscount && data.discountQty > 0 && data.discountValue > 0) {
@@ -363,7 +363,7 @@ export function EditBillableItemDialog({
                     createdByUid: appUser.uid,
                     createdByName: appUser.displayName || appUser.name || undefined,
                 };
-                onAddLineAdjustment(line.id, adj);
+                await onAddLineAdjustment(line.id, adj);
             }
 
             // Part 3: Add new charge adjustment if applicable
@@ -381,7 +381,7 @@ export function EditBillableItemDialog({
                     createdByUid: appUser.uid,
                     createdByName: appUser.displayName || appUser.name || undefined,
                 };
-                onAddLineAdjustment(line.id, adj);
+                await onAddLineAdjustment(line.id, adj);
             }
 
             onClose();

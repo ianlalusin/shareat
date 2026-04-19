@@ -12,6 +12,7 @@ import {
   runTransaction,
   query,
   where,
+  orderBy,
   deleteField,
   increment,
   type DocumentReference,
@@ -91,6 +92,25 @@ function formatReceiptNumber(fmt: string, seq: number): string {
   const run = m.sort((a, b) => b.length - a.length)[0];
   const padded = String(seq).padStart(run.length, '0');
   return fmt.replace(run, padded);
+}
+
+async function getCurrentSessionBillingState(storeId: string, sessionId: string) {
+  const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
+  const linesRef = query(
+    collection(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`),
+    orderBy("createdAt", "asc"),
+  );
+  const [sessionSnap, linesSnap] = await Promise.all([getDoc(sessionRef), getDocs(linesRef)]);
+  const sessionData = sessionSnap.data() as PendingSession | undefined;
+  if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
+  return {
+    billingRevision: Number((sessionData as any).billingRevision ?? 0),
+    billDiscount: ((sessionData as any).billDiscount ?? null) as Discount | null,
+    customAdjustments: Array.isArray((sessionData as any).customAdjustments)
+      ? ((sessionData as any).customAdjustments as Adjustment[])
+      : [],
+    billLines: linesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as SessionBillLine)),
+  };
 }
 
 /**
@@ -297,19 +317,24 @@ export async function completePaymentFromUnits(
   sessionId: string,
   user: AppUser,
   payments: Payment[],
-  billLines: SessionBillLine[],
   store: Store,
   paymentMethods: ModeOfPayment[],
-  billDiscount: Discount | null,
-  customAdjustments: Adjustment[]
+  expectedTotal?: number
 ) {
   let finalReceipt: Receipt | null = null;
   let receiptId = '';
   let sessionContextForLog: any = null;
   let finalReceiptNumber: string | null = null;
 
+  const billingState = await getCurrentSessionBillingState(storeId, sessionId);
+  const { billLines, billDiscount, customAdjustments } = billingState;
   const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
   const amountDue = finalTotals.grandTotal;
+  if (typeof expectedTotal === "number" && Math.abs(Math.round(expectedTotal * 100) - Math.round(amountDue * 100)) > 1) {
+    throw new Error(
+      `Bill changed before payment could be finalized. Review the bill and collect ₱${amountDue.toFixed(2)}.`
+    );
+  }
   const now = Date.now();
 
   const kdsDeltas: { old: any; new: any }[] = [];
@@ -341,6 +366,11 @@ export async function completePaymentFromUnits(
 
     const sessionData = sessionSnap.data();
     if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
+
+    const currentBillingRevision = Number((sessionData as any).billingRevision ?? 0);
+    if (currentBillingRevision !== billingState.billingRevision) {
+      throw new Error("Bill changed during payment. Review the bill and try again.");
+    }
 
     sessionContextForLog = {
       sessionStatus: 'closed',
@@ -831,7 +861,11 @@ export async function updateSessionBillLine(
     updatedByName: actor.username,
   };
 
-  await updateDoc(lineRef, updatePayload);
+  const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  const batch = writeBatch(db);
+  batch.update(lineRef, updatePayload);
+  batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+  await batch.commit();
 }
 
 export async function removeLineAdjustment(
@@ -855,7 +889,11 @@ export async function removeLineAdjustment(
     updatedByName: actor.username,
   };
 
-  await updateDoc(lineRef, updatePayload);
+  const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  const batch = writeBatch(db);
+  batch.update(lineRef, updatePayload);
+  batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+  await batch.commit();
 }
 
 

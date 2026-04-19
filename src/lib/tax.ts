@@ -151,12 +151,21 @@ export function calculateBillTotals(
       taxTotal = 0;
   }
   
-  const chargesTotal = round(customAdjustments.reduce((sum, charge) => sum + charge.amount, 0) + lineChargesTotal);
-
   // Corrected grand total calculation
   const totalBeforeCharges = isVatExclusive
     ? netSalesAfterAllDiscounts + taxTotal
     : netSalesAfterAllDiscounts;
+
+  const billChargesTotal = customAdjustments.reduce((sum, charge) => {
+    const value = Number(charge.amount || 0);
+    if (charge.type === "percent") {
+      const base = charge.appliesTo === "total" ? totalBeforeCharges : netSalesAfterAllDiscounts;
+      return sum + base * (value / 100);
+    }
+    return sum + value;
+  }, 0);
+
+  const chargesTotal = round(billChargesTotal + lineChargesTotal);
 
   const grandTotal = totalBeforeCharges + chargesTotal;
 

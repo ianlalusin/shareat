@@ -10,9 +10,6 @@ export type QueuedPayment = {
   status: "pending" | "syncing" | "failed";
   payload: {
     payments: any[];
-    billLines: any[];
-    billDiscount: any | null;
-    customAdjustments: any[];
     totalAmount: number;
   };
   errorMessage?: string;

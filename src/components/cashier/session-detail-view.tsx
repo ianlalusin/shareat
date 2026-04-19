@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { isDiscountDateActive } from "@/lib/collections/globalCollections";
-import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
@@ -110,6 +110,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         if (doc.exists()) {
             const data = doc.data();
             setSession({ id: doc.id, ...data } as PendingSession);
+            setBillDiscount((data.billDiscount as Discount | null | undefined) ?? null);
+            setCustomAdjustments(Array.isArray(data.customAdjustments) ? (data.customAdjustments as Adjustment[]) : []);
         } else {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
             router.replace('/cashier');
@@ -187,11 +189,22 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const { grandTotal } = billTotals;
 
+  const updateSessionBillingState = async (patch: { billDiscount?: Discount | null; customAdjustments?: Adjustment[] }) => {
+    if (!storeId || !sessionId) return;
+    const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
+    await updateDoc(sessionRef, {
+      ...patch,
+      billingRevision: increment(1),
+      updatedAt: serverTimestamp(),
+    });
+  };
+
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
     try {
         await runTransaction(db, async (tx) => {
             const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
+            const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
             const actor = getActorStamp(appUser);
 
             const updatePayload = {
@@ -201,6 +214,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 updatedByName: actor.username,
             };
             tx.update(lineRef, updatePayload);
+            tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
 
             const line = billLines.find(l => l.id === lineId);
             if (!line) throw new Error("Line item not found in local state.");
@@ -316,6 +330,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+        throw e;
     }
   }
 
@@ -323,9 +338,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     if (!appUser || !storeId || !sessionId || !activeStore || !session) return;
     try {
         const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
-        await updateDoc(lineRef, {
+        const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+        const batch = writeBatch(db);
+        batch.update(lineRef, {
             [`lineAdjustments.${adj.id}`]: adj,
         });
+        batch.update(sessionRef, {
+            billingRevision: increment(1),
+            updatedAt: serverTimestamp(),
+        });
+        await batch.commit();
         toast({ title: 'Adjustment Added'});
         
         if (adj.kind === 'discount') {
@@ -373,6 +395,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         }
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
+        throw e;
     }
   }
 
@@ -413,21 +436,28 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         appUser={appUser}
         charges={billCharges}
         discounts={billableDiscounts}
-        onAddAdjustment={(charge: Charge) => {
-          setCustomAdjustments(prev => [...prev, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge', sourceId: charge.id}]);
-          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Charge added: ${charge.name} ₱${charge.value}`, meta: { itemName: charge.name, amount: charge.value } });
+        onAddAdjustment={async (charge: Charge) => {
+          const next = [...customAdjustments, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge' as const, sourceId: charge.id, appliesTo: charge.appliesTo}];
+          await updateSessionBillingState({ customAdjustments: next });
+          setCustomAdjustments(next);
+          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Charge added: ${charge.name} ${charge.type === 'percent' ? charge.value + '%' : '₱' + charge.value}`, meta: { itemName: charge.name, amount: charge.value, discountType: charge.type } });
         }}
-        onAddCustomAdjustment={(note, amount) => {
-          setCustomAdjustments(prev => [...prev, {id: `custom_${Date.now()}`, note, amount, type: 'fixed', source: 'custom'}]);
+        onAddCustomAdjustment={async (note, amount) => {
+          const next = [...customAdjustments, {id: `custom_${Date.now()}`, note, amount, type: 'fixed' as const, source: 'custom' as const}];
+          await updateSessionBillingState({ customAdjustments: next });
+          setCustomAdjustments(next);
           if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Custom charge: ${note} ₱${amount}`, meta: { itemName: note, amount } });
         }}
-        onRemoveAdjustment={(id) => {
+        onRemoveAdjustment={async (id) => {
           const adj = customAdjustments.find(a => a.id === id);
-          setCustomAdjustments(prev => prev.filter(a => a.id !== id));
+          const next = customAdjustments.filter(a => a.id !== id);
+          await updateSessionBillingState({ customAdjustments: next });
+          setCustomAdjustments(next);
           if (storeId && sessionId && appUser && adj) writeActivityLog({ action: "CUSTOM_CHARGE_REMOVED", storeId, sessionId, user: appUser, note: `Charge removed: ${adj.note} ₱${adj.amount}`, meta: { itemName: adj.note, amount: adj.amount } });
         }}
-        onSetBillDiscount={(d) => {
+        onSetBillDiscount={async (d) => {
           const wasDiscount = !!billDiscount;
+          await updateSessionBillingState({ billDiscount: d });
           setBillDiscount(d);
           if (storeId && sessionId && appUser) {
             if (d) writeActivityLog({ action: "BILL_DISCOUNT_APPLIED", storeId, sessionId, user: appUser, note: `Bill discount: ${d.name} (${d.type === 'percent' ? d.value + '%' : '₱' + d.value})`, meta: { discountName: d.name, discountType: d.type, discountValue: d.value } });
@@ -555,9 +585,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           appUser={appUser}
           firebaseUser={user ?? null}
           paymentMethods={paymentMethods}
-          billLines={billLines}
-          billDiscount={billDiscount}
-          customAdjustments={customAdjustments}
         />
       )}
     </div>

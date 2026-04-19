@@ -230,6 +230,7 @@ function POSContent({
       
       await runTransaction(db, async (tx) => {
         const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
+        const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
         const lineSnap = await tx.get(lineRef);
         
         if (lineSnap.exists()) {
@@ -272,6 +273,7 @@ function POSContent({
             kitchenLocationName: selectedAddon.kitchenLocationName,
             billLineId: lineId
         }, quantity, actor, { tx });
+        tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
       });
       
       // OPTIMISTIC UI HOOK
