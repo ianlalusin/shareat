@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
 import { addToQueue } from "@/lib/offline/payment-queue";
-import type { Payment, ModeOfPayment, SessionBillLine, Store, Discount, Adjustment, PendingSession } from "@/lib/types";
+import type { Payment, ModeOfPayment, SessionBillLine, Store, Discount, Adjustment } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
 
@@ -68,7 +68,6 @@ interface PaymentModalProps {
   grandTotal: number;
   sessionId: string;
   storeId: string;
-  session: PendingSession;
   activeStore: Store;
   appUser: AppUser;
   firebaseUser: User | null;
@@ -84,7 +83,6 @@ export function PaymentModal({
   grandTotal,
   sessionId,
   storeId,
-  session,
   activeStore,
   appUser,
   firebaseUser,

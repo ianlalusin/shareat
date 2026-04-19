@@ -7,12 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { isDiscountDateActive } from "@/lib/collections/globalCollections";
-import { collection, onSnapshot, query, doc, getDocs, Timestamp, orderBy, updateDoc, writeBatch, where, serverTimestamp, runTransaction } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
-import { Loader2, History, ArrowLeft, AlertCircle, Receipt } from "lucide-react";
+import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SessionHeader } from "@/components/cashier/session-header";
 import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
@@ -21,7 +20,7 @@ import { PaymentModal } from "@/components/cashier/payment-modal";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { ModeOfPayment, PendingSession, Charge, Discount, SessionBillLine, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import type { PendingSession, Charge, Discount, SessionBillLine, Adjustment, LineAdjustment } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
@@ -40,7 +39,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { toast } = useToast();
   const { user, appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
-  const { confirm, Dialog } = useConfirmDialog();
+  const { Dialog } = useConfirmDialog();
   const isMobile = useIsMobile();
 
   const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
@@ -449,7 +448,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   return (
     <div className="h-screen flex flex-col">
       <header className="flex items-center gap-4 border-b bg-muted/40 px-6 h-[72px]">
-        <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-99 w-9">
+        <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-9 w-9">
             <ArrowLeft className="h-5 w-5" />
         </Button>
         <SessionHeader session={{
@@ -552,7 +551,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           grandTotal={grandTotal}
           sessionId={sessionId}
           storeId={storeId}
-          session={session}
           activeStore={activeStore}
           appUser={appUser}
           firebaseUser={user ?? null}
