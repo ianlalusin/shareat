@@ -3,6 +3,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -72,6 +73,7 @@ function getActor(log: ActivityLog): string {
 }
 
 export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCompsCardProps) {
+    const router = useRouter();
     const [filter, setFilter] = useState<'all' | 'voids' | 'free' | 'discounted'>('all');
 
     const filteredLogs = useMemo(() => {
@@ -134,8 +136,21 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                         itemLabel = `${meta.itemName || 'Bill Discount'} (Removed)`;
                                     }
 
+                                    const auditHref = `/logs/sessions/${encodeURIComponent(log.storeId)}/${encodeURIComponent(log.sessionId)}?focus=${encodeURIComponent(log.id)}`;
+
                                     return (
-                                        <TableRow key={log.id}>
+                                        <TableRow
+                                            key={log.id}
+                                            className="cursor-pointer"
+                                            tabIndex={0}
+                                            onClick={() => router.push(auditHref)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                    event.preventDefault();
+                                                    router.push(auditHref);
+                                                }
+                                            }}
+                                        >
                                             <TableCell className="font-medium">{itemLabel}</TableCell>
                                             <TableCell>{sessionLabel}</TableCell>
                                             <TableCell>{format(toJsDate(log.createdAt)!, 'p')}</TableCell>

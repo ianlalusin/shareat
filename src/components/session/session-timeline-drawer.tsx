@@ -80,6 +80,10 @@ function describeActivityLog(log: any): { description: string; detail?: string; 
       return null; // Shown from session document data with richer context
     case "SESSION_VOIDED":
       return { type: "void", description: `Session voided`, detail: log.reason || meta.reason || undefined };
+    case "SESSION_AUDIT_FLAGGED":
+      return { type: "adjustment", description: "Session flagged for manager review", detail: log.reason || meta.reason || undefined };
+    case "SESSION_AUDIT_CLEARED":
+      return { type: "adjustment", description: "Session audit flag cleared", detail: log.reason || meta.reason || undefined };
     case "VOID_TICKETS":
       return { type: "void", description: `Voided ${qty ? qty + "x " : ""}${itemName}`, detail: log.reason || undefined };
     case "UNVOID":

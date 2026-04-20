@@ -3,6 +3,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
+import { Button } from "../ui/button";
 
 function fmtTime(ts?: any) {
   const d = toJsDate(ts);
@@ -24,6 +26,8 @@ function actionLabel(a: ActivityLog['action']) {
     case "SESSION_STARTED": return "Session Started";
     case "SESSION_VOIDED": return "Session Voided";
     case "SESSION_VERIFIED": return "Verified";
+    case "SESSION_AUDIT_FLAGGED": return "Audit Flagged";
+    case "SESSION_AUDIT_CLEARED": return "Audit Cleared";
     case "PAYMENT_COMPLETED": return "Payment";
     case "DISCOUNT_APPLIED": return "Discount Applied";
     case "DISCOUNT_REMOVED": return "Discount Removed";
@@ -207,6 +211,13 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                     </div>
                 </AccordionTrigger>
                 <AccordionContent>
+                    <div className="flex justify-end px-4 pb-3">
+                        <Button asChild size="sm" variant="outline">
+                            <Link href={`/logs/sessions/${encodeURIComponent(session.storeId)}/${encodeURIComponent(session.id)}`}>
+                                View full session
+                            </Link>
+                        </Button>
+                    </div>
                     {logs.length === 0 ? (
                          <p className="text-sm text-muted-foreground text-center py-4 px-4">No activity logs for this session.</p>
                     ) : (
