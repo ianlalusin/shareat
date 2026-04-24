@@ -8,7 +8,8 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { PaymentMix } from "@/components/dashboard/PaymentMix";
-import { Loader2, AlertTriangle, Printer } from "lucide-react";
+import { PaymentConvertModal } from "@/components/dashboard/PaymentConvertModal";
+import { Loader2, AlertTriangle, Printer, ArrowRightLeft } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportDialog";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
@@ -58,6 +59,7 @@ export default function DashboardPageClient() {
     const { activeStore } = useStoreContext();
     const { appUser } = useAuthContext();
     const [reportDialogOpen, setReportDialogOpen] = useState(false);
+    const [convertModalOpen, setConvertModalOpen] = useState(false);
     const [datePreset, setDatePreset] = useState<DatePreset>("today");
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -180,7 +182,20 @@ export default function DashboardPageClient() {
                     </div>
                     <div className="space-y-6">
                       <Card>
-                          <CardHeader className="pb-3"><CardTitle className="text-base">Payment Mix</CardTitle></CardHeader>
+                          <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+                              <CardTitle className="text-base">Payment Mix</CardTitle>
+                              {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin) && (
+                                  <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7"
+                                      onClick={() => setConvertModalOpen(true)}
+                                  >
+                                      <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                      Convert
+                                  </Button>
+                              )}
+                          </CardHeader>
                           <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
                       </Card>
                       <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
@@ -218,6 +233,15 @@ export default function DashboardPageClient() {
             )}
 
             <PrintSalesReportDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen} />
+
+            {activeStore?.id && (
+                <PaymentConvertModal
+                    open={convertModalOpen}
+                    onOpenChange={setConvertModalOpen}
+                    storeId={activeStore.id}
+                    knownMethods={Object.keys(paymentMix || {})}
+                />
+            )}
         </RoleGuard>
     );
 }

@@ -70,7 +70,7 @@ export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) 
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Item Adjustments</CardTitle>
-            <CardDescription>Voided, discounted, free, and refunded items for the period.</CardDescription>
+            <CardDescription>Per-line activity: voided, line-discounted, free, and refunded items.</CardDescription>
           </div>
           <ArrowRight className="h-4 w-4 text-muted-foreground" />
         </div>
@@ -89,7 +89,7 @@ export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) 
             />
             <StatRow
               icon={<Tag className="h-4 w-4 text-amber-600" />}
-              label="Discounted Items"
+              label="Line Discounts"
               qty={stats.discountedQty}
               amount={stats.discountedAmount}
               color="bg-amber-50"
