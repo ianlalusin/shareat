@@ -53,7 +53,7 @@ function addDays(d: Date, days: number): Date {
  * @param eventDate The date of the receipt/event.
  * @returns An array of preset ID strings (e.g., ["today", "last7"]).
  */
-function getApplicablePresets(eventDate: Date): string[] {
+export function getApplicablePresets(eventDate: Date): string[] {
   const applicable: string[] = [];
   const now = new Date();
 

@@ -32,7 +32,7 @@ export function DiscountsChargesCard({ dailyMetrics, isLoading }: DiscountsCharg
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Discounts &amp; Charges</CardTitle>
-          <CardDescription className="text-center">Total adjustments in range.</CardDescription>
+          <CardDescription className="text-center">Receipt-level totals (line + order discounts).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Skeleton className="h-5 w-3/4" />
@@ -47,7 +47,7 @@ export function DiscountsChargesCard({ dailyMetrics, isLoading }: DiscountsCharg
       <Card className="h-full hover:bg-muted/50 transition-colors cursor-pointer">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Discounts &amp; Charges</CardTitle>
-          <CardDescription className="text-center">Total adjustments in range.</CardDescription>
+          <CardDescription className="text-center">Receipt-level totals (line + order discounts).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between gap-3">
