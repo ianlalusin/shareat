@@ -122,3 +122,58 @@ Kitchen staff use the Kitchen Display System (KDS) to manage incoming orders.
     -   If an item cannot be made (e.g., out of stock), click **"Cancel"** and select a reason. This notifies the cashier/server.
 -   **Viewing History**:
     -   The "Order History" panel shows recently completed or cancelled items for quick reference.
+
+---
+
+## Session Activity Log
+
+A running log of feature changes and meaningful fixes shipped per session. Newest entries on top.
+
+### 2026-04-25 — Fix: Add-ons modal action bar hidden on Android phone
+
+**Shipped to:** `sev5_advanced` and `sev6` (see commit hashes after push).
+
+**Symptom:** On Android phones, when a server opened the Add-ons modal on `/server` and tapped the search input, the qty stepper and "Add to Order" button vanished below the visible screen.
+
+**Root cause:** `AddonsPOSModal`'s mobile (Vaul `Drawer`) layout had a hard-coded `ScrollArea h-[55vh]` inside a non-flex wrapper, with no `dvh`-based cap on `DrawerContent`. When the soft keyboard opened, the visual viewport shrank but nothing in the layout shrank with it — the browser scrolled the focused input into view, pushing the drawer's bottom (the action bar) behind the keyboard.
+
+**Fix (mobile-only):** In `src/components/shared/AddonsPOSModal.tsx`:
+- `DrawerContent` capped at `max-h-[92dvh]` so the sheet always fits inside the dynamic viewport (Android WebView shrinks dvh when the keyboard opens).
+- Drawer inner wrapper turned into a flex column (`flex-1 min-h-0 flex flex-col`).
+- `DrawerHeader` marked `shrink-0`.
+- `POSContent` accepts an `isMobile` prop. When mobile: root becomes `flex flex-col flex-1 min-h-0`; ScrollArea swaps `h-[55vh]` for `flex-1 min-h-0`; search row and bottom action bar marked `shrink-0`.
+- Desktop `Dialog` path untouched.
+
+**Net effect:** ScrollArea absorbs the keyboard's viewport reduction; the action bar (qty stepper + "Add to Order") stays pinned and visible above the keyboard.
+
+---
+
+### 2026-04-25 — Dashboard Payment Mix conversions + discount card clarification
+
+**Shipped to:** `sev5_advanced` (commit `34e094a`), cherry-picked to `sev6` (commit `f8a5278`).
+
+**Payment Mix → Convert (new feature)**
+- Added a **Convert** button on the Dashboard's Payment Mix card (visible to admin / manager / platform admin).
+- Clicking opens a modal where the user records a payment-mode conversion: `From method`, `To method`, `Amount`, optional `Note`. Methods are seeded from the current payment mix; "Other…" allows a custom method name.
+- A conversion is a **non-sales transaction** that reshuffles balances between methods (e.g., a GCash cashout to a customer: `−₱X cash, +₱X gcash`). Receipts are never altered.
+- Implementation:
+    - Source-of-truth doc: `stores/{storeId}/paymentConversions/{id}` with `amount`, `fromMethod`, `toMethod`, `dayId`, `dayStartMs`, `note`, `status`, `createdBy`, `createdAt`, `voidedAt`/`voidedBy`.
+    - Projection updates write `payments.byMethod.{from} -= amount` and `payments.byMethod.{to} += amount` on `analytics/{dayId}`, monthly/yearly rollups, and every applicable `dashPresets/*` doc — same pattern as `applyAnalyticsDeltaV2`.
+    - `payments.totalGross` and `payments.txCount` are deliberately untouched, so net-sales reconciliation still balances and the Payment Mix mismatch warning does not false-positive.
+    - Single Firestore transaction per create / void; voiding reverses the deltas and is idempotent.
+- Today's conversions list inside the modal lets the user **void** a mistaken entry with a single click (with a confirm prompt). Voided rows are dimmed and tagged.
+- ERP impact: `/api/external/sales` and `/api/external/payment-methods` already read from `payments.byMethod`, so they immediately return the post-conversion (real) balance per method — no endpoint change needed.
+
+**Dashboard discount cards — relabeled for clarity**
+- Two cards on the dashboard previously appeared to disagree on discount totals. They actually measure two different things from two different projection fields:
+    - **Discounts & Charges** reads `payments.discountsTotal` = receipt-level total (line + order-level discounts such as senior/PWD applied to the whole bill, package promos, manual order-level adjustments).
+    - **Item Adjustments → Discounted Items** reads `items.discountedAmount` = line-level discounts only, computed from `line.lineAdjustments[kind='discount']`.
+- The gap between the two cards = order/subtotal-level discounts. Not a bug, definitional.
+- Relabeled so the two read as complementary:
+    - `discounts-charges-card.tsx` description → "Receipt-level totals (line + order discounts)."
+    - `ItemAdjustmentsCard.tsx` description → "Per-line activity: voided, line-discounted, free, and refunded items."
+    - "Discounted Items" row → renamed **"Line Discounts"**.
+
+**Files touched**
+- New: `src/lib/analytics/applyPaymentConversion.ts`, `src/components/dashboard/PaymentConvertModal.tsx`
+- Modified: `src/components/dashboard/DashboardPageClient.tsx`, `src/components/dashboard/discounts-charges-card.tsx`, `src/components/dashboard/ItemAdjustmentsCard.tsx`, `src/lib/analytics/applyAnalyticsDeltaV2.ts` (exported `getApplicablePresets`).

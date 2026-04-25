@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { ScrollArea } from "../ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
@@ -123,12 +124,14 @@ function POSContent({
   sessionIsLocked,
   onClose,
   onAddLine,
+  isMobile = false,
 }: {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
   onClose: () => void;
   onAddLine?: (line: SessionBillLine) => void;
+  isMobile?: boolean;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -317,8 +320,8 @@ function POSContent({
         onSelectVariant={(addon) => handleSelectAddon(addon)}
       />
 
-      <div className="space-y-3">
-        <div className="flex gap-2">
+      <div className={cn("space-y-3", isMobile && "flex flex-col flex-1 min-h-0")}>
+        <div className={cn("flex gap-2", isMobile && "shrink-0")}>
           <div className="relative w-full">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -333,7 +336,7 @@ function POSContent({
           </Button>
         </div>
 
-        <ScrollArea className="h-[55vh] pr-2">
+        <ScrollArea className={cn("pr-2", isMobile ? "flex-1 min-h-0" : "h-[55vh]")}>
           <div className="flex flex-wrap gap-2 pb-3">
             {categories.map((cat) => (
               <Badge
@@ -366,7 +369,7 @@ function POSContent({
           )}
         </ScrollArea>
 
-        <div className="border-t pt-3 space-y-2">
+        <div className={cn("border-t pt-3 space-y-2", isMobile && "shrink-0")}>
           <div className="text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Selected</span>
@@ -421,18 +424,19 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
       sessionIsLocked={sessionIsLocked}
       onClose={() => onOpenChange(false)}
       onAddLine={onAddLine}
+      isMobile={isMobile}
     />
   );
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent>
-          <DrawerHeader className="text-left">
+        <DrawerContent className="max-h-[92dvh]">
+          <DrawerHeader className="text-left shrink-0">
             <DrawerTitle>Add-ons</DrawerTitle>
             <DrawerDescription>Select add-on items to add to the order.</DrawerDescription>
           </DrawerHeader>
-          <div className="px-4 pb-4">{content}</div>
+          <div className="px-4 pb-4 flex-1 min-h-0 flex flex-col">{content}</div>
         </DrawerContent>
       </Drawer>
     );
