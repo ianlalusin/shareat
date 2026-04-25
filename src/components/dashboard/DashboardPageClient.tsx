@@ -184,7 +184,7 @@ export default function DashboardPageClient() {
                       <Card>
                           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
                               <CardTitle className="text-base">Payment Mix</CardTitle>
-                              {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin) && (
+                              {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin) && (
                                   <Button
                                       variant="outline"
                                       size="sm"

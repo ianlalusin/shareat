@@ -177,3 +177,5 @@ A running log of feature changes and meaningful fixes shipped per session. Newes
 **Files touched**
 - New: `src/lib/analytics/applyPaymentConversion.ts`, `src/components/dashboard/PaymentConvertModal.tsx`
 - Modified: `src/components/dashboard/DashboardPageClient.tsx`, `src/components/dashboard/discounts-charges-card.tsx`, `src/components/dashboard/ItemAdjustmentsCard.tsx`, `src/lib/analytics/applyAnalyticsDeltaV2.ts` (exported `getApplicablePresets`).
+
+**Follow-up (same day):** Convert button visibility extended to **cashier** role in addition to admin / manager / platform admin (`DashboardPageClient.tsx:224`).
