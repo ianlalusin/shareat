@@ -131,7 +131,7 @@ A running log of feature changes and meaningful fixes shipped per session. Newes
 
 ### 2026-04-27 — Fix: Today's Forecast actual-vs-projected and missing accuracy days
 
-**Shipped to:** `sev5_advanced` and `sev6` (commit hashes after push).
+**Shipped to:** `sev5_advanced` only. Not applied to `sev6` — the bugs don't exist there: sev6's `TodayForecastCard` doesn't show an actual-vs-projected comparison, and sev6 still generates forecasts client-side via `localStorage`-gated `useForecastAnalytics`, not via server cron.
 
 **Bug 1 — "Actual" on Today's Forecast card showed the date-preset's total, not today's.**
 - `DashboardPageClient.tsx` was passing `actualSalesToday={stats?.netSales}`. `stats` comes from `useDashboardAnalytics` which is filtered by the dashboard's date preset, so picking "Last 7 Days" caused the forecast comparison to use the 7-day total as today's actual.
