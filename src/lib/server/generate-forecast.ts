@@ -16,36 +16,53 @@ type StoreData = {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-async function updateYesterdayAccuracy(storeId: string, now: Date): Promise<void> {
+/**
+ * Idempotently fills `accuracy` and `actualSales` for any forecast doc within
+ * the last `days` days that is missing them. Self-healing: if a previous cron
+ * run skipped, errored, or fired before yesterday's analytics doc was complete,
+ * the next run picks it up automatically — no permanent gaps.
+ *
+ * Days are evaluated in reverse chronological order (most recent first) but
+ * each is independent, so partial failures still make progress.
+ */
+async function backfillRecentAccuracy(storeId: string, now: Date, days = 7): Promise<void> {
   const db = getAdminDb();
-  const yesterday = subDays(now, 1);
-  const yesterdayStr = format(yesterday, "yyyy-MM-dd");
-  const yesterdayDayId = yesterdayStr.replace(/-/g, "");
 
-  const forecastRef = db.doc(`stores/${storeId}/salesForecasts/${yesterdayStr}`);
-  const forecastSnap = await forecastRef.get();
-  if (!forecastSnap.exists) return;
+  for (let i = 1; i <= days; i++) {
+    const day = subDays(now, i);
+    const dateStr = format(day, "yyyy-MM-dd");
+    const dayId = dateStr.replace(/-/g, "");
 
-  const forecastData = forecastSnap.data();
-  if (!forecastData || forecastData.accuracy != null) return;
+    try {
+      const forecastRef = db.doc(`stores/${storeId}/salesForecasts/${dateStr}`);
+      const forecastSnap = await forecastRef.get();
+      if (!forecastSnap.exists) continue;
 
-  const analyticsRef = db.doc(`stores/${storeId}/analytics/${yesterdayDayId}`);
-  const analyticsSnap = await analyticsRef.get();
-  if (!analyticsSnap.exists) return;
+      const forecastData = forecastSnap.data();
+      if (!forecastData || forecastData.accuracy != null) continue;
 
-  const actualSales = analyticsSnap.data()?.payments?.totalGross ?? 0;
-  if (actualSales <= 0) return;
+      const analyticsRef = db.doc(`stores/${storeId}/analytics/${dayId}`);
+      const analyticsSnap = await analyticsRef.get();
+      if (!analyticsSnap.exists) continue;
 
-  const projected = forecastData.projectedSales ?? 0;
-  // Symmetric accuracy: |error| / max(actual, projected)
-  // Gives identical scores for mirrored under/over-forecasts and is bounded [0,1].
-  const denom = Math.max(actualSales, projected);
-  const accuracy = denom > 0 ? 1 - Math.abs(actualSales - projected) / denom : 0;
+      const actualSales = analyticsSnap.data()?.payments?.totalGross ?? 0;
+      if (actualSales <= 0) continue;
 
-  await forecastRef.update({
-    actualSales,
-    accuracy: Math.max(0, Math.min(1, accuracy)),
-  });
+      const projected = forecastData.projectedSales ?? 0;
+      // Symmetric accuracy: |error| / max(actual, projected)
+      // Gives identical scores for mirrored under/over-forecasts and is bounded [0,1].
+      const denom = Math.max(actualSales, projected);
+      const accuracy = denom > 0 ? 1 - Math.abs(actualSales - projected) / denom : 0;
+
+      await forecastRef.update({
+        actualSales,
+        accuracy: Math.max(0, Math.min(1, accuracy)),
+      });
+    } catch (err) {
+      console.error(`[backfillRecentAccuracy] store=${storeId} date=${dateStr} failed:`, err);
+      // continue on next day — never let one bad day block the rest
+    }
+  }
 }
 
 export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; forecastsWritten?: number }> {
@@ -53,8 +70,8 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
   const now = new Date();
 
   try {
-    // 1. Update yesterday's accuracy
-    await updateYesterdayAccuracy(store.id, now);
+    // 1. Backfill accuracy for the last 7 days (idempotent, self-healing).
+    await backfillRecentAccuracy(store.id, now, 7);
 
     // 2. Fetch 28 days of data
     const historyEndDate = subDays(now, 1);
@@ -211,7 +228,7 @@ export async function updateAccuracyForAllActiveStores(): Promise<{
   const results = await Promise.all(
     storesSnap.docs.map(async (d) => {
       try {
-        await updateYesterdayAccuracy(d.id, now);
+        await backfillRecentAccuracy(d.id, now, 7);
         return { storeId: d.id, ok: true };
       } catch (err: any) {
         console.error(`[updateAccuracy] store=${d.id} failed:`, err);

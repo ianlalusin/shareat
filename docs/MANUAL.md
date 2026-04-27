@@ -129,6 +129,24 @@ Kitchen staff use the Kitchen Display System (KDS) to manage incoming orders.
 
 A running log of feature changes and meaningful fixes shipped per session. Newest entries on top.
 
+### 2026-04-27 — Fix: Today's Forecast actual-vs-projected and missing accuracy days
+
+**Shipped to:** `sev5_advanced` and `sev6` (commit hashes after push).
+
+**Bug 1 — "Actual" on Today's Forecast card showed the date-preset's total, not today's.**
+- `DashboardPageClient.tsx` was passing `actualSalesToday={stats?.netSales}`. `stats` comes from `useDashboardAnalytics` which is filtered by the dashboard's date preset, so picking "Last 7 Days" caused the forecast comparison to use the 7-day total as today's actual.
+- Fix: `useForecastAnalytics` now subscribes directly to `stores/{storeId}/analytics/{todayDayId}` and returns `actualSalesToday`. The dashboard passes this value instead of `stats.netSales`. Forecast comparison is now decoupled from the date filter.
+
+**Bug 2 — Forecast accuracy not updating daily; some days permanently missing.**
+- `generate-forecast.ts` had `updateYesterdayAccuracy` — a single-day update. The cron path (`/api/cron/generate-forecast` → `runForecastWithTracking` → `generateForecastForStore`) called it once per Manila day, gated by `system/forecastCronLog`. Any cron run that skipped, errored, or fired before yesterday's analytics doc was complete left a permanent gap, because the next day's run only updated *its* yesterday.
+- Fix: replaced with `backfillRecentAccuracy(storeId, now, days=7)` — idempotent loop that fills `accuracy`/`actualSales` for any forecast doc within the last 7 days that's missing them. Now wired into both the daily-cron path (`generateForecastForStore`) and the standalone accuracy cron (`updateAccuracyForAllActiveStores`). Missed days self-heal on the next successful run.
+- The pre-existing manual `/api/admin/backfill-forecast-accuracy` endpoint still works the same.
+
+**Files touched**
+- Modified: `src/hooks/useForecastAnalytics.ts`, `src/components/dashboard/DashboardPageClient.tsx`, `src/lib/server/generate-forecast.ts`.
+
+---
+
 ### 2026-04-25 — Fix: Add-ons modal action bar hidden on Android phone
 
 **Shipped to:** `sev5_advanced` and `sev6` (see commit hashes after push).

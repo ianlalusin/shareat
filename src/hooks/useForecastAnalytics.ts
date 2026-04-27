@@ -5,12 +5,14 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { format, subDays } from 'date-fns';
+import { getDayIdFromTimestamp } from '@/lib/analytics/daily';
 import type { Store } from '@/lib/types';
 
 export function useForecastAnalytics(storeId?: string, _store?: Store) {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [todaysProjectedSales, setTodaysProjectedSales] = useState<number | null>(null);
   const [todaysConfidence, setTodaysConfidence] = useState<string | null>(null);
+  const [actualSalesToday, setActualSalesToday] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -18,6 +20,7 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
       setAccuracy(null);
       setTodaysProjectedSales(null);
       setTodaysConfidence(null);
+      setActualSalesToday(null);
       setIsLoading(false);
       return;
     }
@@ -35,6 +38,22 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
         setTodaysProjectedSales(null);
         setTodaysConfidence(null);
       }
+    });
+
+    // Listener for today's actual sales (decoupled from the dashboard's date-preset filter).
+    // Reads stores/{storeId}/analytics/{todayDayId} so the forecast comparison always reflects today.
+    const todayDayId = getDayIdFromTimestamp(new Date());
+    const todayAnalyticsRef = doc(db, 'stores', storeId, 'analytics', todayDayId);
+    const unsubActual = onSnapshot(todayAnalyticsRef, (snap) => {
+      if (snap.exists()) {
+        const gross = snap.data()?.payments?.totalGross;
+        setActualSalesToday(typeof gross === 'number' ? gross : 0);
+      } else {
+        setActualSalesToday(0);
+      }
+    }, (err) => {
+      console.error("Error fetching today's actual sales:", err);
+      setActualSalesToday(null);
     });
 
     // Listener for 7-day accuracy
@@ -65,9 +84,10 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
 
     return () => {
       unsubToday();
+      unsubActual();
       unsubAccuracy();
     };
   }, [storeId]);
 
-  return { accuracy, todaysProjectedSales, todaysConfidence, isLoading };
+  return { accuracy, todaysProjectedSales, todaysConfidence, actualSalesToday, isLoading };
 }
