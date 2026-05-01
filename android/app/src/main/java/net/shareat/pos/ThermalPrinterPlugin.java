@@ -541,19 +541,15 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
     private void disconnect() {
-        try {
-            if (outputStream != null) {
-                outputStream.close();
-                outputStream = null;
-            }
-            if (bluetoothSocket != null) {
-                bluetoothSocket.close();
-                bluetoothSocket = null;
-            }
-            // Keep connectedAddress so reconnect() can find the printer
-        } catch (IOException e) {
-            Log.e(TAG, "Disconnect error", e);
+        if (outputStream != null) {
+            try { outputStream.close(); } catch (IOException e) { Log.w(TAG, "Stream close error", e); }
+            outputStream = null;
         }
+        if (bluetoothSocket != null) {
+            try { bluetoothSocket.close(); } catch (IOException e) { Log.w(TAG, "Socket close error", e); }
+            bluetoothSocket = null;
+        }
+        // Keep connectedAddress so reconnect() can find the printer
     }
 
     /** Explicit user-initiated disconnect — clears stored address too. */
@@ -567,21 +563,12 @@ public class ThermalPrinterPlugin extends Plugin {
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
-        // Proactively check and reconnect when app returns to foreground
-        if (connectedAddress != null && bluetoothSocket != null) {
-            try {
-                outputStream.write(new byte[0]);
-                outputStream.flush();
-                Log.d(TAG, "onResume: socket still alive");
-            } catch (Exception e) {
-                Log.w(TAG, "onResume: socket dead, reconnecting...");
-                try {
-                    reconnect();
-                    Log.d(TAG, "onResume: reconnected successfully");
-                } catch (Exception re) {
-                    Log.w(TAG, "onResume: reconnect failed, will retry on next print", re);
-                }
-            }
+        // Drop any held socket when the app returns to foreground. Another app (e.g. GrabFood)
+        // may have used the printer while we were paused — trying to keep the socket alive
+        // would hold the BT link and block their next print. Connect fresh on the next job.
+        if (bluetoothSocket != null) {
+            Log.d(TAG, "onResume: releasing stale socket — will reconnect on next print");
+            disconnect();
         }
     }
 }

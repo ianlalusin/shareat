@@ -153,33 +153,37 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
   let logoPrinted = false;
 
   await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-
-  // Print logo if enabled — cache → fetch fallback → skip gracefully
-  if (job.showLogo && job.storeId) {
-    try {
-      const base64 = await resolveLogoBase64(job.storeId);
-      if (base64) {
-        await ThermalPrinter.printImage({
-          base64,
-          widthMm,
-          align: 'center',
-        });
-        logoPrinted = true;
+  try {
+    // Print logo if enabled — cache → fetch fallback → skip gracefully
+    if (job.showLogo && job.storeId) {
+      try {
+        const base64 = await resolveLogoBase64(job.storeId);
+        if (base64) {
+          await ThermalPrinter.printImage({
+            base64,
+            widthMm,
+            align: 'center',
+          });
+          logoPrinted = true;
+        }
+      } catch (e) {
+        // Logo print failed — continue with text-only receipt
+        console.warn('Logo print failed, continuing without logo:', e);
       }
-    } catch (e) {
-      // Logo print failed — continue with text-only receipt
-      console.warn('Logo print failed, continuing without logo:', e);
     }
-  }
 
-  await ThermalPrinter.printReceipt({
-    text: job.text,
-    widthMm,
-    cut: job.cut ?? true,
-    beep: job.beep ?? true,
-    encoding: job.encoding ?? 'CP437',
-    skipInit: logoPrinted,
-  });
+    await ThermalPrinter.printReceipt({
+      text: job.text,
+      widthMm,
+      cut: job.cut ?? true,
+      beep: job.beep ?? true,
+      encoding: job.encoding ?? 'CP437',
+      skipInit: logoPrinted,
+    });
+  } finally {
+    // Always release the BT socket so other apps (e.g. GrabFood) can print freely.
+    try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+  }
 }
 
 

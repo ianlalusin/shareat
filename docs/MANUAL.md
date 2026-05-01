@@ -129,6 +129,24 @@ Kitchen staff use the Kitchen Display System (KDS) to manage incoming orders.
 
 A running log of feature changes and meaningful fixes shipped per session. Newest entries on top.
 
+### 2026-04-27 — Fix: Bluetooth printer fails after GrabFood (or any other app) uses the same printer
+
+**Shipped to:** `sev5_advanced` only (Android-native code; `sev6` uses the same plugin but the fix applies there too — manual cherry-pick needed after APK build verification).
+
+**Root cause:** The POS held its Bluetooth RFCOMM socket open indefinitely after printing. `printViaNativeBluetooth()` in `printHub.ts` called `connectBluetoothPrinter` but never called `disconnectBluetoothPrinter`, so the socket lived for the entire app session. When another app (e.g. GrabFood) needed the same printer, it either failed to connect (POS was holding the link) or forced the OS to drop the POS socket, leaving the POS's cached `outputStream` pointing at a dead connection. The next POS receipt print then failed because the stale socket rejected writes. Two secondary weaknesses made recovery impossible: (1) `disconnect()` had stream + socket in a single `try` block — if `outputStream.close()` threw, `bluetoothSocket.close()` was never reached, leaving the socket leaked; (2) `handleOnResume()` tried a zero-byte write to detect socket health, but Android's BT stack doesn't actually flush zero-byte writes to the wire, so the check always passed even on a dead socket, and the "reconnect" path kept the same stale socket alive.
+
+**Fix:**
+- `printViaNativeBluetooth()` (`src/lib/printing/printHub.ts`): wrapped the logo + receipt print body in a `try/finally` that always calls `ThermalPrinter.disconnectBluetoothPrinter()` — same pattern used by the PIN slip flow. Each receipt job is now self-contained: connect → print → disconnect.
+- `disconnect()` (`ThermalPrinterPlugin.java`): split into two independent `try` blocks (one for `outputStream.close()`, one for `bluetoothSocket.close()`), each setting its field to `null`. A stream-close failure no longer prevents the socket from closing.
+- `handleOnResume()` (`ThermalPrinterPlugin.java`): replaced the unreliable zero-byte health check + reconnect with a simple `disconnect()` call. When the app comes back to foreground any held socket is dropped; the next print job connects fresh. This also prevents the POS from blocking other apps that used the printer while the POS was paused.
+
+**Net effect:** GrabFood can print while the POS is foregrounded or in the background; the POS will always reconnect cleanly on its next print job.
+
+**Files touched**
+- Modified: `src/lib/printing/printHub.ts`, `android/app/src/main/java/net/shareat/pos/ThermalPrinterPlugin.java`.
+
+---
+
 ### 2026-04-27 — Fix: Today's Forecast actual-vs-projected and missing accuracy days
 
 **Shipped to:** `sev5_advanced` only. Not applied to `sev6` — the bugs don't exist there: sev6's `TodayForecastCard` doesn't show an actual-vs-projected comparison, and sev6 still generates forecasts client-side via `localStorage`-gated `useForecastAnalytics`, not via server cron.
