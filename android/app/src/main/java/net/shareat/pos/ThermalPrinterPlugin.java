@@ -59,8 +59,11 @@ public class ThermalPrinterPlugin extends Plugin {
     private BluetoothSocket bluetoothSocket;
     private OutputStream outputStream;
     private String connectedAddress;
-    private static final int MAX_RETRIES = 2;
-    private static final int RETRY_DELAY_MS = 500;
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 1500;
+    // Delays before each connect attempt (ms). First attempt is immediate; subsequent
+    // ones wait progressively longer for another app (e.g. GrabFood) to release the socket.
+    private static final int[] CONNECT_RETRY_DELAYS_MS = {0, 1500, 3000, 5000};
 
     @Override
     public void load() {
@@ -140,11 +143,7 @@ public class ThermalPrinterPlugin extends Plugin {
             if (bluetoothAdapter.isDiscovering()) {
                 bluetoothAdapter.cancelDiscovery();
             }
-            BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
-            bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-            bluetoothSocket.connect();
-            outputStream = bluetoothSocket.getOutputStream();
-            connectedAddress = address;
+            connectWithRetry(address);
             call.resolve();
         } catch (Exception e) {
             Log.e(TAG, "Connection failed", e);
@@ -524,6 +523,60 @@ public class ThermalPrinterPlugin extends Plugin {
         return baos.toByteArray();
     }
 
+    /**
+     * Attempts to connect to {@code address}, retrying with increasing delays so that
+     * a competing app (e.g. GrabFood) has time to release the BT socket between tries.
+     * Also tries the hidden createRfcommSocket(1) reflection path when SDP-based connect fails.
+     */
+    private void connectWithRetry(String address) throws Exception {
+        BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
+        Exception lastError = null;
+        for (int i = 0; i < CONNECT_RETRY_DELAYS_MS.length; i++) {
+            if (CONNECT_RETRY_DELAYS_MS[i] > 0) {
+                Log.w(TAG, "BT connect retry " + i + " — waiting " + CONNECT_RETRY_DELAYS_MS[i] + "ms for socket to free up");
+                Thread.sleep(CONNECT_RETRY_DELAYS_MS[i]);
+            }
+            try {
+                BluetoothSocket socket = createSocket(device);
+                socket.connect();
+                bluetoothSocket = socket;
+                outputStream = bluetoothSocket.getOutputStream();
+                connectedAddress = address;
+                Thread.sleep(80);
+                Log.d(TAG, "Connected to " + address + " on attempt " + (i + 1));
+                return;
+            } catch (Exception e) {
+                lastError = e;
+                Log.w(TAG, "Connect attempt " + (i + 1) + " failed: " + e.getMessage());
+                if (bluetoothSocket != null) {
+                    try { bluetoothSocket.close(); } catch (Exception ignored) {}
+                    bluetoothSocket = null;
+                    outputStream = null;
+                }
+            }
+        }
+        throw lastError != null ? lastError : new IOException("Connection failed after retries");
+    }
+
+    /**
+     * Creates an RFCOMM socket using the standard UUID path; falls back to the
+     * hidden createRfcommSocket(channel=1) on devices where SDP lookup fails.
+     */
+    @SuppressWarnings({"JavaReflectionMemberAccess", "PrivateApi"})
+    private BluetoothSocket createSocket(BluetoothDevice device) throws Exception {
+        try {
+            return device.createRfcommSocketToServiceRecord(SPP_UUID);
+        } catch (IOException e) {
+            Log.w(TAG, "createRfcommSocketToServiceRecord failed, trying reflection fallback: " + e.getMessage());
+            try {
+                java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                return (BluetoothSocket) m.invoke(device, 1);
+            } catch (Exception ex) {
+                throw e; // rethrow original if reflection also fails
+            }
+        }
+    }
+
     private synchronized void reconnect() throws Exception {
         if (connectedAddress == null) {
             throw new IOException("No previous connection address");
@@ -533,10 +586,11 @@ public class ThermalPrinterPlugin extends Plugin {
             bluetoothAdapter.cancelDiscovery();
         }
         BluetoothDevice device = bluetoothAdapter.getRemoteDevice(connectedAddress);
-        bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-        bluetoothSocket.connect();
+        BluetoothSocket socket = createSocket(device);
+        socket.connect();
+        bluetoothSocket = socket;
         outputStream = bluetoothSocket.getOutputStream();
-        Thread.sleep(100); // Let printer settle
+        Thread.sleep(100);
         Log.d(TAG, "Reconnected to " + connectedAddress);
     }
 
@@ -561,11 +615,21 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
     @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        // Release the socket when the app goes to background so other apps (e.g. GrabFood)
+        // can connect to the same printer without being blocked by a stale held socket.
+        if (bluetoothSocket != null) {
+            Log.d(TAG, "onPause: releasing socket for other apps");
+            disconnect();
+        }
+    }
+
+    @Override
     protected void handleOnResume() {
         super.handleOnResume();
-        // Drop any held socket when the app returns to foreground. Another app (e.g. GrabFood)
-        // may have used the printer while we were paused — trying to keep the socket alive
-        // would hold the BT link and block their next print. Connect fresh on the next job.
+        // Drop any held socket when the app returns to foreground — it may have been
+        // invalidated while we were paused. Connect fresh on the next print job.
         if (bluetoothSocket != null) {
             Log.d(TAG, "onResume: releasing stale socket — will reconnect on next print");
             disconnect();
