@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getManilaDayId } from "@/lib/pins/day-id";
 import { endAllParticipants } from "@/lib/server/customer-participants";
+import { writeServerActivityLog } from "@/lib/server/write-activity-log";
 
 export const runtime = "nodejs";
 
@@ -119,7 +120,13 @@ export async function POST(request: Request) {
     });
 
     if (result.isReissue) {
-      await endAllParticipants(adminDb, storeId, sessionId, "revoked", actorUid, "pin_reissued");
+      const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "revoked", actorUid, "pin_reissued");
+      await writeServerActivityLog(adminDb, {
+        storeId, sessionId, actorUid,
+        action: "CUSTOMER_PARTICIPANTS_RESET",
+        meta: { revokedCount, reason: "pin_reissued" },
+        dayId: getManilaDayId(Date.now()),
+      });
     }
 
     return NextResponse.json({ pin: result.pin, expiresAtMs: result.expiresAtMs });

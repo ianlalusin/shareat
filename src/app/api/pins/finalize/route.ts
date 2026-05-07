@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getManilaDayId } from "@/lib/pins/day-id";
 import { endAllParticipants } from "@/lib/server/customer-participants";
+import { writeServerActivityLog } from "@/lib/server/write-activity-log";
 
 export const runtime = "nodejs";
 
@@ -116,7 +117,13 @@ export async function POST(request: Request) {
       return { ok: true, pin: currentPin || null, reason, archivedDayId: dayId };
     });
 
-    await endAllParticipants(adminDb, storeId, sessionId, "ended", actorUid, `finalize_${reason}`);
+    const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "ended", actorUid, `finalize_${reason}`);
+    await writeServerActivityLog(adminDb, {
+      storeId, sessionId, actorUid,
+      action: "CUSTOMER_PARTICIPANTS_RESET",
+      meta: { revokedCount, reason },
+      dayId: getManilaDayId(Date.now()),
+    });
 
     return NextResponse.json(result);
   } catch (e: any) {
