@@ -23,6 +23,8 @@ type ActiveSession = {
   customerPin?: string | null;
   customerAccessEnabled?: boolean | null;
   customerAccessExpiresAtMs?: number | null;
+  customerParticipantActiveCount?: number | null;
+  customerParticipantLimit?: number | null;
   startedAtClientMs?: number | null;
 };
 
@@ -431,6 +433,27 @@ export default function PinsClient() {
                         </div>
                       </div>
 
+                      {s.customerParticipantLimit != null && (
+                        <div className="flex items-center justify-between rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-sm">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-zinc-700">Connected Guests</span>
+                            <span className="text-zinc-400 text-xs">of {s.customerParticipantLimit} allowed</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-2xl font-black ${
+                              (s.customerParticipantActiveCount ?? 0) >= (s.customerParticipantLimit ?? 1)
+                                ? "text-destructive"
+                                : "text-primary"
+                            }`}>
+                              {s.customerParticipantActiveCount ?? 0}
+                            </span>
+                            {(s.customerParticipantActiveCount ?? 0) >= (s.customerParticipantLimit ?? 1) && (
+                              <span className="text-[10px] font-bold text-destructive uppercase tracking-wide">Full</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 flex-wrap justify-end pt-1">
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
@@ -592,6 +615,38 @@ export default function PinsClient() {
                             Reissue
                           </button>
                           </>
+                        )}
+
+                        {s.customerAccessEnabled && (
+                          <button
+                            className="border rounded px-3 py-2 text-sm text-destructive border-destructive/30 hover:bg-destructive/10 disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={() => {
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in.");
+                                  if (!window.confirm("This will disconnect all customer devices from this session. Continue?")) return;
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/participants/reset", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                    body: JSON.stringify({ storeId, sessionId: s.id }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to reset participants.");
+                                  window.alert(`${data.revokedCount ?? 0} device(s) disconnected.`);
+                                } catch (error: any) {
+                                  window.alert(error?.message || "Reset failed.");
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Reset Guests
+                          </button>
                         )}
                       </div>
                     </CardContent>
