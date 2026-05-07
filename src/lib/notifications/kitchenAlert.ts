@@ -19,8 +19,11 @@
 import { Capacitor } from "@capacitor/core";
 
 let audioCtx: AudioContext | null = null;
+let kitchenAudio: HTMLAudioElement | null = null;
 let primed = false;
 let nativeChannelEnsured = false;
+
+const ALERT_SOUND_PATH = "/sounds/kitchen-alert.mp3";
 
 const KITCHEN_CHANNEL_ID = "kitchen-alerts";
 
@@ -50,25 +53,46 @@ export function primeKitchenAudio(): void {
   if (primed) return;
   if (typeof window === "undefined") return;
   try {
-    const Ctor = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!Ctor) return;
-    const ctx: AudioContext = audioCtx ?? new Ctor();
-    audioCtx = ctx;
-    // A silent 1-frame blip unlocks autoplay policies on most engines.
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.01);
-    if (ctx.state === "suspended") void ctx.resume();
-    primed = true;
+    // Pre-load the audio file — satisfies autoplay policy for subsequent calls.
+    const audio = new Audio(ALERT_SOUND_PATH);
+    audio.preload = "auto";
+    audio.load();
+    kitchenAudio = audio;
   } catch {
-    // ignore; we'll fall back to the Notification API or native plugin.
+    // file may not exist yet; synthesized beep will be used instead
   }
+  try {
+    const Ctor = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (Ctor) {
+      const ctx: AudioContext = audioCtx ?? new Ctor();
+      audioCtx = ctx;
+      // A silent 1-frame blip unlocks autoplay policies on most engines.
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.01);
+      if (ctx.state === "suspended") void ctx.resume();
+    }
+  } catch {
+    // ignore
+  }
+  primed = true;
 }
 
-function webBeep(durationMs = 260, freq = 880) {
+async function webBeep(durationMs = 260, freq = 880): Promise<void> {
+  // Try the real audio file first.
+  if (kitchenAudio) {
+    try {
+      kitchenAudio.currentTime = 0;
+      await kitchenAudio.play();
+      return;
+    } catch {
+      // autoplay blocked or file missing — fall through to synthesized beep
+    }
+  }
+  // Synthesized beep fallback.
   if (!audioCtx || !primed) return;
   try {
     const osc = audioCtx.createOscillator();
@@ -76,7 +100,6 @@ function webBeep(durationMs = 260, freq = 880) {
     osc.type = "sine";
     osc.frequency.value = freq;
     const t0 = audioCtx.currentTime;
-    // quick envelope to avoid clicks
     gain.gain.setValueAtTime(0, t0);
     gain.gain.linearRampToValueAtTime(0.25, t0 + 0.02);
     gain.gain.linearRampToValueAtTime(0, t0 + durationMs / 1000);
@@ -159,7 +182,7 @@ export async function fireKitchenAlert(opts: { title: string; body?: string }): 
   }
 
   // Web path
-  webBeep();
+  void webBeep();
   try {
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification(title, { body, silent: false });
