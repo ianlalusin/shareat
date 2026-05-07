@@ -74,6 +74,7 @@ export type SessionAuditTrail = {
   flag: SessionAuditFlag | null;
   events: SessionAuditEvent[];
   riskSummary: SessionAuditRiskSummary;
+  participants: any[];
 };
 
 function eventTime(...values: any[]): Date | null {
@@ -362,6 +363,7 @@ export function useSessionAuditTrail(storeId?: string, sessionId?: string) {
       packageChanges: 0,
       priceOverrides: 0,
     },
+    participants: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -413,7 +415,7 @@ export function useSessionAuditTrail(storeId?: string, sessionId?: string) {
 
           events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-          setData({
+          setData((prev) => ({
             session,
             receipt,
             billLines,
@@ -422,7 +424,8 @@ export function useSessionAuditTrail(storeId?: string, sessionId?: string) {
             flag,
             events,
             riskSummary: buildRiskSummary(activityLogs, tickets, receipt),
-          });
+            participants: prev.participants,
+          }));
           setLoading(false);
         } catch (err: any) {
           if (cancelled) return;
@@ -436,9 +439,22 @@ export function useSessionAuditTrail(storeId?: string, sessionId?: string) {
       }
     );
 
+    const participantsRef = collection(db, "stores", storeId, "activeSessions", sessionId, "customerParticipants");
+    const unsubParticipants = onSnapshot(
+      query(participantsRef, orderBy("joinedAtMs", "desc")),
+      (snap) => {
+        if (cancelled) return;
+        setData((prev) => ({
+          ...prev,
+          participants: snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })),
+        }));
+      }
+    );
+
     return () => {
       cancelled = true;
       unsub();
+      unsubParticipants();
     };
   }, [storeId, sessionId]);
 

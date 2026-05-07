@@ -98,6 +98,7 @@ export default function SessionAuditPage() {
     flag,
     events,
     riskSummary,
+    participants,
     loading,
     error,
   } = useSessionAuditTrail(storeId, sessionId);
@@ -423,6 +424,36 @@ export default function SessionAuditPage() {
               )}
             </CardContent>
           </Card>
+
+          {participants.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Guest Devices</CardTitle>
+                <CardDescription>{participants.length} device{participants.length !== 1 ? "s" : ""} joined this session.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {participants.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 text-sm">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-zinc-800">
+                        Guest {p.slotNumber} — {p.joinMethod === "qr" ? "QR Scan" : "Manual PIN"}
+                      </span>
+                      <span className="text-zinc-400 text-xs">
+                        Joined {p.joinedAtMs ? new Date(p.joinedAtMs).toLocaleTimeString() : "—"}
+                      </span>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                      p.status === "active" ? "bg-green-100 text-green-700" :
+                      p.status === "revoked" ? "bg-red-100 text-red-700" :
+                      "bg-zinc-200 text-zinc-500"
+                    }`}>
+                      {p.status}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
