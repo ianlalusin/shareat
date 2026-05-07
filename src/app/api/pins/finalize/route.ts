@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getManilaDayId } from "@/lib/pins/day-id";
+import { endAllParticipants } from "@/lib/server/customer-participants";
 
 export const runtime = "nodejs";
 
@@ -104,6 +105,8 @@ export async function POST(request: Request) {
             customerAccessEnabled: false,
             customerPin: null,
             customerAccessExpiresAtMs: null,
+            customerJoinVersion: FieldValue.increment(1),
+            customerParticipantActiveCount: 0,
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true }
@@ -112,6 +115,8 @@ export async function POST(request: Request) {
 
       return { ok: true, pin: currentPin || null, reason, archivedDayId: dayId };
     });
+
+    await endAllParticipants(adminDb, storeId, sessionId, "ended", actorUid, `finalize_${reason}`);
 
     return NextResponse.json(result);
   } catch (e: any) {
