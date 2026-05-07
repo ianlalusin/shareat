@@ -17,7 +17,8 @@ export default function PrintPinPage() {
 
   const [pin, setPin] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
-  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id });
+  const [joinUrl, setJoinUrl] = useState<string | null>(null);
+  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +72,25 @@ export default function PrintPinPage() {
   }, [pin, isLoading, error]);
 
   useEffect(() => {
+    if (!pin || !activeStore?.id || !sessionId) return;
+    async function fetchJoinUrl() {
+      try {
+        const { getAuth } = await import("firebase/auth");
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch(
+          `/api/pins/join-url?storeId=${activeStore!.id}&sessionId=${sessionId}`,
+          { headers: { Authorization: `Bearer ${idToken}` } }
+        );
+        const json = await res.json();
+        if (json.ok) setJoinUrl(json.joinUrl);
+      } catch {}
+    }
+    fetchJoinUrl();
+  }, [pin, activeStore?.id, sessionId]);
+
+  useEffect(() => {
     try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}
   }, [paperSize]);
 
@@ -122,15 +142,15 @@ export default function PrintPinPage() {
         </p>
 
         <p className="text-xs leading-snug mt-2">
-          Scan the code below or go to
+          Scan the QR code to join instantly
           <br />
-          <b>customer.shareat.net</b>
+          or go to <b>customer.shareat.net</b>
           <br />
-          then enter your PIN and enjoy our new refilling system.
+          and enter your PIN below.
         </p>
 
         <div className="my-3 flex flex-col items-center gap-2">
-          <QRCodeSVG value="https://customer.shareat.net" size={paperSize === "80mm" ? 160 : 140} />
+          <QRCodeSVG value={joinUrl || "https://customer.shareat.net"} size={paperSize === "80mm" ? 160 : 140} />
         </div>
 
         <div className="my-2">

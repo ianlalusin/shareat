@@ -163,10 +163,9 @@ export function formatPinText(opts: {
     center('SHARELEBRATE'),
     center('with us.'),
     '',
-    center('Scan the code below or go to'),
-    center('customer.shareat.net'),
-    center('then enter your PIN and enjoy'),
-    center('our new refilling system.'),
+    center('Scan the QR code to join instantly'),
+    center('or go to customer.shareat.net'),
+    center('and enter your PIN below.'),
     '',
   ];
 

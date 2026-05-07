@@ -131,6 +131,7 @@ export interface UsePinPrintOptions {
   customerName?: string | null;
   storeName?: string;
   storeId?: string | null;
+  joinUrl?: string | null;
 }
 
 export interface UsePinPrintReturn {
@@ -143,6 +144,7 @@ export function usePinPrint({
   customerName,
   storeName,
   storeId,
+  joinUrl,
 }: UsePinPrintOptions): UsePinPrintReturn {
   const [isPrintingPin, setIsPrintingPin] = useState(false);
   const { toast } = useToast();
@@ -169,7 +171,7 @@ export function usePinPrint({
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
         try {
-          await ThermalPrinter.printPinSlip({ top, bottom, qrData: 'https://customer.shareat.net', qrSize: 8, encoding: 'CP437' });
+          await ThermalPrinter.printPinSlip({ top, bottom, qrData: joinUrl || 'https://customer.shareat.net', qrSize: 8, encoding: 'CP437' });
         } finally {
           try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
         }
