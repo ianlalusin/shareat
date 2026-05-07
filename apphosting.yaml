@@ -14,3 +14,7 @@ env:
     secret: CRON_SECRET
     availability:
       - RUNTIME
+  - variable: CUSTOMER_JOIN_TOKEN_SECRET
+    secret: CUSTOMER_JOIN_TOKEN_SECRET
+    availability:
+      - RUNTIME
