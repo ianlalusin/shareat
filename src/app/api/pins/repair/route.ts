@@ -4,6 +4,13 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 
 export const runtime = "nodejs";
 
+function resolveGuestCountLimit(active: Record<string, any>): number {
+  if (active?.guestCountFinal != null) return Number(active.guestCountFinal) || 1;
+  if (active?.guestCountCashierInitial != null) return Number(active.guestCountCashierInitial) || 1;
+  if (active?.guestCount != null) return Number(active.guestCount) || 1;
+  return 1;
+}
+
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get("authorization") || "";
@@ -70,6 +77,8 @@ export async function POST(request: Request) {
           customerAccessEnabled: true,
           customerAccessExpiresAtMs: pinData.expiresAtMs ?? Date.now() + 2 * 60 * 60 * 1000,
           customerName: activeData?.customerName ?? pinData?.customerName ?? null,
+          customerParticipantLimit: resolveGuestCountLimit(activeData),
+          customerParticipantActiveCount: 0,
           updatedAt: FieldValue.serverTimestamp(),
           repairedAt: FieldValue.serverTimestamp(),
           repairedByUid: actorUid,

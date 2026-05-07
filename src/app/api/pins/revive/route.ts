@@ -119,6 +119,8 @@ export async function POST(request: Request) {
           customerPin: pin,
           customerAccessEnabled: true,
           customerAccessExpiresAtMs: expiresAtMs,
+          customerJoinVersion: FieldValue.increment(1),
+          customerParticipantActiveCount: 0,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
