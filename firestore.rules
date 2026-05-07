@@ -46,6 +46,7 @@ service cloud.firestore {
         && customerStoreId() == storeId
         && customerSessionId() == sessionId;
     }
+    function customerParticipantId() { return request.auth.token.participantId; }
 
     function msNow() { return request.time.toMillis(); }
     function pinFieldsUnchanged() {
@@ -112,6 +113,13 @@ service cloud.firestore {
       allow get: if isCustomerForSession(storeId, sessionId)
         && resource.data.customerAccessEnabled == true
         && resource.data.customerAccessExpiresAtMs > msNow();
+    }
+
+    // Customer participants: customers read only their own active doc; staff have full access via wildcard below.
+    match /stores/{storeId}/activeSessions/{sessionId}/customerParticipants/{participantId} {
+      allow get: if isCustomerForSession(storeId, sessionId)
+        && customerParticipantId() == participantId
+        && resource.data.status == 'active';
     }
 
     // Keep your existing catch-all for staff subpaths under activeSessions if needed
