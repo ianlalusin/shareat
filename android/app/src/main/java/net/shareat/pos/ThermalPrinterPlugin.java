@@ -246,6 +246,11 @@ public class ThermalPrinterPlugin extends Plugin {
             Thread.sleep(400);
 
             // QR CODE
+            // Pad above the QR so the top row of modules isn't clipped by the
+            // previous line's print-head trailing ink. Without this some printers
+            // render the QR as a slightly-wider-than-tall rectangle (top eaten).
+            outputStream.write(new byte[]{0x0A, 0x0A});
+            outputStream.flush();
             byte[] qrBytes = qrData.getBytes("UTF-8");
             int storeLen = qrBytes.length + 3;
             byte pL = (byte)(storeLen & 0xFF);
