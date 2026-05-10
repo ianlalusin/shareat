@@ -272,7 +272,14 @@ public class ThermalPrinterPlugin extends Plugin {
                 qrMono.recycle();
 
                 outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left (raster handles centering)
-                outputStream.write(raster);
+                outputStream.flush();
+                // Stream the raster in small chunks with brief pauses so the
+                // printer's Bluetooth buffer can drain between writes. 80mm
+                // rasters are ~15KB and overflow many printer buffers if sent
+                // in a single shot — symptoms are mid-QR truncation followed
+                // by garbage characters as the printer mis-interprets the
+                // remaining raster bytes as new ESC/POS commands.
+                writeChunked(raster, 512, 30);
                 outputStream.write(new byte[]{0x0A, 0x0A});
                 outputStream.flush();
                 Thread.sleep(300);
@@ -472,6 +479,23 @@ public class ThermalPrinterPlugin extends Plugin {
             }
         }
         call.reject("printImage failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    /**
+     * Write a large byte buffer to the printer in fixed-size chunks with a
+     * brief pause between each. Prevents Bluetooth buffer overflow on
+     * printers with small input buffers (which would otherwise drop bytes
+     * mid-stream and corrupt the in-flight ESC/POS command).
+     */
+    private void writeChunked(byte[] data, int chunkSize, int sleepMs) throws Exception {
+        int offset = 0;
+        while (offset < data.length) {
+            int len = Math.min(chunkSize, data.length - offset);
+            outputStream.write(data, offset, len);
+            outputStream.flush();
+            if (sleepMs > 0) Thread.sleep(sleepMs);
+            offset += len;
+        }
     }
 
     /**
