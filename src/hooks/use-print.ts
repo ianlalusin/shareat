@@ -11,7 +11,7 @@
  *   });
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
@@ -147,10 +147,15 @@ export function usePinPrint({
   joinUrl,
 }: UsePinPrintOptions): UsePinPrintReturn {
   const [isPrintingPin, setIsPrintingPin] = useState(false);
+  // Ref mirrors the in-flight flag so the re-entry guard doesn't have to live
+  // inside the useCallback deps — keeps `printPin`'s identity stable across
+  // print start/finish, which auto-print effects in callers depend on.
+  const isPrintingPinRef = useRef(false);
   const { toast } = useToast();
 
   const printPin = useCallback(async () => {
-    if (!pin || isPrintingPin) return;
+    if (!pin || isPrintingPinRef.current) return;
+    isPrintingPinRef.current = true;
     setIsPrintingPin(true);
 
     try {
@@ -182,9 +187,10 @@ export function usePinPrint({
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Print Failed', description: e?.message ?? 'Unknown error' });
     } finally {
+      isPrintingPinRef.current = false;
       setIsPrintingPin(false);
     }
-  }, [pin, isPrintingPin, storeId, customerName, storeName, toast, joinUrl]);
+  }, [pin, storeId, customerName, storeName, toast, joinUrl]);
 
   return { printPin, isPrintingPin };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
@@ -65,8 +65,12 @@ export default function PrintPinPage() {
     return () => unsubscribe();
   }, [activeStore?.id, sessionId]);
 
+  // Auto-print exactly once per page load: a ref guard makes this idempotent
+  // even though `printPin`'s identity can change as `isPrintingPin` toggles.
+  const hasAutoPrintedRef = useRef(false);
   useEffect(() => {
-    if (pin && !isLoading && !error && joinUrlStatus === "ready") {
+    if (pin && !isLoading && !error && joinUrlStatus === "ready" && !hasAutoPrintedRef.current) {
+      hasAutoPrintedRef.current = true;
       const timer = setTimeout(() => printPin(), 500);
       return () => clearTimeout(timer);
     }
