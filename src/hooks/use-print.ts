@@ -184,7 +184,7 @@ export function usePinPrint({
     } finally {
       setIsPrintingPin(false);
     }
-  }, [pin, isPrintingPin, storeId, customerName, storeName, toast]);
+  }, [pin, isPrintingPin, storeId, customerName, storeName, toast, joinUrl]);
 
   return { printPin, isPrintingPin };
 }

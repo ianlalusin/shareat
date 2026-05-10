@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getManilaDayId } from "@/lib/pins/day-id";
 import { endAllParticipants } from "@/lib/server/customer-participants";
+import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import { writeServerActivityLog } from "@/lib/server/write-activity-log";
 
 export const runtime = "nodejs";
@@ -30,26 +31,19 @@ export async function POST(request: Request) {
     if (!match) return NextResponse.json({ error: "Missing bearer token." }, { status: 401 });
 
     const decoded = await getAdminAuth().verifyIdToken(match[1]);
-    const actorUid = decoded.uid;
-
     const body = await request.json();
     const storeId = String(body?.storeId || "");
     const sessionId = String(body?.sessionId || "");
     if (!storeId || !sessionId) return NextResponse.json({ error: "storeId and sessionId are required." }, { status: 400 });
 
     const adminDb = getAdminDb();
+    const { uid: actorUid } = await requireStaffStoreAccess(adminDb, decoded, storeId, ["admin", "manager", "cashier"]);
     const activeSessionRef = adminDb.doc(`stores/${storeId}/activeSessions/${sessionId}`);
-    const staffRef = adminDb.doc(`staff/${actorUid}`);
 
     const result = await adminDb.runTransaction(async (tx) => {
-      const [activeSnap, staffSnap] = await Promise.all([tx.get(activeSessionRef), tx.get(staffRef)]);
+      const activeSnap = await tx.get(activeSessionRef);
 
       if (!activeSnap.exists) throw new Error("Active session not found.");
-
-      const staff = staffSnap.exists ? (staffSnap.data() as any) : null;
-      if (!["admin", "manager", "cashier"].includes(String(staff?.role || ""))) {
-        throw new Error("You are not allowed to issue PINs.");
-      }
 
       const active = activeSnap.data() as any;
       if ((active?.sessionMode || "") === "alacarte") {
@@ -134,8 +128,8 @@ export async function POST(request: Request) {
     console.error("[api/pins/issue] failed:", e);
     const message = e?.message || "Failed to issue PIN.";
     const status =
-      /Missing bearer token|verifyIdToken/i.test(message) ? 401 :
-      /not allowed/i.test(message) ? 403 :
+      /Missing bearer token|verifyIdToken|Invalid token/i.test(message) ? 401 :
+      /not allowed|No access|Not a staff member|Staff not active/i.test(message) ? 403 :
       /required|not found|only allowed/i.test(message) ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }

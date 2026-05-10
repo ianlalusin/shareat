@@ -3,7 +3,6 @@ import { createHmac } from "crypto";
 export interface JoinTokenPayload {
   s: string;  // storeId
   i: string;  // sessionId
-  p: string;  // pin
   v: number;  // joinVersion
   e: number;  // exp (Unix seconds)
 }
@@ -23,14 +22,12 @@ export function signJoinToken(payload: JoinTokenPayload): string {
 export function buildJoinUrl(opts: {
   storeId: string;
   sessionId: string;
-  pin: string;
   joinVersion: number;
   exp: number;
 }): string {
   const payload: JoinTokenPayload = {
     s: opts.storeId,
     i: opts.sessionId,
-    p: opts.pin,
     v: opts.joinVersion,
     e: Math.floor(opts.exp / 1000),
   };

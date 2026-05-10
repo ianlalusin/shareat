@@ -18,6 +18,7 @@ export default function PrintPinPage() {
   const [pin, setPin] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState<string | null>(null);
+  const [joinUrlStatus, setJoinUrlStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,27 +66,36 @@ export default function PrintPinPage() {
   }, [activeStore?.id, sessionId]);
 
   useEffect(() => {
-    if (pin && !isLoading && !error) {
+    if (pin && !isLoading && !error && joinUrlStatus === "ready") {
       const timer = setTimeout(() => printPin(), 500);
       return () => clearTimeout(timer);
     }
-  }, [pin, isLoading, error]);
+  }, [pin, isLoading, error, joinUrlStatus, printPin]);
 
   useEffect(() => {
     if (!pin || !activeStore?.id || !sessionId) return;
     async function fetchJoinUrl() {
+      setJoinUrlStatus("loading");
       try {
         const { getAuth } = await import("firebase/auth");
         const user = getAuth().currentUser;
-        if (!user) return;
+        if (!user) {
+          setJoinUrlStatus("error");
+          return;
+        }
         const idToken = await user.getIdToken();
         const res = await fetch(
           `/api/pins/join-url?storeId=${activeStore!.id}&sessionId=${sessionId}`,
           { headers: { Authorization: `Bearer ${idToken}` } }
         );
         const json = await res.json();
-        if (json.ok) setJoinUrl(json.joinUrl);
+        if (json.ok && json.joinUrl) {
+          setJoinUrl(json.joinUrl);
+          setJoinUrlStatus("ready");
+          return;
+        }
       } catch {}
+      setJoinUrlStatus("error");
     }
     fetchJoinUrl();
   }, [pin, activeStore?.id, sessionId]);
@@ -196,7 +206,7 @@ export default function PrintPinPage() {
           Back
         </Button>
 
-        <Button onClick={printPin} disabled={isLoading || !pin || isPrintingPin}>
+        <Button onClick={printPin} disabled={isLoading || !pin || isPrintingPin || joinUrlStatus !== "ready"}>
           <Printer className="mr-2" /> Print
         </Button>
       </div>

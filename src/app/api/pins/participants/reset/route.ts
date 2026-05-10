@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { endAllParticipants } from "@/lib/server/customer-participants";
+import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 
 export const runtime = "nodejs";
 
@@ -12,19 +13,13 @@ export async function POST(request: Request) {
     if (!match) return NextResponse.json({ error: "Missing bearer token." }, { status: 401 });
 
     const decoded = await getAdminAuth().verifyIdToken(match[1]);
-    const actorUid = decoded.uid;
-
     const body = await request.json();
     const storeId = String(body?.storeId || "");
     const sessionId = String(body?.sessionId || "");
     if (!storeId || !sessionId) return NextResponse.json({ error: "storeId and sessionId required." }, { status: 400 });
 
     const adminDb = getAdminDb();
-    const staffSnap = await adminDb.doc(`staff/${actorUid}`).get();
-    const role = String(staffSnap.exists ? (staffSnap.data() as any)?.role : "");
-    if (!["admin", "manager", "cashier"].includes(role)) {
-      return NextResponse.json({ error: "Not allowed." }, { status: 403 });
-    }
+    const { uid: actorUid } = await requireStaffStoreAccess(adminDb, decoded, storeId, ["admin", "manager", "cashier"]);
 
     const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "revoked", actorUid, "manual_reset");
 
@@ -36,6 +31,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, revokedCount });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Reset failed." }, { status: 500 });
+    const message = e?.message || "Reset failed.";
+    const status =
+      /Missing bearer token|verifyIdToken|Invalid token/i.test(message) ? 401 :
+      /not allowed|No access|Not a staff member|Staff not active/i.test(message) ? 403 :
+      /required/i.test(message) ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
