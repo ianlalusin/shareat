@@ -173,10 +173,15 @@ export function usePinPrint({
           ? await getReceiptSettings(db, storeId)
           : null;
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        // Pick QR module size so a ~200-char URL still fits the paper.
+        // 58mm ≈ 384 printable dots; 80mm ≈ 576. URLs of this length produce
+        // a QR around 53–57 modules wide — at qrSize 8 that's >420 dots and
+        // overflows 58mm paper, clipping the left finder patterns.
+        const qrSize = paperWidth === 58 ? 5 : 7;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
         try {
-          await ThermalPrinter.printPinSlip({ top, bottom, qrData: joinUrl || 'https://customer.shareat.net', qrSize: 8, encoding: 'CP437' });
+          await ThermalPrinter.printPinSlip({ top, bottom, qrData: joinUrl || 'https://customer.shareat.net', qrSize, encoding: 'CP437' });
         } finally {
           try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
         }
