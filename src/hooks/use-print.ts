@@ -17,6 +17,7 @@ import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
+import QRCode from 'qrcode';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -173,15 +174,31 @@ export function usePinPrint({
           ? await getReceiptSettings(db, storeId)
           : null;
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
-        // Pick QR module size so a ~200-char URL still fits the paper.
-        // 58mm ≈ 384 printable dots; 80mm ≈ 576. URLs of this length produce
-        // a QR around 53–57 modules wide — at qrSize 8 that's >420 dots and
-        // overflows 58mm paper, clipping the left finder patterns.
-        const qrSize = paperWidth === 58 ? 5 : 7;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
+
+        // Render the QR as a PNG bitmap client-side and let the native plugin
+        // print it via the raster path. That sidesteps printer-firmware QR
+        // command quirks (this printer ignores center-alignment for GS QR,
+        // so the QR clipped against the left margin) and lets us pick the
+        // physical size + density precisely. scale = dots per QR module.
+        // scale 4 → ~25mm-wide compact QR with sharp edges, easy to scan.
+        const qrText = joinUrl || 'https://customer.shareat.net';
+        const qrDataUrl = await QRCode.toDataURL(qrText, {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          scale: 4,
+        });
+        const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
         try {
-          await ThermalPrinter.printPinSlip({ top, bottom, qrData: joinUrl || 'https://customer.shareat.net', qrSize, encoding: 'CP437' });
+          await ThermalPrinter.printPinSlip({
+            top,
+            bottom,
+            qrImageBase64,
+            paperWidthMm: paperWidth,
+            encoding: 'CP437',
+          });
         } finally {
           try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
         }

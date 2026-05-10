@@ -215,11 +215,13 @@ public class ThermalPrinterPlugin extends Plugin {
 
     @PluginMethod
     public void printPinSlip(PluginCall call) {
-        String topText    = call.getString("top", "");
-        String bottomText = call.getString("bottom", "");
-        String qrData     = call.getString("qrData", "https://customer.shareat.net");
-        int    qrSize     = call.getInt("qrSize", 4);
-        String encoding   = call.getString("encoding", "CP437");
+        String topText        = call.getString("top", "");
+        String bottomText     = call.getString("bottom", "");
+        String qrData         = call.getString("qrData", "https://customer.shareat.net");
+        int    qrSize         = call.getInt("qrSize", 4);
+        String encoding       = call.getString("encoding", "CP437");
+        String qrImageBase64  = call.getString("qrImageBase64", "");
+        int    paperWidthMm   = call.getInt("paperWidthMm", 80);
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -247,24 +249,50 @@ public class ThermalPrinterPlugin extends Plugin {
 
             // QR CODE
             // Pad above the QR so the top row of modules isn't clipped by the
-            // previous line's print-head trailing ink. Without this some printers
-            // render the QR as a slightly-wider-than-tall rectangle (top eaten).
+            // previous line's print-head trailing ink.
             outputStream.write(new byte[]{0x0A, 0x0A});
             outputStream.flush();
-            byte[] qrBytes = qrData.getBytes("UTF-8");
-            int storeLen = qrBytes.length + 3;
-            byte pL = (byte)(storeLen & 0xFF);
-            byte pH = (byte)((storeLen >> 8) & 0xFF);
-            outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // ECC M
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
-            outputStream.write(qrBytes);
-            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
-            outputStream.write(new byte[]{0x0A, 0x0A});
-            outputStream.flush();
-            Thread.sleep(500);
+
+            if (qrImageBase64 != null && !qrImageBase64.isEmpty()) {
+                // Bitmap path — preferred. The native GS QR command on some
+                // printers ignores ESC a center alignment, so the QR clips
+                // against the left margin. Rendering as a raster image with
+                // per-row left-padding centers reliably and lets JS control
+                // dot density and physical size.
+                byte[] qrBytes = Base64.decode(qrImageBase64, Base64.DEFAULT);
+                Bitmap qrSrc = BitmapFactory.decodeByteArray(qrBytes, 0, qrBytes.length);
+                if (qrSrc == null) throw new IOException("Failed to decode qrImageBase64.");
+
+                int maxWidthPx = paperWidthMm == 58 ? 384 : 576;
+                // Threshold to 1-bit without dithering (preserves QR module crispness).
+                Bitmap qrMono = qrToMonochrome(qrSrc);
+                qrSrc.recycle();
+
+                byte[] raster = bitmapToEscPosRaster(qrMono, maxWidthPx);
+                qrMono.recycle();
+
+                outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left (raster handles centering)
+                outputStream.write(raster);
+                outputStream.write(new byte[]{0x0A, 0x0A});
+                outputStream.flush();
+                Thread.sleep(300);
+            } else {
+                // Legacy native QR command path (kept for backward compat).
+                byte[] qrBytes = qrData.getBytes("UTF-8");
+                int storeLen = qrBytes.length + 3;
+                byte pL = (byte)(storeLen & 0xFF);
+                byte pH = (byte)((storeLen >> 8) & 0xFF);
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
+                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
+                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // ECC M
+                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
+                outputStream.write(qrBytes);
+                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
+                outputStream.write(new byte[]{0x0A, 0x0A});
+                outputStream.flush();
+                Thread.sleep(500);
+            }
 
             // BOTTOM TEXT — PIN line gets double height/width, rest normal
             if (bottomText != null && !bottomText.isEmpty()) {
@@ -444,6 +472,33 @@ public class ThermalPrinterPlugin extends Plugin {
             }
         }
         call.reject("printImage failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    /**
+     * QR-specific monochrome conversion: pure threshold, no dithering.
+     * Dithering would scatter the QR module edges with noise pixels and
+     * could break scanability. Source is expected to already be near-B&W
+     * (PNG from a QR generator), so a simple threshold is correct.
+     */
+    private Bitmap qrToMonochrome(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        int[] pixels = new int[w * h];
+        src.getPixels(pixels, 0, w, 0, 0, w, h);
+
+        Bitmap mono = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        int[] out = new int[w * h];
+        for (int i = 0; i < pixels.length; i++) {
+            int p = pixels[i];
+            // Use luminance-ish (average of RGB) since src might not be desaturated.
+            int r = (p >> 16) & 0xFF;
+            int g = (p >> 8) & 0xFF;
+            int b = p & 0xFF;
+            int gray = (r + g + b) / 3;
+            out[i] = gray < 128 ? 0xFF000000 : 0xFFFFFFFF;
+        }
+        mono.setPixels(out, 0, w, 0, 0, w, h);
+        return mono;
     }
 
     /**
