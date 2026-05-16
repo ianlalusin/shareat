@@ -27,7 +27,8 @@ export function BestTimeHeatmap({ bestTime }: { bestTime: DataAnalysisResult["be
       <CardHeader>
         <CardTitle>Best Time</CardTitle>
         <CardDescription>
-          Estimated sales intensity by day of week × hour of day. Peak hours:&nbsp;
+          Sales intensity by day of week × hour of day, based on <strong>session start time</strong>{" "}
+          (when customers arrive, not when they pay). Peak hours:&nbsp;
           {peakHours.length > 0
             ? peakHours.map((p) => `${p.hour}:00`).join(", ")
             : "—"}

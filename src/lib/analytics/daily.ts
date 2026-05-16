@@ -334,10 +334,12 @@ export function getPeakHourContribution(receipt: Receipt | null): PeakHourContri
     const defaultReturn: PeakHourContribution = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0, mode: null };
     const r = receipt;
     if (!r) return defaultReturn;
-    if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
+    if (isVoidReceipt(r)) return defaultReturn;
 
-    // Use session start time first, which is more accurate for peak hour calculation
-    const eventMs = r.analytics.sessionStartedAtClientMs || toJsDate(r.analytics.sessionStartedAt)?.getTime();
+    // Peak hour reflects when the customer arrived (session start), not when they paid.
+    // Fall back to createdAt only for receipts that pre-date sessionStartedAt tracking.
+    const sessionMs = r.analytics?.sessionStartedAtClientMs || toJsDate(r.analytics?.sessionStartedAt)?.getTime();
+    const eventMs = sessionMs || r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
     const date = new Date(eventMs);
@@ -370,13 +372,18 @@ export function getDayOfWeekContribution(receipt: Receipt | null): DayOfWeekCont
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
 
-    const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
-    if (!eventMs) return defaultReturn;
+    // DOW reflects when the customer arrived (session start), matching peak-hour semantics.
+    // Fall back to createdAt only for receipts that pre-date sessionStartedAt tracking.
+    const sessionMs = r.analytics?.sessionStartedAtClientMs || toJsDate(r.analytics?.sessionStartedAt)?.getTime();
+    const sessionEventMs = sessionMs || r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
+    const bucketEventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
+    if (!sessionEventMs || !bucketEventMs) return defaultReturn;
 
-    const dayStartMs = getDayStartMs(eventMs);
-    const dayId = getDayIdFromTimestamp(eventMs);
-    // DOW from Asia/Manila day-start to be consistent with how we bucket days.
-    const dow = new Date(dayStartMs).getDay();
+    // dayId/dayStartMs are keyed off the payment day so this contribution lives in the same
+    // analytics doc as the receipt's other fields; dowKey is derived from session start.
+    const dayStartMs = getDayStartMs(bucketEventMs);
+    const dayId = getDayIdFromTimestamp(bucketEventMs);
+    const dow = new Date(getDayStartMs(sessionEventMs)).getDay();
 
     const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
     const amount = Number(r.total ?? analytics?.grandTotal ?? 0);
