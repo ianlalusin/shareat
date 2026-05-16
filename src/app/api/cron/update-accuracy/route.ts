@@ -5,6 +5,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  // Scheduled by Google Cloud Scheduler with header Authorization: Bearer ${CRON_SECRET}.
+  // See docs/CRON.md for the job definitions.
   const authHeader = request.headers.get("authorization") || "";
   const expected = process.env.CRON_SECRET;
 

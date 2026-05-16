@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { runForecastWithTracking } from "@/lib/server/generate-forecast";
 
 export const runtime = "nodejs";
-// Allow up to 5 minutes (Vercel Pro default max is 300s; free is 60s but upgrade if needed)
+// Allow up to 5 minutes — Gemini call + Firestore writes for all active stores.
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  // Verify Vercel Cron secret (Vercel automatically sets Authorization: Bearer ${CRON_SECRET})
+  // Scheduled by Google Cloud Scheduler with header Authorization: Bearer ${CRON_SECRET}.
+  // See docs/CRON.md for the job definitions.
   const authHeader = request.headers.get("authorization") || "";
   const expected = process.env.CRON_SECRET;
 
