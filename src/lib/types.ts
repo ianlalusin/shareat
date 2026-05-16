@@ -478,6 +478,7 @@ export type DailyMetric = {
         };
         discountsTotal?: number;
         chargesTotal?: number;
+        txCountByMode?: { dineIn: number; walkIn: number };
     };
     guests?: {
         guestCountFinalTotal?: number;
@@ -500,6 +501,18 @@ export type DailyMetric = {
         salesAmountByHour: Record<string, number>;
         sessionCountByHour: Record<string, number>;
         topAddonsByQty?: TopAddonRow[];
+        salesAmountByHourByMode?: {
+            dineIn: Record<string, number>;
+            walkIn: Record<string, number>;
+        };
+        sessionCountByHourByMode?: {
+            dineIn: Record<string, number>;
+            walkIn: Record<string, number>;
+        };
+        salesAmountByMode?: { dineIn: number; walkIn: number };
+        netSalesByMode?: { dineIn: number; walkIn: number };
+        salesAmountByDow?: Record<string, number>;
+        sessionCountByDow?: Record<string, number>;
     };
     kitchen?: {
         servedCountByType: Record<string, number>;
@@ -512,6 +525,7 @@ export type DailyMetric = {
     sessions?: {
         closedCount: number;
         totalPaid: number;
+        closedCountByMode?: { dineIn: number; walkIn: number };
     };
     refills?: {
         servedRefillsTotal: number;

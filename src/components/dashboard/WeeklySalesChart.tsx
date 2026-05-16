@@ -8,10 +8,12 @@ import { ChartContainer } from "@/components/ui/chart";
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { addDays, format } from "date-fns";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, BarChart3 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
 import type { DailyMetric } from "@/lib/types";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 interface WeeklySalesChartProps {
   storeId: string;
@@ -191,6 +193,12 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
               {pacingLabel}
             </span>
           )}
+          <Button asChild variant="outline" size="sm" className={`h-7 ${pacingLabel ? "" : "ml-auto"}`}>
+            <Link href="/admin/data-analysis">
+              <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+              Data Analysis
+            </Link>
+          </Button>
         </CardTitle>
         <CardDescription>
           <span className="text-green-600 font-semibold">Green</span> = actual sales ·{" "}

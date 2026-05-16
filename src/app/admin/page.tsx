@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3 } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -35,6 +35,10 @@ const managerTools = [
 const dataTools = [
     { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck },
     { title: "Analytics Backfill", description: "Rebuild daily analytics from receipts.", href: "/admin/backfill", icon: DatabaseZap },
+]
+
+const analysisTools = [
+    { title: "Data Analysis", description: "360° historical performance, comparisons, and trends.", href: "/admin/data-analysis", icon: BarChart3 },
 ]
 
 function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
@@ -119,6 +123,20 @@ export default function AdminPage() {
                             ))}
                         </CardContent>
                      </Card>
+                )}
+
+                {(appUser?.isPlatformAdmin || appUser?.role === 'manager') && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><BarChart3 /> Analysis</CardTitle>
+                            <CardDescription>Historical, comparative, and 360° performance insights for the active store.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {analysisTools.map(tool => (
+                                <ToolCard key={tool.title} {...tool} />
+                            ))}
+                        </CardContent>
+                    </Card>
                 )}
             </div>
         </RoleGuard>

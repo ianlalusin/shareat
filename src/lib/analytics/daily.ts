@@ -94,6 +94,12 @@ export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: stri
     return doc(db, "stores", storeId, "analytics", dayId);
 }
 
+export type SessionModeKey = "dineIn" | "walkIn";
+
+export function modeKeyOf(receipt: Receipt | null | undefined): SessionModeKey {
+  return receipt?.sessionMode === "package_dinein" ? "dineIn" : "walkIn";
+}
+
 // --- Payment Contribution ---
 type PaymentContribution = {
   dayId: string;
@@ -103,13 +109,14 @@ type PaymentContribution = {
   byMethod: Record<string, number>;
   discountsTotal: number;
   chargesTotal: number;
+  mode: SessionModeKey | null;
 };
 
 export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0, mode: null as SessionModeKey | null };
     const r = receipt;
     if (!r || isVoidReceipt(r)) return defaultReturn;
-    
+
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
@@ -124,6 +131,7 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
         byMethod: analytics?.mop ?? {},
         discountsTotal: analytics?.discountsTotal ?? 0,
         chargesTotal: analytics?.chargesTotal ?? 0,
+        mode: modeKeyOf(r),
     };
 }
 
@@ -191,17 +199,20 @@ type SalesContribution = {
     dineInSalesGross: number;
     dineInDiscountsTotal: number;
     dineInChargesTotal: number;
+    mode: SessionModeKey | null;
+    salesGrossByMode: { dineIn: number; walkIn: number };
+    netSalesByMode: { dineIn: number; walkIn: number };
 };
 
 export function getSalesContribution(receipt: Receipt | null, store?: Store | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0, dineInSalesGross: 0, dineInDiscountsTotal: 0, dineInChargesTotal: 0 };
+    const defaultReturn: SalesContribution = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0, dineInSalesGross: 0, dineInDiscountsTotal: 0, dineInChargesTotal: 0, mode: null, salesGrossByMode: { dineIn: 0, walkIn: 0 }, netSalesByMode: { dineIn: 0, walkIn: 0 } };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
-    
+
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
-    
+
     const dayId = getDayIdFromTimestamp(eventMs);
     const dayStartMs = getDayStartMs(eventMs);
 
@@ -214,7 +225,9 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
     const taxRate = (store?.taxRatePct || 0) / 100;
     const isVatInclusive = store?.taxType === 'VAT_INCLUSIVE';
     const isDineIn = r.sessionMode === 'package_dinein';
+    const mode: SessionModeKey = isDineIn ? "dineIn" : "walkIn";
     let dineInSalesGross = 0;
+    let lineGrossSum = 0;
 
     (r.lines || []).forEach(line => {
         const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0) - (line.freeQty || 0);
@@ -222,6 +235,7 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
 
         const unitPrice = line.unitPrice || 0;
         const lineGross = billableQty * unitPrice;
+        lineGrossSum += lineGross;
 
         let lineDiscount = 0;
         const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
@@ -278,6 +292,15 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
     const dineInDiscountsTotal = isDineIn ? Number(analytics?.discountsTotal ?? 0) : 0;
     const dineInChargesTotal = isDineIn ? Number(analytics?.chargesTotal ?? 0) : 0;
 
+    const receiptDiscounts = Number(analytics?.discountsTotal ?? 0);
+    const receiptCharges = Number(analytics?.chargesTotal ?? 0);
+    const receiptNet = lineGrossSum - receiptDiscounts - receiptCharges;
+
+    const salesGrossByMode = { dineIn: 0, walkIn: 0 };
+    const netSalesByMode = { dineIn: 0, walkIn: 0 };
+    salesGrossByMode[mode] = lineGrossSum;
+    netSalesByMode[mode] = receiptNet;
+
     return {
         dayId,
         dayStartMs,
@@ -290,6 +313,9 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
         dineInSalesGross,
         dineInDiscountsTotal,
         dineInChargesTotal,
+        mode,
+        salesGrossByMode,
+        netSalesByMode,
     };
 }
 
@@ -301,18 +327,19 @@ type PeakHourContribution = {
     hourKey: string | null; // "0".."23"
     amount: number;
     count: number; // 1 if valid, 0 if not
+    mode: SessionModeKey | null;
 };
 
 export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
+    const defaultReturn: PeakHourContribution = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0, mode: null };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
-    
+
     // Use session start time first, which is more accurate for peak hour calculation
     const eventMs = r.analytics.sessionStartedAtClientMs || toJsDate(r.analytics.sessionStartedAt)?.getTime();
     if (!eventMs) return defaultReturn;
-    
+
     const date = new Date(eventMs);
     const dayId = getDayIdFromTimestamp(date);
     const dayStartMs = getDayStartMs(date);
@@ -323,6 +350,42 @@ export function getPeakHourContribution(receipt: Receipt | null): PeakHourContri
         dayStartMs,
         hourKey: String(hour),
         amount: r.total ?? r.analytics?.grandTotal ?? 0,
+        count: 1,
+        mode: modeKeyOf(r),
+    };
+}
+
+// --- Day-of-Week Contribution ---
+type DayOfWeekContribution = {
+    dayId: string;
+    dayStartMs: number;
+    dowKey: string | null; // "0".."6" (0 = Sunday), Asia/Manila
+    amount: number;
+    count: number;
+};
+
+export function getDayOfWeekContribution(receipt: Receipt | null): DayOfWeekContribution {
+    const defaultReturn: DayOfWeekContribution = { dayId: "", dayStartMs: 0, dowKey: null, amount: 0, count: 0 };
+    const r = receipt;
+    if (!r) return defaultReturn;
+    if (isVoidReceipt(r)) return defaultReturn;
+
+    const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
+    if (!eventMs) return defaultReturn;
+
+    const dayStartMs = getDayStartMs(eventMs);
+    const dayId = getDayIdFromTimestamp(eventMs);
+    // DOW from Asia/Manila day-start to be consistent with how we bucket days.
+    const dow = new Date(dayStartMs).getDay();
+
+    const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
+    const amount = Number(r.total ?? analytics?.grandTotal ?? 0);
+
+    return {
+        dayId,
+        dayStartMs,
+        dowKey: String(dow),
+        amount,
         count: 1,
     };
 }
@@ -391,10 +454,11 @@ type ClosedSessionsContribution = {
   dayStartMs: number;
   closedCount: number;
   totalPaid: number;
+  mode: SessionModeKey | null;
 };
 
 export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
+    const defaultReturn: ClosedSessionsContribution = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0, mode: null };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
@@ -407,6 +471,7 @@ export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSe
         dayStartMs: getDayStartMs(eventMs),
         closedCount: 1,
         totalPaid: r.total ?? 0,
+        mode: modeKeyOf(r),
     };
 }
 

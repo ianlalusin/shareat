@@ -21,6 +21,7 @@ import {
   getClosedSessionsContribution,
   getKitchenTicketContribution,
   getItemAdjustmentContribution,
+  getDayOfWeekContribution,
 } from './daily';
 import { rebuildDailyAnalyticsFromReceipts } from './backfill';
 import { toJsDate } from '@/lib/utils/date';
@@ -33,6 +34,7 @@ type ContributionSet = {
   refill: ReturnType<typeof getRefillContribution>;
   closed: ReturnType<typeof getClosedSessionsContribution>;
   itemAdj: ReturnType<typeof getItemAdjustmentContribution>;
+  dow: ReturnType<typeof getDayOfWeekContribution>;
 };
 
 // --- Date Helpers for Presets ---
@@ -104,6 +106,7 @@ function getContributions(receipt: Receipt | null): ContributionSet {
     refill: getRefillContribution(receipt),
     closed: getClosedSessionsContribution(receipt),
     itemAdj: getItemAdjustmentContribution(receipt),
+    dow: getDayOfWeekContribution(receipt),
   };
 }
 
@@ -315,10 +318,89 @@ export async function applyAnalyticsDeltaV2(
         const amountDelta = dayNew.peak.amount - dayOld.peak.amount;
         if(amountDelta !== 0) payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(amountDelta);
     }
-    
+
+    // --- Peak Hour by Mode Delta ---
+    // Bucket key: `${mode}.${hourKey}`. Subtract old bucket, add new bucket. Net out when buckets are equal.
+    {
+      const oldKey = (dayOld.peak.mode && dayOld.peak.hourKey && dayOld.peak.count > 0)
+        ? `${dayOld.peak.mode}.${dayOld.peak.hourKey}` : null;
+      const newKey = (dayNew.peak.mode && dayNew.peak.hourKey && dayNew.peak.count > 0)
+        ? `${dayNew.peak.mode}.${dayNew.peak.hourKey}` : null;
+      const amtBuckets: Record<string, number> = {};
+      const cntBuckets: Record<string, number> = {};
+      if (oldKey) {
+        amtBuckets[oldKey] = (amtBuckets[oldKey] || 0) - dayOld.peak.amount;
+        cntBuckets[oldKey] = (cntBuckets[oldKey] || 0) - dayOld.peak.count;
+      }
+      if (newKey) {
+        amtBuckets[newKey] = (amtBuckets[newKey] || 0) + dayNew.peak.amount;
+        cntBuckets[newKey] = (cntBuckets[newKey] || 0) + dayNew.peak.count;
+      }
+      for (const [k, v] of Object.entries(amtBuckets)) {
+        if (v !== 0) payload[`sales.salesAmountByHourByMode.${k}`] = increment(v);
+      }
+      for (const [k, v] of Object.entries(cntBuckets)) {
+        if (v !== 0) payload[`sales.sessionCountByHourByMode.${k}`] = increment(v);
+      }
+    }
+
+    // --- Sales by Mode Totals Delta (gross + net) ---
+    for (const m of ["dineIn", "walkIn"] as const) {
+      const grossDelta = (dayNew.sales.salesGrossByMode?.[m] || 0) - (dayOld.sales.salesGrossByMode?.[m] || 0);
+      const netDelta = (dayNew.sales.netSalesByMode?.[m] || 0) - (dayOld.sales.netSalesByMode?.[m] || 0);
+      if (grossDelta !== 0) payload[`sales.salesAmountByMode.${m}`] = increment(grossDelta);
+      if (netDelta !== 0) payload[`sales.netSalesByMode.${m}`] = increment(netDelta);
+    }
+
+    // --- Day-of-Week Delta ---
+    {
+      const oldKey = dayOld.dow.dowKey && dayOld.dow.count > 0 ? dayOld.dow.dowKey : null;
+      const newKey = dayNew.dow.dowKey && dayNew.dow.count > 0 ? dayNew.dow.dowKey : null;
+      const amtBuckets: Record<string, number> = {};
+      const cntBuckets: Record<string, number> = {};
+      if (oldKey) {
+        amtBuckets[oldKey] = (amtBuckets[oldKey] || 0) - dayOld.dow.amount;
+        cntBuckets[oldKey] = (cntBuckets[oldKey] || 0) - dayOld.dow.count;
+      }
+      if (newKey) {
+        amtBuckets[newKey] = (amtBuckets[newKey] || 0) + dayNew.dow.amount;
+        cntBuckets[newKey] = (cntBuckets[newKey] || 0) + dayNew.dow.count;
+      }
+      for (const [k, v] of Object.entries(amtBuckets)) {
+        if (v !== 0) payload[`sales.salesAmountByDow.${k}`] = increment(v);
+      }
+      for (const [k, v] of Object.entries(cntBuckets)) {
+        if (v !== 0) payload[`sales.sessionCountByDow.${k}`] = increment(v);
+      }
+    }
+
     // --- Closed Sessions Delta ---
     if (dayNew.closed.closedCount !== dayOld.closed.closedCount) payload['sessions.closedCount'] = increment(dayNew.closed.closedCount - dayOld.closed.closedCount);
     if (dayNew.closed.totalPaid !== dayOld.closed.totalPaid) payload['sessions.totalPaid'] = increment(dayNew.closed.totalPaid - dayOld.closed.totalPaid);
+
+    // --- Closed Sessions by Mode Delta ---
+    {
+      const oldKey = dayOld.closed.mode && dayOld.closed.closedCount > 0 ? dayOld.closed.mode : null;
+      const newKey = dayNew.closed.mode && dayNew.closed.closedCount > 0 ? dayNew.closed.mode : null;
+      const buckets: Record<string, number> = {};
+      if (oldKey) buckets[oldKey] = (buckets[oldKey] || 0) - dayOld.closed.closedCount;
+      if (newKey) buckets[newKey] = (buckets[newKey] || 0) + dayNew.closed.closedCount;
+      for (const [k, v] of Object.entries(buckets)) {
+        if (v !== 0) payload[`sessions.closedCountByMode.${k}`] = increment(v);
+      }
+    }
+
+    // --- Payments TxCount by Mode Delta ---
+    {
+      const oldKey = dayOld.payment.mode && dayOld.payment.txCount > 0 ? dayOld.payment.mode : null;
+      const newKey = dayNew.payment.mode && dayNew.payment.txCount > 0 ? dayNew.payment.mode : null;
+      const buckets: Record<string, number> = {};
+      if (oldKey) buckets[oldKey] = (buckets[oldKey] || 0) - dayOld.payment.txCount;
+      if (newKey) buckets[newKey] = (buckets[newKey] || 0) + dayNew.payment.txCount;
+      for (const [k, v] of Object.entries(buckets)) {
+        if (v !== 0) payload[`payments.txCountByMode.${k}`] = increment(v);
+      }
+    }
 
     // --- Item Adjustment Delta ---
     const adjOld = dayOld.itemAdj;

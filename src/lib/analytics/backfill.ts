@@ -28,6 +28,7 @@ import {
   getClosedSessionsContribution,
   getKitchenTicketContribution,
   getItemAdjustmentContribution,
+  getDayOfWeekContribution,
 } from "./daily";
 import { toJsDate } from "@/lib/utils/date";
 
@@ -113,6 +114,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           txCount: 0,
           discountsTotal: 0,
           chargesTotal: 0,
+          txCountByMode: { dineIn: 0, walkIn: 0 },
         },
         guests: {
           guestCountFinalTotal: 0,
@@ -132,6 +134,12 @@ export async function rebuildDailyAnalyticsFromReceipts(
           dineInChargesTotal: 0,
           salesAmountByHour: {},
           sessionCountByHour: {},
+          salesAmountByHourByMode: { dineIn: {}, walkIn: {} },
+          sessionCountByHourByMode: { dineIn: {}, walkIn: {} },
+          salesAmountByMode: { dineIn: 0, walkIn: 0 },
+          netSalesByMode: { dineIn: 0, walkIn: 0 },
+          salesAmountByDow: {},
+          sessionCountByDow: {},
         },
         kitchen: {
           servedCountByType: {},
@@ -141,7 +149,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           durationMsSumByLocation: {},
           durationCountByLocation: {},
         },
-        sessions: { closedCount: 0, totalPaid: 0 },
+        sessions: { closedCount: 0, totalPaid: 0, closedCountByMode: { dineIn: 0, walkIn: 0 } },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
         items: { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 },
       });
@@ -204,6 +212,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
     const peakHourContrib = getPeakHourContribution(receipt);
     const closedSessionContrib = getClosedSessionsContribution(receipt);
     const refillContrib = getRefillContribution(receipt);
+    const dowContrib = getDayOfWeekContribution(receipt);
 
     // payments
     dayData.payments!.totalGross = (dayData.payments!.totalGross || 0) + Number(paymentContrib.totalGross || 0);
@@ -212,6 +221,11 @@ export async function rebuildDailyAnalyticsFromReceipts(
       (dayData.payments!.discountsTotal || 0) + Number(paymentContrib.discountsTotal || 0);
     dayData.payments!.chargesTotal =
       (dayData.payments!.chargesTotal || 0) + Number(paymentContrib.chargesTotal || 0);
+
+    if (paymentContrib.mode && paymentContrib.txCount > 0) {
+      dayData.payments!.txCountByMode ??= { dineIn: 0, walkIn: 0 };
+      dayData.payments!.txCountByMode[paymentContrib.mode] += paymentContrib.txCount;
+    }
 
     for (const [method, amount] of Object.entries(fixedByMethod)) {
       dayData.payments!.byMethod[method] = (dayData.payments!.byMethod[method] || 0) + Number(amount || 0);
@@ -238,6 +252,14 @@ export async function rebuildDailyAnalyticsFromReceipts(
     dayData.sales.dineInSalesGross = (dayData.sales.dineInSalesGross || 0) + Number(salesContrib.dineInSalesGross || 0);
     dayData.sales.dineInDiscountsTotal = (dayData.sales.dineInDiscountsTotal || 0) + Number(salesContrib.dineInDiscountsTotal || 0);
     dayData.sales.dineInChargesTotal = (dayData.sales.dineInChargesTotal || 0) + Number(salesContrib.dineInChargesTotal || 0);
+
+    // sales by mode
+    if (salesContrib.mode) {
+      dayData.sales.salesAmountByMode ??= { dineIn: 0, walkIn: 0 };
+      dayData.sales.netSalesByMode ??= { dineIn: 0, walkIn: 0 };
+      dayData.sales.salesAmountByMode[salesContrib.mode] += Number(salesContrib.salesGrossByMode?.[salesContrib.mode] || 0);
+      dayData.sales.netSalesByMode[salesContrib.mode] += Number(salesContrib.netSalesByMode?.[salesContrib.mode] || 0);
+    }
     
     for (const [pkgName, amount] of Object.entries(salesContrib.packageSalesAmountByName || {})) {
       dayData.sales.packageSalesAmountByName[pkgName] =
@@ -272,12 +294,37 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
       dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] =
         (dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] || 0) + Number(peakHourContrib.count || 0);
+
+      if (peakHourContrib.mode) {
+        dayData.sales!.salesAmountByHourByMode ??= { dineIn: {}, walkIn: {} };
+        dayData.sales!.sessionCountByHourByMode ??= { dineIn: {}, walkIn: {} };
+        const m = peakHourContrib.mode;
+        const hk = peakHourContrib.hourKey;
+        dayData.sales!.salesAmountByHourByMode[m][hk] =
+          (dayData.sales!.salesAmountByHourByMode[m][hk] || 0) + Number(peakHourContrib.amount || 0);
+        dayData.sales!.sessionCountByHourByMode[m][hk] =
+          (dayData.sales!.sessionCountByHourByMode[m][hk] || 0) + Number(peakHourContrib.count || 0);
+      }
+    }
+
+    // day of week
+    if (dowContrib.dowKey) {
+      dayData.sales!.salesAmountByDow ??= {};
+      dayData.sales!.sessionCountByDow ??= {};
+      dayData.sales!.salesAmountByDow[dowContrib.dowKey] =
+        (dayData.sales!.salesAmountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.amount || 0);
+      dayData.sales!.sessionCountByDow[dowContrib.dowKey] =
+        (dayData.sales!.sessionCountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.count || 0);
     }
 
     // sessions
     dayData.sessions!.closedCount =
       (dayData.sessions!.closedCount || 0) + Number(closedSessionContrib.closedCount || 0);
     dayData.sessions!.totalPaid = (dayData.sessions!.totalPaid || 0) + Number(closedSessionContrib.totalPaid || 0);
+    if (closedSessionContrib.mode && closedSessionContrib.closedCount > 0) {
+      dayData.sessions!.closedCountByMode ??= { dineIn: 0, walkIn: 0 };
+      dayData.sessions!.closedCountByMode[closedSessionContrib.mode] += closedSessionContrib.closedCount;
+    }
 
     // refills
     dayData.refills!.packageSessionsCount =
@@ -349,7 +396,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
 
     // meta stamps
     (data.meta as any).backfilledAt = serverTimestamp();
-    (data.meta as any).source = "backfill_v4_receipts_and_kds";
+    (data.meta as any).source = "backfill_v5_mode_split";
 
     batches[batches.length - 1].set(docRef, data, { merge: false }); // overwrite
     opCount++;
