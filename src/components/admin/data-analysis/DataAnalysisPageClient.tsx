@@ -56,15 +56,23 @@ export default function DataAnalysisPageClient() {
         </Alert>
       )}
 
-      <div className="grid gap-6">
-        <KpiStrip totals={analysis.totals} isLoading={analysis.isLoading} />
-        <ModeSplitCard modeSplit={analysis.modeSplit} />
+      <div className="grid gap-6 xl:grid-cols-2 items-start">
+        <div className="xl:col-span-2">
+          <KpiStrip totals={analysis.totals} isLoading={analysis.isLoading} />
+        </div>
+        <div className="xl:col-span-2">
+          <ModeSplitCard modeSplit={analysis.modeSplit} />
+        </div>
         <SalesOverTimeCard salesOverTime={analysis.salesOverTime} />
-        <ComparativeCard comparative={analysis.comparative} />
-        <BestWorstCard bestWorst={analysis.bestWorst} />
         <SalesByDowCard salesByDow={analysis.salesByDow} />
-        <BestTimeHeatmap bestTime={analysis.bestTime} />
+        <div className="xl:col-span-2">
+          <ComparativeCard comparative={analysis.comparative} />
+        </div>
+        <BestWorstCard bestWorst={analysis.bestWorst} />
         <TopSellersCard topSellers={analysis.topSellers} />
+        <div className="xl:col-span-2">
+          <BestTimeHeatmap bestTime={analysis.bestTime} />
+        </div>
       </div>
     </RoleGuard>
   );

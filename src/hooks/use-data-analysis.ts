@@ -8,6 +8,8 @@ import type { DailyMetric } from "@/lib/types";
 export type DataAnalysisRange =
   | { kind: "allTime" }
   | { kind: "year"; year: number }
+  | { kind: "thisMonth" }
+  | { kind: "lastMonth" }
   | { kind: "custom"; start: Date; end: Date };
 
 export type DayRow = { dayId: string; date: Date; net: number; tx: number };
@@ -213,7 +215,23 @@ const CACHE_TTL = 5 * 60 * 1000;
 function rangeKey(storeId: string, range: DataAnalysisRange): string {
   if (range.kind === "allTime") return `${storeId}:allTime`;
   if (range.kind === "year") return `${storeId}:year:${range.year}`;
+  if (range.kind === "thisMonth") {
+    const n = new Date();
+    return `${storeId}:thisMonth:${n.getFullYear()}-${n.getMonth() + 1}`;
+  }
+  if (range.kind === "lastMonth") {
+    const n = new Date();
+    const lm = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+    return `${storeId}:lastMonth:${lm.getFullYear()}-${lm.getMonth() + 1}`;
+  }
   return `${storeId}:custom:${range.start.getTime()}-${range.end.getTime()}`;
+}
+
+function monthRangeDates(year: number, monthIdx0: number): { start: Date; end: Date } {
+  return {
+    start: new Date(year, monthIdx0, 1),
+    end: new Date(year, monthIdx0 + 1, 0),
+  };
 }
 
 async function fetchYearDocs(storeId: string): Promise<Array<{ yearId: string; metric: DailyMetric }>> {
@@ -265,6 +283,13 @@ function resolveRangeDates(range: DataAnalysisRange, knownMonthIds: string[]): {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (range.kind === "year") {
     return { start: new Date(range.year, 0, 1), end: new Date(range.year, 11, 31) };
+  }
+  if (range.kind === "thisMonth") {
+    return monthRangeDates(now.getFullYear(), now.getMonth());
+  }
+  if (range.kind === "lastMonth") {
+    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return monthRangeDates(lm.getFullYear(), lm.getMonth());
   }
   if (range.kind === "custom") {
     return { start: range.start, end: range.end };
@@ -329,6 +354,13 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
           allMonthIdsForRange = monthDocs.map(m => m.monthId);
         } else if (range.kind === "year") {
           allMonthIdsForRange = Array.from({ length: 12 }, (_, i) => `${range.year}${String(i + 1).padStart(2, "0")}`);
+          monthDocs = await fetchMonthDocs(storeId, allMonthIdsForRange);
+        } else if (range.kind === "thisMonth" || range.kind === "lastMonth") {
+          const now = new Date();
+          const ref = range.kind === "thisMonth"
+            ? new Date(now.getFullYear(), now.getMonth(), 1)
+            : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          allMonthIdsForRange = [`${ref.getFullYear()}${String(ref.getMonth() + 1).padStart(2, "0")}`];
           monthDocs = await fetchMonthDocs(storeId, allMonthIdsForRange);
         } else {
           allMonthIdsForRange = enumMonthIds(range.start, range.end);
@@ -452,6 +484,18 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
               previous = { netSales: net, tx: py.payments?.txCount || 0, dineInShare: sShare, guests: py.guests?.guestCountFinalTotal || 0 };
             }
           }
+        } else if (range.kind === "thisMonth" || range.kind === "lastMonth") {
+          const now = new Date();
+          const offset = range.kind === "thisMonth" ? -1 : -2;
+          const prevAnchor = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+          const prevMonthId = `${prevAnchor.getFullYear()}${String(prevAnchor.getMonth() + 1).padStart(2, "0")}`;
+          const prevDocs = await fetchMonthDocs(storeId, [prevMonthId]);
+          const prevAgg = emptyAggregate();
+          for (const { metric } of prevDocs) foldMetric(prevAgg, metric);
+          const prevShare = prevAgg.salesByMode.dineIn + prevAgg.salesByMode.walkIn > 0
+            ? prevAgg.salesByMode.dineIn / (prevAgg.salesByMode.dineIn + prevAgg.salesByMode.walkIn)
+            : 0;
+          previous = { netSales: prevAgg.netSales, tx: prevAgg.txCount, dineInShare: prevShare, guests: prevAgg.totalGuests };
         }
 
         // YoY by month: last 12 months vs prior 12 months (or full current year vs prior year if year range)

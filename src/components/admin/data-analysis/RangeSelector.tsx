@@ -19,6 +19,8 @@ export function RangeSelector({
   const [calOpen, setCalOpen] = useState(false);
   const isAllTime = value.kind === "allTime";
   const isYear = value.kind === "year";
+  const isThisMonth = value.kind === "thisMonth";
+  const isLastMonth = value.kind === "lastMonth";
   const isCustom = value.kind === "custom";
   const years = availableYears.length > 0 ? availableYears : [new Date().getFullYear()];
 
@@ -35,6 +37,22 @@ export function RangeSelector({
         onClick={() => onChange({ kind: "allTime" })}
       >
         All-Time
+      </Button>
+      <Button
+        variant={isThisMonth ? "default" : "ghost"}
+        size="sm"
+        className="h-8"
+        onClick={() => onChange({ kind: "thisMonth" })}
+      >
+        This Month
+      </Button>
+      <Button
+        variant={isLastMonth ? "default" : "ghost"}
+        size="sm"
+        className="h-8"
+        onClick={() => onChange({ kind: "lastMonth" })}
+      >
+        Last Month
       </Button>
       <div className="flex items-center gap-1">
         <Button
