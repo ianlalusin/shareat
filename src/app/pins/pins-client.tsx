@@ -534,6 +534,9 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Failed to extend PIN.");
+                                } catch (error: any) {
+                                  console.error("Extend PIN failed:", error);
+                                  window.alert(error?.message || "Failed to extend PIN.");
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -691,39 +694,55 @@ export default function PinsClient() {
                         <div className="col-span-2 text-xs">{pin.archiveReason || "—"}</div>
                         <div className="col-span-2 text-xs">{fmtExpiry(pin.expiresAtMs)}</div>
                         <div className="col-span-1 text-right">
-                          <button
-                            className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                            disabled={isPending || busyId === pin.id || pin.status === "revived"}
-                            onClick={() => {
-                              startTransition(async () => {
-                                try {
-                                  setBusyId(pin.id);
-                                  if (!user) throw new Error("You must be signed in to revive a PIN.");
-                                  const token = await user.getIdToken();
-                                  const res = await fetch("/api/pins/revive", {
-                                    method: "POST",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                    body: JSON.stringify({
-                                      storeId,
-                                      sessionId: pin.sessionId,
-                                      pin: pin.id,
-                                      dayId: todayDayId,
-                                    }),
+                          {(() => {
+                            const isClosed = pin.status === "closed" || pin.status === "voided";
+                            const isRevived = pin.status === "revived";
+                            const label = isRevived ? "Revived" : isClosed ? (pin.status === "voided" ? "Voided" : "Closed") : "Revive";
+                            const title = isClosed
+                              ? "Session is already closed — issue a new PIN instead of reviving."
+                              : isRevived
+                              ? "This PIN was already revived."
+                              : "Revive this PIN and reopen customer access for the session.";
+                            return (
+                              <button
+                                className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                                disabled={isPending || busyId === pin.id || isRevived || isClosed}
+                                title={title}
+                                onClick={() => {
+                                  startTransition(async () => {
+                                    try {
+                                      setBusyId(pin.id);
+                                      if (!user) throw new Error("You must be signed in to revive a PIN.");
+                                      const token = await user.getIdToken();
+                                      const res = await fetch("/api/pins/revive", {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                          Authorization: `Bearer ${token}`,
+                                        },
+                                        body: JSON.stringify({
+                                          storeId,
+                                          sessionId: pin.sessionId,
+                                          pin: pin.id,
+                                          dayId: todayDayId,
+                                        }),
+                                      });
+                                      const data = await res.json();
+                                      if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
+                                      router.push(`/print/session-pin/${pin.sessionId}`);
+                                    } catch (error: any) {
+                                      console.error("Revive PIN failed:", error);
+                                      window.alert(error?.message || "Failed to revive PIN.");
+                                    } finally {
+                                      setBusyId(null);
+                                    }
                                   });
-                                  const data = await res.json();
-                                  if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
-                                  router.push(`/print/session-pin/${pin.sessionId}`);
-                                } finally {
-                                  setBusyId(null);
-                                }
-                              });
-                            }}
-                          >
-                            {pin.status === "revived" ? "Revived" : "Revive"}
-                          </button>
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
