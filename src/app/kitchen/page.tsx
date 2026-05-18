@@ -93,6 +93,7 @@ import {
   primeKitchenAudio,
   requestKitchenAlertPermission,
 } from "@/lib/notifications/kitchenAlert";
+import { CustomerRequestsPanel } from "@/components/kitchen/CustomerRequestsPanel";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -680,6 +681,7 @@ export default function KitchenPage() {
         subtitle={flash?.subtitle}
         onDone={() => setFlash(null)}
       />
+      {activeStore?.id && <CustomerRequestsPanel storeId={activeStore.id} />}
     </RoleGuard>
   );
 }
