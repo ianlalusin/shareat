@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3 } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -25,6 +25,7 @@ const managerTools = [
     { title: "Store Settings", description: "Manage add-ons, packages, and prices.", href: "/manager/store-settings", icon: SlidersHorizontal },
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
+    { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
