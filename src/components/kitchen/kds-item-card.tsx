@@ -146,6 +146,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                         <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
                     </div>
                     <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
+                    {(ticket as any).modifiersText && (
+                      <p className="text-sm text-muted-foreground -mt-1 italic">
+                        — {(ticket as any).modifiersText}
+                      </p>
+                    )}
 
                     {/* Qty progress for batch tickets */}
                     {isBatchTicket && (

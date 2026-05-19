@@ -19,12 +19,14 @@ import { useStoreContext } from "@/context/store-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types";
+import type { InventoryItem, OptionGroup, PendingSession, SelectedModifier, SessionBillLine } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
 import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
+import { ModifierPicker, type PickerResult } from "../cashier/modifier-picker";
+import { getAuth } from "firebase/auth";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -153,6 +155,12 @@ function POSContent({
   const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
   const [isVariantPickerOpen, setIsVariantPickerOpen] = useState(false);
 
+  // Modifier picker (Phase 2). Opens after "Add to Order" if the selected
+  // addon's underlying Product has any active option groups attached.
+  const [modifierPickerOpen, setModifierPickerOpen] = useState(false);
+  const [pendingOptionGroups, setPendingOptionGroups] = useState<OptionGroup[]>([]);
+  const [loadingOptionGroups, setLoadingOptionGroups] = useState(false);
+
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(addons.map((a) => a.subCategory || "Uncategorized")))];
   }, [addons]);
@@ -200,6 +208,11 @@ function POSContent({
     setIsVariantPickerOpen(true);
   };
 
+  /**
+   * Step 1 of adding an addon: validate, check whether the underlying Product
+   * has any option groups. If yes, open the modifier picker; otherwise jump
+   * straight to performAdd() with no modifiers.
+   */
   const handleAddToOrder = async () => {
     if (sessionIsLocked) {
       toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
@@ -225,17 +238,67 @@ function POSContent({
       return;
     }
 
+    // Look up option groups attached to the underlying Product.
+    const productId = (selectedAddon as any).productId || selectedAddon.id;
+    setLoadingOptionGroups(true);
+    try {
+      const user = getAuth().currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+      const res = idToken
+        ? await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          })
+        : null;
+      const json = res ? await res.json().catch(() => ({})) : ({} as any);
+      const groups: OptionGroup[] = res?.ok && json?.ok ? (json.optionGroups || []) : [];
+      if (groups.length === 0) {
+        await performAdd([], "", 0);
+      } else {
+        setPendingOptionGroups(groups);
+        setModifierPickerOpen(true);
+      }
+    } catch {
+      // If the fetch fails for any reason, fall through to add without modifiers
+      // rather than block the cashier. The line still goes on the bill correctly.
+      await performAdd([], "", 0);
+    } finally {
+      setLoadingOptionGroups(false);
+    }
+  };
+
+  /**
+   * Step 2: write the bill line and kitchen ticket, optionally with modifiers.
+   * Modifiers contribute their priceDelta to the per-unit price and are stored
+   * structurally (for analytics) plus as modifiersText (for KDS/receipt).
+   */
+  const performAdd = async (
+    modifiers: SelectedModifier[],
+    modifiersText: string,
+    modifiersTotal: number
+  ) => {
+    if (!appUser || !storeId || !session?.id || !selectedAddon) return;
+
+    const unitPriceNum = Number((selectedAddon as any).sellingPrice);
+    const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
+    const effectiveUnitPrice = safeUnitPrice + (modifiersTotal || 0);
+
     setIsSubmitting(true);
 
     try {
-      const lineId = `addon_${selectedAddon.id}_${safeUnitPrice}`;
+      // Same item with different modifier picks must land on separate lines.
+      const modHash = modifiers.length
+        ? modifiers.map((m) => m.valueId).sort().join("-")
+        : "";
+      const lineId = modHash
+        ? `addon_${selectedAddon.id}_${safeUnitPrice}_${modHash}`
+        : `addon_${selectedAddon.id}_${safeUnitPrice}`;
       const actor = getActorStamp(appUser);
-      
+
       await runTransaction(db, async (tx) => {
         const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
         const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
         const lineSnap = await tx.get(lineRef);
-        
+
         if (lineSnap.exists()) {
           tx.update(lineRef, {
             qtyOrdered: increment(quantity),
@@ -264,56 +327,88 @@ function POSContent({
             updatedByName: actor.username,
             kitchenLocationId: selectedAddon.kitchenLocationId,
             kitchenLocationName: selectedAddon.kitchenLocationName,
+            modifiers: modifiers.length ? modifiers : null,
+            modifiersText: modifiersText || null,
+            modifiersTotal: modifiers.length ? modifiersTotal : null,
           });
           tx.set(lineRef, newLinePayload);
         }
 
-        // Use the helper for tickets + projections
-        await createKitchenTickets(db, storeId, session.id, session, 'addon', {
+        await createKitchenTickets(
+          db,
+          storeId,
+          session.id,
+          session,
+          "addon",
+          {
             itemId: selectedAddon.id,
             itemName: selectedAddon.displayName,
             kitchenLocationId: selectedAddon.kitchenLocationId!,
             kitchenLocationName: selectedAddon.kitchenLocationName,
-            billLineId: lineId
-        }, quantity, actor, { tx });
+            billLineId: lineId,
+          },
+          quantity,
+          actor,
+          { tx },
+          modifiersText || undefined,
+          // `extra` is spread into the ticket payload. Pass modifier structure
+          // so KDS can render it richly if it wants, plus a flat text field.
+          modifiers.length ? { modifiers, modifiersText } : undefined
+        );
         tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
       });
-      
-      // OPTIMISTIC UI HOOK
+
+      // Optimistic UI hook
       if (onAddLine) {
-          const newLine: SessionBillLine = {
-              id: lineId,
-              type: "addon",
-              itemId: selectedAddon.id,
-              itemName: selectedAddon.displayName,
-              category: selectedAddon.subCategory ?? null,
-              barcode: selectedAddon.barcode ?? null,
-              unitPrice: safeUnitPrice,
-              qtyOrdered: quantity,
-              discountType: null,
-              discountValue: 0,
-              discountQty: 0,
-              freeQty: 0,
-              voidedQty: 0,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              kitchenLocationId: selectedAddon.kitchenLocationId,
-              kitchenLocationName: selectedAddon.kitchenLocationName,
-          };
-          onAddLine(newLine);
+        const newLine: SessionBillLine = {
+          id: lineId,
+          type: "addon",
+          itemId: selectedAddon.id,
+          itemName: selectedAddon.displayName,
+          category: selectedAddon.subCategory ?? null,
+          barcode: selectedAddon.barcode ?? null,
+          unitPrice: safeUnitPrice,
+          qtyOrdered: quantity,
+          discountType: null,
+          discountValue: 0,
+          discountQty: 0,
+          freeQty: 0,
+          voidedQty: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          kitchenLocationId: selectedAddon.kitchenLocationId,
+          kitchenLocationName: selectedAddon.kitchenLocationName,
+          modifiers: modifiers.length ? modifiers : undefined,
+          modifiersText: modifiersText || undefined,
+          modifiersTotal: modifiers.length ? modifiersTotal : undefined,
+        };
+        onAddLine(newLine);
       }
 
-      writeActivityLog({ action: "ADDON_ADDED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedAddon.displayName, qty: quantity, amount: safeUnitPrice * quantity }, note: `Addon: ${selectedAddon.displayName} x${quantity}`, serverProfile });
-      toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
+      const noteSuffix = modifiersText ? ` (${modifiersText})` : "";
+      writeActivityLog({
+        action: "ADDON_ADDED",
+        storeId,
+        sessionId: session.id,
+        user: appUser,
+        meta: { itemName: selectedAddon.displayName, qty: quantity, amount: effectiveUnitPrice * quantity },
+        note: `Addon: ${selectedAddon.displayName}${noteSuffix} x${quantity}`,
+        serverProfile,
+      });
+      toast({ title: "Added", description: `${selectedAddon.displayName}${noteSuffix} x${quantity} added.` });
       setSelectedAddon(null);
       setQuantity(1);
-
+      setPendingOptionGroups([]);
     } catch (e: any) {
       console.error("[AddonsPOSModal] add failed:", e);
       toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order. " + e.message });
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handlePickerConfirm = (result: PickerResult) => {
+    void performAdd(result.modifiers, result.modifiersText, result.modifiersTotal);
   };
 
   return (
@@ -324,6 +419,16 @@ function POSContent({
         onOpenChange={setIsVariantPickerOpen}
         onSelectVariant={(addon) => handleSelectAddon(addon)}
       />
+
+      {modifierPickerOpen && selectedAddon && (
+        <ModifierPicker
+          open={modifierPickerOpen}
+          onOpenChange={setModifierPickerOpen}
+          itemName={selectedAddon.displayName}
+          groups={pendingOptionGroups}
+          onConfirm={handlePickerConfirm}
+        />
+      )}
 
       <div className={cn("space-y-3", isMobile && "flex flex-col flex-1 min-h-0")}>
         <div className={cn("flex gap-2", isMobile && "shrink-0")}>

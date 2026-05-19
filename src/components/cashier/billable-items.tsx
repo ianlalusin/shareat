@@ -37,14 +37,20 @@ function BillableLineRow({
 
     const netQty = line.qtyOrdered - line.voidedQty;
     const unitPrice = line.unitPrice ?? 0;
+    const modTotal = Number((line as any).modifiersTotal ?? 0);
+    const effectiveUnit = unitPrice + modTotal;
+    const modifiersText = (line as any).modifiersText as string | undefined;
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
             <div className="flex items-center gap-4 py-3 px-4">
                 <div className="flex-1">
                     <p className="font-medium">{netQty > 1 && `${netQty}x `}{line.itemName}</p>
+                    {modifiersText && (
+                      <p className="text-xs text-muted-foreground italic pl-2">— {modifiersText}</p>
+                    )}
                      <div className="text-xs text-muted-foreground">
-                        <p>{netQty} x ₱{unitPrice.toFixed(2)} each = ₱{(netQty * unitPrice).toFixed(2)}</p>
+                        <p>{netQty} x ₱{effectiveUnit.toFixed(2)} each = ₱{(netQty * effectiveUnit).toFixed(2)}</p>
                     </div>
                     {totalDiscountQty > 0 && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">{totalDiscountQty} discounted</Badge>}
                     {totalFreeQty > 0 && <Badge variant="outline" className="mt-1 border-green-500 text-green-600">{totalFreeQty} free</Badge>}

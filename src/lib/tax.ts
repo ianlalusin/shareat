@@ -68,10 +68,14 @@ export function calculateBillTotals(
     const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
     if (billableQty <= 0) return;
 
-    const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Math.max(0, Number(line.unitPrice)) : 0;
-    
+    const baseUnitOnly = Number.isFinite(Number(line.unitPrice)) ? Math.max(0, Number(line.unitPrice)) : 0;
+    // Modifiers contribute their priceDelta to the per-unit price. Modifier
+    // selections live on the bill line at order time; see OptionGroup type.
+    const modPerUnit = Number((line as any).modifiersTotal || 0);
+    const unitPrice = baseUnitOnly + modPerUnit;
+
     grossSubtotal += billableQty * unitPrice;
-    
+
     const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
     const adjs = Object.values((line as any).lineAdjustments ?? {}).sort((a: any, b: any) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0)) as LineAdjustment[];
     const hasAdjDiscount = adjs.some(a => a.kind === "discount");

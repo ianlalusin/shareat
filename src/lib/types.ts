@@ -266,7 +266,21 @@ export type KitchenTicket = {
         itemId: string;
         itemName: string;
         unitPrice: number;
-    }
+    };
+
+    // Modifier selections applied at order time. Driven by the product's
+    // attached OptionGroups; see OptionGroup type. Present only on tickets
+    // whose product had option groups and where the cashier picked values.
+    modifiersText?: string;        // "Large, Extra Cheese" — for KDS display
+    modifiers?: SelectedModifier[];
+};
+
+export type SelectedModifier = {
+  groupId: string;
+  groupName: string;
+  valueId: string;
+  valueName: string;
+  priceDelta: number;
 };
 
 export type BillableLine = {
@@ -285,6 +299,10 @@ export type BillableLine = {
   voidedQty: number;
   createdAt?: any;
   updatedAt?: any;
+  // Modifier metadata mirrors SessionBillLine. See SelectedModifier type.
+  modifiers?: SelectedModifier[];
+  modifiersText?: string;
+  modifiersTotal?: number;     // sum of priceDelta across selected modifiers (per unit)
 };
 
 export type SessionBillLine = {
@@ -306,6 +324,18 @@ export type SessionBillLine = {
    * Map keyed by adjustment id for easy removal.
    */
   lineAdjustments?: Record<string, LineAdjustment>;
+  /**
+   * Modifier selections recorded at order time. The line-id includes a hash
+   * of these selections so the same product with different modifier picks
+   * lives on separate bill lines. See SelectedModifier and OptionGroup types.
+   */
+  modifiers?: SelectedModifier[];
+  modifiersText?: string;
+  /**
+   * Sum of selected priceDeltas, per unit. Line total math is:
+   *   (unitPrice + modifiersTotal) * qty - line-level discounts/charges.
+   */
+  modifiersTotal?: number;
   qtyOverrideActive?: boolean;
   qtyOverrideAt?: any;
   qtyLastSyncedApprovedAt?: string | null;

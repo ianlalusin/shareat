@@ -143,8 +143,9 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                 </div>
                 {activeLines.map(line => {
                     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
-                    const lineTotal = billableQty * line.unitPrice;
-                    
+                    const modTotal = Number((line as any).modifiersTotal || 0);
+                    const lineTotal = billableQty * (line.unitPrice + modTotal);
+
                     const hasDiscount = (line.discountValue ?? 0) > 0 && line.discountQty > 0;
                     
                     let lineDiscountAmount = 0;
@@ -172,6 +173,11 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                                   <div className="whitespace-normal break-words leading-tight">
                                     {line.itemName}
                                   </div>
+                                  {(line as any).modifiersText && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
+                                      — {(line as any).modifiersText}
+                                    </div>
+                                  )}
                                 </div>
                                 <span className="text-right whitespace-nowrap">
                                   {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

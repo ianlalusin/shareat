@@ -50,8 +50,11 @@ export function BillTotals({
             const freeQty = line.freeQty || 0;
             const billableQty = Math.max(0, orderedQty - freeQty);
 
-            const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+            const baseUnit = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+            const modTotal = Number((line as any).modifiersTotal || 0);
+            const unitPrice = baseUnit + modTotal;
             const lineGross = billableQty * unitPrice;
+            const modifiersText = (line as any).modifiersText as string | undefined;
             
             const hasAdjDiscount = Object.values(line.lineAdjustments ?? {}).some((a: any) => a.kind === "discount");
             const hasDiscount = !hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0;
@@ -96,6 +99,9 @@ export function BillTotals({
                         <span>{billableQty}x {line.itemName}</span>
                         <span>₱{lineGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
+                    {modifiersText && (
+                      <div className="pl-4 text-xs italic text-muted-foreground">— {modifiersText}</div>
+                    )}
                     {lineSubRows}
                     {adjs.map(adj => {
                         const billableQtyForAdj = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
