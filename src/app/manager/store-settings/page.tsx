@@ -39,6 +39,22 @@ export default function StoreSettingsPage() {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState("store_packages");
 
+    // Track which tabs have ever been opened so we lazy-mount each panel.
+    // Default-active tab is in the set on first render. Each setting panel
+    // owns one or more onSnapshot subscriptions; without this, opening this
+    // page would fire 8 simultaneous listeners for collections the manager
+    // may never look at on this visit.
+    const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["store_packages"]));
+    const handleTabChange = (value: string) => {
+        setActiveTab(value);
+        setMountedTabs((prev) => {
+            if (prev.has(value)) return prev;
+            const next = new Set(prev);
+            next.add(value);
+            return next;
+        });
+    };
+
 
     if (loading) {
         return <div className="flex items-center justify-center h-full"><Loader className="animate-spin" /></div>
@@ -62,9 +78,9 @@ export default function StoreSettingsPage() {
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
             </PageHeader>
-            <Tabs defaultValue={activeTab} value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
                 {isMobile ? (
-                    <Select value={activeTab} onValueChange={setActiveTab}>
+                    <Select value={activeTab} onValueChange={handleTabChange}>
                         <SelectTrigger>
                             <SelectValue placeholder="Select a setting to manage..." />
                         </SelectTrigger>
@@ -83,28 +99,28 @@ export default function StoreSettingsPage() {
                 )}
 
                 <TabsContent value="store_packages">
-                   <StorePackagesSettings store={activeStore} />
+                   {mountedTabs.has("store_packages") && <StorePackagesSettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="refills">
-                   <StoreRefillsSettings store={activeStore} />
+                   {mountedTabs.has("refills") && <StoreRefillsSettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="flavors">
-                   <StoreFlavorsSettings store={activeStore} />
+                   {mountedTabs.has("flavors") && <StoreFlavorsSettings store={activeStore} />}
                 </TabsContent>
                  <TabsContent value="schedules">
-                     <SchedulesSettings />
+                     {mountedTabs.has("schedules") && <SchedulesSettings />}
                  </TabsContent>
                  <TabsContent value="kitchen">
-                    <KitchenLocationsSettings store={activeStore} />
+                    {mountedTabs.has("kitchen") && <KitchenLocationsSettings store={activeStore} />}
                 </TabsContent>
                  <TabsContent value="tables">
-                    <TablesSettings store={activeStore} />
+                    {mountedTabs.has("tables") && <TablesSettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="forecast">
-                    <ForecastSettings store={activeStore} />
+                    {mountedTabs.has("forecast") && <ForecastSettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="loyalty">
-                    <LoyaltySettings store={activeStore} />
+                    {mountedTabs.has("loyalty") && <LoyaltySettings store={activeStore} />}
                 </TabsContent>
             </Tabs>
         </RoleGuard>
