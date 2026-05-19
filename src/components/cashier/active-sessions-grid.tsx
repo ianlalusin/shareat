@@ -32,6 +32,12 @@ export type ActiveSession = {
     isPaid?: boolean;
     guestCountChange?: { status?: string } | null;
     packageChange?: { status?: string } | null;
+    // Bill-line adjustment summary, maintained at write time by
+    // `recomputeSessionAdjustmentFlags`. Drives the badges below the title
+    // without needing a per-session sessionBillLines listener.
+    hasVoids?: boolean;
+    hasFree?: boolean;
+    hasDiscounts?: boolean;
 };
 
 const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
@@ -77,9 +83,7 @@ const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: 
     );
 };
 
-type AdjustmentFlags = Record<string, { hasVoids: boolean; hasFree: boolean; hasDiscounts: boolean }>;
-
-export function ActiveSessionsGrid({ sessions, storeId, adjustmentFlags = {} }: { sessions: ActiveSession[]; storeId: string; adjustmentFlags?: AdjustmentFlags }) {
+export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSession[]; storeId: string }) {
     const router = useRouter();
     const { appUser } = useAuthContext();
     const [voidingSession, setVoidingSession] = useState<ActiveSession | null>(null);
@@ -152,17 +156,17 @@ export function ActiveSessionsGrid({ sessions, storeId, adjustmentFlags = {} }: 
                                         <p className="text-sm font-medium">{guests} Guests</p>
                                     ): <div></div>}
                                     <div className="flex items-center gap-1">
-                                      {adjustmentFlags[session.id]?.hasVoids && (
+                                      {session.hasVoids && (
                                         <Badge variant="outline" className="border-red-400 bg-red-50 text-red-600 text-[10px] px-1.5 py-0 gap-0.5">
                                           <Scissors className="h-3 w-3" /> Void
                                         </Badge>
                                       )}
-                                      {adjustmentFlags[session.id]?.hasDiscounts && (
+                                      {session.hasDiscounts && (
                                         <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-600 text-[10px] px-1.5 py-0 gap-0.5">
                                           <Tag className="h-3 w-3" /> Disc
                                         </Badge>
                                       )}
-                                      {adjustmentFlags[session.id]?.hasFree && (
+                                      {session.hasFree && (
                                         <Badge variant="outline" className="border-green-400 bg-green-50 text-green-600 text-[10px] px-1.5 py-0 gap-0.5">
                                           <Gift className="h-3 w-3" /> Free
                                         </Badge>

@@ -837,6 +837,63 @@ export async function voidSession({
 }
 
 /**
+ * True if a bill-line patch could affect the void / free / discount summary
+ * flags on the activeSessions projection. Used to skip the recompute round
+ * trip for pure qty / price edits.
+ */
+function patchAffectsAdjustmentFlags(patch: Record<string, any>): boolean {
+  for (const key of Object.keys(patch)) {
+    if (key === "voidedQty" || key === "freeQty" || key === "discountQty" || key === "discountValue") return true;
+    if (key === "lineAdjustments" || key.startsWith("lineAdjustments.")) return true;
+  }
+  return false;
+}
+
+/**
+ * Reads every sessionBillLine for the session, recomputes the three summary
+ * booleans, and writes them onto the activeSessions/{sessionId} projection.
+ * Replaces the per-session sessionBillLines listener the cashier session-list
+ * used to fan out across every active session.
+ *
+ * Call this after any commit that may have changed a line's void / free /
+ * discount state. Safe no-op if the session is no longer in activeSessions
+ * (already paid / voided).
+ */
+export async function recomputeSessionAdjustmentFlags(
+  storeId: string,
+  sessionId: string,
+): Promise<void> {
+  if (!storeId || !sessionId) return;
+  try {
+    const linesRef = collection(db, "stores", storeId, "sessions", sessionId, "sessionBillLines");
+    const linesSnap = await getDocs(linesRef);
+
+    let hasVoids = false;
+    let hasFree = false;
+    let hasDiscounts = false;
+    linesSnap.forEach((d) => {
+      const data = d.data() as any;
+      if ((data.voidedQty ?? 0) > 0) hasVoids = true;
+      if ((data.freeQty ?? 0) > 0) hasFree = true;
+      if ((data.discountQty ?? 0) > 0 || (data.discountValue ?? 0) > 0) hasDiscounts = true;
+      const adjs = data.lineAdjustments ?? {};
+      for (const adj of Object.values(adjs) as any[]) {
+        if (adj?.kind === "discount") hasDiscounts = true;
+      }
+    });
+
+    const activeRef = doc(db, "stores", storeId, "activeSessions", sessionId);
+    await updateDoc(activeRef, { hasVoids, hasFree, hasDiscounts });
+  } catch (e: any) {
+    // updateDoc throws if the doc no longer exists in activeSessions (session
+    // was finalized in the same window). Badges are irrelevant in that case.
+    if (e?.code !== "not-found") {
+      console.warn("[recomputeSessionAdjustmentFlags] failed:", e);
+    }
+  }
+}
+
+/**
  * Updates a sessionBillLine document with new values.
  * Uses a transaction to ensure safe updates.
  */
@@ -866,6 +923,10 @@ export async function updateSessionBillLine(
   batch.update(lineRef, updatePayload);
   batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
   await batch.commit();
+
+  if (patchAffectsAdjustmentFlags(patch as Record<string, any>)) {
+    await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  }
 }
 
 export async function removeLineAdjustment(
@@ -894,6 +955,8 @@ export async function removeLineAdjustment(
   batch.update(lineRef, updatePayload);
   batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
   await batch.commit();
+
+  await recomputeSessionAdjustmentFlags(storeId, sessionId);
 }
 
 

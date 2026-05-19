@@ -9,7 +9,7 @@ import { useStoreContext } from "@/context/store-context";
 import { isDiscountDateActive } from "@/lib/collections/globalCollections";
 import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets } from "@/components/cashier/firestore";
+import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets, recomputeSessionAdjustmentFlags } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
@@ -237,6 +237,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             }
         });
 
+        // Refresh adjustment-flag projection if the edit could have changed
+        // void/free/discount state. Read by the cashier session-list badges.
+        const flagFieldsTouched =
+          "voidedQty" in after ||
+          "freeQty" in after ||
+          "discountQty" in after ||
+          "discountValue" in after;
+        if (flagFieldsTouched) {
+          await recomputeSessionAdjustmentFlags(storeId, sessionId);
+        }
+
         // Logging and UI feedback outside the transaction
         const line = billLines.find(l => l.id === lineId);
         if (!line) return;
@@ -349,7 +360,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         });
         await batch.commit();
         toast({ title: 'Adjustment Added'});
-        
+
+        if (adj.kind === "discount") {
+          await recomputeSessionAdjustmentFlags(storeId, sessionId);
+        }
+
         if (adj.kind === 'discount') {
             const line = billLines.find(l => l.id === lineId);
             if(line) {

@@ -15,6 +15,7 @@ import { ArrowRight, Check, X, Package, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { writeActivityLog } from "@/components/cashier/activity-log";
+import { recomputeSessionAdjustmentFlags } from "@/components/cashier/firestore";
 
 type ChangeRequest = {
   sessionId: string;
@@ -206,6 +207,11 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 });
 
                 await batch.commit();
+
+                // Old package line (which may have had voids/free/discounts) was
+                // replaced with a fresh zero-state line. Reconverge the
+                // activeSessions badge flags.
+                await recomputeSessionAdjustmentFlags(storeId, sessionDoc.id);
             },
             onReject: async () => {
               const batch = writeBatch(db);
