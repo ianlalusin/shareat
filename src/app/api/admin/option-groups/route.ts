@@ -92,10 +92,22 @@ export async function POST(req: Request) {
     const v = validate(body);
     if (!v.ok) return bad(v.error, 400);
 
+    // Strip undefined fields so Firestore accepts the write. For single-select
+    // groups, minSelections / maxSelections are deliberately omitted.
+    const payload: Record<string, any> = {
+      name: v.data.name,
+      selectionMode: v.data.selectionMode,
+      required: v.data.required,
+      values: v.data.values,
+      isActive: v.data.isActive,
+    };
+    if (v.data.minSelections != null) payload.minSelections = v.data.minSelections;
+    if (v.data.maxSelections != null) payload.maxSelections = v.data.maxSelections;
+
     const ref = db.collection("optionGroups").doc();
     await ref.set({
       id: ref.id,
-      ...v.data,
+      ...payload,
       isArchived: false,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
