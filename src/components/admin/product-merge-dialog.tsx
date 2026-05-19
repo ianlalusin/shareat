@@ -163,8 +163,8 @@ export function ProductMergeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="p-6 pb-2 border-b">
           <DialogTitle>Merge into family</DialogTitle>
           <DialogDescription>
             Turn {selected.length} selected products into one family. The family parent groups them together for display
@@ -172,7 +172,7 @@ export function ProductMergeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 overflow-y-auto px-6 py-4 flex-1 min-h-0">
           <div>
             <Label className="text-sm">Mode</Label>
             <RadioGroup value={mode} onValueChange={(v) => setMode(v as Mode)} className="mt-1 grid gap-2">
@@ -303,7 +303,7 @@ export function ProductMergeDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="p-6 pt-3 border-t">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
