@@ -13,7 +13,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw, Archive, ArchiveRestore } from "lucide-react";
 import { getAuth } from "firebase/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -99,7 +99,7 @@ export default function ProductManagementPage() {
     return () => unsubscribe();
   }, [appUser, toast]);
 
-  const groupedAndSortedProducts = useMemo(() => {
+  const { groupedAndSortedProducts, archivedRows } = useMemo(() => {
     const filteredProducts = debouncedSearchTerm
       ? products.filter(p =>
           getDisplayName(p).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
@@ -107,11 +107,19 @@ export default function ProductManagementPage() {
         )
       : products;
 
-    // Partition into families. Variants whose parent isn't in the visible set
-    // (filtered out or missing) become "orphans" rendered flat with a warning.
-    const filteredIds = new Set(filteredProducts.map((p) => p.id));
+    // Split archived from live FIRST. Archived items live in their own section
+    // pinned to the bottom of the page; live items go through the normal
+    // sub-category + family grouping below.
+    const liveProducts = filteredProducts.filter((p) => p.isArchived !== true);
+    const archivedProducts = filteredProducts.filter((p) => p.isArchived === true);
+
+    // ---- Live partitioning -------------------------------------------------
+    // Partition into families. Variants whose parent isn't in the live set
+    // (filtered out, missing, or archived) become "orphans" rendered flat with
+    // a warning.
+    const liveIds = new Set(liveProducts.map((p) => p.id));
     const variantsByGroupId = new Map<string, Product[]>();
-    for (const p of filteredProducts) {
+    for (const p of liveProducts) {
       if (getKind(p) === "variant" && p.groupId) {
         const arr = variantsByGroupId.get(p.groupId) || [];
         arr.push(p);
@@ -119,15 +127,13 @@ export default function ProductManagementPage() {
       }
     }
 
-    // Top-level rows are: groups + singletons + orphan variants (whose group isn't visible).
-    // Each entry's subCategory determines which section it falls under.
     type TopLevelRow =
       | { kind: "group"; product: Product; variants: Product[] }
       | { kind: "single"; product: Product }
       | { kind: "orphan"; product: Product };
 
     const topLevel: TopLevelRow[] = [];
-    for (const p of filteredProducts) {
+    for (const p of liveProducts) {
       const k = getKind(p);
       if (k === "group") {
         const variants = (variantsByGroupId.get(p.id) || []).slice().sort((a, b) =>
@@ -137,11 +143,10 @@ export default function ProductManagementPage() {
       } else if (k === "single") {
         topLevel.push({ kind: "single", product: p });
       } else if (k === "variant") {
-        const parentVisible = p.groupId && filteredIds.has(p.groupId);
+        const parentVisible = p.groupId && liveIds.has(p.groupId);
         if (!parentVisible) {
           topLevel.push({ kind: "orphan", product: p });
         }
-        // visible-parent variants are rendered nested under their group, NOT at top level
       }
     }
 
@@ -158,11 +163,43 @@ export default function ProductManagementPage() {
       );
     }
 
-    return Object.keys(grouped).sort().reduce((acc, subCategory) => {
+    const sortedGrouped = Object.keys(grouped).sort().reduce((acc, subCategory) => {
       acc[subCategory] = grouped[subCategory];
       return acc;
     }, {} as Record<string, TopLevelRow[]>);
 
+    // ---- Archived rows (pinned bottom) -------------------------------------
+    // Family parents render with their archived variants nested; archived
+    // variants whose parent isn't archived render flat in the archived list.
+    const archivedById = new Set(archivedProducts.map((p) => p.id));
+    const archivedVariantsByGroup = new Map<string, Product[]>();
+    for (const p of archivedProducts) {
+      if (getKind(p) === "variant" && p.groupId) {
+        const arr = archivedVariantsByGroup.get(p.groupId) || [];
+        arr.push(p);
+        archivedVariantsByGroup.set(p.groupId, arr);
+      }
+    }
+    const archivedTopLevel: TopLevelRow[] = [];
+    for (const p of archivedProducts) {
+      const k = getKind(p);
+      if (k === "group") {
+        const variants = (archivedVariantsByGroup.get(p.id) || []).slice().sort((a, b) =>
+          getDisplayName(a).localeCompare(getDisplayName(b))
+        );
+        archivedTopLevel.push({ kind: "group", product: p, variants });
+      } else if (k === "single") {
+        archivedTopLevel.push({ kind: "single", product: p });
+      } else if (k === "variant") {
+        const parentAlsoArchived = p.groupId && archivedById.has(p.groupId);
+        if (!parentAlsoArchived) archivedTopLevel.push({ kind: "orphan", product: p });
+      }
+    }
+    archivedTopLevel.sort((a, b) =>
+      getDisplayName(a.product).localeCompare(getDisplayName(b.product))
+    );
+
+    return { groupedAndSortedProducts: sortedGrouped, archivedRows: archivedTopLevel };
   }, [products, debouncedSearchTerm]);
 
   type TopLevelRow =
@@ -313,45 +350,95 @@ export default function ProductManagementPage() {
     handleOpenDialog(product);
   };
   
+  /**
+   * Soft-archive a product (and cascade to its variants when it's a family
+   * parent). Auto-deactivates so the cashier inventory picker stops surfacing
+   * it. Archived products move into the pinned "Archived" group at the bottom
+   * of the page and can be restored from there.
+   */
   const handleDeleteProduct = async (product: Product) => {
-    // This is the key change: ensure the details modal is closed
-    // so its overlay doesn't interfere with the confirmation dialog.
     setSelectedProduct(null);
-    
+
     if (!appUser?.isPlatformAdmin) {
       toast({ variant: "destructive", title: "Permission Denied" });
       return;
     }
-    
-    const isGroup = getKind(product) === 'group';
+
+    const isGroup = getKind(product) === "group";
     const confirmed = await confirm({
-      title: `Permanently Delete ${getDisplayName(product)}?`,
-      description: isGroup 
-        ? "This action is irreversible and will also delete all of its variants. This cannot be undone."
-        : "This action is irreversible and cannot be undone.",
-      confirmText: "Yes, Delete Permanently",
+      title: `Archive ${getDisplayName(product)}?`,
+      description: isGroup
+        ? "The family and all of its variants will be archived and deactivated. They'll move to the Archived section at the bottom of the page. You can restore them from there."
+        : "This product will be archived and deactivated. It will move to the Archived section at the bottom of the page. You can restore it from there.",
+      confirmText: "Archive",
       destructive: true,
     });
-  
+
     if (!confirmed) return;
-  
+
     setIsSubmitting(true);
     try {
       const batch = writeBatch(db);
-  
+
       if (isGroup) {
         const variantsQuery = query(collection(db, "products"), where("groupId", "==", product.id));
         const variantsSnap = await getDocs(variantsQuery);
-        variantsSnap.forEach(doc => batch.delete(doc.ref));
+        variantsSnap.forEach((d) =>
+          batch.update(d.ref, { isArchived: true, isActive: false, updatedAt: serverTimestamp() })
+        );
       }
-  
-      batch.delete(doc(db, "products", product.id));
-      
+
+      batch.update(doc(db, "products", product.id), {
+        isArchived: true,
+        isActive: false,
+        updatedAt: serverTimestamp(),
+      });
+
       await batch.commit();
-      
-      toast({ title: "Product Deleted", description: `${getDisplayName(product)} and its data have been removed.` });
+
+      toast({
+        title: "Archived",
+        description: `${getDisplayName(product)} ${isGroup ? "and its variants " : ""}moved to Archived.`,
+      });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Delete Failed", description: error.message });
+      toast({ variant: "destructive", title: "Archive Failed", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * Restore a previously-archived product. Does NOT auto-reactivate — operator
+   * decides when to flip isActive back on, in case the item shouldn't go live
+   * the moment it's unarchived.
+   */
+  const handleRestoreProduct = async (product: Product) => {
+    if (!appUser?.isPlatformAdmin) {
+      toast({ variant: "destructive", title: "Permission Denied" });
+      return;
+    }
+    const isGroup = getKind(product) === "group";
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      if (isGroup) {
+        const variantsQuery = query(collection(db, "products"), where("groupId", "==", product.id));
+        const variantsSnap = await getDocs(variantsQuery);
+        variantsSnap.forEach((d) =>
+          batch.update(d.ref, { isArchived: false, updatedAt: serverTimestamp() })
+        );
+      }
+      batch.update(doc(db, "products", product.id), {
+        isArchived: false,
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      toast({
+        title: "Restored",
+        description: `${getDisplayName(product)} restored. Activate it manually when ready.`,
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Restore Failed", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -526,7 +613,7 @@ export default function ProductManagementPage() {
             <div className="flex justify-center items-center h-40">
               <Loader className="animate-spin" />
             </div>
-          ) : Object.keys(groupedAndSortedProducts).length > 0 ? (
+          ) : Object.keys(groupedAndSortedProducts).length > 0 || archivedRows.length > 0 ? (
             <Table>
                 {Object.entries(groupedAndSortedProducts).map(([subCategory, rows]) => (
                     <React.Fragment key={subCategory}>
@@ -617,9 +704,21 @@ export default function ProductManagementPage() {
                                                   size="sm"
                                                   onClick={(e) => { e.stopPropagation(); handleToggleActive(p);}}
                                                   disabled={isSubmitting}
+                                                  className="mr-2"
                                               >
                                                   {p.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
                                                   {p.isActive ? "Deactivate" : "Activate"}
+                                              </Button>
+                                            )}
+                                            {appUser?.isPlatformAdmin && (
+                                              <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleDeleteProduct(p); }}
+                                                  disabled={isSubmitting}
+                                                  title={isGroup ? "Archive family and all variants" : "Archive product"}
+                                              >
+                                                  <Archive className="mr-2 h-4 w-4" /> Archive
                                               </Button>
                                             )}
                                         </TableCell>
@@ -660,10 +759,22 @@ export default function ProductManagementPage() {
                                                 size="sm"
                                                 onClick={(e) => { e.stopPropagation(); handleToggleActive(v);}}
                                                 disabled={isSubmitting}
+                                                className="mr-2"
                                             >
                                                 {v.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
                                                 {v.isActive ? "Deactivate" : "Activate"}
                                             </Button>
+                                            {appUser?.isPlatformAdmin && (
+                                              <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleDeleteProduct(v); }}
+                                                  disabled={isSubmitting}
+                                                  title="Archive this variant"
+                                              >
+                                                  <Archive className="mr-2 h-4 w-4" /> Archive
+                                              </Button>
+                                            )}
                                         </TableCell>
                                       </TableRow>
                                     ))}
@@ -673,6 +784,140 @@ export default function ProductManagementPage() {
                         </TableBody>
                     </React.Fragment>
                 ))}
+                {archivedRows.length > 0 && (
+                  <React.Fragment key="__archived__">
+                    <TableHeader className="bg-muted/40">
+                      <TableRow>
+                        <TableHead colSpan={8} className="text-lg font-semibold text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <Archive className="h-4 w-4" />
+                            Archived
+                            <Badge variant="secondary" className="text-xs">{archivedRows.length}</Badge>
+                          </div>
+                        </TableHead>
+                      </TableRow>
+                      <TableRow>
+                        <TableHead className="w-10"></TableHead>
+                        <TableHead className="w-10"></TableHead>
+                        <TableHead>Image</TableHead>
+                        <TableHead>Product Name</TableHead>
+                        <TableHead>UOM</TableHead>
+                        <TableHead>Barcode</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {archivedRows.map((row) => {
+                        const p = row.product;
+                        const isGroup = row.kind === "group";
+                        const isOrphan = row.kind === "orphan";
+                        const expanded = expandedGroupIds.has(p.id);
+                        return (
+                          <React.Fragment key={p.id}>
+                            <TableRow onClick={() => setSelectedProduct(p)} className="cursor-pointer opacity-70">
+                              <TableCell className="w-10"></TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                {isGroup ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => toggleExpanded(p.id)}
+                                    aria-label={expanded ? "Collapse family" : "Expand family"}
+                                  >
+                                    {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>
+                                <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                  {p.imageUrl ? (
+                                    <Image src={p.imageUrl} alt={p.name} fill style={{ objectFit: "cover" }} className="rounded-md grayscale" />
+                                  ) : (
+                                    <Package className="h-6 w-6 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <span className="line-through decoration-muted-foreground/60">{getDisplayName(p)}</span>
+                                  {isGroup && (
+                                    <Badge variant="outline" className="text-xs">Family · {row.variants.length}</Badge>
+                                  )}
+                                  {isOrphan && (
+                                    <Badge variant="destructive" className="text-xs gap-1">
+                                      <AlertTriangle className="h-3 w-3" /> Orphan variant
+                                    </Badge>
+                                  )}
+                                  {p.subCategory && (
+                                    <Badge variant="outline" className="text-xs text-muted-foreground">{p.subCategory}</Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>{p.uom}</TableCell>
+                              <TableCell>{p.barcode || '—'}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">Archived</Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {appUser?.isPlatformAdmin && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleRestoreProduct(p); }}
+                                    disabled={isSubmitting}
+                                    title={isGroup ? "Restore family and all variants" : "Restore product"}
+                                  >
+                                    <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {isGroup && expanded && row.variants.map((v) => (
+                              <TableRow key={v.id} onClick={() => setSelectedProduct(v)} className="cursor-pointer bg-muted/20 opacity-70">
+                                <TableCell className="w-10"></TableCell>
+                                <TableCell className="w-10"></TableCell>
+                                <TableCell>
+                                  <div className="ml-6 w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                    {v.imageUrl ? (
+                                      <Image src={v.imageUrl} alt={v.name} fill style={{ objectFit: "cover" }} className="rounded-md grayscale" />
+                                    ) : (
+                                      <Package className="h-5 w-5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-medium pl-6 text-sm">
+                                  <span className="line-through decoration-muted-foreground/60">
+                                    ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                  </span>
+                                </TableCell>
+                                <TableCell>{v.uom}</TableCell>
+                                <TableCell>{v.barcode || '—'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">Archived</Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {appUser?.isPlatformAdmin && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={(e) => { e.stopPropagation(); handleRestoreProduct(v); }}
+                                      disabled={isSubmitting}
+                                      title="Restore this variant"
+                                    >
+                                      <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </React.Fragment>
+                )}
             </Table>
           ) : (
             <p className="text-center text-muted-foreground py-8">{searchTerm ? `No products found for "${searchTerm}".` : 'No products found. Click "New Product" to add one.'}</p>

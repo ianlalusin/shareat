@@ -55,6 +55,13 @@ export type Product = {
   barcode?: string;
   imageUrl?: string;
   isActive: boolean;
+  /**
+   * Soft-deleted. Archiving auto-deactivates the product and pins it into the
+   * bottom-most "Archived" group on /admin/menu/products. Archived products
+   * never appear in the cashier addon picker. Restoring clears both flags via
+   * the restore action.
+   */
+  isArchived?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
