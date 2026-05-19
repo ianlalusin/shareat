@@ -110,9 +110,15 @@ function POSContent({
   const { appUser } = useAuthContext();
   const { toast } = useToast();
 
-  const { storeAddons, storeAddonsLoading, refreshStoreAddons } = useStoreContext();
+  const { storeAddons, storeAddonsLoading, refreshStoreAddons, enableStoreAddons } = useStoreContext();
   const addons = storeAddons as unknown as EnrichedStoreAddon[];
   const isLoading = storeAddonsLoading;
+
+  // Opt the session into the addons subscription on first mount of the picker.
+  // Idempotent. Devices that never mount this picker never subscribe.
+  useEffect(() => {
+    enableStoreAddons();
+  }, [enableStoreAddons]);
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");

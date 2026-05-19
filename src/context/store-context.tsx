@@ -18,6 +18,14 @@ type StoreContextValue = {
   storeAddons: any[];
   storeAddonsLoading: boolean;
   refreshStoreAddons: () => void;
+  /**
+   * Idempotent. Call from a consumer (e.g. AddonsPOSModal) on mount to opt in
+   * to the store's inventory/addons subscription. Devices that never open the
+   * addons picker (kitchen, dashboard, settings) avoid the initial 100+ doc
+   * read entirely. Once enabled, the subscription persists for the session so
+   * repeated modal opens stay instant.
+   */
+  enableStoreAddons: () => void;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -28,9 +36,12 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   const [activeStore, setActiveStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // New state for store-specific addons
+  // Store-specific addons — lazy. The subscription stays dormant until a
+  // consumer calls `enableStoreAddons()` (typically the cashier addon picker
+  // on first mount), then persists for the rest of the session.
   const [storeAddons, setStoreAddons] = useState<any[]>([]);
-  const [storeAddonsLoading, setStoreAddonsLoading] = useState(true);
+  const [storeAddonsLoading, setStoreAddonsLoading] = useState(false);
+  const [addonsEnabled, setAddonsEnabled] = useState(false);
 
   const isPlatformAdmin = useMemo(() => appUser?.isPlatformAdmin === true, [appUser]);
 
@@ -120,9 +131,9 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
     const addonsRef = collection(db, "stores", activeStore.id, "inventory");
     const q = query(addonsRef, where("isAddon", "==", true), where("isActive", "==", true));
-    
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-        const addonsData = snapshot.docs.map(doc => ({ 
+        const addonsData = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
             displayName: getDisplayName(doc.data() as any),
@@ -142,9 +153,14 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
 
 
   useEffect(() => {
+      if (!addonsEnabled) return;
       const unsub = fetchStoreAddons();
       return () => { unsub(); }
-  }, [fetchStoreAddons])
+  }, [addonsEnabled, fetchStoreAddons])
+
+  const enableStoreAddons = useCallback(() => {
+      setAddonsEnabled((prev) => prev || true);
+  }, []);
 
   const setActiveStoreById = useCallback(
     async (storeId: string) => {
@@ -166,8 +182,9 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       storeAddons,
       storeAddonsLoading,
       refreshStoreAddons: fetchStoreAddons,
+      enableStoreAddons,
     }),
-    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, fetchStoreAddons]
+    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, fetchStoreAddons, enableStoreAddons]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
