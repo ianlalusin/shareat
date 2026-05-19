@@ -26,6 +26,7 @@ import { allowsDecimalQty } from "@/lib/uom";
 import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
 import { ModifierPicker, type PickerResult } from "../cashier/modifier-picker";
+import { FamilyOrderModal, type FamilyOrderAddArgs } from "../cashier/family-order-modal";
 import { getAuth } from "firebase/auth";
 
 interface AddonsPOSModalProps {
@@ -86,40 +87,8 @@ function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: A
   );
 }
 
-function VariantPicker({
-  group,
-  open,
-  onOpenChange,
-  onSelectVariant,
-}: {
-  group: AddonGroup | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSelectVariant: (addon: EnrichedStoreAddon) => void;
-}) {
-  if (!group) return null;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Select Variant: {group.title}</DialogTitle>
-        </DialogHeader>
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 py-4">
-          {group.items.map((addon) => (
-            <AddonItem
-              key={addon.id}
-              addon={addon}
-              onSelect={() => {
-                onSelectVariant(addon);
-                onOpenChange(false);
-              }}
-            />
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// The old VariantPicker is replaced by FamilyOrderModal which handles
+// variant pick + modifier pick + qty + Add Item in one combined modal.
 
 function POSContent({
   storeId,
@@ -152,11 +121,15 @@ function POSContent({
   const [quantity, setQuantity] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
-  const [isVariantPickerOpen, setIsVariantPickerOpen] = useState(false);
+  // Combined family flow (replaces the old VariantPicker → AddonsPOSModal flow).
+  // When the cashier clicks a family tile, this modal opens layered over the
+  // main addons modal; it handles variant lock + modifier picks + qty + Add
+  // Item all in one place. Cancelling it returns the cashier to the main grid.
+  const [familyOrderGroup, setFamilyOrderGroup] = useState<AddonGroup | null>(null);
+  const [familyOrderOpen, setFamilyOrderOpen] = useState(false);
 
-  // Modifier picker (Phase 2). Opens after "Add to Order" if the selected
-  // addon's underlying Product has any active option groups attached.
+  // Modifier picker for the SINGLETON flow only. Opens after "Add to Order"
+  // when a non-family addon has option groups attached.
   const [modifierPickerOpen, setModifierPickerOpen] = useState(false);
   const [pendingOptionGroups, setPendingOptionGroups] = useState<OptionGroup[]>([]);
   const [loadingOptionGroups, setLoadingOptionGroups] = useState(false);
@@ -203,15 +176,19 @@ function POSContent({
     setQuantity(1);
   };
 
+  // Click on a family tile opens the combined FamilyOrderModal which handles
+  // variant pick + modifier pick + qty + Add Item all in one place. The main
+  // addons modal stays open behind it so the cashier can add more after.
   const handleSelectGroup = (group: AddonGroup) => {
-    setVariantPickerGroup(group);
-    setIsVariantPickerOpen(true);
+    setFamilyOrderGroup(group);
+    setFamilyOrderOpen(true);
   };
 
   /**
-   * Step 1 of adding an addon: validate, check whether the underlying Product
-   * has any option groups. If yes, open the modifier picker; otherwise jump
-   * straight to performAdd() with no modifiers.
+   * Step 1 of adding a SINGLETON addon (non-family path): validate, check
+   * whether the underlying Product has any option groups. If yes, open the
+   * modifier picker; otherwise jump straight to performAdd() with no modifiers.
+   * Family items skip this entirely — FamilyOrderModal does it all in one go.
    */
   const handleAddToOrder = async () => {
     if (sessionIsLocked) {
@@ -267,18 +244,25 @@ function POSContent({
   };
 
   /**
-   * Step 2: write the bill line and kitchen ticket, optionally with modifiers.
+   * Writes the bill line and kitchen ticket, optionally with modifiers.
+   * Called by:
+   *  - the singleton path (uses `selectedAddon` + `quantity` state)
+   *  - the FamilyOrderModal callback (passes its own `override` with the
+   *    locked variant and chosen quantity)
    * Modifiers contribute their priceDelta to the per-unit price and are stored
    * structurally (for analytics) plus as modifiersText (for KDS/receipt).
    */
   const performAdd = async (
     modifiers: SelectedModifier[],
     modifiersText: string,
-    modifiersTotal: number
+    modifiersTotal: number,
+    override?: { addon: EnrichedStoreAddon; qty: number }
   ) => {
-    if (!appUser || !storeId || !session?.id || !selectedAddon) return;
+    const addon = override?.addon ?? selectedAddon;
+    const qty = override?.qty ?? quantity;
+    if (!appUser || !storeId || !session?.id || !addon) return;
 
-    const unitPriceNum = Number((selectedAddon as any).sellingPrice);
+    const unitPriceNum = Number((addon as any).sellingPrice);
     const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
     const effectiveUnitPrice = safeUnitPrice + (modifiersTotal || 0);
 
@@ -290,8 +274,8 @@ function POSContent({
         ? modifiers.map((m) => m.valueId).sort().join("-")
         : "";
       const lineId = modHash
-        ? `addon_${selectedAddon.id}_${safeUnitPrice}_${modHash}`
-        : `addon_${selectedAddon.id}_${safeUnitPrice}`;
+        ? `addon_${addon.id}_${safeUnitPrice}_${modHash}`
+        : `addon_${addon.id}_${safeUnitPrice}`;
       const actor = getActorStamp(appUser);
 
       await runTransaction(db, async (tx) => {
@@ -301,7 +285,7 @@ function POSContent({
 
         if (lineSnap.exists()) {
           tx.update(lineRef, {
-            qtyOrdered: increment(quantity),
+            qtyOrdered: increment(qty),
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
@@ -310,12 +294,12 @@ function POSContent({
           const newLinePayload = stripUndefined({
             id: lineId,
             type: "addon",
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            category: selectedAddon.subCategory ?? null,
-            barcode: selectedAddon.barcode ?? null,
+            itemId: addon.id,
+            itemName: addon.displayName,
+            category: addon.subCategory ?? null,
+            barcode: addon.barcode ?? null,
             unitPrice: safeUnitPrice,
-            qtyOrdered: quantity,
+            qtyOrdered: qty,
             discountType: null,
             discountValue: 0,
             discountQty: 0,
@@ -325,8 +309,8 @@ function POSContent({
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
-            kitchenLocationId: selectedAddon.kitchenLocationId,
-            kitchenLocationName: selectedAddon.kitchenLocationName,
+            kitchenLocationId: addon.kitchenLocationId,
+            kitchenLocationName: addon.kitchenLocationName,
             modifiers: modifiers.length ? modifiers : null,
             modifiersText: modifiersText || null,
             modifiersTotal: modifiers.length ? modifiersTotal : null,
@@ -341,13 +325,13 @@ function POSContent({
           session,
           "addon",
           {
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            kitchenLocationId: selectedAddon.kitchenLocationId!,
-            kitchenLocationName: selectedAddon.kitchenLocationName,
+            itemId: addon.id,
+            itemName: addon.displayName,
+            kitchenLocationId: addon.kitchenLocationId!,
+            kitchenLocationName: addon.kitchenLocationName,
             billLineId: lineId,
           },
-          quantity,
+          qty,
           actor,
           { tx },
           modifiersText || undefined,
@@ -363,12 +347,12 @@ function POSContent({
         const newLine: SessionBillLine = {
           id: lineId,
           type: "addon",
-          itemId: selectedAddon.id,
-          itemName: selectedAddon.displayName,
-          category: selectedAddon.subCategory ?? null,
-          barcode: selectedAddon.barcode ?? null,
+          itemId: addon.id,
+          itemName: addon.displayName,
+          category: addon.subCategory ?? null,
+          barcode: addon.barcode ?? null,
           unitPrice: safeUnitPrice,
-          qtyOrdered: quantity,
+          qtyOrdered: qty,
           discountType: null,
           discountValue: 0,
           discountQty: 0,
@@ -376,8 +360,8 @@ function POSContent({
           voidedQty: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
-          kitchenLocationId: selectedAddon.kitchenLocationId,
-          kitchenLocationName: selectedAddon.kitchenLocationName,
+          kitchenLocationId: addon.kitchenLocationId,
+          kitchenLocationName: addon.kitchenLocationName,
           modifiers: modifiers.length ? modifiers : undefined,
           modifiersText: modifiersText || undefined,
           modifiersTotal: modifiers.length ? modifiersTotal : undefined,
@@ -391,14 +375,18 @@ function POSContent({
         storeId,
         sessionId: session.id,
         user: appUser,
-        meta: { itemName: selectedAddon.displayName, qty: quantity, amount: effectiveUnitPrice * quantity },
-        note: `Addon: ${selectedAddon.displayName}${noteSuffix} x${quantity}`,
+        meta: { itemName: addon.displayName, qty, amount: effectiveUnitPrice * qty },
+        note: `Addon: ${addon.displayName}${noteSuffix} x${qty}`,
         serverProfile,
       });
-      toast({ title: "Added", description: `${selectedAddon.displayName}${noteSuffix} x${quantity} added.` });
-      setSelectedAddon(null);
-      setQuantity(1);
-      setPendingOptionGroups([]);
+      toast({ title: "Added", description: `${addon.displayName}${noteSuffix} x${qty} added.` });
+      // Only reset singleton-flow state. Family flow callers passed their own
+      // state and don't depend on these resets.
+      if (!override) {
+        setSelectedAddon(null);
+        setQuantity(1);
+        setPendingOptionGroups([]);
+      }
     } catch (e: any) {
       console.error("[AddonsPOSModal] add failed:", e);
       toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order. " + e.message });
@@ -413,11 +401,16 @@ function POSContent({
 
   return (
     <>
-      <VariantPicker
-        group={variantPickerGroup}
-        open={isVariantPickerOpen}
-        onOpenChange={setIsVariantPickerOpen}
-        onSelectVariant={(addon) => handleSelectAddon(addon)}
+      <FamilyOrderModal
+        open={familyOrderOpen}
+        onOpenChange={setFamilyOrderOpen}
+        group={familyOrderGroup}
+        onAdd={async (args: FamilyOrderAddArgs) => {
+          await performAdd(args.modifiers, args.modifiersText, args.modifiersTotal, {
+            addon: args.variant,
+            qty: args.quantity,
+          });
+        }}
       />
 
       {modifierPickerOpen && selectedAddon && (
