@@ -191,6 +191,9 @@ export default function ProductManagementPage() {
     // those live on each child variant SKU. We force them blank to avoid stale
     // data lingering on a product that was just toggled into group mode.
     const isGroup = productData.hasVariants;
+    const optionGroupIds = Array.isArray((productData as any).optionGroupIds)
+      ? ((productData as any).optionGroupIds as string[]).filter((v) => typeof v === "string" && v.length > 0)
+      : [];
     const dataToSave: Partial<Product> = {
         name: productData.name,
         isActive: productData.isActive,
@@ -202,6 +205,7 @@ export default function ProductManagementPage() {
         subCategory: productData.subCategory || "Uncategorized",
         kind: isGroup ? "group" : "single",
         isSku: !isGroup,
+        optionGroupIds,
     };
 
     try {

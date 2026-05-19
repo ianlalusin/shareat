@@ -43,6 +43,12 @@ export type Product = {
   variantLabel?: string | null;
   isSku?: boolean;
 
+  // Modifier / option group references. Order at attach time; the cashier
+  // and the customer modifier pickers iterate in this order. For variants
+  // (kind: "variant"), modifiers are inherited from the parent group product;
+  // per-variant overrides are not supported in this phase.
+  optionGroupIds?: string[];
+
   category: string;
   subCategory?: string;
   uom: string;
@@ -51,6 +57,45 @@ export type Product = {
   isActive: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+};
+
+/**
+ * A reusable, global option group attached to one or more Products.
+ * At order time the cashier and customer modifier pickers iterate the
+ * groups attached to the chosen product and let the user pick from each
+ * group's `values`. Selected values become `modifiers[]` on the bill line
+ * and kitchen ticket, each contributing its `priceDelta` to the line total.
+ *
+ * Examples:
+ *   { name: "Cheese", selectionMode: "multi", values: [
+ *     { name: "Extra Cheese", priceDelta: 20 },
+ *     { name: "No Cheese", priceDelta: 0 },
+ *   ]}
+ *   { name: "Size", selectionMode: "single", required: true, values: [
+ *     { name: "Small", priceDelta: 0 },
+ *     { name: "Large", priceDelta: 40 },
+ *   ]}
+ */
+export type OptionGroupValue = {
+  id: string;            // stable; survives renames; used in receipts/analytics
+  name: string;
+  priceDelta: number;    // peso amount, signed; 0 is the default
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type OptionGroup = {
+  id: string;
+  name: string;
+  selectionMode: "single" | "multi";
+  required: boolean;       // single: must pick a value; multi: requires >= minSelections
+  minSelections?: number;  // multi only
+  maxSelections?: number;  // multi only; undefined = unlimited
+  values: OptionGroupValue[];
+  isActive: boolean;
+  isArchived?: boolean;
+  createdAt: any;
+  updatedAt: any;
 };
 
 export type InventoryItem = {

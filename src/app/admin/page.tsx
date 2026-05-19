@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2 } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -19,6 +19,7 @@ const menuTools = [
     { title: "Flavors", description: "Manage available flavor options.", href: "/admin/menu/flavors", icon: Sparkles },
     { title: "Refills", description: "Define and manage refillable items.", href: "/admin/menu/refills", icon: UtensilsCrossed },
     { title: "Packages", description: "Create and manage product packages.", href: "/admin/menu/packages", icon: Box },
+    { title: "Option Groups", description: "Reusable modifiers (Cheese, Size, etc.) that attach to products at order time.", href: "/admin/menu/option-groups", icon: Settings2 },
 ]
 
 const managerTools = [

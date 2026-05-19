@@ -45,6 +45,7 @@ const formSchema = z.object({
   uom: z.string().optional(),
   barcode: z.string().optional(),
   isActive: z.boolean().default(true),
+  optionGroupIds: z.array(z.string()).optional(),
 });
 
 export type ProductFormValues = z.infer<typeof formSchema> & {
@@ -128,10 +129,16 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [variants, setVariants] = useState<Product[]>([]);
   const [editingVariant, setEditingVariant] = useState<Product | null>(null);
   const [showVariantForm, setShowVariantForm] = useState(false);
+
+  // Option groups available to attach to this product. Loaded once when the
+  // dialog opens; the picker UI is a chip list inside the form.
+  const [availableOptionGroups, setAvailableOptionGroups] = useState<Array<{
+    id: string; name: string; selectionMode: "single" | "multi"; values: any[];
+  }>>([]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, },
+    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, optionGroupIds: [], },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
   
@@ -152,6 +159,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         uom: product ? normalizeUom(product.uom) : 'pcs',
         barcode: product?.barcode || "",
         isActive: product?.isActive ?? true,
+        optionGroupIds: (product as any)?.optionGroupIds || [],
       });
       setSubCategoryInput(product?.subCategory || "");
       setImageUrl(product?.imageUrl || null);
@@ -176,6 +184,33 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     });
     return () => unsubAddonCategories();
   }, []);
+
+  // Load reusable option groups whenever the dialog opens. Read-only fetch via
+  // the admin endpoint so this works regardless of Firestore-client rules.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getAuth } = await import("firebase/auth");
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/admin/option-groups", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && json?.ok) {
+          setAvailableOptionGroups(
+            (json.groups || []).filter((g: any) => g.isActive !== false && g.isArchived !== true)
+          );
+        }
+      } catch {
+        // silent — section just shows empty state
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
   const handleImageSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -332,6 +367,75 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                           </div>
                       </div>
                   )}
+
+                  <Separator />
+
+                  <FormField
+                    control={form.control}
+                    name="optionGroupIds"
+                    render={({ field }) => {
+                      const attached: string[] = Array.isArray(field.value) ? field.value : [];
+                      const attachedSet = new Set(attached);
+                      const unattached = availableOptionGroups.filter((g) => !attachedSet.has(g.id));
+                      return (
+                        <FormItem>
+                          <FormLabel>Option Groups (Modifiers)</FormLabel>
+                          <FormDescription className="text-xs">
+                            Reusable modifier groups applied at order time. When this product is added to a bill the cashier (and customer) will be prompted to pick from each attached group. For families, attach at the family parent — variants inherit automatically.
+                          </FormDescription>
+                          <div className="grid gap-2 mt-2">
+                            {attached.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No option groups attached.</p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {attached.map((id) => {
+                                  const g = availableOptionGroups.find((x) => x.id === id);
+                                  return (
+                                    <div key={id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium truncate">{g?.name ?? `(missing: ${id})`}</div>
+                                        {g && (
+                                          <div className="text-[11px] text-muted-foreground">
+                                            {g.selectionMode === "single" ? "Single-select" : "Multi-select"} · {(g.values || []).filter((v: any) => v.isActive).length} values
+                                          </div>
+                                        )}
+                                      </div>
+                                      <Button type="button" variant="ghost" size="sm" onClick={() => field.onChange(attached.filter((x) => x !== id))}>
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {unattached.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Attach:</div>
+                                <div className="flex flex-wrap gap-1">
+                                  {unattached.map((g) => (
+                                    <Badge
+                                      key={g.id}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-muted/40 text-[11px]"
+                                      onClick={() => field.onChange([...attached, g.id])}
+                                    >
+                                      + {g.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {availableOptionGroups.length === 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                No option groups defined yet. Create them at <code className="text-[11px]">/admin/menu/option-groups</code>.
+                              </p>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
                 </form>
               </Form>
             </div>
