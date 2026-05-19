@@ -178,12 +178,21 @@ export default function KitchenPage() {
         }
     }));
     
-    const flavorsRef = collection(db, "flavors");
-    unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
-        const newFlavorsMap = new Map<string, string>();
-        snapshot.docs.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => newFlavorsMap.set(docSnap.id, docSnap.data().name));
-        setFlavorsMap(newFlavorsMap);
-    }));
+    // Flavors are a global, admin-curated catalog that changes maybe once or
+    // twice a year. A live subscription on every kitchen device is overkill —
+    // do a single fetch at session start instead. If admin renames a flavor
+    // mid-shift, devices pick it up on the next reload.
+    void (async () => {
+        try {
+            const flavorsRef = collection(db, "flavors");
+            const snap = await getDocs(query(flavorsRef, where("isActive", "==", true)));
+            const newFlavorsMap = new Map<string, string>();
+            snap.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => newFlavorsMap.set(docSnap.id, docSnap.data().name));
+            setFlavorsMap(newFlavorsMap);
+        } catch (e) {
+            console.warn("[kitchen] failed to load flavors:", e);
+        }
+    })();
 
     const rtKdsTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets');
     unsubs.push(onSnapshot(rtKdsTicketsRef, (snapshot) => {
