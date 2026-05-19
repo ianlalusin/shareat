@@ -13,11 +13,13 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
+import { ProductMergeDialog } from "@/components/admin/product-merge-dialog";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
@@ -49,6 +51,36 @@ export default function ProductManagementPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  // Multi-row selection + merge state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedProducts = useMemo(
+    () => products.filter((p) => selectedIds.has(p.id)),
+    [products, selectedIds]
+  );
+
   useEffect(() => {
     if (!appUser) return;
 
@@ -74,28 +106,68 @@ export default function ProductManagementPage() {
         )
       : products;
 
-    const grouped = filteredProducts.reduce((acc, product) => {
-      const subCategory = product.subCategory || 'Uncategorized';
-
-      if (!acc[subCategory]) {
-        acc[subCategory] = [];
+    // Partition into families. Variants whose parent isn't in the visible set
+    // (filtered out or missing) become "orphans" rendered flat with a warning.
+    const filteredIds = new Set(filteredProducts.map((p) => p.id));
+    const variantsByGroupId = new Map<string, Product[]>();
+    for (const p of filteredProducts) {
+      if (getKind(p) === "variant" && p.groupId) {
+        const arr = variantsByGroupId.get(p.groupId) || [];
+        arr.push(p);
+        variantsByGroupId.set(p.groupId, arr);
       }
-      acc[subCategory].push(product);
-      return acc;
-    }, {} as Record<string, Product[]>);
-
-    // Sort products within each sub-category
-    for (const subCategory in grouped) {
-        grouped[subCategory].sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
     }
-    
-    // Sort subcategories
+
+    // Top-level rows are: groups + singletons + orphan variants (whose group isn't visible).
+    // Each entry's subCategory determines which section it falls under.
+    type TopLevelRow =
+      | { kind: "group"; product: Product; variants: Product[] }
+      | { kind: "single"; product: Product }
+      | { kind: "orphan"; product: Product };
+
+    const topLevel: TopLevelRow[] = [];
+    for (const p of filteredProducts) {
+      const k = getKind(p);
+      if (k === "group") {
+        const variants = (variantsByGroupId.get(p.id) || []).slice().sort((a, b) =>
+          getDisplayName(a).localeCompare(getDisplayName(b))
+        );
+        topLevel.push({ kind: "group", product: p, variants });
+      } else if (k === "single") {
+        topLevel.push({ kind: "single", product: p });
+      } else if (k === "variant") {
+        const parentVisible = p.groupId && filteredIds.has(p.groupId);
+        if (!parentVisible) {
+          topLevel.push({ kind: "orphan", product: p });
+        }
+        // visible-parent variants are rendered nested under their group, NOT at top level
+      }
+    }
+
+    const grouped = topLevel.reduce((acc, row) => {
+      const subCategory = row.product.subCategory || 'Uncategorized';
+      if (!acc[subCategory]) acc[subCategory] = [];
+      acc[subCategory].push(row);
+      return acc;
+    }, {} as Record<string, TopLevelRow[]>);
+
+    for (const subCategory in grouped) {
+      grouped[subCategory].sort((a, b) =>
+        getDisplayName(a.product).localeCompare(getDisplayName(b.product))
+      );
+    }
+
     return Object.keys(grouped).sort().reduce((acc, subCategory) => {
-        acc[subCategory] = grouped[subCategory];
-        return acc;
-    }, {} as Record<string, Product[]>);
+      acc[subCategory] = grouped[subCategory];
+      return acc;
+    }, {} as Record<string, TopLevelRow[]>);
 
   }, [products, debouncedSearchTerm]);
+
+  type TopLevelRow =
+    | { kind: "group"; product: Product; variants: Product[] }
+    | { kind: "single"; product: Product }
+    | { kind: "orphan"; product: Product };
 
 
   const handleOpenDialog = (product: Product | null = null) => {
@@ -370,10 +442,20 @@ export default function ProductManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={() => router.back()}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>
+            {selectedIds.size >= 2 && (
+              <Button onClick={() => setMergeDialogOpen(true)}>
+                <GitMerge className="mr-2 h-4 w-4" /> Merge Selected ({selectedIds.size})
+              </Button>
+            )}
+            {selectedIds.size > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear selection
+              </Button>
+            )}
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
             <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>
             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".xlsx, .xls, .csv" />
@@ -407,15 +489,17 @@ export default function ProductManagementPage() {
             </div>
           ) : Object.keys(groupedAndSortedProducts).length > 0 ? (
             <Table>
-                {Object.entries(groupedAndSortedProducts).map(([subCategory, items]) => (
+                {Object.entries(groupedAndSortedProducts).map(([subCategory, rows]) => (
                     <React.Fragment key={subCategory}>
                         <TableHeader className="bg-muted/50">
                             <TableRow>
-                                <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
+                                <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
                                     {subCategory}
                                 </TableHead>
                             </TableRow>
                             <TableRow>
+                                <TableHead className="w-10"></TableHead>
+                                <TableHead className="w-10"></TableHead>
                                 <TableHead>Image</TableHead>
                                 <TableHead>Product Name</TableHead>
                                 <TableHead>UOM</TableHead>
@@ -425,41 +509,128 @@ export default function ProductManagementPage() {
                             </TableRow>
                         </TableHeader>
                          <TableBody>
-                            {items.map((product) => (
-                                <TableRow key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
-                                    <TableCell>
-                                        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
-                                            {product.imageUrl ? (
-                                                <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md" />
-                                            ) : (
-                                                <Package className="h-6 w-6 text-muted-foreground"/>
+                            {rows.map((row) => {
+                                const p = row.product;
+                                const isGroup = row.kind === "group";
+                                const isOrphan = row.kind === "orphan";
+                                const expanded = expandedGroupIds.has(p.id);
+                                return (
+                                  <React.Fragment key={p.id}>
+                                    <TableRow onClick={() => setSelectedProduct(p)} className="cursor-pointer">
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            {!isGroup && (
+                                              <Checkbox
+                                                checked={selectedIds.has(p.id)}
+                                                onCheckedChange={() => toggleSelected(p.id)}
+                                                aria-label={`Select ${getDisplayName(p)}`}
+                                              />
                                             )}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="font-medium">{getDisplayName(product)}</TableCell>
-                                    <TableCell>{product.uom}</TableCell>
-                                    <TableCell>{product.barcode || '—'}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={product.isActive ? "default" : "secondary"}>
-                                            {product.isActive ? "Active" : "Inactive"}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(product); }} className="mr-2">
-                                        Edit
-                                    </Button>
-                                    <Button
-                                        variant={product.isActive ? "secondary" : "default"}
-                                        size="sm"
-                                        onClick={(e) => { e.stopPropagation(); handleToggleActive(product);}}
-                                        disabled={isSubmitting}
-                                    >
-                                        {product.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
-                                        {product.isActive ? "Deactivate" : "Activate"}
-                                    </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        </TableCell>
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            {isGroup ? (
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => toggleExpanded(p.id)}
+                                                aria-label={expanded ? "Collapse family" : "Expand family"}
+                                              >
+                                                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                              </Button>
+                                            ) : null}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                                {p.imageUrl ? (
+                                                    <Image src={p.imageUrl} alt={p.name} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                                ) : (
+                                                    <Package className="h-6 w-6 text-muted-foreground"/>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="font-medium">
+                                            <div className="flex items-center gap-2">
+                                                <span>{getDisplayName(p)}</span>
+                                                {isGroup && (
+                                                  <Badge variant="outline" className="text-xs">Family · {row.variants.length}</Badge>
+                                                )}
+                                                {isOrphan && (
+                                                  <Badge variant="destructive" className="text-xs gap-1">
+                                                    <AlertTriangle className="h-3 w-3" /> Orphan variant
+                                                  </Badge>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>{p.uom}</TableCell>
+                                        <TableCell>{p.barcode || '—'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={p.isActive ? "default" : "secondary"}>
+                                                {p.isActive ? "Active" : "Inactive"}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(p); }} className="mr-2">
+                                                Edit
+                                            </Button>
+                                            {!isGroup && (
+                                              <Button
+                                                  variant={p.isActive ? "secondary" : "default"}
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleToggleActive(p);}}
+                                                  disabled={isSubmitting}
+                                              >
+                                                  {p.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                                  {p.isActive ? "Deactivate" : "Activate"}
+                                              </Button>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                    {isGroup && expanded && row.variants.map((v) => (
+                                      <TableRow key={v.id} onClick={() => setSelectedProduct(v)} className="cursor-pointer bg-muted/20">
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            <Checkbox
+                                              checked={selectedIds.has(v.id)}
+                                              onCheckedChange={() => toggleSelected(v.id)}
+                                              aria-label={`Select ${getDisplayName(v)}`}
+                                            />
+                                        </TableCell>
+                                        <TableCell className="w-10"></TableCell>
+                                        <TableCell>
+                                            <div className="ml-6 w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                                {v.imageUrl ? (
+                                                    <Image src={v.imageUrl} alt={v.name} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                                ) : (
+                                                    <Package className="h-5 w-5 text-muted-foreground"/>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="font-medium pl-6 text-sm">
+                                            ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                        </TableCell>
+                                        <TableCell>{v.uom}</TableCell>
+                                        <TableCell>{v.barcode || '—'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={v.isActive ? "default" : "secondary"}>
+                                                {v.isActive ? "Active" : "Inactive"}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(v); }} className="mr-2">Edit</Button>
+                                            <Button
+                                                variant={v.isActive ? "secondary" : "default"}
+                                                size="sm"
+                                                onClick={(e) => { e.stopPropagation(); handleToggleActive(v);}}
+                                                disabled={isSubmitting}
+                                            >
+                                                {v.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                                {v.isActive ? "Deactivate" : "Activate"}
+                                            </Button>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </React.Fragment>
+                                );
+                            })}
                         </TableBody>
                     </React.Fragment>
                 ))}
@@ -496,6 +667,18 @@ export default function ProductManagementPage() {
             product={selectedProduct}
             onEdit={handleEditFromDetails}
             onDelete={handleDeleteProduct}
+        />
+      )}
+
+      {mergeDialogOpen && (
+        <ProductMergeDialog
+          open={mergeDialogOpen}
+          onOpenChange={setMergeDialogOpen}
+          selected={selectedProducts}
+          onMerged={() => {
+            clearSelection();
+            setMergeDialogOpen(false);
+          }}
         />
       )}
 
