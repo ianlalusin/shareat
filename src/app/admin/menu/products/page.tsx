@@ -57,6 +57,32 @@ export default function ProductManagementPage() {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
+  // Collapsed sub-category headers. Persisted to localStorage so closing a
+  // section stays closed across reloads. Defaults to all expanded.
+  const COLLAPSED_KEY = "adminProductsCollapsedSubCategories";
+  const [collapsedSubCategories, setCollapsedSubCategories] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(COLLAPSED_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? new Set<string>(arr) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleSubCategoryCollapsed = (subCategory: string) => {
+    setCollapsedSubCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(subCategory)) next.delete(subCategory);
+      else next.add(subCategory);
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
+
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -615,15 +641,25 @@ export default function ProductManagementPage() {
             </div>
           ) : Object.keys(groupedAndSortedProducts).length > 0 || archivedRows.length > 0 ? (
             <Table>
-                {Object.entries(groupedAndSortedProducts).map(([subCategory, rows]) => (
+                {Object.entries(groupedAndSortedProducts).map(([subCategory, rows]) => {
+                  const isCollapsed = collapsedSubCategories.has(subCategory);
+                  return (
                     <React.Fragment key={subCategory}>
                         <TableHeader className="bg-muted/50">
-                            <TableRow>
-                                <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
-                                    {subCategory}
+                            <TableRow
+                                onClick={() => toggleSubCategoryCollapsed(subCategory)}
+                                className="cursor-pointer hover:bg-muted/70"
+                            >
+                                <TableHead colSpan={8} className="text-lg font-semibold text-foreground">
+                                    <div className="flex items-center gap-2">
+                                        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                        <span>{subCategory}</span>
+                                        <Badge variant="secondary" className="text-xs">{rows.length}</Badge>
+                                    </div>
                                 </TableHead>
                             </TableRow>
-                            <TableRow>
+                            {!isCollapsed && (
+                              <TableRow>
                                 <TableHead className="w-10"></TableHead>
                                 <TableHead className="w-10"></TableHead>
                                 <TableHead>Image</TableHead>
@@ -632,8 +668,10 @@ export default function ProductManagementPage() {
                                 <TableHead>Barcode</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
+                              </TableRow>
+                            )}
                         </TableHeader>
+                         {!isCollapsed && (
                          <TableBody>
                             {rows.map((row) => {
                                 const p = row.product;
@@ -782,31 +820,42 @@ export default function ProductManagementPage() {
                                 );
                             })}
                         </TableBody>
+                         )}
                     </React.Fragment>
-                ))}
-                {archivedRows.length > 0 && (
+                  );
+                })}
+                {archivedRows.length > 0 && (() => {
+                  const archivedCollapsed = collapsedSubCategories.has("__archived__");
+                  return (
                   <React.Fragment key="__archived__">
                     <TableHeader className="bg-muted/40">
-                      <TableRow>
+                      <TableRow
+                        onClick={() => toggleSubCategoryCollapsed("__archived__")}
+                        className="cursor-pointer hover:bg-muted/60"
+                      >
                         <TableHead colSpan={8} className="text-lg font-semibold text-muted-foreground">
                           <div className="flex items-center gap-2">
+                            {archivedCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             <Archive className="h-4 w-4" />
                             Archived
                             <Badge variant="secondary" className="text-xs">{archivedRows.length}</Badge>
                           </div>
                         </TableHead>
                       </TableRow>
-                      <TableRow>
-                        <TableHead className="w-10"></TableHead>
-                        <TableHead className="w-10"></TableHead>
-                        <TableHead>Image</TableHead>
-                        <TableHead>Product Name</TableHead>
-                        <TableHead>UOM</TableHead>
-                        <TableHead>Barcode</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
+                      {!archivedCollapsed && (
+                        <TableRow>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead>Image</TableHead>
+                          <TableHead>Product Name</TableHead>
+                          <TableHead>UOM</TableHead>
+                          <TableHead>Barcode</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      )}
                     </TableHeader>
+                    {!archivedCollapsed && (
                     <TableBody>
                       {archivedRows.map((row) => {
                         const p = row.product;
@@ -916,8 +965,10 @@ export default function ProductManagementPage() {
                         );
                       })}
                     </TableBody>
+                    )}
                   </React.Fragment>
-                )}
+                  );
+                })()}
             </Table>
           ) : (
             <p className="text-center text-muted-foreground py-8">{searchTerm ? `No products found for "${searchTerm}".` : 'No products found. Click "New Product" to add one.'}</p>
