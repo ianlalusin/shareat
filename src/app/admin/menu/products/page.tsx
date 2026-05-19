@@ -13,7 +13,8 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw } from "lucide-react";
+import { getAuth } from "firebase/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -356,6 +357,33 @@ export default function ProductManagementPage() {
     }
   };
 
+    const [isSyncingInventory, setIsSyncingInventory] = useState(false);
+
+    const handleSyncInventoryMetadata = async () => {
+        if (isSyncingInventory) return;
+        setIsSyncingInventory(true);
+        try {
+            const user = getAuth().currentUser;
+            if (!user) throw new Error("Not signed in.");
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/admin/products/sync-inventory-from-products", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) throw new Error(json?.error || `Sync failed (${res.status})`);
+            toast({
+                title: "Inventory synced",
+                description: `Updated ${json.inventoryUpdated} inventory row${json.inventoryUpdated === 1 ? "" : "s"} across ${json.storesScanned} store${json.storesScanned === 1 ? "" : "s"}.`,
+            });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "Sync failed", description: e?.message });
+        } finally {
+            setIsSyncingInventory(false);
+        }
+    };
+
     const handleExportTemplate = () => {
         const headers = ["name", "variantLabel", "uom", "category", "subCategory", "barcode", "isActive"];
         const sampleData = [{
@@ -464,6 +492,9 @@ export default function ProductManagementPage() {
                 Clear selection
               </Button>
             )}
+            <Button variant="outline" onClick={handleSyncInventoryMetadata} disabled={isSyncingInventory} title="Push the latest family / variant info from the products catalog into every store's inventory">
+                {isSyncingInventory ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Sync Inventory
+            </Button>
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
             <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>
             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".xlsx, .xls, .csv" />

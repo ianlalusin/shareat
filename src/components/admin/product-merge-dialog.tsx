@@ -148,7 +148,9 @@ export function ProductMergeDialog({
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Merge failed (${res.status}).`);
       toast({
         title: "Family created",
-        description: `${parentName.trim()} with ${json.variantCount} variants.`,
+        description: typeof json.inventoryUpdated === "number"
+          ? `${parentName.trim()} with ${json.variantCount} variants. ${json.inventoryUpdated} store inventory row${json.inventoryUpdated === 1 ? "" : "s"} updated.`
+          : `${parentName.trim()} with ${json.variantCount} variants.`,
       });
       onMerged();
       onOpenChange(false);

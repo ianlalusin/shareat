@@ -103,6 +103,17 @@ export type InventoryItem = {
   productId: string;
   name: string;
   variantLabel?: string | null;
+  /**
+   * Family / variant metadata mirrored from the underlying Product.
+   * Populated by the merge endpoint and the sync-inventory backfill so the
+   * cashier addons picker can group variants under their family without
+   * an extra Product read per addon. See:
+   *  - /api/admin/products/merge
+   *  - /api/admin/products/sync-inventory-from-products
+   */
+  kind?: "single" | "group" | "variant";
+  groupId?: string | null;
+  groupName?: string | null;
   category?: string;
   subCategory?: string;
   uom: string;

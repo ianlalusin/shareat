@@ -165,8 +165,96 @@ export async function POST(req: Request) {
 
     await batch.commit();
 
+    // ---- Inventory propagation ------------------------------------------------
+    //
+    // The cashier addons picker groups items by InventoryItem.groupId. Without
+    // this step the merged family wouldn't collapse on the cashier tile grid
+    // because per-store inventory still carries the pre-merge name / labels and
+    // no group metadata. Best-effort: failures here are logged but do not roll
+    // back the family creation itself.
+    let inventoryUpdated = 0;
+    let inventorySyncFailed = false;
+    try {
+      // Build a map of productId -> patch for each variant in this merge.
+      const variantPatchByProductId = new Map<string, Record<string, any>>();
+      for (const v of variants) {
+        if (mode === "promote" && v.productId === parentId) continue;
+        variantPatchByProductId.set(v.productId, {
+          name: parentName,
+          variantLabel: v.variantLabel.trim(),
+          kind: "variant",
+          groupId: parentId,
+          groupName: parentName,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      // For promote mode, also clean up the inventory rows of the promoted
+      // parent so it stops appearing as a sellable tile.
+      const parentInventoryPatch: Record<string, any> | null =
+        mode === "promote"
+          ? {
+              kind: "group",
+              groupId: null,
+              groupName: null,
+              variantLabel: null,
+              isAddon: false,
+              updatedAt: FieldValue.serverTimestamp(),
+            }
+          : null;
+
+      // Query inventory across all stores, chunked at 30 ids (Firestore "in" limit).
+      const idsToScan = [
+        ...Array.from(variantPatchByProductId.keys()),
+        ...(parentInventoryPatch ? [parentId] : []),
+      ];
+      const chunks: string[][] = [];
+      for (let i = 0; i < idsToScan.length; i += 30) chunks.push(idsToScan.slice(i, i + 30));
+
+      // Write in batches of up to 400 updates.
+      let pending = db.batch();
+      let pendingCount = 0;
+      const flush = async () => {
+        if (pendingCount === 0) return;
+        await pending.commit();
+        pending = db.batch();
+        pendingCount = 0;
+      };
+
+      for (const chunk of chunks) {
+        const snap = await db
+          .collectionGroup("inventory")
+          .where("productId", "in", chunk)
+          .get();
+        for (const d of snap.docs) {
+          const data = d.data() as any;
+          const pid = String(data?.productId || "");
+          const patch =
+            pid === parentId && parentInventoryPatch
+              ? parentInventoryPatch
+              : variantPatchByProductId.get(pid);
+          if (!patch) continue;
+          pending.update(d.ref, patch);
+          pendingCount += 1;
+          inventoryUpdated += 1;
+          if (pendingCount >= 400) await flush();
+        }
+      }
+      await flush();
+    } catch (e) {
+      console.error("[products/merge] inventory propagation failed:", e);
+      inventorySyncFailed = true;
+    }
+    // --------------------------------------------------------------------------
+
     const variantCount = mode === "promote" ? variants.length - 1 : variants.length;
-    return NextResponse.json({ ok: true, parentId, variantCount });
+    return NextResponse.json({
+      ok: true,
+      parentId,
+      variantCount,
+      inventoryUpdated,
+      inventorySyncFailed,
+    });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
     const status = /not allowed|admin|staff/i.test(message) ? 403 : 500;
