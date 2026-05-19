@@ -265,15 +265,14 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                       </div>
                   </div>
 
-                  <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Product Name</FormLabel><FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl><FormMessage /></FormItem> )}/>
-                  <FormField control={form.control} name="variant" render={({ field }) => (
+                  <FormField control={form.control} name="name" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Variant</FormLabel>
-                      <FormControl><Input placeholder='e.g., "Signature", "Cheese", "500ml"' {...field} /></FormControl>
-                      <FormDescription className="text-xs">Appended to the product name in lists, e.g. <code className="text-[11px]">Kimpab (Signature)</code>. Leave blank if there is no variant.</FormDescription>
+                      <FormLabel>Product Name</FormLabel>
+                      <FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}/>
+
                   <FormField control={form.control} name="description" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Description</FormLabel>
@@ -290,15 +289,23 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                   </FormItem>
 
                   <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                  
+
                   <Separator />
-                  
-                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types).</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                  
+
+                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types). Each variant is its own SKU with its own barcode and inventory.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+
                   {hasVariants ? (
-                      <div className="space-y-4">
-                          <h4 className="font-semibold text-lg">Variants</h4>
+                      // Family / group mode. The umbrella doesn't have its own variant
+                      // label / UOM / barcode — those live on each child variant.
+                      <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                          <div>
+                              <h4 className="font-semibold">Variants</h4>
+                              <p className="text-xs text-muted-foreground">Each row below is a sellable SKU. The variant label is what appears in the parens (e.g., <code className="text-[11px]">Kimpab (Signature)</code>).</p>
+                          </div>
                           <div className="space-y-2">
+                            {variants.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No variants yet. Add one below to begin.</p>
+                            )}
                             {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
                           </div>
                           {showVariantForm ? (
@@ -308,9 +315,21 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                           )}
                       </div>
                   ) : (
-                      <div className="grid grid-cols-2 gap-4">
-                          <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                          <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                      // Single SKU mode. Single-axis variant label + UOM + barcode all
+                      // belong to this product itself.
+                      <div className="space-y-4">
+                          <FormField control={form.control} name="variant" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Variant Label</FormLabel>
+                              <FormControl><Input placeholder='Optional. e.g., "Signature", "500ml"' {...field} /></FormControl>
+                              <FormDescription className="text-xs">Appended to the product name in lists, e.g. <code className="text-[11px]">Kimpab (Signature)</code>. Leave blank if this product has no variant axis.</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}/>
+                          <div className="grid grid-cols-2 gap-4">
+                              <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                              <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                          </div>
                       </div>
                   )}
                 </form>

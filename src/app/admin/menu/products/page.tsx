@@ -186,18 +186,22 @@ export default function ProductManagementPage() {
     
     const { imageFile, ...productData } = formData;
 
-    // Normalize data to ensure required fields are present
+    // Normalize data to ensure required fields are present.
+    // Family/group products don't carry their own variant label, UOM, or barcode —
+    // those live on each child variant SKU. We force them blank to avoid stale
+    // data lingering on a product that was just toggled into group mode.
+    const isGroup = productData.hasVariants;
     const dataToSave: Partial<Product> = {
         name: productData.name,
         isActive: productData.isActive,
-        variant: productData.variant || "",
+        variant: isGroup ? "" : (productData.variant || ""),
         description: (productData as any).description || "",
-        uom: productData.uom || "pcs",
-        barcode: productData.barcode || "",
+        uom: isGroup ? "pcs" : (productData.uom || "pcs"),
+        barcode: isGroup ? "" : (productData.barcode || ""),
         category: "Add-on", // Default category
         subCategory: productData.subCategory || "Uncategorized",
-        kind: productData.hasVariants ? "group" : "single",
-        isSku: !productData.hasVariants,
+        kind: isGroup ? "group" : "single",
+        isSku: !isGroup,
     };
 
     try {
