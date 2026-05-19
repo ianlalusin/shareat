@@ -30,6 +30,19 @@ export default function AdminCollectionsPage() {
   // Shared selection across the two "Store ..." tabs so switching tabs keeps the chosen store.
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
 
+  // Lazy-mount panels: each tab opens onSnapshot listeners we don't want to
+  // pay for until the admin visits.
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["universal-discounts"]));
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    setMountedTabs((prev) => {
+      if (prev.has(value)) return prev;
+      const next = new Set(prev);
+      next.add(value);
+      return next;
+    });
+  };
+
   useEffect(() => {
     // Initialize once stores load, and guard against a stale id if the list changes.
     if (!stores.length) return;
@@ -51,9 +64,9 @@ export default function AdminCollectionsPage() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
       </PageHeader>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         {isMobile ? (
-          <Select value={activeTab} onValueChange={setActiveTab}>
+          <Select value={activeTab} onValueChange={handleTabChange}>
             <SelectTrigger>
               <SelectValue placeholder="Select a tab..." />
             </SelectTrigger>
@@ -72,24 +85,28 @@ export default function AdminCollectionsPage() {
         )}
 
         <TabsContent value="universal-discounts">
-          <UniversalDiscountsSettings stores={stores} />
+          {mountedTabs.has("universal-discounts") && <UniversalDiscountsSettings stores={stores} />}
         </TabsContent>
         <TabsContent value="universal-charges">
-          <UniversalChargesSettings stores={stores} />
+          {mountedTabs.has("universal-charges") && <UniversalChargesSettings stores={stores} />}
         </TabsContent>
         <TabsContent value="store-discounts">
-          <StoreDiscountsAdminView
-            stores={stores}
-            selectedStoreId={selectedStoreId}
-            onSelectedStoreChange={setSelectedStoreId}
-          />
+          {mountedTabs.has("store-discounts") && (
+            <StoreDiscountsAdminView
+              stores={stores}
+              selectedStoreId={selectedStoreId}
+              onSelectedStoreChange={setSelectedStoreId}
+            />
+          )}
         </TabsContent>
         <TabsContent value="store-charges">
-          <StoreChargesAdminView
-            stores={stores}
-            selectedStoreId={selectedStoreId}
-            onSelectedStoreChange={setSelectedStoreId}
-          />
+          {mountedTabs.has("store-charges") && (
+            <StoreChargesAdminView
+              stores={stores}
+              selectedStoreId={selectedStoreId}
+              onSelectedStoreChange={setSelectedStoreId}
+            />
+          )}
         </TabsContent>
       </Tabs>
     </RoleGuard>
