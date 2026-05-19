@@ -103,7 +103,13 @@ export default function KitchenPage() {
   const processedStoresRef = useRef(new Set<string>());
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
-  const [stationDoc, setStationDoc] = useState<RtKdsStationDoc | null>(null);
+  // Single source of truth for every station's rtKdsTickets doc. One
+  // collection listener populates this Map. Both `stationCounts` (tab badges)
+  // and `stationDoc` (active station) derive from it via useMemo, so the
+  // page only opens ONE listener on rtKdsTickets instead of two overlapping
+  // ones.
+  const [stationsAllDocs, setStationsAllDocs] = useState<Map<string, RtKdsStationDoc>>(new Map());
+  const [stationsAllDocsLoaded, setStationsAllDocsLoaded] = useState(false);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [sessionsMap, setSessionsMap] = useState<Map<string, Session>>(new Map());
   const [flavorsMap, setFlavorsMap] = useState<Map<string, string>>(new Map());
@@ -134,7 +140,17 @@ export default function KitchenPage() {
   }, []);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
-  const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
+  const stationCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [id, d] of stationsAllDocs) {
+      m.set(id, (d.activeIds || []).length);
+    }
+    return m;
+  }, [stationsAllDocs]);
+  const stationDoc = useMemo<RtKdsStationDoc | null>(() => {
+    if (!activeTab) return null;
+    return stationsAllDocs.get(activeTab) ?? null;
+  }, [stationsAllDocs, activeTab]);
   const [dailyAnalytics, setDailyAnalytics] = useState<DailyMetric | null>(null);
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
@@ -171,11 +187,10 @@ export default function KitchenPage() {
 
     const rtKdsTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets');
     unsubs.push(onSnapshot(rtKdsTicketsRef, (snapshot) => {
-        const counts = new Map<string, number>();
-        snapshot.forEach(doc => {
-            counts.set(doc.id, (doc.data().activeIds || []).length);
-        });
-        setStationCounts(counts);
+        const m = new Map<string, RtKdsStationDoc>();
+        snapshot.forEach((d) => m.set(d.id, d.data() as RtKdsStationDoc));
+        setStationsAllDocs(m);
+        setStationsAllDocsLoaded(true);
     }));
 
     return () => unsubs.forEach(unsub => unsub());
@@ -198,68 +213,79 @@ export default function KitchenPage() {
   }, [activeStore]);
 
 
-  // Effect for fetching live tickets for the currently active tab
+  const activeStationName = useMemo(() => {
+    return stations.find(s => s.id === activeTab)?.name || 'Station';
+  }, [stations, activeTab]);
+
+  // Effect to load sessions referenced by the active station's tickets, plus
+  // fire the new-ticket alert. Re-runs when the derived `stationDoc` changes,
+  // which is whenever the collection listener gets a new snapshot for the
+  // active station. No extra listener is needed — `stationDoc` is a useMemo
+  // off `stationsAllDocs`.
   useEffect(() => {
     if (!activeStore || !activeTab) {
-        setStationDoc(null);
         setIsLoading(false);
         return;
     }
-    
-    setIsLoading(true);
-    
-    const stationDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab);
-    
-    const unsubscribe = onSnapshot(stationDocRef, async (docSnap: DocumentSnapshot<DocumentData>) => {
-        const data = docSnap.exists() ? docSnap.data() as RtKdsStationDoc : null;
-        setStationDoc(data);
-        
-        const currentTickets = data?.tickets || {};
+    // Wait for the collection listener's first snapshot before we declare loading done.
+    if (!stationsAllDocsLoaded) {
+        setIsLoading(true);
+        return;
+    }
 
-        // Device notification when new ticket appears (ignore first load)
-        const ids = Object.keys(currentTickets);
-        if (didInitTicketsRef.current) {
-          const prev = prevTicketIdsRef.current;
-          const hasNew = ids.some((id) => !prev.has(id));
-          if (hasNew) {
+    const currentTickets = stationDoc?.tickets || {};
+
+    // Device notification when new ticket appears (ignore first load)
+    const ids = Object.keys(currentTickets);
+    if (didInitTicketsRef.current) {
+        const prev = prevTicketIdsRef.current;
+        const hasNew = ids.some((id) => !prev.has(id));
+        if (hasNew) {
             void fireKitchenAlert({
-              title: "New Kitchen Ticket",
-              body: `${activeStationName || "Station"}: ${ids.length} active`,
+                title: "New Kitchen Ticket",
+                body: `${activeStationName || "Station"}: ${ids.length} active`,
             });
-          }
-        } else {
-          didInitTicketsRef.current = true;
         }
-        prevTicketIdsRef.current = new Set(ids);
-        const sessionIds = [...new Set(Object.values(currentTickets).map(t => t.sessionId))];
+    } else {
+        didInitTicketsRef.current = true;
+    }
+    prevTicketIdsRef.current = new Set(ids);
 
-        if (sessionIds.length > 0) {
-            const idChunks: string[][] = [];
-            for (let i = 0; i < sessionIds.length; i += 30) {
-                idChunks.push(sessionIds.slice(i, i + 30));
+    const sessionIds = [...new Set(Object.values(currentTickets).map((t: any) => t.sessionId))];
+    let cancelled = false;
+    if (sessionIds.length > 0) {
+        (async () => {
+            try {
+                const idChunks: string[][] = [];
+                for (let i = 0; i < sessionIds.length; i += 30) {
+                    idChunks.push(sessionIds.slice(i, i + 30));
+                }
+                const newSessionsMap = new Map<string, Session>();
+                for (const chunk of idChunks) {
+                    if (chunk.length === 0) continue;
+                    const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
+                    const sessionsSnap = await getDocs(sessionsQuery);
+                    sessionsSnap.forEach((sDoc: QueryDocumentSnapshot<DocumentData>) => {
+                        newSessionsMap.set(sDoc.id, { id: sDoc.id, ...sDoc.data() } as Session);
+                    });
+                }
+                if (!cancelled) {
+                    setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
+                }
+            } catch (error: any) {
+                if (cancelled || isSigningOut || !appUser) return;
+                console.error("Error fetching sessions for kitchen tickets:", error);
+                toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch session data." });
             }
-
-            const newSessionsMap = new Map<string, Session>();
-            for (const chunk of idChunks) {
-                if (chunk.length === 0) continue;
-                const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
-                const sessionsSnap = await getDocs(sessionsQuery);
-                sessionsSnap.forEach((sDoc: QueryDocumentSnapshot<DocumentData>) => {
-                    newSessionsMap.set(sDoc.id, {id: sDoc.id, ...sDoc.data()} as Session);
-                });
-            }
-             setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
-        }
-        setIsLoading(false);
-    }, (error: any) => {
-        if (isSigningOut || !appUser) return;
-        console.error("Error fetching station doc:", error);
-        toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch station data." });
-        setIsLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [activeStore, activeTab, toast, isSigningOut, appUser]);
+        })();
+    }
+    setIsLoading(false);
+    return () => { cancelled = true; };
+    // activeStationName intentionally not in deps; the closure picks up the
+    // latest value via lexical scope, and refreshing the effect just to update
+    // the alert body string isn't worth the extra runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore, activeTab, stationDoc, stationsAllDocsLoaded, toast, isSigningOut, appUser]);
   
   useEffect(() => {
     if (!activeStore || !activeTab) {
@@ -308,10 +334,6 @@ export default function KitchenPage() {
     
     return { avgMs: sum / count, count };
   }, [dailyAnalytics, activeTab]);
-
-  const activeStationName = useMemo(() => {
-    return stations.find(s => s.id === activeTab)?.name || 'Station';
-  }, [stations, activeTab]);
 
   const ticketsWithData = useMemo(() => {
     if (!stationDoc) return [];
