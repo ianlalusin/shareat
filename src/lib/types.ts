@@ -26,17 +26,23 @@ export interface UserDocument {
 export type Product = {
   id: string;
   name: string;
-  
-  // Legacy single-variant label. Use getEffectiveVariantLabel() helper.
+
+  // Variant label for single-kind products. The display name is "name (variant)"
+  // when set. Distinct from `description`; see comment below. Legacy callers used
+  // this field for free-text notes — kept for backward compat via the dialog UI.
   variant?: string;
-  
+
+  // Free-text description / notes shown to staff in the editor. NOT used as a
+  // variant label or appended to the display name.
+  description?: string;
+
   // New Variant Management
   kind?: "single" | "group" | "variant";
   groupId?: string | null;
   groupName?: string | null;
   variantLabel?: string | null;
   isSku?: boolean;
-  
+
   category: string;
   subCategory?: string;
   uom: string;

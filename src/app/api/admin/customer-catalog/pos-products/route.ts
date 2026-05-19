@@ -27,20 +27,32 @@ export async function GET(req: Request) {
     const all = snap.docs
       .map((d) => {
         const x = d.data() as any;
+        const name = String(x?.name ?? "");
+        // Prefer the new variantLabel when present, fall back to the legacy
+        // single-variant `variant` field. Matches getEffectiveVariantLabel().
+        const variant = x?.variantLabel || x?.variant || "";
+        const displayName = variant ? `${name} (${variant})` : name;
         return {
           id: d.id,
-          name: String(x?.name ?? ""),
+          name,
+          variant: variant ? String(variant) : "",
+          displayName,
           category: String(x?.category ?? ""),
+          subCategory: String(x?.subCategory ?? ""),
           isActive: x?.isActive !== false,
         };
       })
       .filter((p) => p.isActive);
 
-    const filtered = qRaw ? all.filter((p) => p.name.toLowerCase().includes(qRaw)) : all;
+    const filtered = qRaw
+      ? all.filter((p) => p.displayName.toLowerCase().includes(qRaw))
+      : all;
 
     return NextResponse.json({
       ok: true,
-      products: filtered.slice(0, MAX_RESULTS).map(({ id, name, category }) => ({ id, name, category })),
+      products: filtered.slice(0, MAX_RESULTS).map(({ id, name, variant, displayName, category, subCategory }) => ({
+        id, name, variant, displayName, category, subCategory,
+      })),
       totalMatched: filtered.length,
     });
   } catch (e: any) {

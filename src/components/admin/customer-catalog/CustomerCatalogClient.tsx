@@ -36,7 +36,14 @@ type StoreCacheItem = CatalogItem & {
 };
 
 type Category = { id: string; name: string; isActive: boolean; sortOrder: number };
-type PosProduct = { id: string; name: string; category?: string };
+type PosProduct = {
+  id: string;
+  name: string;
+  variant?: string;
+  displayName?: string;
+  category?: string;
+  subCategory?: string;
+};
 
 export default function CustomerCatalogClient() {
   const { user, appUser } = useAuthContext();
@@ -535,22 +542,34 @@ export default function CustomerCatalogClient() {
                       ) : linkResults.length === 0 ? (
                         <div className="p-3 text-center text-sm text-muted-foreground">{linkSearch.trim() ? "No matches" : "Start typing to search"}</div>
                       ) : (
-                        linkResults.map((p) => (
-                          <button
-                            type="button"
-                            key={p.id}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 border-b last:border-b-0"
-                            onClick={() => {
-                              setEditLinkedId(p.id);
-                              setEditLinkedName(p.name);
-                              setLinkPickerOpen(false);
-                              setLinkSearch("");
-                            }}
-                          >
-                            <div className="font-medium truncate">{p.name}</div>
-                            {p.category && <div className="text-xs text-muted-foreground truncate">{p.category}</div>}
-                          </button>
-                        ))
+                        linkResults.map((p) => {
+                          const display = p.displayName || (p.variant ? `${p.name} (${p.variant})` : p.name);
+                          return (
+                            <button
+                              type="button"
+                              key={p.id}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 border-b last:border-b-0"
+                              onClick={() => {
+                                setEditLinkedId(p.id);
+                                // Save the human-readable name including the variant so list
+                                // displays disambiguate (e.g. "Kimpab (Signature)").
+                                setEditLinkedName(display);
+                                setLinkPickerOpen(false);
+                                setLinkSearch("");
+                              }}
+                            >
+                              <div className="font-medium truncate">
+                                {p.name}
+                                {p.variant && <span className="text-muted-foreground"> ({p.variant})</span>}
+                              </div>
+                              {(p.subCategory || p.category) && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {p.subCategory || p.category}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })
                       )}
                     </div>
                   )}

@@ -119,6 +119,7 @@ export default function ProductManagementPage() {
         name: productData.name,
         isActive: productData.isActive,
         variant: productData.variant || "",
+        description: (productData as any).description || "",
         uom: productData.uom || "pcs",
         barcode: productData.barcode || "",
         category: "Add-on", // Default category

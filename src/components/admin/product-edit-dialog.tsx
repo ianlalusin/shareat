@@ -40,6 +40,7 @@ const formSchema = z.object({
   name: z.string().min(2, "Product name must be at least 2 characters."),
   hasVariants: z.boolean().default(false),
   variant: z.string().optional(),
+  description: z.string().optional(),
   subCategory: z.string().optional(),
   uom: z.string().optional(),
   barcode: z.string().optional(),
@@ -130,7 +131,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", hasVariants: false, variant: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, },
+    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
   
@@ -146,6 +147,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         name: product?.name || "",
         hasVariants: isGroup,
         variant: product?.variant || "",
+        description: (product as any)?.description || "",
         subCategory: product?.subCategory || "",
         uom: product ? normalizeUom(product.uom) : 'pcs',
         barcode: product?.barcode || "",
@@ -264,7 +266,21 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                   </div>
 
                   <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Product Name</FormLabel><FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl><FormMessage /></FormItem> )}/>
-                  <FormField control={form.control} name="variant" render={({ field }) => ( <FormItem><FormLabel>Description / Variant Notes</FormLabel><FormControl><Textarea placeholder="Describe the product..." {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                  <FormField control={form.control} name="variant" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Variant</FormLabel>
+                      <FormControl><Input placeholder='e.g., "Signature", "Cheese", "500ml"' {...field} /></FormControl>
+                      <FormDescription className="text-xs">Appended to the product name in lists, e.g. <code className="text-[11px]">Kimpab (Signature)</code>. Leave blank if there is no variant.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+                  <FormField control={form.control} name="description" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl><Textarea placeholder="Internal notes about this product (optional)..." rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
 
                   <FormItem>
                     <FormLabel>Sub-Category</FormLabel>
