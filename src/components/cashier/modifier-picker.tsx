@@ -156,7 +156,22 @@ function ModifierPickerContent({
                   )}
                 </div>
               </div>
-              {sel.size > 0 && <Badge variant="secondary" className="text-xs">{sel.size} selected</Badge>}
+              <div className="flex items-center gap-2">
+                {sel.size > 0 && <Badge variant="secondary" className="text-xs">{sel.size} selected</Badge>}
+                {/* Optional groups: radios alone can't deselect, so expose a Clear
+                    affordance. Hidden when the group is required. */}
+                {!g.required && sel.size > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setSelections((prev) => ({ ...prev, [g.id]: new Set() }))}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
             </div>
 
             {g.selectionMode === "single" ? (

@@ -283,7 +283,23 @@ function FamilyOrderContent({
                         )}
                       </div>
                     </div>
-                    {sel.size > 0 && <Badge variant="secondary" className="text-xs">{sel.size} selected</Badge>}
+                    <div className="flex items-center gap-2">
+                      {sel.size > 0 && <Badge variant="secondary" className="text-xs">{sel.size} selected</Badge>}
+                      {/* Optional groups: let the cashier clear the current pick. Radios
+                          alone don't support deselect, so this button covers both single
+                          and multi modes. Hidden when the group is required. */}
+                      {!g.required && sel.size > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setSelections((prev) => ({ ...prev, [g.id]: new Set() }))}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   {g.selectionMode === "single" ? (
