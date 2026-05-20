@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { SessionLogCard, formatLogForExport } from "@/components/logs/SessionLogCard";
 import { VoidsAndCompsCard } from "@/components/logs/VoidsAndCompsCard";
+import { StaffAdjustmentsCard } from "@/components/logs/StaffAdjustmentsCard";
 import { Accordion } from "@/components/ui/accordion";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { format as formatDate, addDays } from "date-fns";
@@ -219,6 +220,8 @@ export default function LogsPage() {
         });
   }, [groupedLogs]);
 
+  const allLogsFlat = useMemo(() => groupedLogs.flatMap((g) => g.logs), [groupedLogs]);
+
   const totalPages = Math.ceil(groupedLogs.length / ITEMS_PER_PAGE);
   const paginatedLogs = useMemo(() => {
       const startIndex = currentPage * ITEMS_PER_PAGE;
@@ -311,6 +314,7 @@ export default function LogsPage() {
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <div className="space-y-4">
             <VoidsAndCompsCard logs={voidAndFreeLogs} discountLogs={discountLogs} isLoading={isLoading} />
+            <StaffAdjustmentsCard logs={allLogsFlat} isLoading={isLoading} />
         </div>
         <div>
              <Card>
