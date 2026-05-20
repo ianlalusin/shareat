@@ -35,9 +35,38 @@ type CustomerRequest = {
   createdAtClientMs: number;
   createdAt?: any;
   doneAt?: any;
+  doneAtClientMs?: number;
   doneByUid?: string | null;
   doneByUsername?: string | null;
 };
+
+// Resolve a Firestore Timestamp / Date / number to epoch ms.
+function tsToMs(input: any): number | null {
+  if (input == null) return null;
+  if (typeof input === "number" && Number.isFinite(input)) return input;
+  if (typeof input.toMillis === "function") return input.toMillis();
+  if (typeof input.seconds === "number") return input.seconds * 1000;
+  return null;
+}
+
+// Turnaround (created → done) as a compact "Xm Ys" / "Xs" / "Xh Ym" string.
+function fmtTurnaround(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+function turnaroundColorClass(ms: number): string {
+  const minutes = ms / 60000;
+  if (minutes >= 10) return "border-destructive bg-destructive/10 text-destructive";
+  if (minutes >= 5) return "border-amber-400 bg-amber-50 text-amber-600";
+  return "border-emerald-400 bg-emerald-50 text-emerald-600";
+}
 
 function fmtRelative(ms: number, now: number): string {
   const diff = Math.max(0, now - ms);
@@ -126,6 +155,7 @@ export function CustomerRequestsPanel({ storeId }: { storeId: string | null | un
       await updateDoc(requestRef, {
         status: "done",
         doneAt: serverTimestamp(),
+        doneAtClientMs: Date.now(),
         doneByUid: appUser?.uid ?? null,
         doneByUsername: appUser?.displayName || appUser?.name || null,
       });
@@ -269,26 +299,40 @@ export function CustomerRequestsPanel({ storeId }: { storeId: string | null | un
                     No completed requests yet today.
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {done.map((r) => (
-                      <div key={r.id} className="rounded-lg border bg-muted/40 p-3">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="font-semibold text-sm text-muted-foreground">
-                            {r.tableDisplayName || (r.tableNumber ? `Table ${r.tableNumber}` : "—")}
-                            {r.customerName ? <span className="font-normal"> · {r.customerName}</span> : null}
+                  <div className="space-y-2">
+                    {done.map((r) => {
+                      const doneMs = r.doneAtClientMs ?? tsToMs(r.doneAt);
+                      const turnaroundMs = doneMs != null ? Math.max(0, doneMs - r.createdAtClientMs) : null;
+                      return (
+                        <div key={r.id} className="rounded-md border bg-muted/40 px-2.5 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                              <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                              <span className="truncate">
+                                {r.tableDisplayName || (r.tableNumber ? `Table ${r.tableNumber}` : "—")}
+                                {r.customerName ? <span className="font-normal"> · {r.customerName}</span> : null}
+                              </span>
+                            </div>
+                            {turnaroundMs != null && (
+                              <Badge
+                                variant="outline"
+                                className={cn("shrink-0 gap-0.5 text-[10px] px-1.5 py-0", turnaroundColorClass(turnaroundMs))}
+                                title="Time from request to done"
+                              >
+                                <ClockIcon className="h-3 w-3" />
+                                {fmtTurnaround(turnaroundMs)}
+                              </Badge>
+                            )}
                           </div>
-                          <span className="text-xs text-muted-foreground">
-                            {fmtRelative(r.createdAtClientMs, now)}
-                          </span>
+                          <p className="mt-1 text-xs whitespace-pre-wrap break-words text-muted-foreground line-through leading-snug">
+                            &ldquo;{r.text}&rdquo;
+                          </p>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">
+                            Done by {r.doneByUsername || "staff"}
+                          </div>
                         </div>
-                        <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground line-through">
-                          &ldquo;{r.text}&rdquo;
-                        </p>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Done by {r.doneByUsername || "staff"}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </ScrollArea>
