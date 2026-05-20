@@ -91,3 +91,20 @@ export function getDisplayName(product: ProductLike): string {
 
     return product.name || "";
 }
+
+/**
+ * Resolves a family's display picture: the first item in the list that actually
+ * has an image. Used on POS user-facing screens as the family tile picture and
+ * as the fallback for variants that have no picture of their own. Pass the
+ * items in a stable order (e.g. sorted by display name) so "first" is
+ * deterministic.
+ * @returns The first non-empty imageUrl, or null if none of the items have one.
+ */
+export function resolveFamilyImageUrl(
+    items: { imageUrl?: string | null }[],
+): string | null {
+    for (const it of items) {
+        if (it.imageUrl) return it.imageUrl;
+    }
+    return null;
+}

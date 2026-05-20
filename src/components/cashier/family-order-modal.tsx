@@ -14,6 +14,7 @@ import { Loader2, AlertTriangle, Check, Layers, Minus, Plus } from "lucide-react
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { resolveFamilyImageUrl } from "@/lib/products/variants";
 import type { InventoryItem, OptionGroup, OptionGroupValue, SelectedModifier } from "@/lib/types";
 
 type EnrichedStoreAddon = InventoryItem & {
@@ -217,6 +218,11 @@ function FamilyOrderContent({
   const lineUnitPrice = variantUnitPrice + modifiersTotal;
   const lineTotal = lineUnitPrice * quantity;
 
+  // Family picture: first variant with an image. Variants without their own
+  // image fall back to this so the picker never shows empty tiles when the
+  // family has at least one picture.
+  const familyImage = resolveFamilyImageUrl(group.items);
+
   return (
     <div className="grid gap-4 p-4">
       {/* Step 1: variant picker (locks on click) */}
@@ -241,8 +247,8 @@ function FamilyOrderContent({
                   </span>
                 )}
                 <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden">
-                  {variant.imageUrl && (
-                    <Image src={variant.imageUrl} alt={variant.displayName} fill style={{ objectFit: "cover" }} />
+                  {(variant.imageUrl ?? familyImage) && (
+                    <Image src={(variant.imageUrl ?? familyImage) as string} alt={variant.displayName} fill style={{ objectFit: "cover" }} />
                   )}
                 </div>
                 <span className="text-xs font-medium leading-tight line-clamp-2">{variant.displayName}</span>

@@ -23,6 +23,7 @@ import type { InventoryItem, OptionGroup, PendingSession, SelectedModifier, Sess
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
+import { resolveFamilyImageUrl } from "@/lib/products/variants";
 import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
 import { ModifierPicker, type PickerResult } from "../cashier/modifier-picker";
@@ -69,14 +70,15 @@ function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon; onSelect: (
 }
 
 function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: AddonGroup) => void }) {
+  const familyImage = resolveFamilyImageUrl(group.items);
   return (
     <button
       onClick={() => onSelect(group)}
       className="flex flex-col items-center justify-center p-2 border rounded-md hover:bg-muted/50 transition-colors text-center h-32 focus:outline-none focus:ring-2 focus:ring-ring"
     >
       <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden flex items-center justify-center">
-        {group.items[0].imageUrl ? (
-          <Image src={group.items[0].imageUrl} alt={group.title} fill style={{ objectFit: "cover" }} />
+        {familyImage ? (
+          <Image src={familyImage} alt={group.title} fill style={{ objectFit: "cover" }} />
         ) : (
           <Layers className="h-8 w-8 text-muted-foreground" />
         )}
@@ -171,8 +173,12 @@ function POSContent({
 
     return Object.values(groups)
       .map((group) => {
-        const isGroup = group.items.length > 1;
-        return { ...group, isGroup };
+        // Stable order so the family picture (first item with an image) and the
+        // variant list are deterministic.
+        const items = group.items
+          .slice()
+          .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+        return { ...group, items, isGroup: items.length > 1 };
       })
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [addons, search, activeCategory]);
