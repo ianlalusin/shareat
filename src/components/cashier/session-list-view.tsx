@@ -26,7 +26,8 @@ import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { WaitlistCard, type WaitlistEntry } from "./WaitlistCard";
 import type { PendingSeat } from "./start-session-form";
-import { deleteDoc, doc } from "firebase/firestore";
+import { deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { takeReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
@@ -51,17 +52,44 @@ export function SessionListView() {
         setNewSessionAccordion("new-session");
     };
     const handleClearSeat = () => setPendingSeat(null);
-    const handleSeatCompleted = async (_sessionId: string) => {
+    const handleSeatCompleted = async (sessionId: string) => {
         if (!activeStore || !pendingSeat) return;
         try {
-            await deleteDoc(doc(db, "stores", activeStore.id, "waitlist", pendingSeat.id));
+            if (pendingSeat.reservationId) {
+                // Seated from a /reservations booking: mark it seated + link the
+                // new session rather than touching the walk-in waitlist.
+                await updateDoc(doc(db, "stores", activeStore.id, "reservations", pendingSeat.reservationId), {
+                    status: "seated",
+                    sessionId: sessionId || null,
+                    updatedAt: serverTimestamp(),
+                });
+            } else {
+                await deleteDoc(doc(db, "stores", activeStore.id, "waitlist", pendingSeat.id));
+            }
         } catch (err) {
-            console.warn("[Waitlist] Failed to delete entry after seating", err);
+            console.warn("[Seat] Failed to finalize seat source after seating", err);
         } finally {
             setPendingSeat(null);
             setNewSessionAccordion("");
         }
     };
+
+    // Pick up a "Seat now" hand-off from the /reservations page (sessionStorage),
+    // prefill the Start Session form via the existing pendingSeat path, and open
+    // the accordion. Runs once when the store is ready.
+    useEffect(() => {
+        if (!activeStore?.id) return;
+        const handoff = takeReservationSeatHandoff();
+        if (!handoff || handoff.storeId !== activeStore.id) return;
+        setPendingSeat({
+            id: handoff.reservationId,
+            name: handoff.name,
+            partySize: handoff.partySize,
+            phone: handoff.phone ?? null,
+            reservationId: handoff.reservationId,
+        });
+        setNewSessionAccordion("new-session");
+    }, [activeStore?.id]);
 
     useEffect(() => {
         if (!activeStore?.id) {

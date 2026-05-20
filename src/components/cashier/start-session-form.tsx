@@ -63,6 +63,12 @@ export interface PendingSeat {
     name: string;
     partySize: number;
     phone?: string | null;
+    /**
+     * Present when the seat originates from a /reservations "Seat now" rather
+     * than the walk-in waitlist. The cashier marks this reservation seated (and
+     * links the new session) on completion instead of deleting a waitlist entry.
+     */
+    reservationId?: string;
 }
 
 interface StartSessionFormProps {

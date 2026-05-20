@@ -201,6 +201,40 @@ export type KitchenLocation = {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  /**
+   * Per-station serve-time SLA in minutes. The KDS ages each active ticket
+   * against this and flags ones running late. Absent → falls back to a global
+   * default. See the kitchen page's slow-ticket alerting.
+   */
+  slaMinutes?: number;
+};
+
+/**
+ * Forward booking. Lives at stores/{storeId}/reservations/{id} and is managed
+ * from the dedicated /reservations page. The SHAREAT website writes into the
+ * same collection with source:"website". When a party is seated, the
+ * reservation links to the created cashier session via sessionId.
+ */
+export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show";
+
+export type Reservation = {
+  id: string;
+  customerName: string;
+  phone?: string | null;
+  partySize: number;
+  reservedForMs: number;          // exact date+time of the booking
+  reservedForDayId: string;       // YYYYMMDD (Asia/Manila), for day filtering
+  tableId?: string | null;        // optional pre-assignment
+  tableNumber?: string | null;
+  status: ReservationStatus;
+  source: "pos" | "website";
+  sessionId?: string | null;      // set when seated
+  notes?: string | null;
+  createdAt?: Timestamp | null;
+  createdAtClientMs: number;
+  createdByUid?: string | null;
+  createdByName?: string | null;
+  updatedAt?: Timestamp | null;
 };
 
 export type MenuSchedule = {
