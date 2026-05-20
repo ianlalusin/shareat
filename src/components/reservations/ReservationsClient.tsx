@@ -31,7 +31,7 @@ function fmtTime(ms: number): string {
 }
 
 const STATUS_META: Record<ReservationStatus, { label: string; className: string }> = {
-  booked: { label: "Booked", className: "border-blue-400 bg-blue-50 text-blue-600" },
+  booked: { label: "Pending", className: "border-blue-400 bg-blue-50 text-blue-600" },
   confirmed: { label: "Confirmed", className: "border-emerald-400 bg-emerald-50 text-emerald-600" },
   seated: { label: "Seated", className: "border-violet-400 bg-violet-50 text-violet-600" },
   cancelled: { label: "Cancelled", className: "border-muted-foreground/30 bg-muted text-muted-foreground" },

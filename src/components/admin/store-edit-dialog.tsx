@@ -32,6 +32,7 @@ const formSchema = z.object({
   taxRatePct: z.coerce.number().min(0).max(30).optional(),
   logoUrl: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  acceptsReservations: z.boolean().default(false),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   openingDate: z.date().optional().nullable(),
@@ -74,6 +75,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "", code: "", address: "", tin: "", isActive: true,
+      acceptsReservations: false,
       email: "", contactNumber: "", openingDate: null,
       logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
       openingTime: "", closingTime: ""
@@ -106,6 +108,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       form.reset({
         name: store.name, code: store.code, address: store.address,
         tin: store.tin || "", isActive: store.isActive,
+        acceptsReservations: store.acceptsReservations ?? false,
         email: store.email || "", contactNumber: store.contactNumber || "",
         openingDate: toJsDate(store.openingDate),
         openingTime: store.openingTime || "",
@@ -117,6 +120,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
     } else {
       form.reset({
         name: "", code: "", address: "", tin: "", isActive: true,
+        acceptsReservations: false,
         email: "", contactNumber: "", openingDate: null,
         openingTime: "", closingTime: "",
         logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
@@ -263,6 +267,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 </FormItem>
 
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
               </form>
             </Form>
           </div>

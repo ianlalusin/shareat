@@ -579,6 +579,12 @@ export type Store = {
   closingTime?: string;
   contactNumber?: string;
   email?: string;
+  /**
+   * When true, this store is bookable from the public SharEat website. The
+   * website (shareat-website project) reads this flag via an Admin SDK function
+   * to decide which branches to show on its reservation form.
+   */
+  acceptsReservations?: boolean;
   forecastConfig?: ForecastConfig;
   loyaltyConfig?: LoyaltyConfig;
   createdAt: any;
