@@ -314,7 +314,9 @@ export default function LogsPage() {
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <div className="space-y-4">
             <VoidsAndCompsCard logs={voidAndFreeLogs} discountLogs={discountLogs} isLoading={isLoading} />
-            <StaffAdjustmentsCard logs={allLogsFlat} isLoading={isLoading} />
+            {(appUser?.isPlatformAdmin || appUser?.role === "manager") && (
+              <StaffAdjustmentsCard logs={allLogsFlat} isLoading={isLoading} />
+            )}
         </div>
         <div>
              <Card>
