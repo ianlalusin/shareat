@@ -215,6 +215,43 @@ export type KitchenLocation = {
  * same collection with source:"website". When a party is seated, the
  * reservation links to the created cashier session via sessionId.
  */
+/**
+ * Cash handover / till log. Lives at stores/{storeId}/cashHandovers/{id} and is
+ * recorded from /cashier/handover at shift change. Purely a log for
+ * accountability — inventory/accounting truth lives in the ERP. expectedCash =
+ * startingCash + cashSales − deductionsTotal; variance = countedCash −
+ * expectedCash.
+ */
+export type CashHandoverDeduction = {
+  id: string;
+  amount: number;
+  reason: string;
+  encodedByUid?: string | null;
+  encodedByName?: string | null;
+  createdAtClientMs: number;
+};
+
+export type CashHandover = {
+  id: string;
+  shiftDayId: string;
+  periodStartMs: number;
+  periodEndMs: number;
+  startingCash: number;
+  cashSales: number;
+  deductions: CashHandoverDeduction[];
+  deductionsTotal: number;
+  expectedCash: number;
+  countedCash: number;
+  variance: number;
+  outgoingCashierName: string;
+  incomingCashierName: string;
+  notes?: string | null;
+  createdAt?: Timestamp | null;
+  createdAtClientMs: number;
+  createdByUid?: string | null;
+  createdByName?: string | null;
+};
+
 export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show";
 
 export type Reservation = {
