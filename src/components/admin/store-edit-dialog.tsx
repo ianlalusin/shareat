@@ -33,6 +33,8 @@ const formSchema = z.object({
   logoUrl: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   acceptsReservations: z.boolean().default(false),
+  offersAlaCarte: z.boolean().default(true),
+  offersUnlimited: z.boolean().default(true),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   openingDate: z.date().optional().nullable(),
@@ -76,6 +78,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
     defaultValues: {
       name: "", code: "", address: "", tin: "", isActive: true,
       acceptsReservations: false,
+      offersAlaCarte: true,
+      offersUnlimited: true,
       email: "", contactNumber: "", openingDate: null,
       logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
       openingTime: "", closingTime: ""
@@ -109,6 +113,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: store.name, code: store.code, address: store.address,
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
+        offersAlaCarte: store.offersAlaCarte ?? true,
+        offersUnlimited: store.offersUnlimited ?? true,
         email: store.email || "", contactNumber: store.contactNumber || "",
         openingDate: toJsDate(store.openingDate),
         openingTime: store.openingTime || "",
@@ -121,6 +127,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       form.reset({
         name: "", code: "", address: "", tin: "", isActive: true,
         acceptsReservations: false,
+        offersAlaCarte: true,
+        offersUnlimited: true,
         email: "", contactNumber: "", openingDate: null,
         openingTime: "", closingTime: "",
         logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
@@ -268,6 +276,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="offersUnlimited" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Unlimited (Dine-in)</FormLabel><FormDescription className="text-xs"> Package dine-in sessions. Turn off for take-out-only kiosks. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="offersAlaCarte" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Ala Carte</FormLabel><FormDescription className="text-xs"> Ala carte / take-out sessions. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
               </form>
             </Form>
           </div>

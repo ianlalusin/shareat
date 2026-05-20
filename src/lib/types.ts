@@ -585,6 +585,13 @@ export type Store = {
    * to decide which branches to show on its reservation form.
    */
   acceptsReservations?: boolean;
+  /**
+   * Session modes this store offers. Drives which start-session options the
+   * cashier sees (e.g. a take-out kiosk with no dine-in sets offersUnlimited
+   * false). Absent ⇒ treated as offered, so existing stores keep both.
+   */
+  offersAlaCarte?: boolean;
+  offersUnlimited?: boolean;
   forecastConfig?: ForecastConfig;
   loyaltyConfig?: LoyaltyConfig;
   createdAt: any;
