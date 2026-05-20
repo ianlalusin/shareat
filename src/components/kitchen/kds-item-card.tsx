@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle, XCircle, Info, Send, ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Info, Send, ChevronDown, ChevronUp, Minus, Plus, AlarmClock } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,11 @@ function getStartMs(input: any): number | null {
   return null;
 }
 
-function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAtClientMs?: number | null }) {
+export const DEFAULT_SLA_MINUTES = 10;
+
+// Live ticket age in ms, ticking every second. Single source of truth for both
+// the elapsed display and the SLA "late" state on the card.
+function useTicketAge(createdAt: any, createdAtClientMs?: number | null): number | null {
   const startMs = useMemo(() => {
     return Number.isFinite(createdAtClientMs as number) ? (createdAtClientMs as number) : getStartMs(createdAt);
   }, [createdAt, createdAtClientMs]);
@@ -37,12 +41,15 @@ function TimeLapse({ createdAt, createdAtClientMs }: { createdAt: any; createdAt
     const timerId = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerId);
   }, [startMs]);
-  const elapsedMs = Math.max(0, now - (startMs as number));
-  const totalMinutes = Math.floor(elapsedMs / 60000);
+  if (!Number.isFinite(startMs as number)) return null;
+  return Math.max(0, now - (startMs as number));
+}
+
+function TimeLapse({ elapsedMs, isLate }: { elapsedMs: number | null; isLate: boolean }) {
   return (
-    <div className={cn("flex items-center gap-1.5 text-lg font-mono", totalMinutes >= 10 ? "text-destructive font-semibold" : "text-amber-600")}>
+    <div className={cn("flex items-center gap-1.5 text-lg font-mono", isLate ? "text-destructive font-semibold" : "text-amber-600")}>
       <Clock size={18} />
-      <span>{Number.isFinite(startMs as number) ? formatDuration(elapsedMs) : "00:00:00"}</span>
+      <span>{elapsedMs == null ? "00:00:00" : formatDuration(elapsedMs)}</span>
     </div>
   );
 }
@@ -66,13 +73,18 @@ interface KdsItemCardProps {
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
     onServeBatch?: (payload: ServeBatchPayload) => void;
     onCancelRemaining?: (payload: CancelRemainingPayload) => void;
+    slaMinutes?: number;
 }
 
-export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRemaining }: KdsItemCardProps) {
+export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRemaining, slaMinutes = DEFAULT_SLA_MINUTES }: KdsItemCardProps) {
     const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
     const [serveBatchOpen, setServeBatchOpen] = useState(false);
     const [serveQtyInput, setServeQtyInput] = useState("1");
     const [showServeLog, setShowServeLog] = useState(false);
+
+    const elapsedMs = useTicketAge(ticket.createdAt, ticket.createdAtClientMs ?? null);
+    const isActiveTicket = ticket.status === 'preparing' || ticket.status === 'partially_served';
+    const isLate = isActiveTicket && elapsedMs != null && elapsedMs >= slaMinutes * 60000;
 
     const isBatchTicket = ticket.qtyOrdered != null && ticket.qtyOrdered > 1;
     const qtyOrdered = ticket.qtyOrdered ?? ticket.qty ?? 1;
@@ -135,6 +147,8 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
         ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
         : ticket.status === 'cancelled'
         ? 'bg-gray-50 dark:bg-gray-900/20 border-gray-200'
+        : isLate
+        ? 'border-destructive border-2 bg-destructive/5'
         : '';
 
     return (
@@ -143,7 +157,14 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                 <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-center gap-2">
                         <p className="text-2xl font-bold text-destructive truncate">{identifier}</p>
-                        <TimeLapse createdAt={ticket.createdAt} createdAtClientMs={ticket.createdAtClientMs ?? null} />
+                        <div className="flex items-center gap-2 shrink-0">
+                            {isLate && (
+                                <Badge variant="destructive" className="gap-1 animate-pulse">
+                                    <AlarmClock className="h-3.5 w-3.5" /> Late
+                                </Badge>
+                            )}
+                            <TimeLapse elapsedMs={elapsedMs} isLate={isLate} />
+                        </div>
                     </div>
                     <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
                     {(ticket as any).modifiersText && (

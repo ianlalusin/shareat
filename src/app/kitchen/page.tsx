@@ -9,6 +9,7 @@ import {
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
+import { DEFAULT_SLA_MINUTES } from "@/components/kitchen/kds-item-card";
 import { HistoryView } from "@/components/kitchen/history-view";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -35,6 +36,7 @@ export type KitchenStation = {
     key: string;
     sortOrder?: number;
     isActive?: boolean;
+    slaMinutes?: number;
 };
 
 type Session = {
@@ -151,6 +153,46 @@ export default function KitchenPage() {
     if (!activeTab) return null;
     return stationsAllDocs.get(activeTab) ?? null;
   }, [stationsAllDocs, activeTab]);
+
+  // Coarse clock (20s) to drive the per-station "over SLA" tab counters without
+  // a per-second re-render of the whole page. Individual ticket cards keep
+  // their own 1s ticker for the live timer.
+  const [slaTick, setSlaTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setSlaTick(Date.now()), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slaByStation = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of stations) m.set(s.id, s.slaMinutes ?? DEFAULT_SLA_MINUTES);
+    return m;
+  }, [stations]);
+
+  // Count active tickets at each station that have aged past its SLA.
+  const overSlaByStation = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const [stationId, d] of stationsAllDocs) {
+      const slaMs = (slaByStation.get(stationId) ?? DEFAULT_SLA_MINUTES) * 60000;
+      const map = d.tickets || {};
+      const ids = d.activeIds?.length ? d.activeIds : Object.keys(map);
+      let late = 0;
+      for (const id of ids) {
+        const t = map[id];
+        if (!t) continue;
+        const start = getStartMs((t as any).createdAtClientMs ?? (t as any).createdAt);
+        if (start != null && slaTick - start >= slaMs) late += 1;
+      }
+      if (late > 0) counts.set(stationId, late);
+    }
+    return counts;
+  }, [stationsAllDocs, slaByStation, slaTick]);
+
+  const activeStationSla = useMemo(
+    () => slaByStation.get(activeTab) ?? DEFAULT_SLA_MINUTES,
+    [slaByStation, activeTab],
+  );
+
   const [dailyAnalytics, setDailyAnalytics] = useState<DailyMetric | null>(null);
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
@@ -665,9 +707,10 @@ export default function KitchenPage() {
                             <SelectContent>
                                 {stations.map((station: KitchenStation) => {
                                     const count = stationCounts.get(station.id) || 0;
+                                    const late = overSlaByStation.get(station.id) || 0;
                                     return (
                                         <SelectItem key={station.id} value={station.key}>
-                                            {station.name} {count > 0 && `(${count})`}
+                                            {station.name} {count > 0 && `(${count})`}{late > 0 && ` · ${late} late`}
                                         </SelectItem>
                                     )
                                 })}
@@ -677,11 +720,17 @@ export default function KitchenPage() {
                         <TabsList className="gap-2">
                             {stations.map((station: KitchenStation) => {
                                 const count = stationCounts.get(station.id) || 0;
+                                const late = overSlaByStation.get(station.id) || 0;
                                 return (
                                     <TabsTrigger key={station.id} value={station.key} className="relative">
                                         {station.name}
                                         {count > 0 && (
                                             <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{count}</Badge>
+                                        )}
+                                        {late > 0 && (
+                                            <Badge variant="outline" className="ml-2 border-destructive bg-destructive/10 text-destructive text-[10px] px-1.5 py-0 gap-0.5">
+                                                {late} late
+                                            </Badge>
                                         )}
                                     </TabsTrigger>
                                 )
@@ -690,7 +739,7 @@ export default function KitchenPage() {
                     )}
                     {stations.map((station: KitchenStation) => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} />
+                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} slaMinutes={activeStationSla} />
                         </TabsContent>
                     ))}
                  </Tabs>

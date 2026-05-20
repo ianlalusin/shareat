@@ -16,6 +16,7 @@ const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
   sortOrder: z.coerce.number().min(0),
   isActive: z.boolean().default(true),
+  slaMinutes: z.coerce.number().min(1, "At least 1 minute.").max(240),
 });
 type FormValues = z.infer<typeof formSchema>;
 
@@ -29,15 +30,15 @@ interface KitchenLocationEditDialogProps {
 export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: KitchenLocationEditDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", sortOrder: 0, isActive: true },
+    defaultValues: { name: "", sortOrder: 0, isActive: true, slaMinutes: 10 },
   });
 
   useEffect(() => {
     if (isOpen) {
       if (item) {
-        form.reset(item);
+        form.reset({ ...item, slaMinutes: item.slaMinutes ?? 10 });
       } else {
-        form.reset({ name: "", sortOrder: 0, isActive: true });
+        form.reset({ name: "", sortOrder: 0, isActive: true, slaMinutes: 10 });
       }
     }
   }, [item, form, isOpen]);
@@ -61,6 +62,14 @@ export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: Kit
               <FormItem>
                 <FormLabel>Sort Order</FormLabel>
                 <FormControl><Input type="number" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="slaMinutes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Serve-time SLA (minutes)</FormLabel>
+                <FormControl><Input type="number" min={1} max={240} {...field} /></FormControl>
+                <p className="text-xs text-muted-foreground">Tickets at this station turn red and flag as late once they pass this age on the KDS.</p>
                 <FormMessage />
               </FormItem>
             )} />

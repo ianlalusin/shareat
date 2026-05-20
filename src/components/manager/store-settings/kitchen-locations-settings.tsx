@@ -63,6 +63,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                     name: data.name,
                     sortOrder: data.sortOrder ?? (maxSortOrder + 1),
                     isActive: data.isActive ?? true,
+                    slaMinutes: data.slaMinutes ?? 10,
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                 }).commit();
@@ -106,6 +107,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                                 <TableRow>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Sort Order</TableHead>
+                                    <TableHead>SLA</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
@@ -115,6 +117,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                                     <TableRow key={loc.id}>
                                         <TableCell className="font-medium">{loc.name}</TableCell>
                                         <TableCell>{loc.sortOrder}</TableCell>
+                                        <TableCell>{loc.slaMinutes ?? 10} min</TableCell>
                                         <TableCell><Badge variant={loc.isActive ? "default" : "outline"}>{loc.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="outline" size="sm" onClick={() => handleOpenDialog(loc)} className="mr-2">Edit</Button>
