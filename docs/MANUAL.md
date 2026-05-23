@@ -30,12 +30,25 @@ Platform Admins have the highest level of access and are responsible for the glo
 -   **Store Management**:
     -   Navigate to **Admin > Store Management**.
     -   Create new restaurant locations, edit their details (address, tax info, hours), and activate/deactivate them.
+    -   Per-store toggles: **Accepts Online Reservations** (lists the branch on the public website's booking form), **Offers Unlimited (Dine-in)** and **Offers Ala Carte** (which session modes the cashier can start — e.g. a take-out kiosk turns Unlimited off).
 -   **Global Menu Management**:
     -   Navigate to **Admin > Menu Hub**.
-    -   **Products**: Create and manage the master list of all products (e.g., "Chicken Wings", "Coke"). These are not sellable items themselves but templates for inventory.
-    -   **Flavors**: Manage global flavors like "Spicy Buffalo" or "Garlic Parmesan".
-    -   **Refills**: Define refillable items (e.g., "Iced Tea Refill").
-    -   **Packages**: Create global package templates (e.g., "Unlimited Wings Package").
+    -   **Products**: The master catalog. A product can be a **single** item or part of a **Family** — a parent (e.g. "Sharebowl") with **variants** (Beef / Chicken / …), each its own sellable SKU with its own barcode.
+        -   **Merge**: select two or more products and merge them into a family.
+        -   **Archive**: soft-delete a product/family. Archived items drop into a pinned "Archived" group at the bottom (regardless of sort) and are auto-deactivated; restore from there.
+        -   **Family picture**: the family shows the first variant that has an image; variants without their own image inherit it on the cashier screens.
+        -   **Sub-category groups** are collapsible.
+        -   **Sync Inventory**: one click pushes family/variant info (kind, group, names) from the catalog into **every** store's inventory.
+    -   **Option Groups (modifiers)**: reusable choices (e.g. Size, Add Cheese) attached to products and applied at order time, with price deltas, single/multi select, and required / min / max rules.
+    -   **Flavors**: Manage global flavors.
+    -   **Refills**: Define refillable items.
+    -   **Packages**: Create global package templates.
+-   **Universal Collections**: platform-wide discounts and charges, plus oversight of store-scoped entries.
+-   **Customer App Catalog**: manage the customer-app menu and link each item to a POS product.
+-   **Analysis** (also available to Managers):
+    -   **Data Analysis**: 360° historical performance, comparisons, trends.
+    -   **Customer Requests**: every floor request for the store with response times (see §9).
+-   **Data Tools**: Reconciliation (analytics vs receipts) and Analytics Backfill.
 
 ---
 
@@ -49,20 +62,22 @@ Managers oversee the operations of their assigned store(s).
     -   Navigate to **Admin > Store Settings**.
     -   **Packages**: Set the price and availability for global packages within your store.
     -   **Refills & Flavors**: Enable or disable specific refills and flavors for your store.
-    -   **Kitchen**: Define kitchen stations (e.g., "Fryer", "Grill") for your store.
+    -   **Kitchen**: Define kitchen stations (e.g., "Fryer", "Grill"), each with a **serve-time SLA (minutes)** that drives the KDS late-ticket alerts.
     -   **Tables**: Configure the tables available in your restaurant.
 -   **Collections**:
     -   Navigate to **Admin > Collections**.
     -   Manage store-specific **Modes of Payment**, **Charges** (e.g., Service Charge), and **Discounts** (e.g., Senior Citizen).
 -   **Inventory Management**:
     -   Navigate to **Admin > Inventory Management**.
-    -   Add products from the global catalog to your store's inventory.
-    -   Set the `Cost` and `Selling Price` for each inventory item.
-    -   Mark items as "Add-ons" to make them available for individual sale.
+    -   Add products from the global catalog to your store's inventory; set `Cost` and `Selling Price`; mark items as "Add-ons" to sell individually; **archive** items you no longer stock.
+    -   **Backfill Data**: copies missing image URLs and barcodes from the global product onto inventory items. (Family/variant grouping is propagated separately by the admin **Sync Inventory** action — see §3.)
+-   **Reservations**: review and manage bookings for your store (see §8).
+-   **Cash Handover**: record shift-change till handovers (see §5).
 -   **Reporting & Logs**:
-    -   **Dashboard**: View real-time sales analytics, top-selling items, and performance metrics.
-    -   **Receipts & History**: Browse all past transactions, reprint receipts, and make corrections if needed.
-    -   **Activity Logs**: View an audit trail of all significant actions taken by staff in your store.
+    -   **Dashboard**: real-time sales analytics, top-selling items, payment mix, and performance metrics.
+    -   **Receipts & History**: browse past transactions, reprint, and correct.
+    -   **Activity Logs**: audit trail of staff actions, including a **Staff Adjustments** breakdown of voids / comps / discounts per cashier with outlier flags (manager / admin only).
+    -   **Customer Requests** (Analysis): all floor requests with response times (§9).
 
 ---
 
@@ -73,18 +88,19 @@ Cashiers are responsible for managing customer sessions and processing payments.
 ### Key Responsibilities:
 
 -   **Starting a Session**:
-    -   From the **Cashier** page, select "Unlimited" or "Ala Carte".
+    -   From the **Cashier** page, select "Unlimited" or "Ala Carte" (only the modes the store offers are shown).
     -   **For Unlimited**: Select an available table, choose the package, set the guest count, and select initial flavors.
     -   **For Ala Carte**: Enter the customer's name.
     -   Click "Start Session". For unlimited packages, the session becomes "Pending Verification" for a server. Ala carte orders are immediately active.
+    -   You can also seat a **walk-in from the Waitlist** or a **reservation** ("Seat now" on the Reservations page prefills a new session — see §8).
 -   **Managing an Active Bill**:
     -   Click on an active session from the grid.
-    -   **Add Add-ons**: Use the "Add Add-on" button to add items to the bill.
-    -   **Apply Adjustments**: Apply bill-wide discounts or add charges (e.g., Service Charge).
-    -   **Take Payment**: Record payments using the available payment methods. The balance and change are calculated automatically.
+    -   **Add Add-ons**: Use the "Add Add-on" button. Single items add directly; a **family tile** opens a combined picker where you lock the variant, choose any **modifiers** (price deltas apply), set quantity, and add — all in one place.
+    -   **Apply Adjustments**: bill-wide discounts/charges, or per-line discount / mark-free / void. Sessions with adjustments show Void / Disc / Free badges on the session grid.
+    -   **Take Payment**: record one or more payments across methods; balance and change calculate automatically.
 -   **Completing Payment**:
-    -   Once the balance is zero (or more has been paid), click "Complete Payment".
-    -   This closes the session and generates a receipt. You will be redirected to the receipt page for printing.
+    -   Once the balance is zero (or more has been paid), click "Complete Payment". This closes the session, generates a receipt, and redirects to the receipt page for printing.
+-   **Cash Handover** (shift change): from the cashier header open **Cash Handover**. Record the starting float (carried from the prior handover), the auto-computed cash sales for the window, any cash-out **deductions** (with reasons), the **counted** cash, the resulting **variance**, and both the outgoing and incoming cashier names. History and XLSX export are on the same page.
 
 ---
 
@@ -101,10 +117,11 @@ Servers are responsible for on-the-floor guest management and order-taking for r
     -   If the count differs from the cashier's, a manager's approval may be needed.
 -   **Managing Active Sessions**:
     -   **Order Refills**: Click the "Refill" button on an active session card. Select the refill items and flavors requested by the guests.
-    -   **Order Add-ons**: Click the "Add-on" button to open the POS for add-on items. Add items to the guest's bill.
+    -   **Order Add-ons**: Click the "Add-on" button to open the POS for add-on items (same family/variant + modifier picker as the cashier).
     -   All orders are sent directly to the designated kitchen station.
 -   **Requesting Changes**:
     -   If a guest count or package changes mid-session, click "Request Change" on the session card and submit the request for cashier/manager approval.
+-   **Sign-in**: servers identify themselves with a device-local profile so actions are attributed by name. **Platform admins skip this** — they go straight to the station and their actions attribute to their account.
 
 ---
 
@@ -116,18 +133,74 @@ Kitchen staff use the Kitchen Display System (KDS) to manage incoming orders.
 
 -   **Monitoring Orders**:
     -   On the **Kitchen** page, new orders appear as tickets in the appropriate station tab (e.g., "Fryer", "Drinks").
-    -   Each ticket shows the item, quantity, notes/flavors, and how long it has been waiting.
+    -   Each ticket shows the item, quantity, modifiers, notes/flavors, and how long it has been waiting.
+    -   **Late alerts**: once a ticket passes its station's serve-time **SLA** (set in Store Settings), the card turns red with a pulsing "Late" badge and the station tab shows an "N late" counter.
 -   **Managing Tickets**:
-    -   When an item is ready, click the **"Served"** button on the ticket. This removes it from the active screen.
-    -   If an item cannot be made (e.g., out of stock), click **"Cancel"** and select a reason. This notifies the cashier/server.
+    -   When an item is ready, click **"Served"** (or batch-serve part of a multi-qty ticket). It leaves the active screen.
+    -   If an item cannot be made, click **"Cancel"** and select a reason. This notifies the cashier/server.
+-   **Customer Requests**:
+    -   A floating button opens the **Customer Requests** panel — free-text requests guests send from the customer app. Mark each **Done** when handled.
+    -   The **Done** tab shows the **turnaround time** (request → done), color-coded. Only today's requests live here; the full history is in **Admin > Analysis > Customer Requests** (§9).
 -   **Viewing History**:
     -   The "Order History" panel shows recently completed or cancelled items for quick reference.
+
+---
+
+## 8. Feature: Reservations
+
+Forward table bookings, managed on the dedicated **Reservations** page (admin / manager / cashier).
+
+-   **Per day**: pick a date and see that day's bookings; filter to open (booked/confirmed) or show all. The nav link carries a badge with today's open count.
+-   **Create / edit**: customer name, date & time, party size, phone, notes.
+-   **Lifecycle**: bookings start as **Pending** (status "booked"). Staff **Confirm** after contacting the customer, **Cancel**, or mark **No-show**.
+-   **Seat now**: hands the party to the cashier — it prefills a new session and, on completion, marks the reservation seated and links it to the session.
+-   **Website bookings**: the public SharEat website can submit reservations into the same list (tagged `web`). These also arrive Pending for staff confirmation. The website booking form is gated behind a launch flag and its cloud backend (Cloud Functions + App Check) until enabled.
+
+---
+
+## 9. Feature: Customer Requests
+
+Free-text requests guests send from the customer app.
+
+-   **Kitchen (live)**: the KDS Customer Requests panel lists today's pending requests; mark each **Done**. The Done tab shows **turnaround time** (request → done).
+-   **Admin (history)**: **Admin > Analysis > Customer Requests** shows the full history for the store — date presets (today / 7d / 30d / all), status and text filters, summary stats (total, pending, completed, **average response time**), per-row response time, and XLSX export.
 
 ---
 
 ## Session Activity Log
 
 A running log of feature changes and meaningful fixes shipped per session. Newest entries on top.
+
+### 2026-05-24 — Product families, reservations, cash handover, KDS SLA, and more
+
+**Shipped to:** `sev5_advanced` (POS) and `main` (SharEat website). One multi-day batch; the role sections above (§3–§9) were rewritten to match.
+
+**Products & menu**
+- **Families / variants**: products can be grouped into a family parent with sellable variants. Added a **Merge** UI, **archive** (soft-delete → pinned "Archived" group, auto-deactivate, restore), collapsible sub-category groups, and **Sync Inventory** to push family metadata into every store's inventory.
+- **Option Groups (modifiers)**: reusable, price-delta modifiers attached to products and applied at order time (single/multi, required, min/max). New combined **Family Order Modal** in the cashier/server addon picker (variant → modifiers → qty → add) with a "Clear" affordance for optional radio groups.
+- **Family picture**: family tile and imageless variants resolve to the first variant that has an image. (AI image generation for products is designed but deferred until image-model access is confirmed.)
+
+**Stores**
+- New per-store toggles: `acceptsReservations`, `offersAlaCarte`, `offersUnlimited`.
+
+**Reservations** (new)
+- Dedicated `/reservations` page (create/edit/confirm/cancel/no-show, day view, nav badge). "Seat now" hands off to the cashier and links the created session. Public website booking pipeline (Admin SDK Cloud Functions writing into the POS Firestore, App Check, hidden `/admin` mapping page) built and gated behind a launch flag pending cloud setup.
+
+**Cash Handover** (new)
+- `/cashier/handover` till log: starting float, auto-computed cash sales, deductions, counted cash, variance, both cashier names; history + XLSX.
+
+**Oversight & analysis**
+- `/logs` **Staff Adjustments** card: per-cashier voids/comps/discounts with outlier flags (manager/admin only).
+- `/admin/customer-requests` (Analysis): full customer-request history with response-time stats and export.
+
+**Kitchen**
+- Per-station **serve-time SLA**; KDS flags late tickets (red + "Late" badge + per-tab "N late" counter). Customer-request **turnaround** time on the Done tab.
+
+**Server**
+- Platform admins **skip the local server-profile sign-in**; the Verify-Average card shows for them too.
+
+**Read-cost optimizations** (no behavior change)
+- Dropped the per-session bill-line listener fan-out (badge flags now maintained on the `activeSessions` projection); lazy `storeAddons` subscription; consolidated kitchen `rtKdsTickets` listeners and one-shot flavors fetch; lazy-mounted settings/collections tab panels.
 
 ### 2026-04-27 — Fix: Bluetooth printer fails after GrabFood (or any other app) uses the same printer
 
