@@ -247,17 +247,18 @@ export function ServerPageClient() {
   return (
     <RoleGuard allow={["admin", "manager", "server"]}>
       <PageHeader title="Server Station" description="Verify guest sessions and track items for serving.">
+        {/* Store-level stat — show whenever a store is selected, including for
+            admins who bypassed the local profile sign-in. */}
+        {activeStore && <VerifyAverageCard storeId={activeStore.id} />}
+        {/* Profile sign-in/out card only makes sense with an active profile. */}
         {activeStore && currentProfile && (
-          <>
-            <VerifyAverageCard storeId={activeStore.id} />
-            <ServerUserCard
-              storeId={activeStore.id}
-              profileId={currentProfile.profileId}
-              name={currentProfile.name}
-              onSignIn={signIn}
-              onSignOut={signOut}
-            />
-          </>
+          <ServerUserCard
+            storeId={activeStore.id}
+            profileId={currentProfile.profileId}
+            name={currentProfile.name}
+            onSignIn={signIn}
+            onSignOut={signOut}
+          />
         )}
       </PageHeader>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
