@@ -233,7 +233,9 @@ export function ServerPageClient() {
     );
   }
 
-  if (!currentProfile && activeStore) {
+  // Admins (platform admins) skip the local server-profile sign-in — their
+  // actions are attributed by their account uid instead of a device profile.
+  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
     return (
       <RoleGuard allow={["admin", "manager", "server"]}>
         <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
