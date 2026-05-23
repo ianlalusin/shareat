@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2 } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -41,6 +41,7 @@ const dataTools = [
 
 const analysisTools = [
     { title: "Data Analysis", description: "360° historical performance, comparisons, and trends.", href: "/admin/data-analysis", icon: BarChart3 },
+    { title: "Customer Requests", description: "All requests sent from the floor, with response times.", href: "/admin/customer-requests", icon: MessageCircle },
 ]
 
 function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
