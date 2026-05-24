@@ -338,3 +338,76 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
     return { ok: false, error: msg };
   }
 }
+
+type ApplyVoucherArgs = { storeId: string; sessionId: string; code: string; staffUid: string };
+
+/**
+ * Apply a Hub-created voucher (by code) to a session. Points were already
+ * debited when the voucher was created in the Hub; here we just validate it,
+ * enforce the per-visit + per-store limits, bump the per-store counter, and
+ * attach it to the session as a bill discount.
+ */
+export async function applyLoyaltyVoucher({ storeId, sessionId, code, staffUid }: ApplyVoucherArgs): Promise<RedeemResult> {
+  const cleanCode = String(code || "").trim().toUpperCase();
+  if (!cleanCode) return { ok: false, error: "Missing code" };
+  const db = getAdminDb();
+
+  try {
+    // Locate the voucher by code (query outside the transaction).
+    const q = await db.collection("loyaltyRedemptions").where("code", "==", cleanCode).limit(5).get();
+    const voucherDoc = q.docs.find((d) => (d.data() as any).status === "active");
+    if (!voucherDoc) return { ok: false, error: "Voucher not found or already used" };
+
+    const redemptionRef = voucherDoc.ref;
+    const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
+
+    const result = await db.runTransaction(async (tx) => {
+      const vSnap = await tx.get(redemptionRef);
+      if (!vSnap.exists) throw new Error("Voucher not found");
+      const v = vSnap.data() as any;
+      if (v.status !== "active") throw new Error("Voucher already used or cancelled");
+      if (typeof v.expiresAtMs === "number" && v.expiresAtMs < Date.now()) throw new Error("Voucher has expired");
+
+      const rewardRef = db.doc(`loyaltyRewards/${v.rewardId}`);
+      const [rewardSnap, sessSnap] = await Promise.all([tx.get(rewardRef), tx.get(sessionRef)]);
+      const reward = rewardSnap.exists ? (rewardSnap.data() as any) : null;
+
+      // Per-visit limit.
+      const maxPerVisit = Math.max(1, Math.floor(Number(reward?.maxPerVisit) || 1));
+      const existing = sessSnap.exists ? (sessSnap.data() as any).loyaltyRedemptions : null;
+      const existingArr: Array<{ rewardId?: string; phone?: string }> = Array.isArray(existing) ? existing : [];
+      const sameRewardCount = existingArr.filter((e) => e.rewardId === v.rewardId && e.phone === v.phone).length;
+      if (sameRewardCount >= maxPerVisit) throw new Error("Already claimed this reward this visit");
+
+      // Per-store cap.
+      const maxClaimsPerStore = Number(reward?.maxClaimsPerStore) || 0;
+      if (maxClaimsPerStore > 0) {
+        const usedAtStore = Number((reward?.claimsByStore ?? {})[storeId] ?? 0);
+        if (usedAtStore >= maxClaimsPerStore) throw new Error("Reward claim limit reached at this store");
+      }
+
+      // Mark the voucher applied + bump the per-store counter + attach to the session.
+      const nowMs = Date.now();
+      tx.update(redemptionRef, {
+        status: "applied", appliedStoreId: storeId, appliedSessionId: sessionId,
+        appliedByUid: staffUid, appliedAtMs: nowMs, updatedAt: FieldValue.serverTimestamp(),
+      });
+      if (v.rewardId) {
+        tx.set(db.doc(`loyaltyRewards/${v.rewardId}`), { claimsByStore: { [storeId]: FieldValue.increment(1) }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+      const newEntry = { redemptionId: redemptionRef.id, rewardId: v.rewardId, rewardName: v.rewardName, type: v.type, value: v.value, pointsCost: v.pointsCost, phone: v.phone };
+      tx.set(sessionRef, {
+        loyaltyRedemptions: [...existingArr, newEntry],
+        billingRevision: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { rewardName: v.rewardName, type: v.type, value: v.value, pointsCost: v.pointsCost };
+    });
+
+    return { ok: true, redemptionId: redemptionRef.id, code: cleanCode, reward: { name: result.rewardName, type: result.type as "fixed" | "percent", value: result.value, pointsCost: result.pointsCost } };
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    console.error("[applyLoyaltyVoucher] failed:", msg);
+    return { ok: false, error: msg };
+  }
+}

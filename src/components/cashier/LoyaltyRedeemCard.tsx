@@ -6,7 +6,8 @@ import { getAuth } from "firebase/auth";
 import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Gift, Loader2, Sparkles, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Gift, Loader2, Sparkles, Ticket, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { LoyaltyReward, SessionLoyaltyRedemption } from "@/lib/types";
 
@@ -36,6 +37,8 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
   const [rewards, setRewards] = useState<LoyaltyReward[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [applyingVoucher, setApplyingVoucher] = useState(false);
 
   const load = useCallback(async () => {
     if (!linkedPhone) return;
@@ -106,6 +109,28 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
     }
   };
 
+  const applyVoucher = async () => {
+    const code = voucherCode.trim().toUpperCase();
+    if (!code) return;
+    setApplyingVoucher(true);
+    try {
+      const t = await token();
+      const res = await fetch("/api/loyalty/redeem-voucher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ storeId, sessionId, code }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not apply voucher");
+      toast({ title: "Voucher applied", description: json.reward?.name });
+      setVoucherCode("");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Voucher failed", description: e?.message });
+    } finally {
+      setApplyingVoucher(false);
+    }
+  };
+
   if (!linkedPhone) return null;
 
   return (
@@ -171,6 +196,24 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
               </ul>
             )}
             <Button variant="ghost" size="sm" className="w-full" onClick={() => setOpen(false)}>Done</Button>
+          </div>
+        )}
+
+        {/* Apply a Hub voucher by code */}
+        {!disabled && (
+          <div className="flex items-center gap-2 border-t pt-3">
+            <Ticket className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              value={voucherCode}
+              onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+              placeholder="Voucher code"
+              className="h-8 text-sm uppercase"
+              maxLength={8}
+              disabled={applyingVoucher}
+            />
+            <Button size="sm" variant="outline" onClick={applyVoucher} disabled={applyingVoucher || voucherCode.trim().length === 0}>
+              {applyingVoucher ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+            </Button>
           </div>
         )}
       </CardContent>
