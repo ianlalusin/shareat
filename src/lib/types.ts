@@ -576,6 +576,12 @@ export type LoyaltyReward = {
   imageUrl?: string | null;
   /** Optional store scoping; absent ⇒ available at all stores. */
   applicableStoreIds?: string[] | null;
+  /** Max times one customer may claim this reward within a single visit. Default 1. */
+  maxPerVisit?: number;
+  /** Max total claims of this reward per store. null/0/absent ⇒ unlimited. */
+  maxClaimsPerStore?: number | null;
+  /** Running claim counter per store, maintained on redeem/reverse. */
+  claimsByStore?: Record<string, number>;
   createdAt?: any;
   updatedAt?: any;
   createdBy?: string;
@@ -610,9 +616,14 @@ export type LoyaltyRedemption = {
   refundedAtMs?: number | null;
 };
 
-/** Snapshot of an applied loyalty reward stored on a session (drives bill totals). */
+/**
+ * Snapshot of an applied loyalty reward stored on a session. A session can hold
+ * several (`session.loyaltyRedemptions`), each a different reward; bill totals
+ * sum them. Drives the bill discount math.
+ */
 export type SessionLoyaltyRedemption = {
   redemptionId: string;
+  rewardId: string;
   rewardName: string;
   type: "fixed" | "percent";
   value: number;
@@ -868,7 +879,7 @@ export type Receipt = {
     voidReason?: string;
   billDiscount?: Discount | null;
   customAdjustments?: Adjustment[];
-  loyaltyRedemption?: SessionLoyaltyRedemption | null;
+  loyaltyRedemptions?: SessionLoyaltyRedemption[];
   // Refund receipt support
   receiptId?: string;
   parentReceiptId?: string;

@@ -50,7 +50,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
-  const [loyaltyRedemption, setLoyaltyRedemption] = useState<SessionLoyaltyRedemption | null>(null);
+  const [loyaltyRedemptions, setLoyaltyRedemptions] = useState<SessionLoyaltyRedemption[]>([]);
 
   const [isLoadingSession, setIsLoadingSession] = useState(true);
 
@@ -114,7 +114,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             setSession({ id: doc.id, ...data } as PendingSession);
             setBillDiscount((data.billDiscount as Discount | null | undefined) ?? null);
             setCustomAdjustments(Array.isArray(data.customAdjustments) ? (data.customAdjustments as Adjustment[]) : []);
-            setLoyaltyRedemption((data.loyaltyRedemption as SessionLoyaltyRedemption | null | undefined) ?? null);
+            setLoyaltyRedemptions(Array.isArray(data.loyaltyRedemptions) ? (data.loyaltyRedemptions as SessionLoyaltyRedemption[]) : []);
         } else {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
             router.replace('/cashier');
@@ -188,8 +188,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const billTotals = useMemo(() => {
     return calculateBillTotals(billLines, activeStore, billDiscount, customAdjustments,
-      loyaltyRedemption ? { type: loyaltyRedemption.type, value: loyaltyRedemption.value } : null);
-  }, [billLines, activeStore, billDiscount, customAdjustments, loyaltyRedemption]);
+      loyaltyRedemptions.map((r) => ({ type: r.type, value: r.value })));
+  }, [billLines, activeStore, billDiscount, customAdjustments, loyaltyRedemptions]);
   
   const { grandTotal } = billTotals;
 
@@ -446,7 +446,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           store={activeStore!}
           billDiscount={billDiscount}
           customAdjustments={customAdjustments}
-          loyaltyRedemption={loyaltyRedemption}
+          loyaltyRedemptions={loyaltyRedemptions}
           totalPaid={0}
           isLocked={isBillingLocked}
           onRemoveLineAdjustment={handleRemoveLineAdjustment}
@@ -458,7 +458,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               sessionId={sessionId}
               linkedPhone={(session as any).linkedCustomerPhone}
               linkedName={(session as any).linkedCustomerName ?? null}
-              redemption={loyaltyRedemption}
+              redemptions={loyaltyRedemptions}
               disabled={isBillingLocked}
             />
           </div>

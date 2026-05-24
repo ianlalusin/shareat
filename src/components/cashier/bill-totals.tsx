@@ -11,7 +11,7 @@ interface BillTotalsProps {
   store: Store;
   billDiscount: Discount | null;
   customAdjustments: Adjustment[];
-  loyaltyRedemption?: SessionLoyaltyRedemption | null;
+  loyaltyRedemptions?: SessionLoyaltyRedemption[];
   totalPaid: number;
   isLocked?: boolean;
   onRemoveLineAdjustment?: (lineId: string, adjId: string) => void;
@@ -22,12 +22,13 @@ export function BillTotals({
   store,
   billDiscount,
   customAdjustments,
-  loyaltyRedemption,
+  loyaltyRedemptions,
   totalPaid,
   isLocked,
   onRemoveLineAdjustment,
 }: BillTotalsProps) {
 
+    const redemptions = loyaltyRedemptions ?? [];
     const totals = useMemo(() => {
         if (!store) return {
           subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
@@ -35,8 +36,8 @@ export function BillTotals({
           vatableSales: 0, vatExemptSales: 0
         };
         return calculateBillTotals(lines, store, billDiscount, customAdjustments,
-          loyaltyRedemption ? { type: loyaltyRedemption.type, value: loyaltyRedemption.value } : null);
-    }, [lines, store, billDiscount, customAdjustments, loyaltyRedemption]);
+          redemptions.map((r) => ({ type: r.type, value: r.value })));
+    }, [lines, store, billDiscount, customAdjustments, redemptions]);
 
     // Add guards for totals being null
     const grandTotal = totals?.grandTotal ?? 0;
@@ -172,7 +173,7 @@ export function BillTotals({
 
         {((totals?.loyaltyDiscountTotal ?? 0) > 0) && (
              <div className="flex justify-between text-red-600">
-                <span>★ {loyaltyRedemption?.rewardName || "Sharelebrator reward"}</span>
+                <span>★ Sharelebrator{redemptions.length === 1 ? `: ${redemptions[0].rewardName}` : ` (${redemptions.length} rewards)`}</span>
                 <span>- ₱{(totals?.loyaltyDiscountTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         )}

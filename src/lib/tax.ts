@@ -15,8 +15,8 @@ export interface TaxAndTotals {
   vatExemptSales: number;
 }
 
-/** A redeemed loyalty reward applied to the bill as a stacking discount. */
-export type LoyaltyDiscountInput = { type: "fixed" | "percent"; value: number } | null;
+/** Redeemed loyalty rewards applied to the bill as stacking discounts. */
+export type LoyaltyDiscountInput = { type: "fixed" | "percent"; value: number }[] | null;
 
 /** Rounds to 2 decimal places using standard half-up rounding. EPSILON avoids floating-point edge cases (e.g., 1.005 -> 1.01). */
 function round(value: number): number {
@@ -145,18 +145,19 @@ export function calculateBillTotals(
   
   billDiscountTotal = round(billDiscountTotal);
 
-  // Loyalty reward stacks AFTER line + bill discounts, on the remaining base
-  // (VAT-exclusive when the store is VAT-inclusive, to mirror billDiscount).
+  // Loyalty rewards stack AFTER line + bill discounts, each applied on the
+  // running remaining base (VAT-exclusive when the store is VAT-inclusive, to
+  // mirror billDiscount). Multiple rewards compound on what's left.
   let loyaltyDiscountTotal = 0;
-  if (loyaltyDiscount && loyaltyDiscount.value > 0) {
-    const remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
-    const loyaltyBase = isVatInclusive && taxRate > 0
-      ? remainingGross / (1 + taxRate)
-      : remainingGross;
-    if (loyaltyDiscount.type === "percent") {
-      loyaltyDiscountTotal = loyaltyBase * (loyaltyDiscount.value / 100);
-    } else {
-      loyaltyDiscountTotal = Math.min(loyaltyBase, loyaltyDiscount.value);
+  if (Array.isArray(loyaltyDiscount) && loyaltyDiscount.length > 0) {
+    let remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
+    for (const lr of loyaltyDiscount) {
+      if (!lr || !(lr.value > 0) || remainingGross <= 0) continue;
+      const base = isVatInclusive && taxRate > 0 ? remainingGross / (1 + taxRate) : remainingGross;
+      const amt = lr.type === "percent" ? base * (lr.value / 100) : Math.min(base, lr.value);
+      const grossAmt = isVatInclusive && taxRate > 0 ? amt * (1 + taxRate) : amt;
+      loyaltyDiscountTotal += amt;
+      remainingGross -= grossAmt;
     }
   }
   loyaltyDiscountTotal = round(Math.max(0, loyaltyDiscountTotal));

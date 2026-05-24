@@ -30,10 +30,12 @@ type FormState = {
   value: string;
   pointsCost: string;
   sortOrder: string;
+  maxPerVisit: string;
+  maxClaimsPerStore: string;
   isActive: boolean;
 };
 
-const EMPTY: FormState = { name: "", description: "", type: "fixed", value: "", pointsCost: "", sortOrder: "0", isActive: true };
+const EMPTY: FormState = { name: "", description: "", type: "fixed", value: "", pointsCost: "", sortOrder: "0", maxPerVisit: "1", maxClaimsPerStore: "", isActive: true };
 
 export default function LoyaltyRewardsPage() {
   const router = useRouter();
@@ -66,7 +68,10 @@ export default function LoyaltyRewardsPage() {
     setEditing(r);
     setForm({
       name: r.name, description: r.description ?? "", type: r.type, value: String(r.value),
-      pointsCost: String(r.pointsCost), sortOrder: String(r.sortOrder ?? 0), isActive: r.isActive,
+      pointsCost: String(r.pointsCost), sortOrder: String(r.sortOrder ?? 0),
+      maxPerVisit: String(r.maxPerVisit ?? 1),
+      maxClaimsPerStore: r.maxClaimsPerStore ? String(r.maxClaimsPerStore) : "",
+      isActive: r.isActive,
     });
     setDialogOpen(true);
   };
@@ -87,6 +92,8 @@ export default function LoyaltyRewardsPage() {
         value: Number(form.value),
         pointsCost: Math.floor(Number(form.pointsCost)),
         sortOrder: Number(form.sortOrder) || 0,
+        maxPerVisit: Math.max(1, Math.floor(Number(form.maxPerVisit) || 1)),
+        maxClaimsPerStore: form.maxClaimsPerStore.trim() === "" ? null : Math.max(0, Math.floor(Number(form.maxClaimsPerStore) || 0)),
         isActive: form.isActive,
         updatedAt: serverTimestamp(),
       };
@@ -224,6 +231,18 @@ export default function LoyaltyRewardsPage() {
               <div className="space-y-1">
                 <Label>Sort order</Label>
                 <Input type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} disabled={saving} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Max per visit</Label>
+                <Input type="number" min={1} inputMode="numeric" value={form.maxPerVisit} onChange={(e) => setForm({ ...form, maxPerVisit: e.target.value })} disabled={saving} />
+                <p className="text-[11px] text-muted-foreground">Times one customer can claim this, per visit.</p>
+              </div>
+              <div className="space-y-1">
+                <Label>Max claims / store</Label>
+                <Input type="number" min={0} inputMode="numeric" placeholder="Unlimited" value={form.maxClaimsPerStore} onChange={(e) => setForm({ ...form, maxClaimsPerStore: e.target.value })} disabled={saving} />
+                <p className="text-[11px] text-muted-foreground">Blank = unlimited. Total claims per store.</p>
               </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">

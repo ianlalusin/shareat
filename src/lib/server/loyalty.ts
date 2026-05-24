@@ -180,16 +180,9 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
   const db = getAdminDb();
 
   try {
-    const rewardSnap = await db.doc(`loyaltyRewards/${rewardId}`).get();
-    if (!rewardSnap.exists) return { ok: false, error: "Reward not found" };
-    const reward = rewardSnap.data() as any;
-    if (reward.isActive === false) return { ok: false, error: "Reward is not available" };
-    const pointsCost = Math.floor(Number(reward.pointsCost) || 0);
-    const value = Number(reward.value) || 0;
-    const type = reward.type === "percent" ? "percent" : "fixed";
-    if (pointsCost <= 0 || value <= 0) return { ok: false, error: "Invalid reward configuration" };
-
     const customerRef = db.doc(`customers/${phone}`);
+    const rewardRef = db.doc(`loyaltyRewards/${rewardId}`);
+    const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
     const redemptionRef = db.collection("loyaltyRedemptions").doc();
     const ledgerRef = customerRef.collection("pointsLedger").doc();
     const logRef = db.collection("loyaltyLogs").doc();
@@ -197,13 +190,37 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
     const now = Date.now();
     const code = genRedemptionCode();
 
-    const customerName = await db.runTransaction(async (tx) => {
-      const cSnap = await tx.get(customerRef);
+    const result = await db.runTransaction(async (tx) => {
+      const [cSnap, rewardSnap, sessSnap] = await Promise.all([tx.get(customerRef), tx.get(rewardRef), tx.get(sessionRef)]);
       if (!cSnap.exists) throw new Error("Customer not found");
+      if (!rewardSnap.exists) throw new Error("Reward not found");
       const c = cSnap.data() as any;
+      const reward = rewardSnap.data() as any;
+      if (reward.isActive === false) throw new Error("Reward is not available");
+
+      const pointsCost = Math.floor(Number(reward.pointsCost) || 0);
+      const value = Number(reward.value) || 0;
+      const type = reward.type === "percent" ? "percent" : "fixed";
+      if (pointsCost <= 0 || value <= 0) throw new Error("Invalid reward configuration");
+
       const balance = Number(c.pointsBalance || 0);
       if (balance < pointsCost) throw new Error("Insufficient points");
       const name = c.name || "";
+
+      // Per-visit limit: how many times this member already claimed THIS reward
+      // on THIS session.
+      const maxPerVisit = Math.max(1, Math.floor(Number(reward.maxPerVisit) || 1));
+      const existing = sessSnap.exists ? (sessSnap.data() as any).loyaltyRedemptions : null;
+      const existingArr: Array<{ rewardId?: string; phone?: string }> = Array.isArray(existing) ? existing : [];
+      const sameRewardCount = existingArr.filter((e) => e.rewardId === rewardId && e.phone === phone).length;
+      if (sameRewardCount >= maxPerVisit) throw new Error("Already claimed this reward this visit");
+
+      // Per-store claim cap.
+      const maxClaimsPerStore = Number(reward.maxClaimsPerStore) || 0;
+      if (maxClaimsPerStore > 0) {
+        const usedAtStore = Number((reward.claimsByStore ?? {})[storeId] ?? 0);
+        if (usedAtStore >= maxClaimsPerStore) throw new Error("Reward claim limit reached at this store");
+      }
 
       tx.update(customerRef, { pointsBalance: FieldValue.increment(-pointsCost), updatedAt: FieldValue.serverTimestamp() });
       tx.set(ledgerRef, {
@@ -229,25 +246,28 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
         totalPointsRedeemedEver: FieldValue.increment(pointsCost),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
-      // Stamp the redemption onto the session so bill totals + payment reflect
-      // the discount. Bump billingRevision so an in-flight payment re-checks.
-      const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
+      // Bump the per-store claim counter on the reward.
+      tx.set(rewardRef, { claimsByStore: { [storeId]: FieldValue.increment(1) }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Append the redemption onto the session (array) so bill totals + payment
+      // reflect it. Bump billingRevision so an in-flight payment re-checks.
+      const newEntry = { redemptionId: redemptionRef.id, rewardId, rewardName: reward.name, type, value, pointsCost, phone };
       tx.set(sessionRef, {
-        loyaltyRedemption: { redemptionId: redemptionRef.id, rewardName: reward.name, type, value, pointsCost, phone },
+        loyaltyRedemptions: [...existingArr, newEntry],
         billingRevision: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
-      return name;
+      return { name, rewardName: reward.name, type, value, pointsCost };
     });
+    const customerName = result.name;
 
     try {
       await appendLogToProjection(
-        { type: "points_redeemed", phone, customerName, actorUid: staffUid, storeId, sessionId, points: pointsCost, rewardName: reward.name } as any,
+        { type: "points_redeemed", phone, customerName, actorUid: staffUid, storeId, sessionId, points: result.pointsCost, rewardName: result.rewardName } as any,
         logRef.id,
       );
     } catch {}
 
-    return { ok: true, redemptionId: redemptionRef.id, code, reward: { name: reward.name, type, value, pointsCost } };
+    return { ok: true, redemptionId: redemptionRef.id, code, reward: { name: result.rewardName, type: result.type as "fixed" | "percent", value: result.value, pointsCost: result.pointsCost } };
   } catch (err: any) {
     const msg = err.message || String(err);
     console.error("[writeLoyaltyRedeem] failed:", msg);
@@ -269,11 +289,17 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
 
   try {
     const refunded = await db.runTransaction(async (tx) => {
+      // --- reads (all before writes) ---
       const rSnap = await tx.get(redRef);
       if (!rSnap.exists) throw new Error("Redemption not found");
       const r = rSnap.data() as any;
       if (r.status === "cancelled" || r.status === "expired") return 0; // already reversed
 
+      const hasSession = !!(r.appliedStoreId && r.appliedSessionId);
+      const sessionRef = hasSession ? db.doc(`stores/${r.appliedStoreId}/sessions/${r.appliedSessionId}`) : null;
+      const sessSnap = sessionRef ? await tx.get(sessionRef) : null;
+
+      // --- writes ---
       const pointsCost = Math.floor(Number(r.pointsCost) || 0);
       const customerRef = db.doc(`customers/${r.phone}`);
       const ledgerRef = customerRef.collection("pointsLedger").doc();
@@ -286,12 +312,18 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
       });
       tx.update(redRef, { status: reason === "expired" ? "expired" : "cancelled", refundedAtMs: Date.now(), updatedAt: FieldValue.serverTimestamp() });
       tx.set(statsRef, { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      // Clear the redemption off its session (if still attached) so the bill
-      // discount drops. Only when it was applied to a session.
-      if (r.appliedStoreId && r.appliedSessionId) {
-        const sessionRef = db.doc(`stores/${r.appliedStoreId}/sessions/${r.appliedSessionId}`);
+
+      // Free up the per-store claim counter.
+      if (r.rewardId && r.appliedStoreId) {
+        tx.set(db.doc(`loyaltyRewards/${r.rewardId}`), { claimsByStore: { [r.appliedStoreId]: FieldValue.increment(-1) }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+
+      // Drop this redemption from its session so the bill discount goes away.
+      if (sessionRef && sessSnap?.exists) {
+        const existing = ((sessSnap.data() as any).loyaltyRedemptions ?? []) as Array<{ redemptionId?: string }>;
+        const next = existing.filter((e) => e.redemptionId !== redemptionId);
         tx.set(sessionRef, {
-          loyaltyRedemption: FieldValue.delete(),
+          loyaltyRedemptions: next,
           billingRevision: FieldValue.increment(1),
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });

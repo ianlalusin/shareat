@@ -6,7 +6,6 @@ import { getAuth } from "firebase/auth";
 import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Gift, Loader2, Sparkles, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { LoyaltyReward, SessionLoyaltyRedemption } from "@/lib/types";
@@ -16,7 +15,7 @@ interface Props {
   sessionId: string;
   linkedPhone: string | null | undefined;
   linkedName?: string | null;
-  redemption: SessionLoyaltyRedemption | null;
+  redemptions: SessionLoyaltyRedemption[];
   disabled?: boolean;
 }
 
@@ -26,7 +25,11 @@ async function token(): Promise<string> {
   return u.getIdToken();
 }
 
-export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName, redemption, disabled }: Props) {
+function fmtReward(r: { type: "fixed" | "percent"; value: number }) {
+  return r.type === "percent" ? `${r.value}% off` : `₱${r.value.toLocaleString()} off`;
+}
+
+export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName, redemptions, disabled }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
@@ -45,11 +48,12 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
       ]);
       const lookup = await lookupRes.json().catch(() => ({}));
       setBalance(lookup?.found ? Number(lookup.customer?.pointsBalance ?? 0) : 0);
-      const list = rewardsSnap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .filter((r: any) => r.isActive !== false)
-        .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)) as LoyaltyReward[];
-      setRewards(list);
+      setRewards(
+        rewardsSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .filter((r: any) => r.isActive !== false)
+          .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)) as LoyaltyReward[],
+      );
     } catch (e: any) {
       toast({ variant: "destructive", title: "Could not load rewards", description: e?.message });
     } finally {
@@ -74,8 +78,7 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Redeem failed");
       toast({ title: "Reward applied", description: `${reward.name} — ${reward.pointsCost} pts` });
-      setOpen(false);
-      setBalance(null); // force refresh next open
+      setBalance(null); // refresh balance after the debit
     } catch (e: any) {
       toast({ variant: "destructive", title: "Redeem failed", description: e?.message });
     } finally {
@@ -83,19 +86,18 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
     }
   };
 
-  const remove = async () => {
-    if (!redemption) return;
-    setBusyId("__remove__");
+  const remove = async (r: SessionLoyaltyRedemption) => {
+    setBusyId(r.redemptionId);
     try {
       const t = await token();
       const res = await fetch("/api/loyalty/redeem", {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
-        body: JSON.stringify({ redemptionId: redemption.redemptionId, reason: "removed" }),
+        body: JSON.stringify({ redemptionId: r.redemptionId, reason: "removed" }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Remove failed");
-      toast({ title: "Reward removed", description: `${redemption.pointsCost} pts refunded.` });
+      toast({ title: "Reward removed", description: `${r.pointsCost} pts refunded.` });
       setBalance(null);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Remove failed", description: e?.message });
@@ -106,8 +108,6 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
 
   if (!linkedPhone) return null;
 
-  const fmtReward = (r: { type: "fixed" | "percent"; value: number }) => (r.type === "percent" ? `${r.value}% off` : `₱${r.value.toLocaleString()} off`);
-
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -116,26 +116,34 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
         </CardTitle>
         <CardDescription>{linkedName ? `${linkedName} · ` : ""}{linkedPhone}</CardDescription>
       </CardHeader>
-      <CardContent>
-        {redemption ? (
-          <div className="flex items-center justify-between gap-2 rounded-md border p-2">
-            <div className="min-w-0">
-              <div className="font-medium text-sm flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-amber-500" /> {redemption.rewardName}
-              </div>
-              <div className="text-xs text-muted-foreground">{fmtReward(redemption)} · {redemption.pointsCost} pts</div>
-            </div>
-            {!disabled && (
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={remove} disabled={busyId === "__remove__"}>
-                {busyId === "__remove__" ? <Loader2 className="h-4 w-4 animate-spin" /> : <><X className="h-4 w-4 mr-1" /> Remove</>}
-              </Button>
-            )}
-          </div>
-        ) : disabled ? (
-          <p className="text-xs text-muted-foreground">Session is locked.</p>
+      <CardContent className="space-y-3">
+        {/* Applied rewards */}
+        {redemptions.length > 0 && (
+          <ul className="space-y-1.5">
+            {redemptions.map((r) => (
+              <li key={r.redemptionId} className="flex items-center justify-between gap-2 rounded-md border p-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-500" /> {r.rewardName}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{fmtReward(r)} · {r.pointsCost} pts</div>
+                </div>
+                {!disabled && (
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => remove(r)} disabled={busyId === r.redemptionId}>
+                    {busyId === r.redemptionId ? <Loader2 className="h-4 w-4 animate-spin" /> : <><X className="h-4 w-4 mr-1" /> Remove</>}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Add a reward */}
+        {disabled ? (
+          redemptions.length === 0 ? <p className="text-xs text-muted-foreground">Session is locked.</p> : null
         ) : !open ? (
           <Button variant="outline" size="sm" className="w-full" onClick={() => setOpen(true)}>
-            <Gift className="h-4 w-4 mr-2" /> Redeem a reward
+            <Gift className="h-4 w-4 mr-2" /> {redemptions.length > 0 ? "Add another reward" : "Redeem a reward"}
           </Button>
         ) : loading ? (
           <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
@@ -162,7 +170,7 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
                 })}
               </ul>
             )}
-            <Button variant="ghost" size="sm" className="w-full" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => setOpen(false)}>Done</Button>
           </div>
         )}
       </CardContent>
