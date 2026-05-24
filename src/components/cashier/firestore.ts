@@ -742,6 +742,7 @@ export async function voidSession({
 
   const kdsDeltas: { old: any; new: any }[] = [];
   const rtKdsUpdates: { stationId: string; ticketId: string; ticketState: any }[] = [];
+  let redemptionIdsToReverse: string[] = [];
   await runTransaction(db, async (tx: Transaction) => {
     // New projection paths
     const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
@@ -758,7 +759,11 @@ export async function voidSession({
       console.warn(`voidSession skipped: Session ${sessionId} was already finalized.`);
       return;
     }
-    
+
+    redemptionIdsToReverse = Array.isArray(sessionData.loyaltyRedemptions)
+      ? sessionData.loyaltyRedemptions.map((r: any) => r.redemptionId).filter(Boolean)
+      : [];
+
     // Cancel any remaining active tickets
     for (const ticketDoc of activeTicketsSnap.docs) {
         const ticketRef = ticketDoc.ref;
@@ -840,6 +845,11 @@ export async function voidSession({
       meta: { sessionLabel: computeSessionLabel(initialSessionData) }
     });
   }
+
+  // Loyalty rewards redeemed against this session must have their points
+  // refunded. The reversal runs server-side (Admin SDK), so the caller is
+  // handed the ids to reverse via /api/loyalty/redeem.
+  return { reversedRedemptionIds: redemptionIdsToReverse };
 }
 
 /**

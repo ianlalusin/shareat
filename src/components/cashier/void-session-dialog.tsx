@@ -43,12 +43,27 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
       const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", session.id));
       const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
 
-      await voidSession({
+      const voidResult = await voidSession({
         storeId: storeId,
         sessionId: session.id,
         reason: safeReason,
         actor: user,
       });
+
+      // Refund any Sharelebrator rewards redeemed against this session.
+      const redemptionIds = voidResult?.reversedRedemptionIds ?? [];
+      if (firebaseUser && redemptionIds.length > 0) {
+        const token = await firebaseUser.getIdToken();
+        await Promise.all(
+          redemptionIds.map((redemptionId) =>
+            fetch("/api/loyalty/redeem", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ redemptionId, reason: "void" }),
+            }).catch((e) => console.warn("[Loyalty] reverse on void failed (non-fatal):", e)),
+          ),
+        );
+      }
 
       if (firebaseUser && currentPin) {
         const token = await firebaseUser.getIdToken();
