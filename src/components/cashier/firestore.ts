@@ -909,6 +909,126 @@ export async function recomputeSessionAdjustmentFlags(
   }
 }
 
+export type GuestCountApprovalResult = {
+  clearedVoidQty: number;
+  clampedFreeQty: number;
+  clampedDiscountQty: number;
+  newBillable: number;
+};
+
+/**
+ * Approve a pending guest-count change. The approved count is the authoritative
+ * final billable headcount, so the package line is reconciled to bill exactly
+ * `requestedCount` covers: qtyOrdered is set to the count and the (now
+ * redundant) package-cover void is cleared, with free/discount clamped to fit.
+ *
+ * This closes a double-subtraction bug: voiding covers and approving a
+ * guest-count change both reduce `qtyOrdered − voidedQty − freeQty`, so without
+ * this reconciliation a prior void would stack on top of the new count (e.g.
+ * qty 15, void 10 → approve count 5 left voidedQty 10 → billable max(0, 5-10)=0).
+ */
+export async function approveGuestCountChange({
+  storeId,
+  sessionId,
+  requestedCount,
+  actor,
+}: {
+  storeId: string;
+  sessionId: string;
+  requestedCount: number;
+  actor: AppUser;
+}): Promise<GuestCountApprovalResult> {
+  const stamp = getActorStamp(actor);
+  const count = Math.max(0, Math.floor(Number(requestedCount) || 0));
+
+  const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  const projectionRef = doc(db, 'stores', storeId, 'activeSessions', sessionId);
+
+  const result = await runTransaction(db, async (tx: Transaction) => {
+    const sessionSnap = await tx.get(sessionRef);
+    if (!sessionSnap.exists()) throw new Error('Session disappeared during transaction.');
+    const sessionData = sessionSnap.data() as any;
+    if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {
+      throw new Error('This session has already been closed.');
+    }
+
+    const packageOfferingId: string | undefined = sessionData.packageOfferingId || undefined;
+    const pkgLineRef = packageOfferingId
+      ? doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `package_${packageOfferingId}`)
+      : null;
+
+    // All reads must precede all writes in a Firestore transaction.
+    const pkgSnap = pkgLineRef ? await tx.get(pkgLineRef) : null;
+    const projSnap = await tx.get(projectionRef);
+
+    const summary: GuestCountApprovalResult = {
+      clearedVoidQty: 0,
+      clampedFreeQty: 0,
+      clampedDiscountQty: 0,
+      newBillable: count,
+    };
+
+    if (pkgLineRef && pkgSnap?.exists()) {
+      const line = pkgSnap.data() as any;
+      const prevVoid = Math.max(0, line.voidedQty ?? 0);
+      const prevFree = Math.max(0, line.freeQty ?? 0);
+      const prevDiscount = Math.max(0, line.discountQty ?? 0);
+
+      const newFree = Math.min(prevFree, count);
+      const newDiscount = Math.min(prevDiscount, Math.max(0, count - newFree));
+
+      summary.clearedVoidQty = prevVoid;
+      summary.clampedFreeQty = prevFree - newFree;
+      summary.clampedDiscountQty = prevDiscount - newDiscount;
+      summary.newBillable = Math.max(0, count - newFree);
+
+      const reqAt = sessionData.guestCountChange?.requestedAt;
+      const linePatch: Record<string, any> = {
+        qtyOrdered: count,
+        voidedQty: 0,
+        freeQty: newFree,
+        discountQty: newDiscount,
+        qtyLastSyncedApprovedAt: reqAt ? reqAt.toString() : serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: stamp.uid,
+        updatedByName: stamp.username,
+      };
+      if (prevVoid > 0) {
+        linePatch.voidReason = deleteField();
+        linePatch.voidNote = deleteField();
+      }
+      if (newDiscount === 0) {
+        linePatch.discountType = null;
+        linePatch.discountValue = 0;
+      }
+      tx.update(pkgLineRef, linePatch);
+    }
+
+    tx.update(sessionRef, {
+      guestCountFinal: count,
+      'guestCountChange.status': 'approved',
+      'guestCountChange.approvedByUid': stamp.uid,
+      'guestCountChange.approvedAt': serverTimestamp(),
+      billingRevision: increment(1),
+      updatedAt: serverTimestamp(),
+    });
+
+    if (projSnap.exists()) {
+      tx.update(projectionRef, {
+        guestCountFinal: count,
+        'guestCountChange.status': 'approved',
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    return summary;
+  });
+
+  // Void/free/discount on the package line may have changed; reconverge badges.
+  await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  return result;
+}
+
 /**
  * Updates a sessionBillLine document with new values.
  * Uses a transaction to ensure safe updates.

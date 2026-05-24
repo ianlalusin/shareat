@@ -15,7 +15,7 @@ import { ArrowRight, Check, X, Package, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { writeActivityLog } from "@/components/cashier/activity-log";
-import { recomputeSessionAdjustmentFlags } from "@/components/cashier/firestore";
+import { recomputeSessionAdjustmentFlags, approveGuestCountChange, type GuestCountApprovalResult } from "@/components/cashier/firestore";
 
 type ChangeRequest = {
   sessionId: string;
@@ -30,7 +30,8 @@ type ChangeRequest = {
   reason: string;
   reasonNote?: string;
   isSessionLocked: boolean;
-  onApprove: () => Promise<void>;
+  packageOfferingId?: string;
+  onApprove: () => Promise<void | GuestCountApprovalResult>;
   onReject: () => Promise<void>;
 };
 
@@ -89,38 +90,17 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             reason: session.guestCountChange.reason,
             reasonNote: session.guestCountChange.reasonNote,
             isSessionLocked: isLocked,
+            packageOfferingId: session.packageOfferingId || undefined,
             onApprove: async () => {
-              const batch = writeBatch(db);
-              const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
-
-              if (session.packageOfferingId) {
-                const packageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageOfferingId}`);
-                batch.update(packageLineRef, {
-                    qtyOrdered: session.guestCountChange.requestedCount,
-                    qtyLastSyncedApprovedAt: session.guestCountChange.requestedAt.toString(),
-                    updatedAt: serverTimestamp(),
-                    updatedByUid: appUser?.uid,
-                    updatedByName: appUser?.displayName || appUser?.name || "System"
-                });
-              }
-
-              batch.update(sessionRef, {
-                guestCountFinal: session.guestCountChange.requestedCount,
-                "guestCountChange.status": "approved",
-                "guestCountChange.approvedByUid": appUser?.uid,
-                "guestCountChange.approvedAt": serverTimestamp(),
-                billingRevision: increment(1),
-                updatedAt: serverTimestamp(),
+              if (!appUser) throw new Error("Not signed in.");
+              // Reconciles the package line so billable covers == the approved
+              // count, clearing any prior package-cover void (see helper).
+              return approveGuestCountChange({
+                storeId,
+                sessionId: sessionDoc.id,
+                requestedCount: session.guestCountChange.requestedCount,
+                actor: appUser,
               });
-              
-              batch.update(sessionProjectionRef, {
-                guestCountFinal: session.guestCountChange.requestedCount,
-                "guestCountChange.status": "approved",
-                updatedAt: serverTimestamp(),
-              });
-
-              await batch.commit();
             },
             onReject: async () => {
               const batch = writeBatch(db);
@@ -246,11 +226,34 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
       toast({ variant: 'destructive', title: 'Action Failed', description: 'This session is already closed and cannot be modified.' });
       return;
     }
-    if (!(await confirm({ title: `Approve this ${req.type} change?`, confirmText: "Yes, Approve", destructive: false }))) return;
+
+    // For a guest-count change, the approved count is the authoritative billable
+    // headcount — any existing package-cover void will be cleared. Warn first.
+    let confirmDescription: string | undefined;
+    if (req.type === 'guest' && req.packageOfferingId) {
+      try {
+        const lineRef = doc(db, "stores", storeId, "sessions", req.sessionId, "sessionBillLines", `package_${req.packageOfferingId}`);
+        const lineSnap = await getDoc(lineRef);
+        const voided = lineSnap.exists() ? (lineSnap.data().voidedQty ?? 0) : 0;
+        if (voided > 0) {
+          confirmDescription = `Table ${req.tableNumber} has ${voided} voided cover${voided === 1 ? '' : 's'}. Approving will bill ${req.requestedValue} cover${Number(req.requestedValue) === 1 ? '' : 's'} and clear the void.`;
+        }
+      } catch {
+        // Fall back to the plain confirmation if the line can't be read.
+      }
+    }
+
+    if (!(await confirm({ title: `Approve this ${req.type} change?`, description: confirmDescription, confirmText: "Yes, Approve", destructive: false }))) return;
     try {
-      await req.onApprove();
+      const approveResult = await req.onApprove();
+      const clearedVoidQty =
+        approveResult && typeof approveResult === 'object' && 'clearedVoidQty' in approveResult
+          ? approveResult.clearedVoidQty
+          : 0;
       const action = req.type === 'guest' ? "GUEST_COUNT_APPROVED" : "PACKAGE_CHANGE_APPROVED";
-      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, meta: { beforeQty: Number(req.currentValue) || undefined, afterQty: Number(req.requestedValue) || undefined, itemName: req.type === 'package' ? String(req.requestedValue) : undefined }, note: `${req.type === 'guest' ? 'Guest count' : 'Package'} change approved: ${req.currentValue} → ${req.requestedValue}` });
+      const baseNote = `${req.type === 'guest' ? 'Guest count' : 'Package'} change approved: ${req.currentValue} → ${req.requestedValue}`;
+      const note = clearedVoidQty > 0 ? `${baseNote} (cleared ${clearedVoidQty} prior voided cover${clearedVoidQty === 1 ? '' : 's'})` : baseNote;
+      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, meta: { beforeQty: Number(req.currentValue) || undefined, afterQty: Number(req.requestedValue) || undefined, itemName: req.type === 'package' ? String(req.requestedValue) : undefined }, note });
       toast({ title: "Request Approved" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Approval Failed", description: e.message });
