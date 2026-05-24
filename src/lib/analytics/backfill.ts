@@ -417,4 +417,98 @@ export async function rebuildDailyAnalyticsFromReceipts(
   onProgress("Backfill complete.");
 }
 
+/**
+ * Recomputes ONLY the dine-in session-duration fields
+ * (sessions.dineInDurationMsSum / dineInDurationCount) on the month and year
+ * rollup docs, by summing the daily analytics docs in each affected month/year.
+ *
+ * The daily backfill (rebuildDailyAnalyticsFromReceipts) only rewrites daily
+ * docs; the data-analysis page reads month/year rollups, which are otherwise
+ * only maintained by live deltas. Run this AFTER the daily backfill to surface
+ * historical averages there.
+ *
+ * This is additive: it merges only the two duration fields, so other rollup
+ * data (payments, conversions, discounts, etc.) is left untouched. Session
+ * duration is purely receipt-derived, so recomputing it from the daily docs is
+ * authoritative and cannot conflict with those other sources.
+ */
+export async function backfillSessionDurationRollups(
+  db: Firestore,
+  storeId: string,
+  startDate: Date,
+  endDate: Date,
+  onProgress: (message: string) => void
+) {
+  const monthIds = new Set<string>();
+  const yearIds = new Set<string>();
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  const stop = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+  while (cursor.getTime() <= stop.getTime()) {
+    monthIds.add(`${cursor.getFullYear()}${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    yearIds.add(String(cursor.getFullYear()));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  onProgress(`Recomputing session-time rollups for ${monthIds.size} month(s) and ${yearIds.size} year(s)...`);
+
+  // Sum the duration fields across daily analytics docs in [startMs, endMs).
+  const sumDailyDurations = async (startMs: number, endMs: number) => {
+    const daysRef = collection(db, "stores", storeId, "analytics");
+    const qDays = query(
+      daysRef,
+      where("meta.dayStartMs", ">=", startMs),
+      where("meta.dayStartMs", "<", endMs),
+    );
+    const snap = await getDocs(qDays);
+    let msSum = 0;
+    let count = 0;
+    snap.forEach((d) => {
+      const x: any = d.data();
+      msSum += Number(x?.sessions?.dineInDurationMsSum ?? 0);
+      count += Number(x?.sessions?.dineInDurationCount ?? 0);
+    });
+    return { msSum, count };
+  };
+
+  let batch = writeBatch(db);
+  let opCount = 0;
+  const flushIfNeeded = async () => {
+    if (opCount >= 450) {
+      await batch.commit();
+      batch = writeBatch(db);
+      opCount = 0;
+    }
+  };
+
+  for (const monthId of monthIds) {
+    const y = parseInt(monthId.slice(0, 4), 10);
+    const m = parseInt(monthId.slice(4, 6), 10) - 1;
+    const { msSum, count } = await sumDailyDurations(new Date(y, m, 1).getTime(), new Date(y, m + 1, 1).getTime());
+    const monthRef = doc(db, "stores", storeId, "analyticsMonths", monthId);
+    batch.set(
+      monthRef,
+      { meta: { storeId, monthId, updatedAt: serverTimestamp() }, sessions: { dineInDurationMsSum: msSum, dineInDurationCount: count } },
+      { merge: true },
+    );
+    opCount++;
+    await flushIfNeeded();
+  }
+
+  for (const yearId of yearIds) {
+    const y = parseInt(yearId, 10);
+    const { msSum, count } = await sumDailyDurations(new Date(y, 0, 1).getTime(), new Date(y + 1, 0, 1).getTime());
+    const yearRef = doc(db, "stores", storeId, "analyticsYears", yearId);
+    batch.set(
+      yearRef,
+      { meta: { storeId, yearId, updatedAt: serverTimestamp() }, sessions: { dineInDurationMsSum: msSum, dineInDurationCount: count } },
+      { merge: true },
+    );
+    opCount++;
+    await flushIfNeeded();
+  }
+
+  await batch.commit();
+  onProgress("Session-time rollups updated.");
+}
+
     

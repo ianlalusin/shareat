@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { addDays, format } from "date-fns";
 import { Loader2, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
-import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
+import { rebuildDailyAnalyticsFromReceipts, backfillSessionDurationRollups } from "@/lib/analytics/backfill";
 import { db } from "@/lib/firebase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
@@ -35,6 +35,9 @@ export default function BackfillPage() {
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [progressMessage, setProgressMessage] = useState("");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [rollupConfirmText, setRollupConfirmText] = useState("");
+  const [isRollingUp, setIsRollingUp] = useState(false);
+  const [rollupProgress, setRollupProgress] = useState("");
 
   if (appUser?.role !== 'admin') {
     return null; // This page is strictly for admins, RoleGuard will handle redirect
@@ -73,6 +76,39 @@ export default function BackfillPage() {
     }
   };
   
+  const handleRollupBackfill = async () => {
+    if (appUser?.role !== 'admin') {
+        toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
+        return;
+    }
+    if (rollupConfirmText !== "ROLLUP" || !activeStore) return;
+
+    setIsRollingUp(true);
+    setRollupProgress("Starting rollup recompute...");
+    toast({ title: "Rollup Recompute Started", description: "Updating month/year session-time rollups." });
+
+    try {
+      await backfillSessionDurationRollups(
+        db,
+        activeStore.id,
+        dateRange.start,
+        dateRange.end,
+        (message) => {
+          console.log(`[Rollup]: ${message}`);
+          setRollupProgress(message);
+        }
+      );
+      toast({ title: "Rollups Updated", description: "Month/year session-time rollups recomputed from daily docs." });
+    } catch (error: any) {
+      console.error("Rollup recompute failed:", error);
+      toast({ variant: 'destructive', title: "Rollup Failed", description: error.message });
+      setRollupProgress(`Error: ${error.message}`);
+    } finally {
+      setIsRollingUp(false);
+      setRollupConfirmText("");
+    }
+  };
+
   const handleCalendarChange = (range: { start: Date; end: Date }) => {
     setDateRange(range);
     setIsCalendarOpen(false);
@@ -156,6 +192,50 @@ export default function BackfillPage() {
                       className="w-full"
                   >
                       {isBackfilling ? "Running..." : `Rebuild Analytics for ${activeStore?.name || '...'}`}
+                  </Button>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Recompute Session-Time Rollups</CardTitle>
+                    <CardDescription>
+                        Update the month/year rollups that the Data Analysis page reads, so historical average
+                        dine-in session time shows there. Run this AFTER the daily backfill above.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert>
+                      <AlertTitle>Additive &amp; safe</AlertTitle>
+                      <AlertDescription>
+                          Recomputes only the dine-in session-duration fields on month/year docs by summing the
+                          daily analytics docs in the selected range. Other rollup data is left untouched. Uses the
+                          same date range selected above.
+                      </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2 max-w-xs">
+                      <Label htmlFor="rollup-confirm">Type "ROLLUP" to confirm</Label>
+                      <Input
+                          id="rollup-confirm"
+                          value={rollupConfirmText}
+                          onChange={(e) => setRollupConfirmText(e.target.value)}
+                          placeholder='Type "ROLLUP"'
+                          disabled={isRollingUp}
+                      />
+                  </div>
+                  {isRollingUp && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-background rounded-md">
+                          <Loader2 className="animate-spin h-4 w-4" />
+                          <span>{rollupProgress}</span>
+                      </div>
+                  )}
+                  <Button
+                      onClick={handleRollupBackfill}
+                      disabled={isRollingUp || rollupConfirmText !== "ROLLUP" || !activeStore}
+                      className="w-full"
+                      variant="secondary"
+                  >
+                      {isRollingUp ? "Running..." : "Recompute Session-Time Rollups"}
                   </Button>
                 </CardContent>
             </Card>
