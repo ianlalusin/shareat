@@ -555,6 +555,69 @@ export type ForecastConfig = {
 export type LoyaltyConfig = {
   isEnabled: boolean;
   pointsPerPeso: number; // e.g. 0.01 = 1 point per ₱100
+  /** Minutes a self-redeemed Hub voucher stays valid before it expires and refunds. Default 60. */
+  redemptionExpiryMinutes?: number;
+};
+
+/**
+ * A global (program-wide) loyalty reward members can redeem points for.
+ * Managed by platform admin in the POS; read by the Customer Hub. v1 reward
+ * types apply as a bill discount when redeemed.
+ */
+export type LoyaltyReward = {
+  id: string;
+  name: string;
+  description?: string | null;
+  pointsCost: number;
+  type: "fixed" | "percent"; // fixed = ₱ off, percent = % off the bill
+  value: number;
+  isActive: boolean;
+  sortOrder?: number;
+  imageUrl?: string | null;
+  /** Optional store scoping; absent ⇒ available at all stores. */
+  applicableStoreIds?: string[] | null;
+  createdAt?: any;
+  updatedAt?: any;
+  createdBy?: string;
+};
+
+export type LoyaltyRedemptionStatus = "active" | "applied" | "expired" | "cancelled";
+
+/**
+ * A redemption record / voucher. Created when a member redeems a reward (points
+ * are debited at creation). Hub-created vouchers carry a short `code` the
+ * cashier enters; POS-created ones are applied immediately (status "applied").
+ */
+export type LoyaltyRedemption = {
+  id: string;
+  code: string;
+  phone: string;
+  rewardId: string;
+  rewardName: string;
+  pointsCost: number;
+  type: "fixed" | "percent";
+  value: number;
+  status: LoyaltyRedemptionStatus;
+  source: "hub" | "pos";
+  createdAt?: any;
+  createdAtClientMs: number;
+  expiresAtMs: number;
+  appliedStoreId?: string | null;
+  appliedSessionId?: string | null;
+  appliedReceiptId?: string | null;
+  appliedByUid?: string | null;
+  appliedAtMs?: number | null;
+  refundedAtMs?: number | null;
+};
+
+/** Snapshot of an applied loyalty reward stored on a session (drives bill totals). */
+export type SessionLoyaltyRedemption = {
+  redemptionId: string;
+  rewardName: string;
+  type: "fixed" | "percent";
+  value: number;
+  pointsCost: number;
+  phone: string;
 };
 
 export type SharelebratorLink = {

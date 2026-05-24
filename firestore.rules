@@ -176,6 +176,22 @@ service cloud.firestore {
     }
 
     // -----------------------------
+    // SHARELEBRATOR REWARDS CATALOG + REDEMPTIONS
+    // -----------------------------
+    // Global rewards catalog: readable by staff (POS cashier UI) and loyalty /
+    // session customers (Hub); writable only by platform admins.
+    match /loyaltyRewards/{rewardId} {
+      allow read, list: if isActiveStaff() || isLoyaltyCustomer() || isCustomer();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Redemption records / vouchers — created, validated, and applied
+    // server-side via the Admin SDK only.
+    match /loyaltyRedemptions/{id} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    // -----------------------------
     // PLATFORM-WIDE (UNIVERSAL) DISCOUNTS & CHARGES
     // Admins create/update/delete; any active staff can read (POS/manager views need them).
     // -----------------------------
