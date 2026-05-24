@@ -237,11 +237,31 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
             
             // --- FALLBACK LOGIC ---
             if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
-                 setDailyMetrics([]);
-                 setTopCategories([]);
-                 setTopRefills([]);
-                 setTopAddonItems([]);
-                 setHasTopAddonItems(false);
+                // Range too large for a daily-doc query (e.g. YTD). Aggregate the
+                // month rollup docs spanning the range instead of giving up — this
+                // computes from whatever months have data, so empty leading months
+                // (e.g. an empty January for YTD) are simply skipped.
+                const monthIds: string[] = [];
+                const cursor = new Date(dateRange.start.getFullYear(), dateRange.start.getMonth(), 1);
+                const stop = new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), 1);
+                while (cursor.getTime() <= stop.getTime()) {
+                    monthIds.push(`${cursor.getFullYear()}${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+
+                const monthSnaps = await Promise.all(
+                    monthIds.map((id) => getDoc(doc(db, "stores", storeId, "analyticsMonths", id)))
+                );
+                if (cancelled) return;
+
+                const metrics = monthSnaps.filter((s) => s.exists()).map((s) => s.data() as DailyMetric);
+                const aggregatedAddons = aggregateTopAddons(metrics);
+
+                setDailyMetrics(metrics);
+                setTopCategories(aggregateAddonCategories(metrics));
+                setTopRefills(aggregateRefills(metrics));
+                setTopAddonItems(aggregatedAddons);
+                setHasTopAddonItems(aggregatedAddons.length > 0);
             } else {
                 const tomorrow = addDays(dateRange.end, 1);
                 const q = query(
@@ -249,13 +269,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     where("meta.dayStartMs", ">=", dateRange.start.getTime()),
                     where("meta.dayStartMs", "<", startOfDay(tomorrow).getTime())
                 );
-                
+
                 const snapshot = await getDocs(q);
                 if (cancelled) return;
 
                 const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
                 const aggregatedAddons = aggregateTopAddons(metrics);
-                
+
                 setDailyMetrics(metrics);
                 setTopCategories(aggregateAddonCategories(metrics));
                 setTopRefills(aggregateRefills(metrics));
