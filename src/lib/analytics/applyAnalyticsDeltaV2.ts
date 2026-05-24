@@ -390,6 +390,14 @@ export async function applyAnalyticsDeltaV2(
       }
     }
 
+    // --- Dine-in Session Duration Delta ---
+    {
+      const durDelta = dayNew.closed.dineInDurationMs - dayOld.closed.dineInDurationMs;
+      const cntDelta = dayNew.closed.dineInDurationCount - dayOld.closed.dineInDurationCount;
+      if (durDelta !== 0) payload['sessions.dineInDurationMsSum'] = increment(durDelta);
+      if (cntDelta !== 0) payload['sessions.dineInDurationCount'] = increment(cntDelta);
+    }
+
     // --- Payments TxCount by Mode Delta ---
     {
       const oldKey = dayOld.payment.mode && dayOld.payment.txCount > 0 ? dayOld.payment.mode : null;

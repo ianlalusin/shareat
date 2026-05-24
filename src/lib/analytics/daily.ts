@@ -462,10 +462,15 @@ type ClosedSessionsContribution = {
   closedCount: number;
   totalPaid: number;
   mode: SessionModeKey | null;
+  dineInDurationMs: number;
+  dineInDurationCount: number;
 };
 
+// Reject absurd durations (clock skew / stale sessions) so they don't skew the average.
+const MAX_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
 export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
-    const defaultReturn: ClosedSessionsContribution = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0, mode: null };
+    const defaultReturn: ClosedSessionsContribution = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0, mode: null, dineInDurationMs: 0, dineInDurationCount: 0 };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
@@ -473,12 +478,28 @@ export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSe
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
+    const mode = modeKeyOf(r);
+    let dineInDurationMs = 0;
+    let dineInDurationCount = 0;
+    if (mode === "dineIn") {
+        const startMs = r.analytics?.sessionStartedAtClientMs ?? toJsDate(r.analytics?.sessionStartedAt)?.getTime() ?? null;
+        if (startMs && eventMs > startMs) {
+            const dur = eventMs - startMs;
+            if (dur > 0 && dur <= MAX_SESSION_DURATION_MS) {
+                dineInDurationMs = dur;
+                dineInDurationCount = 1;
+            }
+        }
+    }
+
     return {
         dayId: getDayIdFromTimestamp(eventMs),
         dayStartMs: getDayStartMs(eventMs),
         closedCount: 1,
         totalPaid: r.total ?? 0,
-        mode: modeKeyOf(r),
+        mode,
+        dineInDurationMs,
+        dineInDurationCount,
     };
 }
 

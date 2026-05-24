@@ -783,6 +783,10 @@ export type DailyMetric = {
         closedCount: number;
         totalPaid: number;
         closedCountByMode?: { dineIn: number; walkIn: number };
+        // Sum of dine-in (package) session durations and the count of sessions
+        // that contributed a valid duration. Average = sum / count.
+        dineInDurationMsSum?: number;
+        dineInDurationCount?: number;
     };
     refills?: {
         servedRefillsTotal: number;

@@ -27,6 +27,7 @@ export type DataAnalysisResult = {
     walkInSessions: number;
     totalGuests: number;
     avgBasket: number;
+    avgDineInSessionMs: number;
   };
   modeSplit: {
     byMonth: Array<{ monthId: string; monthLabel: string; dineIn: number; walkIn: number }>;
@@ -106,6 +107,8 @@ type Aggregate = {
   dineInSessions: number;
   walkInSessions: number;
   totalGuests: number;
+  dineInDurationMsSum: number;
+  dineInDurationCount: number;
   salesByMode: { dineIn: number; walkIn: number };
   sessionsByMode: { dineIn: number; walkIn: number };
   salesByHourByMode: { dineIn: Record<string, number>; walkIn: Record<string, number> };
@@ -125,6 +128,8 @@ function emptyAggregate(): Aggregate {
     dineInSessions: 0,
     walkInSessions: 0,
     totalGuests: 0,
+    dineInDurationMsSum: 0,
+    dineInDurationCount: 0,
     salesByMode: { dineIn: 0, walkIn: 0 },
     sessionsByMode: { dineIn: 0, walkIn: 0 },
     salesByHourByMode: { dineIn: {}, walkIn: {} },
@@ -151,6 +156,8 @@ function foldMetric(agg: Aggregate, m: DailyMetric) {
     // (We don't know the split; leave both at 0 to avoid misleading numbers.)
   }
   agg.totalGuests += m.guests?.guestCountFinalTotal || 0;
+  agg.dineInDurationMsSum += m.sessions?.dineInDurationMsSum || 0;
+  agg.dineInDurationCount += m.sessions?.dineInDurationCount || 0;
 
   const salesByMode = m.sales?.salesAmountByMode;
   if (salesByMode) {
@@ -381,6 +388,7 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
         for (const { metric } of monthDocs) foldMetric(agg, metric);
 
         const avgBasket = agg.txCount > 0 ? agg.netSales / agg.txCount : 0;
+        const avgDineInSessionMs = agg.dineInDurationCount > 0 ? agg.dineInDurationMsSum / agg.dineInDurationCount : 0;
 
         // 5) Sales-over-time series
         const byMonthSorted = [...monthDocs].sort((a, b) => a.monthId.localeCompare(b.monthId));
@@ -589,6 +597,7 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
             walkInSessions: agg.sessionsByMode.walkIn,
             totalGuests: agg.totalGuests,
             avgBasket,
+            avgDineInSessionMs,
           },
           modeSplit: {
             byMonth: modeSplitByMonth,
@@ -629,7 +638,7 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
         isLoading,
         error,
         availableYears: [],
-        totals: { netSales: 0, grossSales: 0, txCount: 0, dineInSessions: 0, walkInSessions: 0, totalGuests: 0, avgBasket: 0 },
+        totals: { netSales: 0, grossSales: 0, txCount: 0, dineInSessions: 0, walkInSessions: 0, totalGuests: 0, avgBasket: 0, avgDineInSessionMs: 0 },
         modeSplit: { byMonth: [], salesShare: { dineIn: 0, walkIn: 0 }, sessionShare: { dineIn: 0, walkIn: 0 } },
         salesOverTime: { byMonth: [], byDay: null },
         comparative: { current: { netSales: 0, tx: 0, dineInShare: 0, guests: 0 }, previous: { netSales: 0, tx: 0, dineInShare: 0, guests: 0 }, yoyByMonth: [] },

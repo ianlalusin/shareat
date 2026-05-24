@@ -149,7 +149,7 @@ export async function rebuildDailyAnalyticsFromReceipts(
           durationMsSumByLocation: {},
           durationCountByLocation: {},
         },
-        sessions: { closedCount: 0, totalPaid: 0, closedCountByMode: { dineIn: 0, walkIn: 0 } },
+        sessions: { closedCount: 0, totalPaid: 0, closedCountByMode: { dineIn: 0, walkIn: 0 }, dineInDurationMsSum: 0, dineInDurationCount: 0 },
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
         items: { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 },
       });
@@ -325,6 +325,10 @@ export async function rebuildDailyAnalyticsFromReceipts(
       dayData.sessions!.closedCountByMode ??= { dineIn: 0, walkIn: 0 };
       dayData.sessions!.closedCountByMode[closedSessionContrib.mode] += closedSessionContrib.closedCount;
     }
+    dayData.sessions!.dineInDurationMsSum =
+      (dayData.sessions!.dineInDurationMsSum || 0) + Number(closedSessionContrib.dineInDurationMs || 0);
+    dayData.sessions!.dineInDurationCount =
+      (dayData.sessions!.dineInDurationCount || 0) + Number(closedSessionContrib.dineInDurationCount || 0);
 
     // refills
     dayData.refills!.packageSessionsCount =

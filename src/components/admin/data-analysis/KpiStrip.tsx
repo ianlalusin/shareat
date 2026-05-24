@@ -3,6 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatNumber } from "./formatters";
+import { formatDurationHuman } from "@/lib/utils/date";
 import type { DataAnalysisResult } from "@/hooks/use-data-analysis";
 
 export function KpiStrip({ totals, isLoading }: { totals: DataAnalysisResult["totals"]; isLoading: boolean }) {
@@ -13,10 +14,11 @@ export function KpiStrip({ totals, isLoading }: { totals: DataAnalysisResult["to
     { label: "Walk-In Sessions", value: formatNumber(totals.walkInSessions) },
     { label: "Guests Served", value: formatNumber(totals.totalGuests) },
     { label: "Avg Basket", value: formatCurrency(totals.avgBasket) },
+    { label: "Avg Dine-In Session", value: totals.avgDineInSessionMs > 0 ? formatDurationHuman(totals.avgDineInSessionMs) : "—" },
   ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+    <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-7">
       {items.map((it) => (
         <Card key={it.label}>
           <CardContent className="p-4">

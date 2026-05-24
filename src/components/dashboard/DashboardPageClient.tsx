@@ -15,6 +15,7 @@ import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportD
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
 import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
+import { AvgSessionTimeCard } from "@/components/dashboard/avg-session-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { Button } from "@/components/ui/button";
@@ -250,7 +251,8 @@ export default function DashboardPageClient() {
                         isLoading={isLoading} 
                     />
                     <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <TopRefillsCard 
+                    <AvgSessionTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <TopRefillsCard
                         dailyMetrics={dailyMetrics} 
                         isLoading={isLoading} 
                         topRefills={topRefills} 

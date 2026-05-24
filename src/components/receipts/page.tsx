@@ -26,7 +26,7 @@ import type { ReceiptData } from "@/lib/types";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
-import { toJsDate } from "@/lib/utils/date";
+import { toJsDate, formatDuration } from "@/lib/utils/date";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
@@ -46,6 +46,16 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
     return isSameDay(range.start, range.end)
         ? `Custom: ${fmtDate(range.start)}`
         : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
+// Dine-in (package) session duration = payment time − session start. "N/A" for
+// ala carte or when the session start wasn't captured. Excel export only.
+function sessionDurationLabel(r: ReceiptType): string {
+    if (r.sessionMode !== 'package_dinein') return 'N/A';
+    const startMs = (r.analytics?.sessionStartedAtClientMs ?? toJsDate(r.analytics?.sessionStartedAt)?.getTime()) || null;
+    const endMs = (r.createdAtClientMs ?? toJsDate(r.createdAt)?.getTime()) || null;
+    if (!startMs || !endMs || endMs <= startMs) return 'N/A';
+    return formatDuration(endMs - startMs);
 }
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
@@ -545,6 +555,7 @@ export default function ReceiptsPageContents() {
                     "TIN": r.customerTin || 'N/A',
                     "Table No.": r.tableNumber || 'N/A',
                     "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
+                    "Session Time": sessionDurationLabel(r),
                     "Subtotal": r.analytics?.subtotal ?? 0,
                     "Discount": r.analytics?.discountsTotal ?? 0,
                     "Charges": r.analytics?.chargesTotal ?? 0,
