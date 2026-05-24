@@ -13,6 +13,7 @@ import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitch
 import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
+import { LoyaltyRedeemCard } from "@/components/cashier/LoyaltyRedeemCard";
 import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
 import { BillAdjustments } from "@/components/cashier/bill-adjustments";
@@ -20,7 +21,7 @@ import { PaymentModal } from "@/components/cashier/payment-modal";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
-import type { PendingSession, Charge, Discount, SessionBillLine, Adjustment, LineAdjustment } from "@/lib/types";
+import type { PendingSession, Charge, Discount, SessionBillLine, Adjustment, LineAdjustment, SessionLoyaltyRedemption } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
@@ -49,6 +50,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
+  const [loyaltyRedemption, setLoyaltyRedemption] = useState<SessionLoyaltyRedemption | null>(null);
 
   const [isLoadingSession, setIsLoadingSession] = useState(true);
 
@@ -112,6 +114,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             setSession({ id: doc.id, ...data } as PendingSession);
             setBillDiscount((data.billDiscount as Discount | null | undefined) ?? null);
             setCustomAdjustments(Array.isArray(data.customAdjustments) ? (data.customAdjustments as Adjustment[]) : []);
+            setLoyaltyRedemption((data.loyaltyRedemption as SessionLoyaltyRedemption | null | undefined) ?? null);
         } else {
             toast({ variant: 'destructive', title: 'Error', description: 'Session not found.' });
             router.replace('/cashier');
@@ -184,8 +187,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const isBillingLocked = session?.status !== 'active' || session?.isPaid;
 
   const billTotals = useMemo(() => {
-    return calculateBillTotals(billLines, activeStore, billDiscount, customAdjustments);
-  }, [billLines, activeStore, billDiscount, customAdjustments]);
+    return calculateBillTotals(billLines, activeStore, billDiscount, customAdjustments,
+      loyaltyRedemption ? { type: loyaltyRedemption.type, value: loyaltyRedemption.value } : null);
+  }, [billLines, activeStore, billDiscount, customAdjustments, loyaltyRedemption]);
   
   const { grandTotal } = billTotals;
 
@@ -442,10 +446,23 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           store={activeStore!}
           billDiscount={billDiscount}
           customAdjustments={customAdjustments}
+          loyaltyRedemption={loyaltyRedemption}
           totalPaid={0}
           isLocked={isBillingLocked}
           onRemoveLineAdjustment={handleRemoveLineAdjustment}
         />
+        {session && (session as any).linkedCustomerPhone && (
+          <div className="px-4 pb-2">
+            <LoyaltyRedeemCard
+              storeId={storeId!}
+              sessionId={sessionId}
+              linkedPhone={(session as any).linkedCustomerPhone}
+              linkedName={(session as any).linkedCustomerName ?? null}
+              redemption={loyaltyRedemption}
+              disabled={isBillingLocked}
+            />
+          </div>
+        )}
       </div>
       <BillAdjustments
         appUser={appUser}

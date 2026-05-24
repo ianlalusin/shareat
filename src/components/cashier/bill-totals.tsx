@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { Separator } from "../ui/separator";
-import type { SessionBillLine, Discount, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import type { SessionBillLine, Discount, Store, Adjustment, LineAdjustment, SessionLoyaltyRedemption } from "@/lib/types";
 import { calculateBillTotals, type TaxAndTotals } from "@/lib/tax";
 
 interface BillTotalsProps {
@@ -11,6 +11,7 @@ interface BillTotalsProps {
   store: Store;
   billDiscount: Discount | null;
   customAdjustments: Adjustment[];
+  loyaltyRedemption?: SessionLoyaltyRedemption | null;
   totalPaid: number;
   isLocked?: boolean;
   onRemoveLineAdjustment?: (lineId: string, adjId: string) => void;
@@ -21,19 +22,21 @@ export function BillTotals({
   store,
   billDiscount,
   customAdjustments,
+  loyaltyRedemption,
   totalPaid,
   isLocked,
   onRemoveLineAdjustment,
 }: BillTotalsProps) {
-    
+
     const totals = useMemo(() => {
         if (!store) return {
           subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
-          billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
+          billDiscountTotal: 0, loyaltyDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
           vatableSales: 0, vatExemptSales: 0
         };
-        return calculateBillTotals(lines, store, billDiscount, customAdjustments);
-    }, [lines, store, billDiscount, customAdjustments]);
+        return calculateBillTotals(lines, store, billDiscount, customAdjustments,
+          loyaltyRedemption ? { type: loyaltyRedemption.type, value: loyaltyRedemption.value } : null);
+    }, [lines, store, billDiscount, customAdjustments, loyaltyRedemption]);
 
     // Add guards for totals being null
     const grandTotal = totals?.grandTotal ?? 0;
@@ -160,10 +163,17 @@ export function BillTotals({
             <span>₱{(totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         
-        {((totals?.totalDiscounts ?? 0) > 0) && (
+        {(((totals?.totalDiscounts ?? 0) - (totals?.loyaltyDiscountTotal ?? 0)) > 0) && (
              <div className="flex justify-between text-red-600">
                 <span>Discounts</span>
-                <span>- ₱{(totals?.totalDiscounts ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>- ₱{((totals?.totalDiscounts ?? 0) - (totals?.loyaltyDiscountTotal ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+        )}
+
+        {((totals?.loyaltyDiscountTotal ?? 0) > 0) && (
+             <div className="flex justify-between text-red-600">
+                <span>★ {loyaltyRedemption?.rewardName || "Sharelebrator reward"}</span>
+                <span>- ₱{(totals?.loyaltyDiscountTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         )}
 

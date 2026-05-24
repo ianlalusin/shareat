@@ -141,3 +141,168 @@ export async function writeLoyaltyEarn({
     return { ok: false, error: err.message || String(err) };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Redemption (claim/use points for a rewards-catalog reward)
+// ---------------------------------------------------------------------------
+
+const REDEEM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+function genRedemptionCode(len = 6): string {
+  let s = "";
+  for (let i = 0; i < len; i++) s += REDEEM_CODE_ALPHABET[Math.floor(Math.random() * REDEEM_CODE_ALPHABET.length)];
+  return s;
+}
+
+type RedeemArgs = {
+  storeId: string;
+  sessionId: string;
+  phone: string;
+  rewardId: string;
+  staffUid: string;
+};
+
+type RedeemResult = {
+  ok: boolean;
+  error?: string;
+  redemptionId?: string;
+  code?: string;
+  reward?: { name: string; type: "fixed" | "percent"; value: number; pointsCost: number };
+};
+
+/**
+ * Cashier-side redemption: debit the member's points for a reward and create
+ * an `applied` redemption record linked to the session. The caller then applies
+ * the reward as a bill discount. Reverse with reverseLoyaltyRedeem (remove /
+ * void / refund).
+ */
+export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, staffUid }: RedeemArgs): Promise<RedeemResult> {
+  if (!phone || !rewardId) return { ok: false, error: "Missing phone or reward" };
+  const db = getAdminDb();
+
+  try {
+    const rewardSnap = await db.doc(`loyaltyRewards/${rewardId}`).get();
+    if (!rewardSnap.exists) return { ok: false, error: "Reward not found" };
+    const reward = rewardSnap.data() as any;
+    if (reward.isActive === false) return { ok: false, error: "Reward is not available" };
+    const pointsCost = Math.floor(Number(reward.pointsCost) || 0);
+    const value = Number(reward.value) || 0;
+    const type = reward.type === "percent" ? "percent" : "fixed";
+    if (pointsCost <= 0 || value <= 0) return { ok: false, error: "Invalid reward configuration" };
+
+    const customerRef = db.doc(`customers/${phone}`);
+    const redemptionRef = db.collection("loyaltyRedemptions").doc();
+    const ledgerRef = customerRef.collection("pointsLedger").doc();
+    const logRef = db.collection("loyaltyLogs").doc();
+    const statsRef = db.doc("loyaltyStats/global");
+    const now = Date.now();
+    const code = genRedemptionCode();
+
+    const customerName = await db.runTransaction(async (tx) => {
+      const cSnap = await tx.get(customerRef);
+      if (!cSnap.exists) throw new Error("Customer not found");
+      const c = cSnap.data() as any;
+      const balance = Number(c.pointsBalance || 0);
+      if (balance < pointsCost) throw new Error("Insufficient points");
+      const name = c.name || "";
+
+      tx.update(customerRef, { pointsBalance: FieldValue.increment(-pointsCost), updatedAt: FieldValue.serverTimestamp() });
+      tx.set(ledgerRef, {
+        type: "redeem", points: -pointsCost, amount: 0, storeId, storeName: "", sessionId,
+        rewardId, rewardName: reward.name, redemptionId: redemptionRef.id,
+        createdAt: FieldValue.serverTimestamp(), createdByUid: staffUid,
+      });
+      tx.set(redemptionRef, {
+        id: redemptionRef.id, code, phone, rewardId, rewardName: reward.name,
+        pointsCost, type, value,
+        status: "applied", source: "pos",
+        createdAt: FieldValue.serverTimestamp(), createdAtClientMs: now, expiresAtMs: now,
+        appliedStoreId: storeId, appliedSessionId: sessionId, appliedReceiptId: null,
+        appliedByUid: staffUid, appliedAtMs: now,
+      });
+      tx.set(logRef, {
+        type: "points_redeemed", phone, customerName: name, actorUid: staffUid,
+        storeId, sessionId, points: pointsCost, rewardName: reward.name,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(statsRef, {
+        totalPointsOutstanding: FieldValue.increment(-pointsCost),
+        totalPointsRedeemedEver: FieldValue.increment(pointsCost),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      // Stamp the redemption onto the session so bill totals + payment reflect
+      // the discount. Bump billingRevision so an in-flight payment re-checks.
+      const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
+      tx.set(sessionRef, {
+        loyaltyRedemption: { redemptionId: redemptionRef.id, rewardName: reward.name, type, value, pointsCost, phone },
+        billingRevision: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return name;
+    });
+
+    try {
+      await appendLogToProjection(
+        { type: "points_redeemed", phone, customerName, actorUid: staffUid, storeId, sessionId, points: pointsCost, rewardName: reward.name } as any,
+        logRef.id,
+      );
+    } catch {}
+
+    return { ok: true, redemptionId: redemptionRef.id, code, reward: { name: reward.name, type, value, pointsCost } };
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    console.error("[writeLoyaltyRedeem] failed:", msg);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Reverse a redemption — credit the points back and mark the record cancelled.
+ * Idempotent: a redemption already cancelled/expired is a no-op. Used when a
+ * cashier removes a reward, or a session that used it is voided/refunded, or a
+ * Hub voucher expires unused.
+ */
+export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: string, reason: string): Promise<{ ok: boolean; error?: string; refunded?: number }> {
+  if (!redemptionId) return { ok: false, error: "Missing redemptionId" };
+  const db = getAdminDb();
+  const redRef = db.doc(`loyaltyRedemptions/${redemptionId}`);
+  const statsRef = db.doc("loyaltyStats/global");
+
+  try {
+    const refunded = await db.runTransaction(async (tx) => {
+      const rSnap = await tx.get(redRef);
+      if (!rSnap.exists) throw new Error("Redemption not found");
+      const r = rSnap.data() as any;
+      if (r.status === "cancelled" || r.status === "expired") return 0; // already reversed
+
+      const pointsCost = Math.floor(Number(r.pointsCost) || 0);
+      const customerRef = db.doc(`customers/${r.phone}`);
+      const ledgerRef = customerRef.collection("pointsLedger").doc();
+
+      tx.update(customerRef, { pointsBalance: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
+      tx.set(ledgerRef, {
+        type: "redeem_refund", points: pointsCost, amount: 0, storeId: r.appliedStoreId ?? "", storeName: "",
+        sessionId: r.appliedSessionId ?? "", redemptionId, rewardId: r.rewardId, rewardName: r.rewardName,
+        reason, createdAt: FieldValue.serverTimestamp(), createdByUid: actorUid,
+      });
+      tx.update(redRef, { status: reason === "expired" ? "expired" : "cancelled", refundedAtMs: Date.now(), updatedAt: FieldValue.serverTimestamp() });
+      tx.set(statsRef, { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Clear the redemption off its session (if still attached) so the bill
+      // discount drops. Only when it was applied to a session.
+      if (r.appliedStoreId && r.appliedSessionId) {
+        const sessionRef = db.doc(`stores/${r.appliedStoreId}/sessions/${r.appliedSessionId}`);
+        tx.set(sessionRef, {
+          loyaltyRedemption: FieldValue.delete(),
+          billingRevision: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      return pointsCost;
+    });
+
+    return { ok: true, refunded };
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    console.error("[reverseLoyaltyRedeem] failed:", msg);
+    return { ok: false, error: msg };
+  }
+}

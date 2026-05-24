@@ -868,6 +868,7 @@ export type Receipt = {
     voidReason?: string;
   billDiscount?: Discount | null;
   customAdjustments?: Adjustment[];
+  loyaltyRedemption?: SessionLoyaltyRedemption | null;
   // Refund receipt support
   receiptId?: string;
   parentReceiptId?: string;

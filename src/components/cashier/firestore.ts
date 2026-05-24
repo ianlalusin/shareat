@@ -36,6 +36,7 @@ import type {
   SessionBillLine,
   Discount,
   Adjustment,
+  SessionLoyaltyRedemption,
   ReceiptAnalyticsV2,
   Receipt,
   KitchenTicket,
@@ -109,6 +110,7 @@ async function getCurrentSessionBillingState(storeId: string, sessionId: string)
     customAdjustments: Array.isArray((sessionData as any).customAdjustments)
       ? ((sessionData as any).customAdjustments as Adjustment[])
       : [],
+    loyaltyRedemption: ((sessionData as any).loyaltyRedemption ?? null) as SessionLoyaltyRedemption | null,
     billLines: linesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as SessionBillLine)),
   };
 }
@@ -327,8 +329,11 @@ export async function completePaymentFromUnits(
   let finalReceiptNumber: string | null = null;
 
   const billingState = await getCurrentSessionBillingState(storeId, sessionId);
-  const { billLines, billDiscount, customAdjustments } = billingState;
-  const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments);
+  const { billLines, billDiscount, customAdjustments, loyaltyRedemption } = billingState;
+  const loyaltyDiscountInput = loyaltyRedemption
+    ? { type: loyaltyRedemption.type, value: loyaltyRedemption.value }
+    : null;
+  const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments, loyaltyDiscountInput);
   const amountDue = finalTotals.grandTotal;
   if (typeof expectedTotal === "number" && Math.abs(Math.round(expectedTotal * 100) - Math.round(amountDue * 100)) > 1) {
     throw new Error(
@@ -546,6 +551,7 @@ export async function completePaymentFromUnits(
       total: amountDue, totalPaid, change, status: 'final',
       receiptSeq: nextSeq, receiptNumber, receiptNoFormatUsed: receiptNoFormat,
       createdAtClientMs: Date.now(), lines: billLines, billDiscount: billDiscount ?? null, customAdjustments: customAdjustments ?? [], receiptId: sessionId,
+      loyaltyRedemption: loyaltyRedemption ?? null,
     } as Omit<Receipt, 'createdAt'>);
 
     const salesAnalytics = billLines.reduce(

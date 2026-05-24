@@ -7,12 +7,16 @@ export interface TaxAndTotals {
   taxTotal: number;
   lineDiscountsTotal: number;
   billDiscountTotal: number;
+  loyaltyDiscountTotal: number; // Sharelebrator reward redeemed against this bill
   totalDiscounts: number;
   chargesTotal: number;
   grandTotal: number; // The final, gross amount due by the customer
   vatableSales: number;
   vatExemptSales: number;
 }
+
+/** A redeemed loyalty reward applied to the bill as a stacking discount. */
+export type LoyaltyDiscountInput = { type: "fixed" | "percent"; value: number } | null;
 
 /** Rounds to 2 decimal places using standard half-up rounding. EPSILON avoids floating-point edge cases (e.g., 1.005 -> 1.01). */
 function round(value: number): number {
@@ -32,14 +36,15 @@ export function calculateBillTotals(
   billLines: SessionBillLine[],
   store: Store | null,
   billDiscount: Discount | null,
-  customAdjustments: Adjustment[]
+  customAdjustments: Adjustment[],
+  loyaltyDiscount: LoyaltyDiscountInput = null
 ): TaxAndTotals {
 
   if (!store) {
     console.warn("[Tax] calculateBillTotals called with null store — returning zero totals. This may indicate a loading race.");
     return {
       subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
-      billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
+      billDiscountTotal: 0, loyaltyDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
       vatableSales: 0, vatExemptSales: 0
     };
   }
@@ -140,7 +145,23 @@ export function calculateBillTotals(
   
   billDiscountTotal = round(billDiscountTotal);
 
-  const totalDiscounts = lineDiscountsTotal + billDiscountTotal;
+  // Loyalty reward stacks AFTER line + bill discounts, on the remaining base
+  // (VAT-exclusive when the store is VAT-inclusive, to mirror billDiscount).
+  let loyaltyDiscountTotal = 0;
+  if (loyaltyDiscount && loyaltyDiscount.value > 0) {
+    const remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
+    const loyaltyBase = isVatInclusive && taxRate > 0
+      ? remainingGross / (1 + taxRate)
+      : remainingGross;
+    if (loyaltyDiscount.type === "percent") {
+      loyaltyDiscountTotal = loyaltyBase * (loyaltyDiscount.value / 100);
+    } else {
+      loyaltyDiscountTotal = Math.min(loyaltyBase, loyaltyDiscount.value);
+    }
+  }
+  loyaltyDiscountTotal = round(Math.max(0, loyaltyDiscountTotal));
+
+  const totalDiscounts = lineDiscountsTotal + billDiscountTotal + loyaltyDiscountTotal;
   const netSalesAfterAllDiscounts = grossSubtotal - totalDiscounts;
 
 
@@ -179,6 +200,7 @@ export function calculateBillTotals(
     taxTotal: round(taxTotal),
     lineDiscountsTotal: lineDiscountsTotal,
     billDiscountTotal: billDiscountTotal,
+    loyaltyDiscountTotal: loyaltyDiscountTotal,
     totalDiscounts: round(totalDiscounts),
     chargesTotal,
     grandTotal: round(grandTotal),
