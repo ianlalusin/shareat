@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { addDays, format } from "date-fns";
 import { Loader2, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
-import { rebuildDailyAnalyticsFromReceipts, backfillSessionDurationRollups } from "@/lib/analytics/backfill";
+import { rebuildDailyAnalyticsFromReceipts, backfillSessionDurationRollups, rebuildDashboardPresets } from "@/lib/analytics/backfill";
 import { db } from "@/lib/firebase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
@@ -43,6 +43,9 @@ export default function BackfillPage() {
     end: new Date(),
   });
   const [isRollupCalendarOpen, setIsRollupCalendarOpen] = useState(false);
+  const [presetConfirmText, setPresetConfirmText] = useState("");
+  const [isRebuildingPresets, setIsRebuildingPresets] = useState(false);
+  const [presetProgress, setPresetProgress] = useState("");
 
   if (appUser?.role !== 'admin') {
     return null; // This page is strictly for admins, RoleGuard will handle redirect
@@ -111,6 +114,37 @@ export default function BackfillPage() {
     } finally {
       setIsRollingUp(false);
       setRollupConfirmText("");
+    }
+  };
+
+  const handleRebuildPresets = async () => {
+    if (appUser?.role !== 'admin') {
+        toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
+        return;
+    }
+    if (presetConfirmText !== "PRESETS" || !activeStore) return;
+
+    setIsRebuildingPresets(true);
+    setPresetProgress("Rebuilding dashboard presets...");
+    toast({ title: "Preset Rebuild Started", description: "Recomputing dashboard preset rollups from daily docs." });
+
+    try {
+      await rebuildDashboardPresets(
+        db,
+        activeStore.id,
+        (message) => {
+          console.log(`[Presets]: ${message}`);
+          setPresetProgress(message);
+        }
+      );
+      toast({ title: "Presets Rebuilt", description: "Dashboard preset tiles now reflect the daily docs." });
+    } catch (error: any) {
+      console.error("Preset rebuild failed:", error);
+      toast({ variant: 'destructive', title: "Preset Rebuild Failed", description: error.message });
+      setPresetProgress(`Error: ${error.message}`);
+    } finally {
+      setIsRebuildingPresets(false);
+      setPresetConfirmText("");
     }
   };
 
@@ -275,6 +309,50 @@ export default function BackfillPage() {
                       variant="secondary"
                   >
                       {isRollingUp ? "Running..." : "Recompute Session-Time Rollups"}
+                  </Button>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Rebuild Dashboard Presets</CardTitle>
+                    <CardDescription>
+                        Rebuild the dashboard preset tiles (Today, Yesterday, This Week, Last 7/30, This/Last Month, YTD)
+                        from the daily docs, so historical metrics — including average dine-in session time — show on the
+                        dashboard. Run this AFTER the daily backfill above.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert>
+                      <AlertTitle>Rebuilt from daily docs</AlertTitle>
+                      <AlertDescription>
+                          Each preset's fixed window (relative to today) is recomputed by summing the daily analytics
+                          docs in that window and overwriting the preset doc. No date range needed.
+                      </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2 max-w-xs">
+                      <Label htmlFor="preset-confirm">Type "PRESETS" to confirm</Label>
+                      <Input
+                          id="preset-confirm"
+                          value={presetConfirmText}
+                          onChange={(e) => setPresetConfirmText(e.target.value)}
+                          placeholder='Type "PRESETS"'
+                          disabled={isRebuildingPresets}
+                      />
+                  </div>
+                  {isRebuildingPresets && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-background rounded-md">
+                          <Loader2 className="animate-spin h-4 w-4" />
+                          <span>{presetProgress}</span>
+                      </div>
+                  )}
+                  <Button
+                      onClick={handleRebuildPresets}
+                      disabled={isRebuildingPresets || presetConfirmText !== "PRESETS" || !activeStore}
+                      className="w-full"
+                      variant="secondary"
+                  >
+                      {isRebuildingPresets ? "Running..." : "Rebuild Dashboard Presets"}
                   </Button>
                 </CardContent>
             </Card>

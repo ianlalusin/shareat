@@ -30,7 +30,7 @@ import {
   getItemAdjustmentContribution,
   getDayOfWeekContribution,
 } from "./daily";
-import { toJsDate } from "@/lib/utils/date";
+import { toJsDate, startOfDay, endOfDay } from "@/lib/utils/date";
 
 /**
  * Rebuilds daily analytics documents for a given date range by processing existing receipts and kitchen tickets.
@@ -509,6 +509,106 @@ export async function backfillSessionDurationRollups(
 
   await batch.commit();
   onProgress("Session-time rollups updated.");
+}
+
+// Deep-sums numeric fields of `src` into `target`, recursing into nested maps.
+// Skips `meta` (per-day stamps) and arrays (top lists are recomputed).
+function sumDailyBodyInto(target: any, src: any) {
+  for (const key of Object.keys(src)) {
+    if (key === "meta") continue;
+    const sv = src[key];
+    if (sv == null) continue;
+    if (typeof sv === "number") {
+      target[key] = (typeof target[key] === "number" ? target[key] : 0) + sv;
+    } else if (Array.isArray(sv)) {
+      continue;
+    } else if (typeof sv === "object") {
+      if (typeof target[key] !== "object" || target[key] == null || Array.isArray(target[key])) target[key] = {};
+      sumDailyBodyInto(target[key], sv);
+    }
+  }
+}
+
+function topRefillsFrom(agg: any, topN = 10) {
+  const m = (agg?.refills?.servedRefillsByName ?? {}) as Record<string, number>;
+  return Object.entries(m).map(([name, qty]) => ({ name, qty: Number(qty) || 0 })).sort((a, b) => b.qty - a.qty).slice(0, topN);
+}
+
+function topAddonsFrom(agg: any, topN = 10) {
+  const m = (agg?.sales?.addonSalesByItem ?? {}) as Record<string, any>;
+  return Object.entries(m)
+    .map(([name, d]) => ({ name, qty: Number(d?.qty) || 0, amount: Number(d?.amount) || 0, categoryName: d?.categoryName || "Uncategorized" }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, topN);
+}
+
+/**
+ * Rebuilds the dashboard preset rollup docs (today, yesterday, thisWeek, last7,
+ * last30, thisMonth, lastMonth, ytd) by aggregating the daily analytics docs in
+ * each preset's window. Mirrors scripts/backfill-dash-presets.ts so it can be
+ * run from the browser instead of a node script.
+ *
+ * The dashboard reads these preset docs (when their stored range matches the
+ * current view); since neither the daily nor rollup backfill touches them, run
+ * this after the daily backfill so historical metrics (incl. avg dine-in
+ * session time) surface on the dashboard preset tiles.
+ *
+ * Ranges use the same startOfDay/endOfDay helpers as the dashboard so the
+ * rangeStartMs/rangeEndMs stamps match its validity check.
+ */
+export async function rebuildDashboardPresets(
+  db: Firestore,
+  storeId: string,
+  onProgress: (message: string) => void,
+) {
+  const now = new Date();
+  const addDaysLocal = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+  const ranges: { presetId: string; start: Date; end: Date }[] = [
+    { presetId: "today", start: startOfDay(now), end: endOfDay(now) },
+    { presetId: "yesterday", start: startOfDay(addDaysLocal(now, -1)), end: endOfDay(addDaysLocal(now, -1)) },
+    { presetId: "thisWeek", start: startOfDay(addDaysLocal(now, -now.getDay())), end: endOfDay(now) },
+    { presetId: "last7", start: startOfDay(addDaysLocal(now, -6)), end: endOfDay(now) },
+    { presetId: "last30", start: startOfDay(addDaysLocal(now, -29)), end: endOfDay(now) },
+    { presetId: "thisMonth", start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) },
+    { presetId: "lastMonth", start: startOfDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)), end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)) },
+    { presetId: "ytd", start: startOfDay(new Date(now.getFullYear(), 0, 1)), end: endOfDay(now) },
+  ];
+
+  const batch = writeBatch(db);
+  for (const { presetId, start, end } of ranges) {
+    onProgress(`Rebuilding preset "${presetId}"...`);
+    const daysRef = collection(db, "stores", storeId, "analytics");
+    const qDays = query(
+      daysRef,
+      where("meta.dayStartMs", ">=", start.getTime()),
+      where("meta.dayStartMs", "<=", end.getTime()),
+    );
+    const snap = await getDocs(qDays);
+
+    const agg: any = {};
+    snap.forEach((d) => sumDailyBodyInto(agg, d.data()));
+
+    const presetData = {
+      ...agg,
+      refills: { ...(agg.refills ?? {}), topRefillsByQty: topRefillsFrom(agg) },
+      sales: { ...(agg.sales ?? {}), topAddonsByQty: topAddonsFrom(agg) },
+      meta: {
+        presetId,
+        storeId,
+        source: "backfill-client-presets",
+        updatedAt: serverTimestamp(),
+        rangeStartMs: start.getTime(),
+        rangeEndMs: end.getTime(),
+      },
+    };
+
+    const presetRef = doc(db, "stores", storeId, "dashPresets", presetId);
+    batch.set(presetRef, presetData); // full overwrite, mirrors the node script
+  }
+
+  await batch.commit();
+  onProgress("Dashboard presets rebuilt.");
 }
 
     
