@@ -38,6 +38,11 @@ export default function BackfillPage() {
   const [rollupConfirmText, setRollupConfirmText] = useState("");
   const [isRollingUp, setIsRollingUp] = useState(false);
   const [rollupProgress, setRollupProgress] = useState("");
+  const [rollupDateRange, setRollupDateRange] = useState<{ start: Date; end: Date }>({
+    start: addDays(new Date(), -60),
+    end: new Date(),
+  });
+  const [isRollupCalendarOpen, setIsRollupCalendarOpen] = useState(false);
 
   if (appUser?.role !== 'admin') {
     return null; // This page is strictly for admins, RoleGuard will handle redirect
@@ -91,8 +96,8 @@ export default function BackfillPage() {
       await backfillSessionDurationRollups(
         db,
         activeStore.id,
-        dateRange.start,
-        dateRange.end,
+        rollupDateRange.start,
+        rollupDateRange.end,
         (message) => {
           console.log(`[Rollup]: ${message}`);
           setRollupProgress(message);
@@ -209,19 +214,53 @@ export default function BackfillPage() {
                       <AlertTitle>Additive &amp; safe</AlertTitle>
                       <AlertDescription>
                           Recomputes only the dine-in session-duration fields on month/year docs by summing the
-                          daily analytics docs in the selected range. Other rollup data is left untouched. Uses the
-                          same date range selected above.
+                          daily analytics docs in the selected range. Other rollup data is left untouched.
                       </AlertDescription>
                   </Alert>
-                  <div className="space-y-2 max-w-xs">
-                      <Label htmlFor="rollup-confirm">Type "ROLLUP" to confirm</Label>
-                      <Input
-                          id="rollup-confirm"
-                          value={rollupConfirmText}
-                          onChange={(e) => setRollupConfirmText(e.target.value)}
-                          placeholder='Type "ROLLUP"'
-                          disabled={isRollingUp}
-                      />
+                  <div className="grid sm:grid-cols-2 gap-4 items-end">
+                      <div className="space-y-2">
+                          <Label>Date Range</Label>
+                          <Popover open={isRollupCalendarOpen} onOpenChange={setIsRollupCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                    "w-full justify-start text-left font-normal h-9",
+                                    !rollupDateRange && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {rollupDateRange.start ? (
+                                    rollupDateRange.end && !isSameDay(rollupDateRange.start, rollupDateRange.end) ? (
+                                        <>
+                                        {format(rollupDateRange.start, "LLL dd, y")} -{" "}
+                                        {format(rollupDateRange.end, "LLL dd, y")}
+                                        </>
+                                    ) : (
+                                        format(rollupDateRange.start, "LLL dd, y")
+                                    )
+                                    ) : (
+                                    <span>Pick a date range</span>
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <CompactCalendar
+                                    onChange={(range) => { setRollupDateRange(range); setIsRollupCalendarOpen(false); }}
+                                />
+                            </PopoverContent>
+                         </Popover>
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="rollup-confirm">Type "ROLLUP" to confirm</Label>
+                          <Input
+                              id="rollup-confirm"
+                              value={rollupConfirmText}
+                              onChange={(e) => setRollupConfirmText(e.target.value)}
+                              placeholder='Type "ROLLUP"'
+                              disabled={isRollingUp}
+                          />
+                      </div>
                   </div>
                   {isRollingUp && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-background rounded-md">
