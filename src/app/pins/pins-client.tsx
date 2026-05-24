@@ -10,6 +10,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomersAdmin } from "@/components/pins/customers-admin";
 
@@ -105,6 +106,7 @@ export default function PinsClient() {
   const { activeStore } = useStoreContext();
   const { user } = useAuthContext();
   const { confirm, Dialog } = useConfirmDialog();
+  const { toast } = useToast();
 
   const storeId = activeStore?.id;
   const targetSessionId = searchParams.get("sessionId");
@@ -498,7 +500,7 @@ export default function PinsClient() {
                                   if (!res.ok) throw new Error(data?.error || "Failed to disable PIN.");
                                 } catch (error: any) {
                                   console.error("Disable PIN failed:", error);
-                                  window.alert(error?.message || "Failed to disable PIN.");
+                                  toast({ variant: "destructive", title: "Failed to disable PIN", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -536,7 +538,7 @@ export default function PinsClient() {
                                   if (!res.ok) throw new Error(data?.error || "Failed to extend PIN.");
                                 } catch (error: any) {
                                   console.error("Extend PIN failed:", error);
-                                  window.alert(error?.message || "Failed to extend PIN.");
+                                  toast({ variant: "destructive", title: "Failed to extend PIN", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -565,9 +567,9 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Repair failed.");
-                                  if (data.repaired === 0) window.alert("No PIN found in registry for this session. Use Reissue instead.");
+                                  if (data.repaired === 0) toast({ title: "No PIN found", description: "No PIN found in registry for this session. Use Reissue instead." });
                                 } catch (error: any) {
-                                  window.alert(error?.message || "Repair failed.");
+                                  toast({ variant: "destructive", title: "Repair failed", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -607,7 +609,7 @@ export default function PinsClient() {
                                   router.push(`/print/session-pin/${s.id}`);
                                 } catch (error: any) {
                                   console.error("Reissue PIN failed:", error);
-                                  window.alert(error?.message || "Failed to issue PIN.");
+                                  toast({ variant: "destructive", title: "Failed to issue PIN", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -624,12 +626,21 @@ export default function PinsClient() {
                           <button
                             className="border rounded px-3 py-2 text-sm text-destructive border-destructive/30 hover:bg-destructive/10 disabled:opacity-50"
                             disabled={busyId === s.id}
-                            onClick={() => {
+                            onClick={async () => {
+                              if (!user) {
+                                toast({ variant: "destructive", title: "You must be signed in." });
+                                return;
+                              }
+                              const ok = await confirm({
+                                title: "Disconnect all customer devices?",
+                                description: "This will disconnect all customer devices from this session.",
+                                confirmText: "Disconnect",
+                                destructive: true,
+                              });
+                              if (!ok) return;
                               startTransition(async () => {
                                 try {
                                   setBusyId(s.id);
-                                  if (!user) throw new Error("You must be signed in.");
-                                  if (!window.confirm("This will disconnect all customer devices from this session. Continue?")) return;
                                   const token = await user.getIdToken();
                                   const res = await fetch("/api/pins/participants/reset", {
                                     method: "POST",
@@ -638,9 +649,9 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Failed to reset participants.");
-                                  window.alert(`${data.revokedCount ?? 0} device(s) disconnected.`);
+                                  toast({ title: "Guests disconnected", description: `${data.revokedCount ?? 0} device(s) disconnected.` });
                                 } catch (error: any) {
-                                  window.alert(error?.message || "Reset failed.");
+                                  toast({ variant: "destructive", title: "Reset failed", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -732,7 +743,7 @@ export default function PinsClient() {
                                       router.push(`/print/session-pin/${pin.sessionId}`);
                                     } catch (error: any) {
                                       console.error("Revive PIN failed:", error);
-                                      window.alert(error?.message || "Failed to revive PIN.");
+                                      toast({ variant: "destructive", title: "Failed to revive PIN", description: error?.message });
                                     } finally {
                                       setBusyId(null);
                                     }

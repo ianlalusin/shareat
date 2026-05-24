@@ -19,6 +19,7 @@ import {
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { toJsDate } from "@/lib/utils/date";
 
 import {
@@ -76,6 +77,7 @@ export function PaymentConvertModal({
 }: PaymentConvertModalProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
 
   const [fromMethod, setFromMethod] = useState<string>("");
   const [toMethod, setToMethod] = useState<string>("");
@@ -185,7 +187,12 @@ export function PaymentConvertModal({
 
   const handleVoid = async (id: string) => {
     if (!appUser?.uid) return;
-    const confirmed = window.confirm("Void this conversion? This reverses its effect on the payment mix.");
+    const confirmed = await confirm({
+      title: "Void this conversion?",
+      description: "This reverses its effect on the payment mix.",
+      confirmText: "Void",
+      destructive: true,
+    });
     if (!confirmed) return;
     setVoidingId(id);
     try {
@@ -238,6 +245,8 @@ export function PaymentConvertModal({
   );
 
   return (
+    <>
+    {ConfirmDialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -375,5 +384,6 @@ export function PaymentConvertModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
