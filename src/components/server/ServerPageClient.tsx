@@ -24,6 +24,7 @@ import { useServerProfile } from "@/hooks/useServerProfile";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
 import { ServerUserCard } from "@/components/server/ServerUserCard";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
+import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 import { formatElapsedShort } from "@/components/server/SessionCard";
 import { VerifyAverageCard } from "@/components/server/VerifyAverageCard";
 
@@ -233,9 +234,9 @@ export function ServerPageClient() {
     );
   }
 
-  // Admins (platform admins) skip the local server-profile sign-in — their
-  // actions are attributed by their account uid instead of a device profile.
-  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
+  // Admins and managers skip the local server-profile sign-in — their actions
+  // are attributed by their account instead of a device profile.
+  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
     return (
       <RoleGuard allow={["admin", "manager", "server"]}>
         <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />

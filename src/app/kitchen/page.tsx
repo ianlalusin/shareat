@@ -100,6 +100,7 @@ import { useServerProfile } from "@/hooks/useServerProfile";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
 import { ServerUserCard } from "@/components/server/ServerUserCard";
 import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
+import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -689,8 +690,8 @@ export default function KitchenPage() {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
   }
 
-  // Local sign-in gate (platform admins are attributed by their account, so they bypass).
-  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
+  // Local sign-in gate. Admins/managers are attributed by their account, so they bypass.
+  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
     return (
       <RoleGuard allow={["admin", "manager", "kitchen"]}>
         <PageHeader title="Kitchen Display System" description="Monitor and manage all active food and beverage orders." />

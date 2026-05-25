@@ -16,6 +16,7 @@ import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
 import { ServerUserCard } from "@/components/server/ServerUserCard";
 import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
+import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -91,8 +92,8 @@ function CashierPageContent() {
     setShiftOpen(false);
   }
 
-  // Local sign-in gate (platform admins are attributed by their account, so they bypass).
-  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
+  // Local sign-in gate. Admins/managers are attributed by their account, so they bypass.
+  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
     return (
       <RoleGuard allow={["admin", "manager", "cashier"]}>
         <PageHeader title="Cashier" description="Start a new session or manage active ones." />
