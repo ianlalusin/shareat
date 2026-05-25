@@ -239,7 +239,7 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                                             {log.serverProfileName ? (
                                                 <div className="leading-tight">
                                                     <p className="font-medium">{log.serverProfileName}</p>
-                                                    <p className="text-[10px] text-muted-foreground">{log.actorName || log.actorRole || "—"}</p>
+                                                    {log.actorRole && <p className="text-[10px] text-muted-foreground capitalize">{log.actorRole}</p>}
                                                 </div>
                                             ) : (
                                                 <span>{log.actorName || log.actorRole || 'System'}</span>

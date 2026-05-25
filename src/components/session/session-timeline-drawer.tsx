@@ -27,6 +27,7 @@ type TimelineEvent = {
   description: string;
   actorUid?: string;
   actorName?: string;
+  serverProfileName?: string | null;
   detail?: string;
 };
 
@@ -319,6 +320,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
                 detail: result.detail,
                 actorUid: log.actorUid || log.user?.uid,
                 actorName: log.actorName || log.user?.name,
+                serverProfileName: log.serverProfileName ?? null,
             });
         });
 
@@ -479,9 +481,9 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
                       <p className="text-xs text-muted-foreground mt-0.5">{event.detail}</p>
                     )}
 
-                    {(event.actorUid || event.actorName) && (
+                    {(event.actorUid || event.actorName || event.serverProfileName) && (
                         <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                            <User size={10} /> {event.actorName || userProfiles[event.actorUid!]?.name || event.actorUid?.substring(0,6)}
+                            <User size={10} /> {event.serverProfileName || event.actorName || userProfiles[event.actorUid!]?.name || event.actorUid?.substring(0,6)}
                         </div>
                     )}
                 </div>

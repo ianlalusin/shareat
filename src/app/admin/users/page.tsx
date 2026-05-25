@@ -25,6 +25,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { PlusCircle } from "lucide-react";
+import { ServerProfilesManagerCard } from "@/components/manager/ServerProfilesManagerCard";
+import { CreateServerProfileModal } from "@/components/server/CreateServerProfileModal";
 
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
@@ -32,8 +37,10 @@ type AssignableRole = Exclude<UserRole, "pending">;
 export default function UserManagementPage() {
     const router = useRouter();
     const { appUser, isSigningOut } = useAuthContext();
-    const { stores: availableStores, loading: storesLoading } = useStoreContext();
+    const { stores: availableStores, activeStore, loading: storesLoading } = useStoreContext();
     const { toast } = useToast();
+    const [localStoreId, setLocalStoreId] = useState<string>("");
+    const [createLocalOpen, setCreateLocalOpen] = useState(false);
     const [pendingUsers, setPendingUsers] = useState<AppUser[]>([]);
     const [activeUsers, setActiveUsers] = useState<AppUser[]>([]);
     const [deactivatedUsers, setDeactivatedUsers] = useState<AppUser[]>([]);
@@ -338,9 +345,11 @@ export default function UserManagementPage() {
         });
     };
 
+    const effectiveLocalStore = localStoreId || activeStore?.id || availableStores[0]?.id || "";
+
     return (
         <RoleGuard allow={["admin"]}>
-            <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts.">
+            <PageHeader title="User Management" description="Manage app user accounts and device-local user profiles.">
                 <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={() => router.back()}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -351,6 +360,14 @@ export default function UserManagementPage() {
                     </Button>
                 </div>
             </PageHeader>
+
+            <Tabs defaultValue="app" className="mt-2">
+              <TabsList className="mb-4">
+                <TabsTrigger value="app">App Users</TabsTrigger>
+                <TabsTrigger value="local">Local Users</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="app">
              <div className="grid gap-6">
                 <Card>
                     <CardHeader>
@@ -521,6 +538,53 @@ export default function UserManagementPage() {
                     </CardContent>
                 </Card>
             </div>
+              </TabsContent>
+
+              <TabsContent value="local">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> Local User Accounts</CardTitle>
+                    <CardDescription>
+                      Device-local identities (cashier, server, kitchen) used on shared tablets. Pick a store to manage its
+                      local users — add one for staff, reset a passcode, or delete an account.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Store</Label>
+                        <Select value={effectiveLocalStore} onValueChange={setLocalStoreId}>
+                          <SelectTrigger className="w-[240px]"><SelectValue placeholder="Select a store" /></SelectTrigger>
+                          <SelectContent>
+                            {availableStores.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button onClick={() => setCreateLocalOpen(true)} disabled={!effectiveLocalStore}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> New Local User
+                      </Button>
+                    </div>
+
+                    {effectiveLocalStore ? (
+                      <ServerProfilesManagerCard storeId={effectiveLocalStore} />
+                    ) : (
+                      <p className="text-sm text-muted-foreground py-6 text-center">Select a store to manage its local users.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {effectiveLocalStore && (
+              <CreateServerProfileModal
+                open={createLocalOpen}
+                onOpenChange={setCreateLocalOpen}
+                storeId={effectiveLocalStore}
+                onCreated={(_, name) => { setCreateLocalOpen(false); toast({ title: "Local user created", description: name }); }}
+              />
+            )}
 
             {selectedUser && appUser && (
                 <UserDetailsModal

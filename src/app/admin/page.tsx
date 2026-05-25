@@ -9,7 +9,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
 
 const adminTools = [
-    { title: "Staff Management", description: "Manage staff roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
+    { title: "User Management", description: "Manage app users and device-local user accounts.", href: "/admin/users", icon: UserCog },
     { title: "Store Management", description: "Create, edit, or deactivate store locations.", href: "/admin/stores", icon: Store },
     { title: "Universal Collections", description: "Manage platform-wide discounts, charges, and store overrides.", href: "/admin/collections", icon: Globe },
     { title: "Loyalty Rewards", description: "Rewards members redeem Sharelebrator points for.", href: "/admin/loyalty-rewards", icon: Gift },

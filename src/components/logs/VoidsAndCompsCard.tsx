@@ -12,6 +12,7 @@ import { Loader2 } from "lucide-react";
 import type { ActivityLog, PendingSession } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { logActorName } from "@/lib/logs/actor";
 import { ScrollArea } from "../ui/scroll-area";
 
 interface VoidsAndCompsCardProps {
@@ -69,7 +70,9 @@ function getReason(log: ActivityLog): string {
 }
 
 function getActor(log: ActivityLog): string {
-   return log.actorName || (log.actorUid ? log.actorUid.slice(0,8) : '—')
+   const name = logActorName(log);
+   if (name && name !== "System") return name;
+   return log.actorUid ? log.actorUid.slice(0, 8) : '—';
 }
 
 export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCompsCardProps) {

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, ShieldAlert, Users } from "lucide-react";
 import type { ActivityLog } from "@/lib/types";
+import { logActorKey, logActorName } from "@/lib/logs/actor";
 
 type StaffStat = {
   actorUid: string;
@@ -43,18 +44,19 @@ export function StaffAdjustmentsCard({ logs, isLoading }: { logs: ActivityLog[];
   const { stats, totals } = useMemo(() => {
     const byActor = new Map<string, StaffStat>();
     const get = (log: ActivityLog): StaffStat => {
-      const uid = log.actorUid || "unknown";
-      let s = byActor.get(uid);
+      // Group by the local user when present (staff share one account), else uid.
+      const key = logActorKey(log);
+      let s = byActor.get(key);
       if (!s) {
         s = {
-          actorUid: uid,
-          actorName: log.actorName || "Unknown",
+          actorUid: key,
+          actorName: logActorName(log),
           voidCount: 0, voidAmount: 0, freeCount: 0, freeAmount: 0,
           discountCount: 0, discountAmount: 0, total: 0, flagged: false,
         };
-        byActor.set(uid, s);
-      } else if (s.actorName === "Unknown" && log.actorName) {
-        s.actorName = log.actorName;
+        byActor.set(key, s);
+      } else if ((s.actorName === "Unknown" || s.actorName === "System") && logActorName(log)) {
+        s.actorName = logActorName(log);
       }
       return s;
     };
