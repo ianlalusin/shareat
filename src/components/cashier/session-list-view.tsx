@@ -30,7 +30,7 @@ import type { PendingSeat } from "./start-session-form";
 import { deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { takeReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
 
-export function SessionListView() {
+export function SessionListView({ localUserCard }: { localUserCard?: React.ReactNode } = {}) {
     const { appUser, isSigningOut } = useAuthContext();
     const { activeStore } = useStoreContext();
     const router = useRouter();
@@ -220,6 +220,7 @@ export function SessionListView() {
         <>
             <PageHeader title="Cashier" description="Start a new session or manage active ones.">
                 <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {localUserCard}
                     <CashierTargetProgressCard storeId={activeStore.id} />
                     <Button variant="outline" size="sm" onClick={() => router.push("/cashier/handover")}>
                         <Banknote className="mr-2 h-4 w-4" /> Cash Handover

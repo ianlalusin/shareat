@@ -96,6 +96,10 @@ import {
   requestKitchenAlertPermission,
 } from "@/lib/notifications/kitchenAlert";
 import { CustomerRequestsPanel } from "@/components/kitchen/CustomerRequestsPanel";
+import { useServerProfile } from "@/hooks/useServerProfile";
+import { ServerSignInGate } from "@/components/server/ServerSignInGate";
+import { ServerUserCard } from "@/components/server/ServerUserCard";
+import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -103,6 +107,14 @@ export default function KitchenPage() {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const processedStoresRef = useRef(new Set<string>());
+
+  // Local-profile sign-in so shared-account staff are identified on this KDS.
+  // No idle auto-logout here — the kitchen display is meant to stay on.
+  const { currentProfile, signIn, signOut } = useServerProfile(activeStore?.id ?? null);
+  useEffect(() => {
+    setActiveLocalProfile(currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null);
+    return () => setActiveLocalProfile(null);
+  }, [currentProfile]);
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
   // Single source of truth for every station's rtKdsTickets doc. One
@@ -677,13 +689,32 @@ export default function KitchenPage() {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
   }
 
+  // Local sign-in gate (platform admins are attributed by their account, so they bypass).
+  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
+    return (
+      <RoleGuard allow={["admin", "manager", "kitchen"]}>
+        <PageHeader title="Kitchen Display System" description="Monitor and manage all active food and beverage orders." />
+        <ServerSignInGate storeId={activeStore.id} roleLabel="kitchen display" onSignIn={signIn} />
+      </RoleGuard>
+    );
+  }
+
   return (
     <RoleGuard allow={["admin", "manager", "kitchen"]}>
-      <PageHeader 
-        title="Kitchen Display System" 
+      <PageHeader
+        title="Kitchen Display System"
         description="Monitor and manage all active food and beverage orders."
       >
         <div className="flex items-center gap-2">
+            {activeStore && currentProfile && (
+              <ServerUserCard
+                storeId={activeStore.id}
+                profileId={currentProfile.profileId}
+                name={currentProfile.name}
+                onSignIn={signIn}
+                onSignOut={signOut}
+              />
+            )}
             <SyncKdsTicketsTool />
             <div className="text-right">
                 <p className="text-sm font-medium text-muted-foreground">{activeStationName} Avg Serving Time</p>

@@ -7,7 +7,15 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useStoreContext } from "@/context/store-context";
+import { useAuthContext } from "@/context/auth-context";
+import { useToast } from "@/hooks/use-toast";
 import { StartShiftModal } from "@/components/shared/StartShiftModal";
+import { PageHeader } from "@/components/page-header";
+import { useServerProfile } from "@/hooks/useServerProfile";
+import { useIdleTimer } from "@/hooks/useIdleTimer";
+import { ServerSignInGate } from "@/components/server/ServerSignInGate";
+import { ServerUserCard } from "@/components/server/ServerUserCard";
+import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -44,7 +52,26 @@ function CashierPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get('sessionId') ?? null;
   const { activeStore } = useStoreContext();
+  const { appUser } = useAuthContext();
+  const { toast } = useToast();
   const [shiftOpen, setShiftOpen] = useState(false);
+
+  const { currentProfile, signIn, signOut } = useServerProfile(activeStore?.id ?? null);
+
+  // Idle auto sign-out (30 minutes), mirroring the server station.
+  const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
+  useEffect(() => {
+    if (isIdle && currentProfile) {
+      signOut();
+      toast({ title: "Signed out", description: "Inactive for 30 minutes." });
+    }
+  }, [isIdle, currentProfile, signOut, toast]);
+
+  // Make the local profile available to fire-and-forget loggers for attribution.
+  useEffect(() => {
+    setActiveLocalProfile(currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null);
+    return () => setActiveLocalProfile(null);
+  }, [currentProfile]);
 
   useEffect(() => {
     if (!activeStore?.id) return;
@@ -64,9 +91,29 @@ function CashierPageContent() {
     setShiftOpen(false);
   }
 
+  // Local sign-in gate (platform admins are attributed by their account, so they bypass).
+  if (!currentProfile && activeStore && !appUser?.isPlatformAdmin) {
+    return (
+      <RoleGuard allow={["admin", "manager", "cashier"]}>
+        <PageHeader title="Cashier" description="Start a new session or manage active ones." />
+        <ServerSignInGate storeId={activeStore.id} roleLabel="cashier station" onSignIn={signIn} />
+      </RoleGuard>
+    );
+  }
+
+  const userCard = activeStore && currentProfile ? (
+    <ServerUserCard
+      storeId={activeStore.id}
+      profileId={currentProfile.profileId}
+      name={currentProfile.name}
+      onSignIn={signIn}
+      onSignOut={signOut}
+    />
+  ) : undefined;
+
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
-      {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView />}
+      {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView localUserCard={userCard} />}
       {activeStore?.id && (
         <StartShiftModal
           isOpen={shiftOpen}

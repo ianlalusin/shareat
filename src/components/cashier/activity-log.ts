@@ -8,6 +8,7 @@ import type { AppUser } from "@/context/auth-context";
 import type { ActivityLog } from "@/lib/types";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { computeSessionLabel } from "@/lib/utils/session";
+import { getActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 
 type SessionContext = {
     sessionStatus?: 'pending_verification' | 'active' | 'closed' | 'voided';
@@ -55,7 +56,12 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
     const dayId = getDayIdFromTimestamp(now);
 
     const meta = { ...rest.meta, ...(qty !== undefined && { qty }), ...(rest.reason && { reason: rest.reason }) };
-    
+
+    // Attribute to the explicitly-passed profile (server flow) or fall back to
+    // the device's active local profile (KDS / cashier) so shared-account
+    // actions still record who did them.
+    const profile = serverProfile ?? getActiveLocalProfile();
+
     const logDoc: Omit<ActivityLog, 'id' | 'createdAt'> = {
       storeId,
       sessionId,
@@ -64,8 +70,8 @@ export async function writeActivityLog(payload: ActivityLogPayload): Promise<voi
       actorRole: user.role || null,
       actorName: user.displayName || user.name || null,
 
-      serverProfileId: serverProfile?.id ?? null,
-      serverProfileName: serverProfile?.name ?? null,
+      serverProfileId: profile?.id ?? null,
+      serverProfileName: profile?.name ?? null,
 
       // Denormalized session context
       sessionStatus: sessionContext?.sessionStatus,

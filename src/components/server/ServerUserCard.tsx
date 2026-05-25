@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Repeat, UserCircle2 } from "lucide-react";
+import { LogOut, Repeat, UserCircle2 } from "lucide-react";
 import { ServerProfileSwitcher } from "./ServerProfileSwitcher";
 
 interface Props {
@@ -30,6 +30,9 @@ export function ServerUserCard({ storeId, profileId, name, onSignIn, onSignOut }
           </div>
           <Button variant="outline" size="sm" className="h-8" onClick={() => setSwitcherOpen(true)}>
             <Repeat className="h-3.5 w-3.5 mr-1" /> Switch
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={onSignOut} title="Log out this local user">
+            <LogOut className="h-3.5 w-3.5 mr-1" /> Log out
           </Button>
         </CardContent>
       </Card>
