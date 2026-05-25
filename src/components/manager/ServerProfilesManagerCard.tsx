@@ -92,10 +92,10 @@ export function ServerProfilesManagerCard({ storeId }: Props) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
-            Server Profiles
+            Local Users
           </CardTitle>
           <CardDescription>
-            Device-local identities used on the Server Station. Reset a passcode if someone forgot theirs, or delete a profile to remove it from the switcher.
+            Device-local identities (cashier, server, kitchen) used on shared tablets. Reset a passcode if someone forgot theirs, or delete an account to remove it from the switcher.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -104,7 +104,7 @@ export function ServerProfilesManagerCard({ storeId }: Props) {
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           ) : profiles.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No server profiles yet for this store.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">No local users yet for this store.</p>
           ) : (
             <ul className="divide-y border rounded-lg">
               {profiles.map((p) => (

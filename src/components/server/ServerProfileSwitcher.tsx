@@ -106,7 +106,7 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
             <DialogDescription>
               {selected
                 ? "6-digit passcode."
-                : "Tap your name, or create a new profile."}
+                : "Tap your name, or create a new local user."}
             </DialogDescription>
           </DialogHeader>
 
@@ -136,7 +136,7 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
               )}
 
               <Button variant="outline" className="w-full" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" /> Create new profile
+                <Plus className="h-4 w-4 mr-1" /> Create new local user
               </Button>
 
               {currentProfileId && (

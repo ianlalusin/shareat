@@ -89,7 +89,7 @@ export function CreateServerProfileModal({ open, onOpenChange, storeId, onCreate
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5 text-primary" />
-            {step === "name" ? "New server profile" : step === "passcode" ? "Choose a 6-digit passcode" : "Confirm passcode"}
+            {step === "name" ? "New local user" : step === "passcode" ? "Choose a 6-digit passcode" : "Confirm passcode"}
           </DialogTitle>
           <DialogDescription>
             {step === "name"
