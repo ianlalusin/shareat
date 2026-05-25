@@ -30,7 +30,7 @@ const managerTools = [
     { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
-    { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
+    { title: "Sales Reports", description: "Daily & monthly sales summary for printing and cash-up.", href: "/sales-report", icon: LineChart },
     { title: "Printer Setup", description: "Configure Bluetooth thermal printers.", href: "/admin/tools/printer-test", icon: Printer },
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]
