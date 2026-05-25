@@ -28,6 +28,7 @@ type CustomerRequest = {
   doneAtClientMs?: number | null;
   doneAt?: any;
   doneByUsername?: string | null;
+  doneByProfileName?: string | null;
 };
 
 type Preset = "today" | "7d" | "30d" | "all";
@@ -164,7 +165,7 @@ export default function CustomerRequestsAnalysisPage() {
           "Table / Customer": r.tableDisplayName || (r.tableNumber ? `Table ${r.tableNumber}` : "") || r.customerName || "",
           "Request": r.text,
           "Status": r.status,
-          "Done by": r.doneByUsername ?? "",
+          "Done by": r.doneByProfileName || r.doneByUsername || "",
           "Response time": r.status === "done" && doneMs != null ? fmtDuration(doneMs - r.createdAtClientMs) : "",
         };
       }),
@@ -274,7 +275,7 @@ export default function CustomerRequestsAnalysisPage() {
                             <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-600 text-[10px]">Pending</Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.doneByUsername || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.doneByProfileName || r.doneByUsername || "—"}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {responseMs != null ? fmtDuration(responseMs) : "—"}
                         </TableCell>

@@ -1003,6 +1003,8 @@ export type ActivityLog = {
     // Customer request fields
     requestId?: string;
     text?: string;
+    type?: string;
+    responseMs?: number;
   };
 
   createdAt: any; // serverTimestamp()

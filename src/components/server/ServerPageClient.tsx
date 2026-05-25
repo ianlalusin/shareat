@@ -21,6 +21,7 @@ import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
 import { useLocalProfile } from "@/context/local-profile-context";
+import { AssistanceAlerts } from "@/components/kitchen/AssistanceAlerts";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { formatElapsedShort } from "@/components/server/SessionCard";
 import { VerifyAverageCard } from "@/components/server/VerifyAverageCard";
@@ -291,6 +292,7 @@ export function ServerPageClient() {
                 serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
+        {activeStore?.id && <AssistanceAlerts storeId={activeStore.id} />}
     </RoleGuard>
   );
 }
