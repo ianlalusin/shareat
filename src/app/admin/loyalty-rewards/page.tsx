@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { db, storage } from "@/lib/firebase/client";
+import { getAuth } from "firebase/auth";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -20,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Gift, Loader, PlusCircle, Power, PowerOff } from "lucide-react";
+import { ArrowLeft, BarChart3, Gift, ImageIcon, Loader, PlusCircle, Power, PowerOff } from "lucide-react";
 import type { LoyaltyReward } from "@/lib/types";
 
 type FormState = {
@@ -33,9 +35,16 @@ type FormState = {
   maxPerVisit: string;
   maxClaimsPerStore: string;
   isActive: boolean;
+  imageUrl: string | null;
 };
 
-const EMPTY: FormState = { name: "", description: "", type: "fixed", value: "", pointsCost: "", sortOrder: "0", maxPerVisit: "1", maxClaimsPerStore: "", isActive: true };
+const EMPTY: FormState = { name: "", description: "", type: "fixed", value: "", pointsCost: "", sortOrder: "0", maxPerVisit: "1", maxClaimsPerStore: "", isActive: true, imageUrl: null };
+
+type RewardStats = {
+  totals: { totalClaims: number; appliedClaims: number; pendingClaims: number; expiredClaims: number; cancelledClaims: number; totalPointsSpent: number; storeCount: number };
+  byStore: Array<{ storeId: string; storeName: string; claims: number; points: number }>;
+  recent: Array<{ id: string; ts: number; status: string; source: string; storeName: string | null; pointsCost: number; phone: string }>;
+};
 
 export default function LoyaltyRewardsPage() {
   const router = useRouter();
@@ -48,7 +57,12 @@ export default function LoyaltyRewardsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LoyaltyReward | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [statsReward, setStatsReward] = useState<LoyaltyReward | null>(null);
+  const [statsData, setStatsData] = useState<RewardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "loyaltyRewards"), orderBy("sortOrder", "asc"));
@@ -63,17 +77,49 @@ export default function LoyaltyRewardsPage() {
     return () => unsub();
   }, []);
 
-  const openNew = () => { setEditing(null); setForm(EMPTY); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm(EMPTY); setImageFile(null); setDialogOpen(true); };
   const openEdit = (r: LoyaltyReward) => {
     setEditing(r);
+    setImageFile(null);
     setForm({
       name: r.name, description: r.description ?? "", type: r.type, value: String(r.value),
       pointsCost: String(r.pointsCost), sortOrder: String(r.sortOrder ?? 0),
       maxPerVisit: String(r.maxPerVisit ?? 1),
       maxClaimsPerStore: r.maxClaimsPerStore ? String(r.maxClaimsPerStore) : "",
       isActive: r.isActive,
+      imageUrl: r.imageUrl ?? null,
     });
     setDialogOpen(true);
+  };
+
+  async function uploadRewardImage(file: File, rewardId: string): Promise<string> {
+    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `loyaltyRewardImages/${rewardId}/${Date.now()}-${safe}`;
+    const r = storageRef(storage, path);
+    await uploadBytes(r, file, { contentType: file.type || "image/jpeg" });
+    return await getDownloadURL(r);
+  }
+
+  const openStats = async (r: LoyaltyReward) => {
+    setStatsReward(r);
+    setStatsData(null);
+    setStatsLoading(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Not signed in.");
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/admin/loyalty/reward-stats?rewardId=${encodeURIComponent(r.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to load usage.");
+      setStatsData({ totals: json.totals, byStore: json.byStore, recent: json.recent });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not load usage", description: e?.message });
+      setStatsReward(null);
+    } finally {
+      setStatsLoading(false);
+    }
   };
 
   const canSave = useMemo(() => {
@@ -98,18 +144,25 @@ export default function LoyaltyRewardsPage() {
         updatedAt: serverTimestamp(),
       };
       if (editing) {
-        await updateDoc(doc(db, "loyaltyRewards", editing.id), payload);
+        const imageUrl = imageFile ? await uploadRewardImage(imageFile, editing.id) : (form.imageUrl ?? null);
+        await updateDoc(doc(db, "loyaltyRewards", editing.id), { ...payload, imageUrl });
         toast({ title: "Reward updated" });
       } else {
-        await addDoc(collection(db, "loyaltyRewards"), {
+        const ref = await addDoc(collection(db, "loyaltyRewards"), {
           ...payload,
+          imageUrl: null,
           applicableStoreIds: null,
           createdAt: serverTimestamp(),
           createdBy: appUser?.uid ?? null,
         });
+        if (imageFile) {
+          const url = await uploadRewardImage(imageFile, ref.id);
+          await updateDoc(doc(db, "loyaltyRewards", ref.id), { imageUrl: url, updatedAt: serverTimestamp() });
+        }
         toast({ title: "Reward created" });
       }
       setDialogOpen(false);
+      setImageFile(null);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Save failed", description: e?.message });
     } finally {
@@ -171,13 +224,25 @@ export default function LoyaltyRewardsPage() {
                 {rewards.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">
-                      {r.name}
-                      {r.description && <div className="text-xs text-muted-foreground">{r.description}</div>}
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+                          {r.imageUrl ? (
+                            <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          {r.name}
+                          {r.description && <div className="text-xs text-muted-foreground">{r.description}</div>}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>{fmtValue(r)}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.pointsCost.toLocaleString()}</TableCell>
                     <TableCell><Badge variant={r.isActive ? "default" : "secondary"}>{r.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                     <TableCell className="text-right">
+                      <Button variant="outline" size="sm" className="mr-2" onClick={() => openStats(r)}><BarChart3 className="h-4 w-4 mr-1" /> Usage</Button>
                       <Button variant="outline" size="sm" className="mr-2" onClick={() => openEdit(r)}>Edit</Button>
                       <Button variant={r.isActive ? "secondary" : "default"} size="sm" className="mr-2" onClick={() => handleToggle(r)}>
                         {r.isActive ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
@@ -206,6 +271,29 @@ export default function LoyaltyRewardsPage() {
             <div className="space-y-1">
               <Label>Description <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} disabled={saving} />
+            </div>
+            <div className="space-y-1">
+              <Label>Photo <span className="text-xs text-muted-foreground font-normal">(optional — shown in the customer app)</span></Label>
+              <div className="flex items-center gap-3">
+                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+                  {imageFile ? (
+                    <img src={URL.createObjectURL(imageFile)} alt="preview" className="h-full w-full object-cover" />
+                  ) : form.imageUrl ? (
+                    <img src={form.imageUrl} alt="current" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Input type="file" accept="image/*" disabled={saving} onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} className="text-sm" />
+                  {(imageFile || form.imageUrl) && (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 w-fit px-2 text-muted-foreground" disabled={saving}
+                      onClick={() => { setImageFile(null); setForm({ ...form, imageUrl: null }); }}>
+                      Remove photo
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -256,6 +344,90 @@ export default function LoyaltyRewardsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={statsReward !== null} onOpenChange={(o) => { if (!o) { setStatsReward(null); setStatsData(null); } }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> Usage — {statsReward?.name}</DialogTitle>
+            <DialogDescription>Claims, points spent, and where this reward is being used.</DialogDescription>
+          </DialogHeader>
+
+          {statsLoading || !statsData ? (
+            <div className="flex justify-center py-12"><Loader className="animate-spin" /></div>
+          ) : (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Total claims</div>
+                  <div className="text-2xl font-semibold tabular-nums">{statsData.totals.totalClaims.toLocaleString()}</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Used (applied)</div>
+                  <div className="text-2xl font-semibold tabular-nums">{statsData.totals.appliedClaims.toLocaleString()}</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Pending vouchers</div>
+                  <div className="text-2xl font-semibold tabular-nums">{statsData.totals.pendingClaims.toLocaleString()}</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Points spent</div>
+                  <div className="text-2xl font-semibold tabular-nums">{statsData.totals.totalPointsSpent.toLocaleString()}</div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Per store ({statsData.totals.storeCount})</h4>
+                {statsData.byStore.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Not used at any store yet.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow><TableHead>Store</TableHead><TableHead className="text-right">Claims</TableHead><TableHead className="text-right">Points spent</TableHead></TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {statsData.byStore.map((s) => (
+                        <TableRow key={s.storeId}>
+                          <TableCell className="font-medium">{s.storeName}</TableCell>
+                          <TableCell className="text-right tabular-nums">{s.claims.toLocaleString()}</TableCell>
+                          <TableCell className="text-right tabular-nums">{s.points.toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Usage log</h4>
+                {statsData.recent.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No redemptions yet.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>When</TableHead><TableHead>Store</TableHead><TableHead>Customer</TableHead>
+                        <TableHead className="text-right">Points</TableHead><TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {statsData.recent.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="text-xs">{row.ts ? new Date(row.ts).toLocaleString() : "—"}</TableCell>
+                          <TableCell className="text-xs">{row.storeName ?? "—"}</TableCell>
+                          <TableCell className="text-xs">{row.phone || "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.pointsCost.toLocaleString()}</TableCell>
+                          <TableCell><Badge variant={row.status === "applied" ? "default" : row.status === "active" ? "secondary" : "outline"}>{row.status}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                <p className="mt-2 text-[11px] text-muted-foreground">Showing up to 60 most recent. Source-of-truth is server-side.</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {ConfirmDialog}
     </RoleGuard>
   );
