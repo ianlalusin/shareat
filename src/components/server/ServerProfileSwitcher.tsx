@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   collection,
   doc,
-  onSnapshot,
+  getDocs,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -47,23 +47,29 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
     }
   }, [open]);
 
-  useEffect(() => {
+  // Fetch the roster on demand (when the dialog opens) instead of holding a
+  // persistent listener — the profile list changes rarely, so a one-shot read
+  // per open is far cheaper than an always-on snapshot subscription.
+  const loadProfiles = useCallback(async () => {
     if (!storeId) return;
     setIsLoading(true);
-    const ref = collection(db, "stores", storeId, "serverProfiles");
-    const unsub = onSnapshot(ref, (snap) => {
+    try {
+      const snap = await getDocs(collection(db, "stores", storeId, "serverProfiles"));
       const rows = snap.docs
-        .map(d => ({ id: d.id, ...(d.data() as any) }))
-        .filter(p => typeof p.name === "string" && p.name.trim().length > 0);
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((p) => typeof p.name === "string" && p.name.trim().length > 0);
       rows.sort((a, b) => a.name.localeCompare(b.name));
       setProfiles(rows);
+    } catch (err) {
+      console.error("[ServerProfileSwitcher] load error:", err);
+    } finally {
       setIsLoading(false);
-    }, (err) => {
-      console.error("[ServerProfileSwitcher] snapshot error:", err);
-      setIsLoading(false);
-    });
-    return () => unsub();
+    }
   }, [storeId]);
+
+  useEffect(() => {
+    if (open) void loadProfiles();
+  }, [open, loadProfiles]);
 
   const handlePasscodeComplete = async (passcode: string) => {
     if (!selected) return;

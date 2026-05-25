@@ -20,9 +20,8 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
-import { useServerProfile } from "@/hooks/useServerProfile";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
-import { ServerUserCard } from "@/components/server/ServerUserCard";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 import { formatElapsedShort } from "@/components/server/SessionCard";
@@ -43,7 +42,7 @@ export function ServerPageClient() {
   const { appUser } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const { toast } = useToast();
-  const { currentProfile, signIn, signOut, isReady: profileReady } = useServerProfile(activeStore?.id ?? null);
+  const { currentProfile, signOut, isReady: profileReady } = useLocalProfile();
 
   // Idle auto sign-out (30 minutes). Any click/key/scroll resets the timer.
   const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
@@ -240,7 +239,7 @@ export function ServerPageClient() {
     return (
       <RoleGuard allow={["admin", "manager", "server"]}>
         <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
-        <ServerSignInGate storeId={activeStore.id} onSignIn={signIn} />
+        <ServerSignInGate roleLabel="server station" />
       </RoleGuard>
     );
   }
@@ -251,16 +250,6 @@ export function ServerPageClient() {
         {/* Store-level stat — show whenever a store is selected, including for
             admins who bypassed the local profile sign-in. */}
         {activeStore && <VerifyAverageCard storeId={activeStore.id} />}
-        {/* Profile sign-in/out card only makes sense with an active profile. */}
-        {activeStore && currentProfile && (
-          <ServerUserCard
-            storeId={activeStore.id}
-            profileId={currentProfile.profileId}
-            name={currentProfile.name}
-            onSignIn={signIn}
-            onSignOut={signOut}
-          />
-        )}
       </PageHeader>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2">

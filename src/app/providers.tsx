@@ -2,6 +2,7 @@
 
 import { AuthContextProvider } from '@/context/auth-context';
 import { StoreContextProvider } from '@/context/store-context';
+import { LocalProfileProvider } from '@/context/local-profile-context';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Capacitor } from '@capacitor/core';
 import { useEffect } from 'react';
@@ -44,7 +45,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <FirebaseClientProvider>
             <AuthContextProvider>
                 <StoreContextProvider>
-                    {children}
+                    <LocalProfileProvider>
+                        {children}
+                    </LocalProfileProvider>
                 </StoreContextProvider>
             </AuthContextProvider>
         </FirebaseClientProvider>

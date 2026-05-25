@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -56,8 +56,17 @@ export function CreateServerProfileModal({ open, onOpenChange, storeId, onCreate
     }
     setSaving(true);
     try {
-      const passcodeHash = await hashPasscode(storeId, pc);
       const trimmedName = name.trim();
+      // Block duplicate names (case-insensitive) so attribution stays unambiguous.
+      const existing = await getDocs(collection(db, "stores", storeId, "serverProfiles"));
+      const clash = existing.docs.some((d) => String((d.data() as any)?.name ?? "").trim().toLowerCase() === trimmedName.toLowerCase());
+      if (clash) {
+        toast({ title: "Name already exists", description: "Another profile on this store already uses that name.", variant: "destructive" });
+        setStep("name");
+        setResetToken((t) => t + 1);
+        return;
+      }
+      const passcodeHash = await hashPasscode(storeId, pc);
       const ref = await addDoc(collection(db, "stores", storeId, "serverProfiles"), {
         name: trimmedName,
         passcodeHash,

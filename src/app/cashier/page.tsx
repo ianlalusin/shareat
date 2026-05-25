@@ -11,11 +11,9 @@ import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { StartShiftModal } from "@/components/shared/StartShiftModal";
 import { PageHeader } from "@/components/page-header";
-import { useServerProfile } from "@/hooks/useServerProfile";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
-import { ServerUserCard } from "@/components/server/ServerUserCard";
-import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 const SessionDetailView = dynamic(
@@ -57,7 +55,7 @@ function CashierPageContent() {
   const { toast } = useToast();
   const [shiftOpen, setShiftOpen] = useState(false);
 
-  const { currentProfile, signIn, signOut } = useServerProfile(activeStore?.id ?? null);
+  const { currentProfile, signOut } = useLocalProfile();
 
   // Idle auto sign-out (30 minutes), mirroring the server station.
   const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
@@ -67,12 +65,6 @@ function CashierPageContent() {
       toast({ title: "Signed out", description: "Inactive for 30 minutes." });
     }
   }, [isIdle, currentProfile, signOut, toast]);
-
-  // Make the local profile available to fire-and-forget loggers for attribution.
-  useEffect(() => {
-    setActiveLocalProfile(currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null);
-    return () => setActiveLocalProfile(null);
-  }, [currentProfile]);
 
   useEffect(() => {
     if (!activeStore?.id) return;
@@ -97,24 +89,14 @@ function CashierPageContent() {
     return (
       <RoleGuard allow={["admin", "manager", "cashier"]}>
         <PageHeader title="Cashier" description="Start a new session or manage active ones." />
-        <ServerSignInGate storeId={activeStore.id} roleLabel="cashier station" onSignIn={signIn} />
+        <ServerSignInGate roleLabel="cashier station" />
       </RoleGuard>
     );
   }
 
-  const userCard = activeStore && currentProfile ? (
-    <ServerUserCard
-      storeId={activeStore.id}
-      profileId={currentProfile.profileId}
-      name={currentProfile.name}
-      onSignIn={signIn}
-      onSignOut={signOut}
-    />
-  ) : undefined;
-
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
-      {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView localUserCard={userCard} />}
+      {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView />}
       {activeStore?.id && (
         <StartShiftModal
           isOpen={shiftOpen}

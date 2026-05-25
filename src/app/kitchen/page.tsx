@@ -96,10 +96,8 @@ import {
   requestKitchenAlertPermission,
 } from "@/lib/notifications/kitchenAlert";
 import { CustomerRequestsPanel } from "@/components/kitchen/CustomerRequestsPanel";
-import { useServerProfile } from "@/hooks/useServerProfile";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { ServerSignInGate } from "@/components/server/ServerSignInGate";
-import { ServerUserCard } from "@/components/server/ServerUserCard";
-import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 export default function KitchenPage() {
@@ -111,11 +109,8 @@ export default function KitchenPage() {
 
   // Local-profile sign-in so shared-account staff are identified on this KDS.
   // No idle auto-logout here — the kitchen display is meant to stay on.
-  const { currentProfile, signIn, signOut } = useServerProfile(activeStore?.id ?? null);
-  useEffect(() => {
-    setActiveLocalProfile(currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null);
-    return () => setActiveLocalProfile(null);
-  }, [currentProfile]);
+  // The switcher/logout live in the navbar; we only need the current profile to gate.
+  const { currentProfile } = useLocalProfile();
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
   // Single source of truth for every station's rtKdsTickets doc. One
@@ -695,7 +690,7 @@ export default function KitchenPage() {
     return (
       <RoleGuard allow={["admin", "manager", "kitchen"]}>
         <PageHeader title="Kitchen Display System" description="Monitor and manage all active food and beverage orders." />
-        <ServerSignInGate storeId={activeStore.id} roleLabel="kitchen display" onSignIn={signIn} />
+        <ServerSignInGate roleLabel="kitchen display" />
       </RoleGuard>
     );
   }
@@ -707,15 +702,6 @@ export default function KitchenPage() {
         description="Monitor and manage all active food and beverage orders."
       >
         <div className="flex items-center gap-2">
-            {activeStore && currentProfile && (
-              <ServerUserCard
-                storeId={activeStore.id}
-                profileId={currentProfile.profileId}
-                name={currentProfile.name}
-                onSignIn={signIn}
-                onSignOut={signOut}
-              />
-            )}
             <SyncKdsTicketsTool />
             <div className="text-right">
                 <p className="text-sm font-medium text-muted-foreground">{activeStationName} Avg Serving Time</p>

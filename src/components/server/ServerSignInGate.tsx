@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LogIn, UserCircle2 } from "lucide-react";
-import { ServerProfileSwitcher } from "./ServerProfileSwitcher";
+import { useLocalProfile } from "@/context/local-profile-context";
 
 interface Props {
-  storeId: string;
-  onSignIn: (profileId: string, name: string) => void;
   /** UI copy. Defaults to the server-station wording. */
   title?: string;
   description?: string;
@@ -16,12 +14,13 @@ interface Props {
   roleLabel?: string;
 }
 
-export function ServerSignInGate({ storeId, onSignIn, title, description, roleLabel }: Props) {
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+export function ServerSignInGate({ title, description, roleLabel }: Props) {
+  const { openSwitcher } = useLocalProfile();
 
+  // Auto-open the global selector when the gate appears.
   useEffect(() => {
-    setSwitcherOpen(true);
-  }, []);
+    openSwitcher();
+  }, [openSwitcher]);
 
   const resolvedTitle = title ?? (roleLabel ? `Sign in to the ${roleLabel}` : "Sign in as server");
   const resolvedDescription =
@@ -36,25 +35,14 @@ export function ServerSignInGate({ storeId, onSignIn, title, description, roleLa
             <UserCircle2 className="h-8 w-8 text-primary" />
           </div>
           <CardTitle>{resolvedTitle}</CardTitle>
-          <CardDescription>
-            {resolvedDescription}
-          </CardDescription>
+          <CardDescription>{resolvedDescription}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button size="lg" className="w-full" onClick={() => setSwitcherOpen(true)}>
+          <Button size="lg" className="w-full" onClick={openSwitcher}>
             <LogIn className="h-4 w-4 mr-2" /> Sign in
           </Button>
         </CardContent>
       </Card>
-
-      <ServerProfileSwitcher
-        open={switcherOpen}
-        onOpenChange={setSwitcherOpen}
-        storeId={storeId}
-        currentProfileId={null}
-        onSignIn={onSignIn}
-        onSignOut={() => {}}
-      />
     </div>
   );
 }

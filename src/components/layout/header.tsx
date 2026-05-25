@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { MainNav } from './main-nav'
 import { UserNav } from './user-nav'
 import { StoreSwitcher } from './store-switcher'
+import { LocalUserNavButton } from './local-user-nav-button'
 import type { User } from '@/lib/types'
 import { Button } from '../ui/button'
 import { PanelLeft } from 'lucide-react'
@@ -30,6 +31,9 @@ export default function Header({ user }: { user: User }) {
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
+        {/* Local-user (device profile) selector — sits before the store switcher. */}
+        <LocalUserNavButton />
+
         <div className="relative hidden flex-1 md:block md:grow-0">
           <StoreSwitcher className="text-black" />
         </div>
