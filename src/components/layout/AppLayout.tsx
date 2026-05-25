@@ -53,15 +53,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     // are always attributed. Admins/managers are attributed by their own account.
     const needsLocalUser = !bypassesLocalUserGate(appUser) && !!activeStore && !currentProfile;
 
+    // Role-aware sign-in copy.
+    const gateProps =
+        appUser?.role === "cashier" ? { roleLabel: "cashier station" } :
+        appUser?.role === "kitchen" ? { roleLabel: "kitchen display" } :
+        appUser?.role === "server" ? { roleLabel: "server station" } :
+        { title: "Sign in as a local user", description: "Pick your local user account to use this device. Your actions are recorded under your name." };
+
     return (
         <div className="flex min-h-screen w-full flex-col">
             <Header user={combinedUser as any} />
             <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8 mt-14">
                 {needsLocalUser ? (
-                    <ServerSignInGate
-                        title="Sign in as a local user"
-                        description="Pick your local user account to use this device. Your actions are recorded under your name."
-                    />
+                    <ServerSignInGate {...gateProps} />
                 ) : (
                     children
                 )}

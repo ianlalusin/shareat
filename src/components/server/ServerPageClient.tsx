@@ -21,9 +21,7 @@ import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
 import { useLocalProfile } from "@/context/local-profile-context";
-import { ServerSignInGate } from "@/components/server/ServerSignInGate";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
-import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 import { formatElapsedShort } from "@/components/server/SessionCard";
 import { VerifyAverageCard } from "@/components/server/VerifyAverageCard";
 
@@ -229,17 +227,6 @@ export function ServerPageClient() {
         <div className="flex items-center justify-center py-12 text-muted-foreground">
           <Loader className="h-5 w-5 animate-spin" />
         </div>
-      </RoleGuard>
-    );
-  }
-
-  // Admins and managers skip the local server-profile sign-in — their actions
-  // are attributed by their account instead of a device profile.
-  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
-    return (
-      <RoleGuard allow={["admin", "manager", "server"]}>
-        <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
-        <ServerSignInGate roleLabel="server station" />
       </RoleGuard>
     );
   }

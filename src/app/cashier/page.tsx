@@ -7,14 +7,10 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useStoreContext } from "@/context/store-context";
-import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { StartShiftModal } from "@/components/shared/StartShiftModal";
-import { PageHeader } from "@/components/page-header";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
-import { ServerSignInGate } from "@/components/server/ServerSignInGate";
-import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -51,7 +47,6 @@ function CashierPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get('sessionId') ?? null;
   const { activeStore } = useStoreContext();
-  const { appUser } = useAuthContext();
   const { toast } = useToast();
   const [shiftOpen, setShiftOpen] = useState(false);
 
@@ -82,16 +77,6 @@ function CashierPageContent() {
       localStorage.setItem(LAST_SHIFT_KEY, getShiftDayId());
     } catch {}
     setShiftOpen(false);
-  }
-
-  // Local sign-in gate. Admins/managers are attributed by their account, so they bypass.
-  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
-    return (
-      <RoleGuard allow={["admin", "manager", "cashier"]}>
-        <PageHeader title="Cashier" description="Start a new session or manage active ones." />
-        <ServerSignInGate roleLabel="cashier station" />
-      </RoleGuard>
-    );
   }
 
   return (

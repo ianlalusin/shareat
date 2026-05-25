@@ -96,9 +96,6 @@ import {
   requestKitchenAlertPermission,
 } from "@/lib/notifications/kitchenAlert";
 import { CustomerRequestsPanel } from "@/components/kitchen/CustomerRequestsPanel";
-import { useLocalProfile } from "@/context/local-profile-context";
-import { ServerSignInGate } from "@/components/server/ServerSignInGate";
-import { bypassesLocalUserGate } from "@/lib/server-profiles/localGate";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
@@ -106,11 +103,6 @@ export default function KitchenPage() {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const processedStoresRef = useRef(new Set<string>());
-
-  // Local-profile sign-in so shared-account staff are identified on this KDS.
-  // No idle auto-logout here — the kitchen display is meant to stay on.
-  // The switcher/logout live in the navbar; we only need the current profile to gate.
-  const { currentProfile } = useLocalProfile();
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
   // Single source of truth for every station's rtKdsTickets doc. One
@@ -683,16 +675,6 @@ export default function KitchenPage() {
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-full"><Loader className="animate-spin" size={48} /></div>;
-  }
-
-  // Local sign-in gate. Admins/managers are attributed by their account, so they bypass.
-  if (!currentProfile && activeStore && !bypassesLocalUserGate(appUser)) {
-    return (
-      <RoleGuard allow={["admin", "manager", "kitchen"]}>
-        <PageHeader title="Kitchen Display System" description="Monitor and manage all active food and beverage orders." />
-        <ServerSignInGate roleLabel="kitchen display" />
-      </RoleGuard>
-    );
   }
 
   return (
