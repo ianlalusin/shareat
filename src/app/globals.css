@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Reservations nav alert — discrete 3-color blink shown when there are pending
+   (unconfirmed/unhandled) upcoming bookings. */
+@keyframes reservationAlertBlink {
+  0%, 32.9%  { background-color: #ef4444; color: #fff; }
+  33%, 65.9% { background-color: #f59e0b; color: #fff; }
+  66%, 100%  { background-color: #10b981; color: #fff; }
+}
+.reservation-alert-blink {
+  animation: reservationAlertBlink 1.35s steps(1, end) infinite;
+  border-radius: 9999px;
+  padding-inline: 0.5rem;
+}
+
 @layer base {
   :root {
     --background: 0 0% 98%;

@@ -252,7 +252,7 @@ export type CashHandover = {
   createdByName?: string | null;
 };
 
-export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show";
+export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled";
 
 export type Reservation = {
   id: string;
@@ -664,6 +664,17 @@ export type Store = {
    * routes to this store's cashier inbox.
    */
   acceptsWebsiteChat?: boolean;
+  /**
+   * When set (and acceptsReservations is on), constrains the days/time window a
+   * customer may book from the public website. Enforced server-side by the
+   * website's createReservation function. Absent ⇒ no constraint (any time).
+   * days: allowed weekdays in Asia/Manila, 0=Sun … 6=Sat. Times are "HH:mm".
+   */
+  reservationSchedule?: {
+    days: number[];
+    fromTime: string;
+    toTime: string;
+  };
   /**
    * Session modes this store offers. Drives which start-session options the
    * cashier sees (e.g. a take-out kiosk with no dine-in sets offersUnlimited

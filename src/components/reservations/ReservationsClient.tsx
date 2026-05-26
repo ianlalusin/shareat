@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft, CalendarPlus, ChevronLeft, ChevronRight, Clock, Loader2, Phone, Users,
-  Check, X, UserCheck, CalendarClock,
+  Check, X, UserCheck, CalendarClock, Handshake, CalendarRange,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
@@ -30,15 +30,26 @@ function fmtTime(ms: number): string {
   return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
+function fmtShortDate(ms: number): string {
+  return new Date(ms).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
 const STATUS_META: Record<ReservationStatus, { label: string; className: string }> = {
   booked: { label: "Pending", className: "border-blue-400 bg-blue-50 text-blue-600" },
   confirmed: { label: "Confirmed", className: "border-emerald-400 bg-emerald-50 text-emerald-600" },
   seated: { label: "Seated", className: "border-violet-400 bg-violet-50 text-violet-600" },
   cancelled: { label: "Cancelled", className: "border-muted-foreground/30 bg-muted text-muted-foreground" },
   no_show: { label: "No-show", className: "border-red-400 bg-red-50 text-red-600" },
+  handled: { label: "Handled", className: "border-amber-400 bg-amber-50 text-amber-600" },
 };
 
 const OPEN_STATUSES: ReservationStatus[] = ["booked", "confirmed"];
+
+function startOfTodayMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
 
 export function ReservationsClient() {
   const router = useRouter();
@@ -46,6 +57,7 @@ export function ReservationsClient() {
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
 
+  const [viewMode, setViewMode] = useState<"upcoming" | "day">("upcoming");
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,10 +71,11 @@ export function ReservationsClient() {
   useEffect(() => {
     if (!activeStore?.id) return;
     setIsLoading(true);
-    const q = query(
-      collection(db, "stores", activeStore.id, "reservations"),
-      where("reservedForDayId", "==", dayId),
-    );
+    const base = collection(db, "stores", activeStore.id, "reservations");
+    const q =
+      viewMode === "day"
+        ? query(base, where("reservedForDayId", "==", dayId))
+        : query(base, where("reservedForMs", ">=", startOfTodayMs()));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -74,7 +87,7 @@ export function ReservationsClient() {
       () => setIsLoading(false),
     );
     return () => unsub();
-  }, [activeStore?.id, dayId]);
+  }, [activeStore?.id, viewMode, dayId]);
 
   const visible = useMemo(
     () => (showOpenOnly ? reservations.filter((r) => OPEN_STATUSES.includes(r.status)) : reservations),
@@ -150,32 +163,65 @@ export function ReservationsClient() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <CalendarClock className="h-5 w-5 text-primary" />
-                {selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                {viewMode === "upcoming" ? (
+                  <>
+                    <CalendarRange className="h-5 w-5 text-primary" />
+                    Upcoming bookings
+                  </>
+                ) : (
+                  <>
+                    <CalendarClock className="h-5 w-5 text-primary" />
+                    {selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                  </>
+                )}
                 {openCount > 0 && <Badge variant="secondary">{openCount} open</Badge>}
               </CardTitle>
-              <CardDescription>Bookings for the selected day.</CardDescription>
+              <CardDescription>
+                {viewMode === "upcoming" ? "All bookings from today onward." : "Bookings for the selected day."}
+              </CardDescription>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex rounded-md border p-0.5">
+                <Button
+                  variant={viewMode === "upcoming" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setViewMode("upcoming")}
+                >
+                  Upcoming
+                </Button>
+                <Button
+                  variant={viewMode === "day" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setViewMode("day")}
+                >
+                  By day
+                </Button>
+              </div>
               <Button variant="outline" size="sm" onClick={() => setShowOpenOnly((v) => !v)}>
                 {showOpenOnly ? "Show all" : "Open only"}
               </Button>
-              <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => shiftDay(-1)} aria-label="Previous day">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Input
-                type="date"
-                value={dayIdToInputValue(selectedDay)}
-                onChange={(e) => {
-                  const [y, m, d] = e.target.value.split("-").map(Number);
-                  if (y && m && d) setSelectedDay(new Date(y, m - 1, d));
-                }}
-                className="w-auto"
-              />
-              <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => shiftDay(1)} aria-label="Next day">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedDay(new Date())}>Today</Button>
+              {viewMode === "day" && (
+                <>
+                  <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => shiftDay(-1)} aria-label="Previous day">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    type="date"
+                    value={dayIdToInputValue(selectedDay)}
+                    onChange={(e) => {
+                      const [y, m, d] = e.target.value.split("-").map(Number);
+                      if (y && m && d) setSelectedDay(new Date(y, m - 1, d));
+                    }}
+                    className="w-auto"
+                  />
+                  <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => shiftDay(1)} aria-label="Next day">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedDay(new Date())}>Today</Button>
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -186,7 +232,9 @@ export function ReservationsClient() {
             </div>
           ) : visible.length === 0 ? (
             <p className="text-center text-muted-foreground py-10">
-              {showOpenOnly ? "No open reservations for this day." : "No reservations for this day."}
+              {viewMode === "upcoming"
+                ? (showOpenOnly ? "No open upcoming reservations." : "No upcoming reservations.")
+                : (showOpenOnly ? "No open reservations for this day." : "No reservations for this day.")}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -196,6 +244,9 @@ export function ReservationsClient() {
                 return (
                   <li key={r.id} className="rounded-lg border p-3 flex items-start gap-3">
                     <div className="flex flex-col items-center justify-center rounded-md bg-muted px-3 py-2 min-w-[78px]">
+                      {viewMode === "upcoming" && (
+                        <span className="text-[10px] font-medium text-muted-foreground">{fmtShortDate(r.reservedForMs)}</span>
+                      )}
                       <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm font-semibold tabular-nums">{fmtTime(r.reservedForMs)}</span>
                     </div>
@@ -231,6 +282,20 @@ export function ReservationsClient() {
                       {isOpen && (
                         <Button size="sm" variant="outline" className="h-8" onClick={() => { setEditing(r); setFormOpen(true); }}>
                           Edit
+                        </Button>
+                      )}
+                      {isOpen && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-amber-600 border-amber-300 hover:text-amber-700"
+                          onClick={() => setStatus(r, "handled", {
+                            title: `Mark ${r.customerName} as handled?`,
+                            description: "Use when there was a scheduling conflict and you've already spoken with the customer and agreed on an arrangement. This clears it from the pending alert.",
+                            confirmText: "Mark handled",
+                          })}
+                        >
+                          <Handshake className="h-4 w-4 mr-1" /> Handled
                         </Button>
                       )}
                       {isOpen && (

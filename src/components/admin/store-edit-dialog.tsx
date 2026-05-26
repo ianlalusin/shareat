@@ -34,6 +34,11 @@ const formSchema = z.object({
   isActive: z.boolean().default(true),
   acceptsReservations: z.boolean().default(false),
   acceptsWebsiteChat: z.boolean().default(false),
+  reservationSchedule: z.object({
+    days: z.array(z.number()),
+    fromTime: z.string(),
+    toTime: z.string(),
+  }).optional(),
   offersAlaCarte: z.boolean().default(true),
   offersUnlimited: z.boolean().default(true),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
@@ -44,6 +49,17 @@ const formSchema = z.object({
 });
 
 type StoreFormValues = z.infer<typeof formSchema>;
+
+const WEEKDAYS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+];
+const DEFAULT_RESERVATION_SCHEDULE = { days: [0, 1, 2, 3, 4, 5, 6], fromTime: "11:00", toTime: "21:00" };
 
 interface StoreEditDialogProps {
   isOpen: boolean;
@@ -80,6 +96,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       name: "", code: "", address: "", tin: "", isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
+      reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
       offersAlaCarte: true,
       offersUnlimited: true,
       email: "", contactNumber: "", openingDate: null,
@@ -90,6 +107,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
   const logoUrl = form.watch("logoUrl");
   const taxType = useWatch({ control: form.control, name: 'taxType' });
+  const acceptsReservations = useWatch({ control: form.control, name: 'acceptsReservations' });
 
   useEffect(() => {
       if (taxType === "NON_VAT") {
@@ -116,6 +134,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
+        reservationSchedule: store.reservationSchedule ?? DEFAULT_RESERVATION_SCHEDULE,
         offersAlaCarte: store.offersAlaCarte ?? true,
         offersUnlimited: store.offersUnlimited ?? true,
         email: store.email || "", contactNumber: store.contactNumber || "",
@@ -131,6 +150,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: "", code: "", address: "", tin: "", isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
+        reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
         offersAlaCarte: true,
         offersUnlimited: true,
         email: "", contactNumber: "", openingDate: null,
@@ -280,6 +300,63 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                {acceptsReservations && (
+                  <div className="rounded-lg border p-3 shadow-sm space-y-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Reservation Availability</FormLabel>
+                      <FormDescription className="text-xs">
+                        Customers can only book on these days, within this time window. Validated when they submit on the website.
+                      </FormDescription>
+                    </div>
+                    <FormField control={form.control} name="reservationSchedule.days" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Available days</FormLabel>
+                        <div className="flex flex-wrap gap-1.5">
+                          {WEEKDAYS.map((d) => {
+                            const selected = (field.value ?? []).includes(d.value);
+                            return (
+                              <button
+                                type="button"
+                                key={d.value}
+                                onClick={() => {
+                                  const cur: number[] = field.value ?? [];
+                                  field.onChange(
+                                    selected ? cur.filter((x) => x !== d.value) : [...cur, d.value].sort((a, b) => a - b),
+                                  );
+                                }}
+                                className={cn(
+                                  "h-8 w-11 rounded-md border text-xs font-medium transition-colors",
+                                  selected
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-background text-muted-foreground hover:bg-muted",
+                                )}
+                              >
+                                {d.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="reservationSchedule.fromTime" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Earliest time</FormLabel>
+                          <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="reservationSchedule.toTime" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Latest time</FormLabel>
+                          <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                )}
                 <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="offersUnlimited" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Unlimited (Dine-in)</FormLabel><FormDescription className="text-xs"> Package dine-in sessions. Turn off for take-out-only kiosks. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="offersAlaCarte" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Ala Carte</FormLabel><FormDescription className="text-xs"> Ala carte / take-out sessions. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
