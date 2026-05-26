@@ -26,6 +26,7 @@ import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { WaitlistCard, type WaitlistEntry } from "./WaitlistCard";
+import { ChatInbox } from "./ChatInbox";
 import type { PendingSeat } from "./start-session-form";
 import { deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { takeReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
@@ -299,6 +300,7 @@ export function SessionListView() {
             {activeStore?.id && (
                 <WeatherLogFloatingButton storeId={activeStore.id} />
             )}
+            {activeStore?.id && <ChatInbox storeId={activeStore.id} />}
         </>
     );
 }

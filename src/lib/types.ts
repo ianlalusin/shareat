@@ -660,6 +660,11 @@ export type Store = {
    */
   acceptsReservations?: boolean;
   /**
+   * When true, the public website shows a live-chat option for this branch that
+   * routes to this store's cashier inbox.
+   */
+  acceptsWebsiteChat?: boolean;
+  /**
    * Session modes this store offers. Drives which start-session options the
    * cashier sees (e.g. a take-out kiosk with no dine-in sets offersUnlimited
    * false). Absent ⇒ treated as offered, so existing stores keep both.
