@@ -56,7 +56,9 @@ export function ReservationsClient() {
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showOpenOnly, setShowOpenOnly] = useState(true);
+  // Default to showing every booking (each carries a status badge); the toggle
+  // lets staff narrow to just open (pending/confirmed) when they want.
+  const [showOpenOnly, setShowOpenOnly] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Reservation | null>(null);
@@ -241,6 +243,7 @@ export function ReservationsClient() {
               {visible.map((r) => {
                 const meta = STATUS_META[r.status];
                 const isOpen = OPEN_STATUSES.includes(r.status);
+                const canModify = r.status === "booked" || r.status === "confirmed" || r.status === "handled";
                 return (
                   <li
                     key={r.id}
@@ -283,7 +286,7 @@ export function ReservationsClient() {
                           <Check className="h-4 w-4 mr-1" /> Confirm
                         </Button>
                       )}
-                      {isOpen && (
+                      {canModify && (
                         <Button size="sm" variant="outline" className="h-8" onClick={() => { setEditing(r); setFormOpen(true); }}>
                           Edit
                         </Button>
@@ -316,7 +319,7 @@ export function ReservationsClient() {
                           No-show
                         </Button>
                       )}
-                      {isOpen && (
+                      {canModify && (
                         <Button
                           size="icon"
                           variant="ghost"

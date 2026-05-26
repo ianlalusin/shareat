@@ -148,6 +148,9 @@ export default function ReservationDetailPage() {
 
   const meta = STATUS_META[reservation.status];
   const isOpen = OPEN_STATUSES.includes(reservation.status);
+  // A booking can still be rescheduled / re-noted / cancelled until it's
+  // seated or already closed.
+  const canModify = reservation.status === "booked" || reservation.status === "confirmed" || reservation.status === "handled";
 
   return (
     <>
@@ -208,9 +211,9 @@ export default function ReservationDetailPage() {
                   <Check className="h-4 w-4 mr-1" /> Confirm
                 </Button>
               )}
-              {isOpen && (
+              {canModify && (
                 <Button variant="outline" onClick={() => setFormOpen(true)}>
-                  <Pencil className="h-4 w-4 mr-1" /> Edit
+                  <Pencil className="h-4 w-4 mr-1" /> Reschedule / Edit
                 </Button>
               )}
               {isOpen && (
@@ -239,7 +242,7 @@ export default function ReservationDetailPage() {
                   <UserX className="h-4 w-4 mr-1" /> No-show
                 </Button>
               )}
-              {isOpen && (
+              {canModify && (
                 <Button
                   variant="ghost"
                   className="text-muted-foreground hover:text-destructive"
