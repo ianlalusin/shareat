@@ -5,6 +5,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -61,7 +62,10 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   const { currentProfile } = useLocalProfile();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [open, setOpen] = useState(false);
+  const [listTab, setListTab] = useState<"open" | "closed">("open");
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [closedThreads, setClosedThreads] = useState<ChatThread[]>([]);
+  const [closedLoading, setClosedLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reply, setReply] = useState("");
@@ -94,6 +98,29 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     return () => unsub();
   }, [storeId]);
 
+  // Closed threads are historical — no live listener (that would accrue reads
+  // forever). Fetch once on demand whenever the Closed tab is opened.
+  useEffect(() => {
+    if (!open || listTab !== "closed" || !storeId) return;
+    let cancelled = false;
+    setClosedLoading(true);
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, `stores/${storeId}/chatThreads`), where("status", "==", "closed")));
+        if (cancelled) return;
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }) as ChatThread)
+          .sort((a, b) => (b.lastMessageAtClientMs || 0) - (a.lastMessageAtClientMs || 0));
+        setClosedThreads(rows);
+      } catch (e) {
+        console.error("[ChatInbox] closed threads fetch error:", e);
+      } finally {
+        if (!cancelled) setClosedLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, listTab, storeId]);
+
   const totalUnread = useMemo(() => threads.reduce((n, t) => n + (t.unreadForStaff || 0), 0), [threads]);
 
   // Chime when the staff-unread total rises (a new customer message arrived),
@@ -119,7 +146,12 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     return () => unsub();
   }, [storeId, activeThreadId]);
 
-  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null;
+  const activeThread =
+    threads.find((t) => t.id === activeThreadId) ??
+    closedThreads.find((t) => t.id === activeThreadId) ??
+    null;
+  const isActiveClosed = activeThread?.status === "closed";
+  const displayedThreads = listTab === "open" ? threads : closedThreads;
 
   async function openThread(t: ChatThread) {
     setActiveThreadId(t.id);
@@ -248,16 +280,30 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
         <SheetContent side="right" className="w-full sm:max-w-[420px] p-0 flex flex-col">
           {!activeThread ? (
             <>
-              <SheetHeader className="p-4 border-b">
+              <SheetHeader className="p-4 pb-2 border-b">
                 <SheetTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" /> Website Chats</SheetTitle>
-                <SheetDescription>Live messages from the website. Tap one to reply.</SheetDescription>
+                <SheetDescription>
+                  {listTab === "open" ? "Live messages from the website. Tap one to reply." : "Previously closed conversations."}
+                </SheetDescription>
+                <div className="inline-flex rounded-md border p-0.5 mt-2 w-fit">
+                  <Button variant={listTab === "open" ? "secondary" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setListTab("open")}>
+                    Open{threads.length > 0 ? ` (${threads.length})` : ""}
+                  </Button>
+                  <Button variant={listTab === "closed" ? "secondary" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setListTab("closed")}>
+                    Closed
+                  </Button>
+                </div>
               </SheetHeader>
               <ScrollArea className="flex-1 px-3 py-3">
-                {threads.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">No open chats.</p>
+                {listTab === "closed" && closedLoading ? (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                ) : displayedThreads.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    {listTab === "open" ? "No open chats." : "No closed chats."}
+                  </p>
                 ) : (
                   <div className="space-y-2">
-                    {threads.map((t) => {
+                    {displayedThreads.map((t) => {
                       const unread = (t.unreadForStaff || 0) > 0;
                       const stale =
                         unread &&
@@ -312,9 +358,13 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                       <SheetDescription className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3" /> {activeThread.phone}</SheetDescription>
                     )}
                   </div>
-                  <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={() => void endChat()}>
-                    <Check className="h-4 w-4 mr-1" /> End chat
-                  </Button>
+                  {isActiveClosed ? (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">Closed</Badge>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={() => void endChat()}>
+                      <Check className="h-4 w-4 mr-1" /> End chat
+                    </Button>
+                  )}
                 </div>
               </SheetHeader>
               <ScrollArea className="flex-1 px-3 py-3">
@@ -336,31 +386,37 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                   })}
                 </div>
               </ScrollArea>
-              <div className="border-t p-2 space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-8 text-xs"
-                  onClick={() => void sendClosingAndEnd()}
-                  disabled={sending}
-                >
-                  <CheckCheck className="h-3.5 w-3.5 mr-1" /> Send closing message &amp; end chat
-                </Button>
-                <div className="flex items-end gap-2">
-                  <Textarea
-                    value={reply}
-                    onChange={(e) => setReply(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendReply(); } }}
-                    rows={1}
-                    maxLength={500}
-                    placeholder="Type a reply…"
-                    className="resize-none min-h-[40px] text-sm"
-                  />
-                  <Button size="icon" className="shrink-0" onClick={() => void sendReply()} disabled={sending || reply.trim().length === 0}>
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
+              {isActiveClosed ? (
+                <div className="border-t p-3 text-center text-xs text-muted-foreground">
+                  This chat is closed. A new message from the visitor reopens it under the Open tab.
                 </div>
-              </div>
+              ) : (
+                <div className="border-t p-2 space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => void sendClosingAndEnd()}
+                    disabled={sending}
+                  >
+                    <CheckCheck className="h-3.5 w-3.5 mr-1" /> Send closing message &amp; end chat
+                  </Button>
+                  <div className="flex items-end gap-2">
+                    <Textarea
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendReply(); } }}
+                      rows={1}
+                      maxLength={500}
+                      placeholder="Type a reply…"
+                      className="resize-none min-h-[40px] text-sm"
+                    />
+                    <Button size="icon" className="shrink-0" onClick={() => void sendReply()} disabled={sending || reply.trim().length === 0}>
+                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </SheetContent>
