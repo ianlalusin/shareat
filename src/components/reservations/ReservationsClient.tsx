@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
+import { useAuthContext } from "@/context/auth-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { setReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
-import type { Reservation, ReservationStatus } from "@/lib/types";
+import type { Reservation, ReservationStatus, ReservationEventType } from "@/lib/types";
+import { STATUS_META, OPEN_STATUSES } from "@/lib/reservations/status";
+import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 import { ReservationFormModal } from "./ReservationFormModal";
 
 function dayIdToInputValue(d: Date): string {
@@ -34,17 +38,6 @@ function fmtShortDate(ms: number): string {
   return new Date(ms).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
-const STATUS_META: Record<ReservationStatus, { label: string; className: string }> = {
-  booked: { label: "Pending", className: "border-blue-400 bg-blue-50 text-blue-600" },
-  confirmed: { label: "Confirmed", className: "border-emerald-400 bg-emerald-50 text-emerald-600" },
-  seated: { label: "Seated", className: "border-violet-400 bg-violet-50 text-violet-600" },
-  cancelled: { label: "Cancelled", className: "border-muted-foreground/30 bg-muted text-muted-foreground" },
-  no_show: { label: "No-show", className: "border-red-400 bg-red-50 text-red-600" },
-  handled: { label: "Handled", className: "border-amber-400 bg-amber-50 text-amber-600" },
-};
-
-const OPEN_STATUSES: ReservationStatus[] = ["booked", "confirmed"];
-
 function startOfTodayMs(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -54,6 +47,8 @@ function startOfTodayMs(): number {
 export function ReservationsClient() {
   const router = useRouter();
   const { activeStore, loading } = useStoreContext();
+  const { appUser } = useAuthContext();
+  const { currentProfile } = useLocalProfile();
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
 
@@ -106,8 +101,13 @@ export function ReservationsClient() {
     if (!activeStore?.id) return;
     if (confirmCopy && !(await confirm(confirmCopy))) return;
     try {
+      const actor = {
+        uid: appUser?.uid ?? null,
+        name: currentProfile?.name || appUser?.displayName || appUser?.name || null,
+      };
       await updateDoc(doc(db, "stores", activeStore.id, "reservations", r.id), {
         status,
+        history: appendReservationEvent(reservationEvent(status as ReservationEventType, actor)),
         updatedAt: serverTimestamp(),
       });
       toast({ title: STATUS_META[status].label, description: r.customerName });
@@ -242,7 +242,11 @@ export function ReservationsClient() {
                 const meta = STATUS_META[r.status];
                 const isOpen = OPEN_STATUSES.includes(r.status);
                 return (
-                  <li key={r.id} className="rounded-lg border p-3 flex items-start gap-3">
+                  <li
+                    key={r.id}
+                    onClick={() => router.push(`/reservations/${r.id}`)}
+                    className="rounded-lg border p-3 flex items-start gap-3 cursor-pointer hover:bg-muted/40 transition"
+                  >
                     <div className="flex flex-col items-center justify-center rounded-md bg-muted px-3 py-2 min-w-[78px]">
                       {viewMode === "upcoming" && (
                         <span className="text-[10px] font-medium text-muted-foreground">{fmtShortDate(r.reservedForMs)}</span>
@@ -268,7 +272,7 @@ export function ReservationsClient() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                    <div className="flex items-center gap-1 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
                       {isOpen && (
                         <Button size="sm" onClick={() => handleSeatNow(r)} className="h-8">
                           <UserCheck className="h-4 w-4 mr-1" /> Seat now

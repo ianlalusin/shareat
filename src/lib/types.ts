@@ -254,6 +254,17 @@ export type CashHandover = {
 
 export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled";
 
+export type ReservationEventType =
+  | "created" | "edited" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled";
+
+export type ReservationEvent = {
+  at: number;              // client ms when the event occurred
+  type: ReservationEventType;
+  byUid?: string | null;
+  byName?: string | null;  // local-user/staff name (or null for website)
+  note?: string | null;    // e.g. summary of an edit
+};
+
 export type Reservation = {
   id: string;
   customerName: string;
@@ -271,6 +282,7 @@ export type Reservation = {
   createdAtClientMs: number;
   createdByUid?: string | null;
   createdByName?: string | null;
+  history?: ReservationEvent[];   // lifecycle log: booked → … → seated
   updatedAt?: Timestamp | null;
 };
 

@@ -30,9 +30,12 @@ import { ChatInbox } from "./ChatInbox";
 import type { PendingSeat } from "./start-session-form";
 import { deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { takeReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
+import { useLocalProfile } from "@/context/local-profile-context";
+import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
+    const { currentProfile } = useLocalProfile();
     const { activeStore } = useStoreContext();
     const router = useRouter();
 
@@ -63,6 +66,10 @@ export function SessionListView() {
                 await updateDoc(doc(db, "stores", activeStore.id, "reservations", pendingSeat.reservationId), {
                     status: "seated",
                     sessionId: sessionId || null,
+                    history: appendReservationEvent(reservationEvent("seated", {
+                        uid: appUser?.uid ?? null,
+                        name: currentProfile?.name || appUser?.displayName || appUser?.name || null,
+                    })),
                     updatedAt: serverTimestamp(),
                 });
             } else {

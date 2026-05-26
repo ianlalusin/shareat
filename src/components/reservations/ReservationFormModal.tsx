@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Minus, Plus, CalendarPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 import type { Reservation } from "@/lib/types";
 
 interface Props {
@@ -34,6 +36,7 @@ function toDatetimeLocalValue(ms: number): string {
 export function ReservationFormModal({ open, onOpenChange, storeId, editing, defaultDateMs }: Props) {
   const { toast } = useToast();
   const { appUser } = useAuthContext();
+  const { currentProfile } = useLocalProfile();
   const [name, setName] = useState("");
   const [partySize, setPartySize] = useState(2);
   const [phone, setPhone] = useState("");
@@ -79,8 +82,26 @@ export function ReservationFormModal({ open, onOpenChange, storeId, editing, def
         updatedAt: serverTimestamp(),
       };
 
+      const actor = {
+        uid: appUser?.uid ?? null,
+        name: currentProfile?.name || appUser?.displayName || appUser?.name || null,
+      };
+
       if (editing) {
-        await updateDoc(doc(db, "stores", storeId, "reservations", editing.id), payload);
+        const fmtT = (ms: number) =>
+          new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+        const changes: string[] = [];
+        if (editing.customerName !== payload.customerName) changes.push(`name → ${payload.customerName}`);
+        if (editing.reservedForMs !== reservedForMs) changes.push(`time ${fmtT(editing.reservedForMs)} → ${fmtT(reservedForMs)}`);
+        if (editing.partySize !== partySize) changes.push(`party ${editing.partySize} → ${partySize}`);
+        if ((editing.phone ?? null) !== payload.phone) changes.push("phone updated");
+        if ((editing.notes ?? null) !== payload.notes) changes.push("notes updated");
+
+        const updatePayload: Record<string, unknown> = { ...payload };
+        if (changes.length) {
+          updatePayload.history = appendReservationEvent(reservationEvent("edited", actor, changes.join("; ")));
+        }
+        await updateDoc(doc(db, "stores", storeId, "reservations", editing.id), updatePayload);
         toast({ title: "Reservation updated", description: `${name.trim()} · ${partySize} pax` });
       } else {
         await addDoc(collection(db, "stores", storeId, "reservations"), {
@@ -93,7 +114,8 @@ export function ReservationFormModal({ open, onOpenChange, storeId, editing, def
           createdAt: serverTimestamp(),
           createdAtClientMs: Date.now(),
           createdByUid: appUser?.uid ?? null,
-          createdByName: appUser?.displayName || appUser?.name || null,
+          createdByName: actor.name,
+          history: [reservationEvent("created", actor, "Booked in POS")],
         });
         toast({ title: "Reservation booked", description: `${name.trim()} · ${partySize} pax` });
       }
