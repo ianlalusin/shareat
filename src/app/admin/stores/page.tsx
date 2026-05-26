@@ -76,7 +76,7 @@ export default function StoreManagementPage() {
   const router = useRouter();
   const { appUser } = useAuthContext();
   const { toast } = useToast();
-  const { stores, loading: isLoading } = useStoreContext();
+  const { stores, loading: isLoading, refreshStoresOnce } = useStoreContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -136,6 +136,7 @@ export default function StoreManagementPage() {
         await batch.commit();
         toast({ title: "Store Created", description: "The new store has been added." });
       }
+      await refreshStoresOnce();
       handleCloseDialog();
     } catch (error: any) {
       toast({
@@ -170,6 +171,7 @@ export default function StoreManagementPage() {
             updatedAt: serverTimestamp(),
         });
         toast({ title: "Store Status Updated", description: `${store.name} has been ${action.toLowerCase()}d.` });
+        await refreshStoresOnce();
     } catch (error: any) {
         toast({
             variant: "destructive",
