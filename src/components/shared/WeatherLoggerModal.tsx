@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sun, Cloudy, CloudRain, CloudLightning, Moon } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
 import { doc, setDoc, arrayUnion, getCountFromServer, collection, Timestamp } from "firebase/firestore";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
@@ -31,6 +32,7 @@ function isNightTime(): boolean {
 
 export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerModalProps) {
     const { appUser } = useAuthContext();
+    const { currentProfile } = useLocalProfile();
 
     const weatherOptions = useMemo(() => {
         if (isNightTime()) {
@@ -66,6 +68,8 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
                 activeSessionCount,
                 activeGuestCount,
                 loggedByUid: appUser.uid,
+                loggedByProfileId: currentProfile?.profileId ?? null,
+                loggedByProfileName: currentProfile?.name ?? null,
             };
 
             const recordRef = doc(db, 'stores', storeId, 'weatherRecords', dayId);

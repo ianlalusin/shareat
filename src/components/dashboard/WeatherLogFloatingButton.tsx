@@ -109,7 +109,10 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                                       </div>
                                       <div className="flex-1 min-w-0">
                                           <p className="text-sm font-medium">{display.label}</p>
-                                          <p className="text-xs text-muted-foreground">{format(entryDate, 'h:mm a')}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                              {format(entryDate, 'h:mm a')}
+                                              {entry.loggedByProfileName ? ` · ${entry.loggedByProfileName}` : ""}
+                                          </p>
                                       </div>
                                       <div className={`h-2 w-2 rounded-full ${display.dot} shrink-0`} />
                                   </div>

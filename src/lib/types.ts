@@ -1051,6 +1051,8 @@ export type WeatherEntry = {
   activeSessionCount: number;
   activeGuestCount: number;
   loggedByUid: string;
+  loggedByProfileId?: string | null;
+  loggedByProfileName?: string | null;
 };
 
 export type WeatherRecord = {
