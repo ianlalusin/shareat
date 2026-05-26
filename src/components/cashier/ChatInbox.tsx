@@ -81,13 +81,15 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
 
   const totalUnread = useMemo(() => threads.reduce((n, t) => n + (t.unreadForStaff || 0), 0), [threads]);
 
-  // Chime when the staff-unread total rises (a new customer message arrived).
+  // Chime when the staff-unread total rises (a new customer message arrived),
+  // unless the cashier is already in a conversation (avoid chiming while typing).
   useEffect(() => {
     if (prevUnread.current != null && totalUnread > prevUnread.current) {
-      void fireKitchenAlert({ title: "New website chat", body: "A customer messaged on the website." });
+      const activelyChatting = open && activeThreadId != null;
+      if (!activelyChatting) void fireKitchenAlert({ title: "New website chat", body: "A customer messaged on the website." });
     }
     prevUnread.current = totalUnread;
-  }, [totalUnread]);
+  }, [totalUnread, open, activeThreadId]);
 
   // Conversation listener for the selected thread.
   useEffect(() => {
