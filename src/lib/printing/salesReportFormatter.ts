@@ -26,6 +26,19 @@ export interface SalesReportData {
   refundCount: number;
   refundTotal: number;
   addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string }>;
+  // Service times (avg, ms). Per-user keyed by local-user name.
+  kitchenServingAvgMs?: number;
+  kitchenServingByUser?: { name: string; avgMs: number; count: number }[];
+  serverConfirmAvgMs?: number;
+  serverConfirmByUser?: { name: string; avgMs: number; count: number }[];
+}
+
+// Compact duration for thermal output: "5m 12s" / "48s".
+function fmtDur(ms: number): string {
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
 }
 
 export function formatSalesReportText(data: SalesReportData, width: 58 | 80 = 80): string {
@@ -135,6 +148,26 @@ export function formatSalesReportText(data: SalesReportData, width: 58 | 80 = 80
         String(info.qty).padStart(qtyW) +
         fmtAmt(info.amount).padStart(amtW)
       );
+    }
+    lines.push(hr());
+  }
+
+  // --- Service Times (kitchen serving + server confirmation, per local user) ---
+  const kUsers = data.kitchenServingByUser ?? [];
+  const sUsers = data.serverConfirmByUser ?? [];
+  const hasService =
+    (data.kitchenServingAvgMs ?? 0) > 0 || kUsers.length > 0 ||
+    (data.serverConfirmAvgMs ?? 0) > 0 || sUsers.length > 0;
+  if (hasService) {
+    lines.push(center("SERVICE TIMES"));
+    lines.push(hr());
+    if ((data.kitchenServingAvgMs ?? 0) > 0 || kUsers.length > 0) {
+      lines.push(justify("Avg serving (kitchen)", fmtDur(data.kitchenServingAvgMs ?? 0)));
+      for (const u of kUsers) lines.push(justify("  " + u.name, fmtDur(u.avgMs)));
+    }
+    if ((data.serverConfirmAvgMs ?? 0) > 0 || sUsers.length > 0) {
+      lines.push(justify("Avg confirm (server)", fmtDur(data.serverConfirmAvgMs ?? 0)));
+      for (const u of sUsers) lines.push(justify("  " + u.name, fmtDur(u.avgMs)));
     }
     lines.push(hr());
   }

@@ -84,12 +84,25 @@ export async function rebuildDailyAnalyticsFromReceipts(
     where("createdAt", "<", Timestamp.fromDate(ticketsEnd))
   );
 
-  const [receiptsSnapshot, ticketsSnapshot] = await Promise.all([getDocs(qReceipts), getDocs(qTickets)]);
+  // 3) Query sessions verified within range (server confirmation timing).
+  const sessionsRef = collection(db, "stores", storeId, "sessions");
+  const qSessions = query(
+    sessionsRef,
+    where("verifiedAt", ">=", Timestamp.fromDate(startInclusive)),
+    where("verifiedAt", "<", Timestamp.fromDate(endExclusive))
+  );
+
+  const [receiptsSnapshot, ticketsSnapshot, sessionsSnapshot] = await Promise.all([
+    getDocs(qReceipts),
+    getDocs(qTickets),
+    getDocs(qSessions),
+  ]);
 
   const receipts = receiptsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Receipt));
   const tickets = ticketsSnapshot.docs.map((d) => d.data() as KitchenTicket);
+  const verifiedSessions = sessionsSnapshot.docs.map((d) => d.data() as any);
 
-  if (receipts.length === 0 && tickets.length === 0) {
+  if (receipts.length === 0 && tickets.length === 0 && verifiedSessions.length === 0) {
     onProgress("No data found in the selected date range. Nothing to do.");
     return;
   }
@@ -148,8 +161,12 @@ export async function rebuildDailyAnalyticsFromReceipts(
           durationCountByType: {},
           durationMsSumByLocation: {},
           durationCountByLocation: {},
+          servingMsSumByUser: {},
+          servingCountByUser: {},
         },
         sessions: { closedCount: 0, totalPaid: 0, closedCountByMode: { dineIn: 0, walkIn: 0 }, dineInDurationMsSum: 0, dineInDurationCount: 0 },
+        server: { confirmMsSum: 0, confirmCount: 0, confirmMsSumByUser: {}, confirmCountByUser: {} },
+        staffNames: {},
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
         items: { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 },
       });
@@ -376,16 +393,43 @@ export async function rebuildDailyAnalyticsFromReceipts(
     dayData.kitchen!.durationCountByType[typeKey] =
       (dayData.kitchen!.durationCountByType[typeKey] || 0) + Number(kitchenContrib.durationCount || 0);
       
-    // Aggregate by location
+    // Aggregate by location + per local user
     if (ticket.status === 'served') {
+        const dur = Number(ticket.durationMs ?? 0);
         const locationId = ticket.kitchenLocationId;
         if (locationId) {
-            const dur = Number(ticket.durationMs ?? 0);
             const qty = Number(ticket.qty ?? 1);
-            
             dayData.kitchen!.durationMsSumByLocation![locationId] = (dayData.kitchen!.durationMsSumByLocation![locationId] || 0) + (dur > 0 ? dur : 0);
             dayData.kitchen!.durationCountByLocation![locationId] = (dayData.kitchen!.durationCountByLocation![locationId] || 0) + qty;
         }
+        // Per local user (count = 1 per served ticket, matching the live delta).
+        const pid = (ticket as any).servedByProfileId;
+        if (pid && dur > 0) {
+            dayData.kitchen!.servingMsSumByUser![pid] = (dayData.kitchen!.servingMsSumByUser![pid] || 0) + dur;
+            dayData.kitchen!.servingCountByUser![pid] = (dayData.kitchen!.servingCountByUser![pid] || 0) + 1;
+            const pname = (ticket as any).servedByProfileName;
+            if (pname) (dayData as any).staffNames[pid] = pname;
+        }
+    }
+  }
+
+  // --- aggregate server confirmations (verify time, overall + per local user) ---
+  for (const s of verifiedSessions) {
+    const verifyMs = Number(s.verifyDurationMs ?? 0);
+    if (!(verifyMs > 0)) continue;
+    const verifiedMs = toJsDate(s.verifiedAt)?.getTime();
+    if (!verifiedMs) continue;
+    const dayStartMs = getDayStartMs(verifiedMs);
+    if (dayStartMs < startInclusive.getTime() || dayStartMs >= endExclusive.getTime()) continue;
+    const dayData = ensureDay(getDayIdFromTimestamp(verifiedMs), dayStartMs);
+    const srv = dayData.server!;
+    srv.confirmMsSum = (srv.confirmMsSum || 0) + verifyMs;
+    srv.confirmCount = (srv.confirmCount || 0) + 1;
+    const pid = s.verifiedByServerProfileId;
+    if (pid) {
+      srv.confirmMsSumByUser![pid] = (srv.confirmMsSumByUser![pid] || 0) + verifyMs;
+      srv.confirmCountByUser![pid] = (srv.confirmCountByUser![pid] || 0) + 1;
+      if (s.verifiedByServerProfileName) (dayData as any).staffNames[pid] = s.verifiedByServerProfileName;
     }
   }
 

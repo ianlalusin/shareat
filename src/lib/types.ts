@@ -806,7 +806,19 @@ export type DailyMetric = {
         durationCountByType: Record<string, number>;
         durationMsSumByLocation?: Record<string, number>;
         durationCountByLocation?: Record<string, number>;
+        // Per local-user (profileId) serving-time buckets. Avg = sum / count.
+        servingMsSumByUser?: Record<string, number>;
+        servingCountByUser?: Record<string, number>;
     };
+    // Server-page order confirmation timing. Overall + per local-user (profileId).
+    server?: {
+        confirmMsSum?: number;
+        confirmCount?: number;
+        confirmMsSumByUser?: Record<string, number>;
+        confirmCountByUser?: Record<string, number>;
+    };
+    // profileId -> display name, for labeling per-user metrics in reports.
+    staffNames?: Record<string, string>;
     sessions?: {
         closedCount: number;
         totalPaid: number;

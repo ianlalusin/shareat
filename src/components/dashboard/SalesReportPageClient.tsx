@@ -33,7 +33,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Printer, ArrowLeft, CalendarIcon } from "lucide-react";
 import { format, parse, startOfMonth, endOfMonth, addDays } from "date-fns";
-import { startOfDay } from "@/lib/utils/date";
+import { startOfDay, formatDuration } from "@/lib/utils/date";
 
 import type { DailyMetric, ModeOfPayment } from "@/lib/types";
 import {
@@ -111,6 +111,49 @@ function aggregateMetrics(metrics: DailyMetric[]) {
     refundCount,
     refundTotal,
     addonSalesByItem,
+  };
+}
+
+// Average kitchen serving time + average server confirmation time, overall and
+// per local user — read straight from the analytics rollups (no per-doc scan).
+function aggregateServiceTimes(metrics: DailyMetric[]) {
+  let kSumType = 0, kCntType = 0, sConfMs = 0, sConfCnt = 0;
+  const kByUser: Record<string, { ms: number; count: number }> = {};
+  const sByUser: Record<string, { ms: number; count: number }> = {};
+  const staffNames: Record<string, string> = {};
+
+  for (const m of metrics) {
+    const kt = m.kitchen?.durationMsSumByType ?? {};
+    for (const t in kt) kSumType += kt[t] || 0;
+    const ktc = m.kitchen?.durationCountByType ?? {};
+    for (const t in ktc) kCntType += ktc[t] || 0;
+
+    const ku = m.kitchen?.servingMsSumByUser ?? {};
+    const kuc = m.kitchen?.servingCountByUser ?? {};
+    for (const u in ku) (kByUser[u] ??= { ms: 0, count: 0 }).ms += ku[u] || 0;
+    for (const u in kuc) (kByUser[u] ??= { ms: 0, count: 0 }).count += kuc[u] || 0;
+
+    sConfMs += (m as any).server?.confirmMsSum ?? 0;
+    sConfCnt += (m as any).server?.confirmCount ?? 0;
+    const su = (m as any).server?.confirmMsSumByUser ?? {};
+    const suc = (m as any).server?.confirmCountByUser ?? {};
+    for (const u in su) (sByUser[u] ??= { ms: 0, count: 0 }).ms += su[u] || 0;
+    for (const u in suc) (sByUser[u] ??= { ms: 0, count: 0 }).count += suc[u] || 0;
+
+    Object.assign(staffNames, (m as any).staffNames ?? {});
+  }
+
+  const toRows = (rec: Record<string, { ms: number; count: number }>) =>
+    Object.entries(rec)
+      .filter(([, v]) => v.count > 0)
+      .map(([id, v]) => ({ name: staffNames[id] ?? id, avgMs: v.ms / v.count, count: v.count }))
+      .sort((a, b) => b.count - a.count);
+
+  return {
+    kitchenServingAvgMs: kCntType > 0 ? kSumType / kCntType : 0,
+    kitchenServingByUser: toRows(kByUser),
+    serverConfirmAvgMs: sConfCnt > 0 ? sConfMs / sConfCnt : 0,
+    serverConfirmByUser: toRows(sByUser),
   };
 }
 
@@ -248,6 +291,7 @@ export default function SalesReportPageClient() {
     if (!activeStore) return null;
 
     const agg = aggregateMetrics(dailyMetrics);
+    const svc = aggregateServiceTimes(dailyMetrics);
     const { cashRemitted, onlineRemitted } = classifyRemittance(agg.byMethod, paymentMethods);
 
     const dateLabel =
@@ -264,6 +308,7 @@ export default function SalesReportPageClient() {
       generatedAt: new Date(),
       generatedBy: appUser?.displayName ?? appUser?.email ?? undefined,
       ...agg,
+      ...svc,
       cashRemitted,
       onlineRemitted,
     };
@@ -482,6 +527,26 @@ export default function SalesReportPageClient() {
                       </span>
                     </div>
                   ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {((agg.kitchenServingByUser ?? []).length > 0 || (agg.kitchenServingAvgMs ?? 0) > 0 || (agg.serverConfirmByUser ?? []).length > 0 || (agg.serverConfirmAvgMs ?? 0) > 0) && (
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-2"><CardTitle className="text-base">Service Times</CardTitle></CardHeader>
+                <CardContent className="pt-0 grid gap-6 sm:grid-cols-2">
+                  <div>
+                    <Row label="Avg serving (kitchen)" value={formatDuration(agg.kitchenServingAvgMs ?? 0)} strong />
+                    {(agg.kitchenServingByUser ?? []).map((u) => (
+                      <Row key={u.name} label={u.name} value={formatDuration(u.avgMs)} sub={`${u.count} items`} muted />
+                    ))}
+                  </div>
+                  <div>
+                    <Row label="Avg confirm (server)" value={formatDuration(agg.serverConfirmAvgMs ?? 0)} strong />
+                    {(agg.serverConfirmByUser ?? []).map((u) => (
+                      <Row key={u.name} label={u.name} value={formatDuration(u.avgMs)} sub={`${u.count} sess`} muted />
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}

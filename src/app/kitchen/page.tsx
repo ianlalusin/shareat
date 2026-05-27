@@ -13,6 +13,7 @@ import { DEFAULT_SLA_MINUTES } from "@/components/kitchen/kds-item-card";
 import { HistoryView } from "@/components/kitchen/history-view";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
 import { Loader, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -100,6 +101,7 @@ import { AssistanceAlerts } from "@/components/kitchen/AssistanceAlerts";
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
   const { activeStore } = useStoreContext();
+  const { currentProfile } = useLocalProfile();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const processedStoresRef = useRef(new Set<string>());
@@ -463,6 +465,8 @@ export default function KitchenPage() {
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
+                updatePayload.servedByProfileId = currentProfile?.profileId ?? null;
+                updatePayload.servedByProfileName = currentProfile?.name ?? null;
                 updatePayload.preparedAt = serverTimestamp(); // Note: setting prepared and served at same time
                 updatePayload.preparedByUid = appUser.uid;
                 updatePayload.durationMs = durationMs;
@@ -536,7 +540,10 @@ export default function KitchenPage() {
         if (kdsDelta) {
           const { writeBatch: wb } = await import('firebase/firestore');
           const batch = wb(db);
-          await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, { batch });
+          await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, {
+            batch,
+            actor: { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null },
+          });
           await batch.commit();
         }
         const ticket = ticketsWithData.find(t => t.id === ticketId);
@@ -570,12 +577,14 @@ export default function KitchenPage() {
         const newStatus = qtyRemaining <= 0 ? 'served' : 'partially_served';
         const startMs = getStartMs(old.createdAtClientMs ?? old.createdAt);
         const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
-        const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid };
+        const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid, servedByProfileId: currentProfile?.profileId ?? null, servedByProfileName: currentProfile?.name ?? null };
         const updatePayload: any = {
           qtyServed, qtyCancelled, qtyRemaining,
           status: newStatus,
           serveLog: [...(old.serveLog ?? []), newLogEntry],
           servedByUid: appUser.uid,
+          servedByProfileId: currentProfile?.profileId ?? null,
+          servedByProfileName: currentProfile?.name ?? null,
           servedAtClientMs: nowMs,
           servedAt: serverTimestamp(),
           durationMs,

@@ -18,6 +18,7 @@ import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { toJsDate } from "@/lib/utils/date";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
 import { useLocalProfile } from "@/context/local-profile-context";
@@ -187,6 +188,30 @@ export function ServerPageClient() {
       guestCountFinal: finalCount,
       updatedAt: serverTimestamp(),
     });
+
+    // Roll the confirmation time into daily/month/year analytics (overall + per
+    // local user) so the sales report reads it cheaply — no scanning sessions.
+    if (verifyDurationMs != null) {
+      const nowMs = Date.now();
+      const dayId = getDayIdFromTimestamp(nowMs);
+      const pid = currentProfile?.profileId ?? null;
+      const serverAgg: Record<string, any> = {
+        confirmMsSum: increment(verifyDurationMs),
+        confirmCount: increment(1),
+      };
+      if (pid) {
+        serverAgg.confirmMsSumByUser = { [pid]: increment(verifyDurationMs) };
+        serverAgg.confirmCountByUser = { [pid]: increment(1) };
+      }
+      const buildPayload = (idKey: string, idVal: string) => ({
+        meta: { [idKey]: idVal, storeId: activeStore.id, updatedAt: serverTimestamp() },
+        server: serverAgg,
+        ...(pid && currentProfile?.name ? { staffNames: { [pid]: currentProfile.name } } : {}),
+      });
+      batch.set(doc(db, "stores", activeStore.id, "analytics", dayId), buildPayload("dayId", dayId), { merge: true });
+      batch.set(doc(db, "stores", activeStore.id, "analyticsMonths", dayId.slice(0, 6)), buildPayload("monthId", dayId.slice(0, 6)), { merge: true });
+      batch.set(doc(db, "stores", activeStore.id, "analyticsYears", dayId.slice(0, 4)), buildPayload("yearId", dayId.slice(0, 4)), { merge: true });
+    }
 
     try {
       await batch.commit();

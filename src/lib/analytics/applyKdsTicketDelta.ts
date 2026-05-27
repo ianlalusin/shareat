@@ -56,7 +56,7 @@ export async function applyKdsTicketDelta(
   storeId: string,
   oldTicket: KdsTicket | null,
   newTicket: KdsTicket | null,
-  opts: { tx?: Transaction; batch?: WriteBatch }
+  opts: { tx?: Transaction; batch?: WriteBatch; actor?: { profileId?: string | null; name?: string | null } }
 ) {
   const w: Writer | null =
     opts.tx ? { kind: "tx", tx: opts.tx } :
@@ -150,6 +150,16 @@ export async function applyKdsTicketDelta(
   if (locationId) {
     if (durationMsDelta !== 0) payload[`kitchen.durationMsSumByLocation.${locationId}`] = increment(durationMsDelta);
     if (durationCountDelta !== 0) payload[`kitchen.durationCountByLocation.${locationId}`] = increment(durationCountDelta);
+  }
+
+  // Per local-user serving-time buckets (only when a local profile served it).
+  const actorPid = opts.actor?.profileId ? safeKey(String(opts.actor.profileId)) : null;
+  if (actorPid) {
+    if (durationMsDelta !== 0) payload[`kitchen.servingMsSumByUser.${actorPid}`] = increment(durationMsDelta);
+    if (durationCountDelta !== 0) payload[`kitchen.servingCountByUser.${actorPid}`] = increment(durationCountDelta);
+    if ((durationMsDelta !== 0 || durationCountDelta !== 0) && opts.actor?.name) {
+      payload[`staffNames.${actorPid}`] = String(opts.actor.name);
+    }
   }
   
   // Refill totals (only applies if status changes to/from 'served')
