@@ -74,7 +74,15 @@ service cloud.firestore {
     match /staff/{uid} {
       allow read, write: if isAdmin();
       allow get: if isSignedIn() && request.auth.uid == uid;
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // Public self-signup may create ONLY its own non-privileged, pending
+      // profile. Role/status/store access are locked here so a signer-up
+      // cannot self-elevate to admin or active by writing the doc directly
+      // (bypassing the UI). Promotion happens admin-side via the isAdmin write.
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.role == 'server'
+        && request.resource.data.assignedStoreIds == [];
     }
 
     // -----------------------------

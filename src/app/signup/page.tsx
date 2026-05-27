@@ -53,6 +53,10 @@ export default function SignupPage() {
 
   async function handleAccountCreation(e: React.FormEvent) {
     e.preventDefault();
+    if (password.length < 8) {
+      setAccountError("Password must be at least 8 characters.");
+      return;
+    }
     if (password !== confirmPassword) {
       setAccountError("Passwords do not match.");
       return;
