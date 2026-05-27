@@ -38,10 +38,21 @@ type KdsTicket = {
   durationMs?: number | null;
   refillName?: string | null;
   qty?: number | null;
+  uom?: string | null;
   qtyServed?: number | null;
   qtyCancelled?: number | null;
   qtyOrdered?: number | null;
 };
+
+// Serving units for a non-batch ticket: a weight/measured item (non-integer qty
+// or a weight uom) counts as ONE serving, not its gram/kg value.
+function servingUnits(t: KdsTicket | null): number {
+  const q = Number(t?.qty ?? 1);
+  if (!Number.isInteger(q)) return 1;
+  const uom = String(t?.uom ?? "").trim().toLowerCase();
+  if (uom && /^(kg|g|gram|grams|ml|l|liter|litre)$/.test(uom)) return 1;
+  return q;
+}
 
 function safeKey(s: string) {
   return (s || "Uncategorized")
@@ -90,10 +101,10 @@ export async function applyKdsTicketDelta(
 
  // --- Calculate Deltas ---
   // For batch tickets use qtyServed/qtyCancelled delta; for legacy qty-1 tickets fall back to status change.
-  const oldQtyServed = oldTicket?.qtyServed ?? (oldStatus === 'served' ? (oldTicket?.qty ?? 1) : 0);
-  const newQtyServed = newTicket?.qtyServed ?? (newStatus === 'served' ? (newTicket?.qty ?? 1) : 0);
-  const oldQtyCancelled = oldTicket?.qtyCancelled ?? (oldStatus === 'cancelled' ? (oldTicket?.qty ?? 1) : 0);
-  const newQtyCancelled = newTicket?.qtyCancelled ?? (newStatus === 'cancelled' ? (newTicket?.qty ?? 1) : 0);
+  const oldQtyServed = oldTicket?.qtyServed ?? (oldStatus === 'served' ? servingUnits(oldTicket) : 0);
+  const newQtyServed = newTicket?.qtyServed ?? (newStatus === 'served' ? servingUnits(newTicket) : 0);
+  const oldQtyCancelled = oldTicket?.qtyCancelled ?? (oldStatus === 'cancelled' ? servingUnits(oldTicket) : 0);
+  const newQtyCancelled = newTicket?.qtyCancelled ?? (newStatus === 'cancelled' ? servingUnits(newTicket) : 0);
 
   servedCountDelta = newQtyServed - oldQtyServed;
   cancelledCountDelta = newQtyCancelled - oldQtyCancelled;

@@ -86,7 +86,13 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     const isActiveTicket = ticket.status === 'preparing' || ticket.status === 'partially_served';
     const isLate = isActiveTicket && elapsedMs != null && elapsedMs >= slaMinutes * 60000;
 
-    const isBatchTicket = ticket.qtyOrdered != null && ticket.qtyOrdered > 1;
+    // Weight/measured items (e.g. "32.97 g" of side dishes) are ONE serving, not
+    // a 32.97-count batch — otherwise serving decrements fractionally and float
+    // residue (0.9699…) never reaches zero. Detect a weight uom or a non-integer
+    // qty and serve the whole thing in one tap.
+    const isWeightUom = !!ticket.uom && /^(kg|g|gram|grams|ml|l|liter|litre)$/i.test(ticket.uom.trim());
+    const isMeasuredItem = isWeightUom || (ticket.qtyOrdered != null && !Number.isInteger(ticket.qtyOrdered));
+    const isBatchTicket = !isMeasuredItem && ticket.qtyOrdered != null && ticket.qtyOrdered > 1;
     const qtyOrdered = ticket.qtyOrdered ?? ticket.qty ?? 1;
     const qtyServed = ticket.qtyServed ?? 0;
     const qtyCancelled = ticket.qtyCancelled ?? 0;
