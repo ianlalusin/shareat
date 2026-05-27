@@ -564,12 +564,12 @@ export default function KitchenPage() {
     if (!appUser || !activeStore) return;
     const nowMs = Date.now();
     try {
-      await runTransaction(db, async (transaction: Transaction) => {
+      const kdsDelta = await runTransaction(db, async (transaction: Transaction): Promise<{ old: KitchenTicket; new: KitchenTicket } | null> => {
         const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);
         const ticketSnap = await transaction.get(ticketRef);
         if (!ticketSnap.exists()) throw new Error('Ticket not found.');
         const old = ticketSnap.data() as KitchenTicket;
-        if (old.status === 'served' || old.status === 'cancelled') return;
+        if (old.status === 'served' || old.status === 'cancelled') return null;
         const qtyOrdered = old.qtyOrdered ?? old.qty ?? 1;
         const qtyServed = (old.qtyServed ?? 0) + qtyToServe;
         const qtyCancelled = old.qtyCancelled ?? 0;
@@ -617,7 +617,17 @@ export default function KitchenPage() {
             transaction.update(rtKdsDocRef, rtUpdate);
           }
         }
+        return { old, new: { ...old, ...updatePayload } as KitchenTicket };
       });
+      if (kdsDelta) {
+        const { writeBatch: wb } = await import('firebase/firestore');
+        const batch = wb(db);
+        await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, {
+          batch,
+          actor: { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null },
+        });
+        await batch.commit();
+      }
       const ticket = ticketsWithData.find(t => t.id === ticketId);
       showFlash("served", `${qtyToServe} pcs served`);
       if (ticket) {
