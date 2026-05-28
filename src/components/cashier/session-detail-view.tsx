@@ -27,6 +27,8 @@ import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useDataAnalysis } from "@/hooks/use-data-analysis";
+import { formatDurationVerbose } from "@/lib/utils/date";
 import {
   Accordion,
   AccordionContent,
@@ -40,10 +42,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { toast } = useToast();
   const { user, appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
-  const { Dialog } = useConfirmDialog();
+  const { Dialog, confirm: askConfirm } = useConfirmDialog();
   const isMobile = useIsMobile();
 
   const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
+  const sessionAnalysis = useDataAnalysis(activeStore?.id, { kind: "thisMonth" });
 
   const [session, setSession] = useState<PendingSession | null>(null);
   const [billLines, setBillLines] = useState<SessionBillLine[]>([]);
@@ -503,10 +506,42 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     </div>
   );
 
+  const handlePayClick = async () => {
+    const PREMATURE_BUFFER_MS = 10 * 60 * 1000;
+    const startedMs: number | null =
+      typeof session?.startedAt?.toMillis === "function"
+        ? session.startedAt.toMillis()
+        : session?.startedAtClientMs ?? null;
+    const avgMs = sessionAnalysis.totals.avgDineInSessionMs;
+
+    if (
+      session?.sessionMode === "package_dinein" &&
+      startedMs &&
+      avgMs > 0 &&
+      !sessionAnalysis.isLoading
+    ) {
+      const elapsedMs = Date.now() - startedMs;
+      if (elapsedMs < avgMs - PREMATURE_BUFFER_MS) {
+        const confirmed = await askConfirm({
+          title: "Session looks short",
+          description:
+            `This session has only been active for ${formatDurationVerbose(elapsedMs)}, ` +
+            `which is well below the recent average of ${formatDurationVerbose(avgMs)}. ` +
+            `Are you sure this is the right session you are processing?`,
+          confirmText: "Yes, process payment",
+          cancelText: "Cancel",
+          destructive: false,
+        });
+        if (!confirmed) return;
+      }
+    }
+    setIsPaymentOpen(true);
+  };
+
   if (isLoading || !session || !storeId || !activeStore) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }
-  
+
   return (
     <div className="h-screen flex flex-col">
       <header className="flex items-center gap-4 border-b bg-muted/40 px-6 h-[72px]">
@@ -580,7 +615,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     }}
                 />
                 <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
-                    <Button type="button" className="w-full" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={() => setIsPaymentOpen(true)}>
+                    <Button type="button" className="w-full" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
                         {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </Button>
                 </div>
