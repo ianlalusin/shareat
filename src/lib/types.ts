@@ -255,7 +255,8 @@ export type CashHandover = {
 export type ReservationStatus = "booked" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled";
 
 export type ReservationEventType =
-  | "created" | "edited" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled";
+  | "created" | "edited" | "confirmed" | "seated" | "cancelled" | "no_show" | "handled"
+  | "payment_recorded" | "payment_voided" | "payments_applied";
 
 export type ReservationEvent = {
   at: number;              // client ms when the event occurred
@@ -263,6 +264,25 @@ export type ReservationEvent = {
   byUid?: string | null;
   byName?: string | null;  // local-user/staff name (or null for website)
   note?: string | null;    // e.g. summary of an edit
+};
+
+export type ReservationPayment = {
+  id: string;
+  methodId: string;                 // refs ModeOfPayment.id
+  methodName: string;               // snapshot at log time
+  amount: number;
+  reference?: string | null;        // required when the method's hasRef === true
+  label?: string | null;            // free-text e.g. "Reservation fee", "Ocular deposit"
+  note?: string | null;
+  recordedAt: Timestamp;
+  recordedAtClientMs: number;
+  recordedByUid?: string | null;
+  recordedByName?: string | null;
+  voidedAt?: Timestamp | null;
+  voidedAtClientMs?: number | null;
+  voidedByUid?: string | null;
+  voidedByName?: string | null;
+  voidReason?: string | null;
 };
 
 export type Reservation = {
@@ -284,6 +304,12 @@ export type Reservation = {
   createdByName?: string | null;
   history?: ReservationEvent[];   // lifecycle log: booked → … → seated
   updatedAt?: Timestamp | null;
+  // Multi-entry payment log (reservation fee, ocular deposits, etc.).
+  // Voided entries are kept in place with voidedAt set — never spliced out.
+  payments?: ReservationPayment[];
+  // Set by the Pay modal when reservation payments are applied to a session,
+  // so re-opening the modal on the same session doesn't double-apply.
+  paymentsAppliedToSessionId?: string | null;
 };
 
 export type MenuSchedule = {
@@ -469,6 +495,7 @@ export type Payment = {
     methodId: string;
     amount: number;
     reference?: string;
+    fromReservationPaymentId?: string;
 };
 
 export type Adjustment = {
@@ -721,6 +748,9 @@ export type PendingSession = {
   sessionMode: 'package_dinein' | 'alacarte';
   customerName?: string | null;
   isPaid?: boolean;
+  // Set when the session is seated from a reservation. Used by the Pay modal
+  // to fetch and pre-apply reservation payments.
+  reservationId?: string | null;
   packageOfferingId: string;
   packageSnapshot?: { id?: string; name?: string; pricePerHead?: number } | null;
   initialFlavorIds?: string[];

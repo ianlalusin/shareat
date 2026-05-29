@@ -652,6 +652,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           appUser={appUser}
           firebaseUser={user ?? null}
           paymentMethods={paymentMethods}
+          reservationId={session.reservationId ?? null}
         />
       )}
     </div>

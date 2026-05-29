@@ -62,7 +62,9 @@ export function SessionListView() {
         try {
             if (pendingSeat.reservationId) {
                 // Seated from a /reservations booking: mark it seated + link the
-                // new session rather than touching the walk-in waitlist.
+                // new session rather than touching the walk-in waitlist. Also
+                // back-link reservationId onto the session so the Pay modal can
+                // fetch pre-recorded reservation payments at bill-out.
                 await updateDoc(doc(db, "stores", activeStore.id, "reservations", pendingSeat.reservationId), {
                     status: "seated",
                     sessionId: sessionId || null,
@@ -72,6 +74,12 @@ export function SessionListView() {
                     })),
                     updatedAt: serverTimestamp(),
                 });
+                if (sessionId) {
+                    await updateDoc(doc(db, "stores", activeStore.id, "sessions", sessionId), {
+                        reservationId: pendingSeat.reservationId,
+                        updatedAt: serverTimestamp(),
+                    });
+                }
             } else {
                 await deleteDoc(doc(db, "stores", activeStore.id, "waitlist", pendingSeat.id));
             }

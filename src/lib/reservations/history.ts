@@ -9,6 +9,9 @@ export const EVENT_LABEL: Record<ReservationEventType, string> = {
   cancelled: "Cancelled",
   no_show: "No-show",
   handled: "Handled",
+  payment_recorded: "Payment recorded",
+  payment_voided: "Payment voided",
+  payments_applied: "Payments applied to bill",
 };
 
 type Actor = { uid?: string | null; name?: string | null } | null;

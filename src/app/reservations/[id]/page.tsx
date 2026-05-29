@@ -15,13 +15,15 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import {
   ArrowLeft, Loader2, Phone, Users, Clock, Check, X, UserCheck, UserX,
-  Handshake, CalendarPlus, Pencil, Globe,
+  Handshake, CalendarPlus, Pencil, Globe, Wallet, Ban, Banknote, Plus,
 } from "lucide-react";
-import type { Reservation, ReservationStatus, ReservationEventType, ReservationEvent } from "@/lib/types";
+import type { Reservation, ReservationStatus, ReservationEventType, ReservationEvent, ReservationPayment } from "@/lib/types";
 import { STATUS_META, OPEN_STATUSES } from "@/lib/reservations/status";
 import { reservationEvent, appendReservationEvent, EVENT_LABEL } from "@/lib/reservations/history";
 import { setReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
 import { ReservationFormModal } from "@/components/reservations/ReservationFormModal";
+import { ReservationPaymentModal } from "@/components/reservations/ReservationPaymentModal";
+import { ReservationPaymentVoidModal } from "@/components/reservations/ReservationPaymentVoidModal";
 
 const EVENT_ICON: Record<ReservationEventType, React.ElementType> = {
   created: CalendarPlus,
@@ -31,7 +33,14 @@ const EVENT_ICON: Record<ReservationEventType, React.ElementType> = {
   cancelled: X,
   no_show: UserX,
   handled: Handshake,
+  payment_recorded: Wallet,
+  payment_voided: Ban,
+  payments_applied: Banknote,
 };
+
+function fmtMoney(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function fmtDateTime(ms: number): string {
   return new Date(ms).toLocaleString("en-US", {
@@ -53,6 +62,8 @@ export default function ReservationDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<ReservationPayment | null>(null);
 
   useEffect(() => {
     if (!activeStore?.id || !id) return;
@@ -77,6 +88,19 @@ export default function ReservationDetailPage() {
   const history = useMemo(
     () => (reservation?.history ?? []).slice().sort((a, b) => a.at - b.at),
     [reservation],
+  );
+
+  const activePayments = useMemo(
+    () => (reservation?.payments ?? []).filter((p) => !p.voidedAt).slice().sort((a, b) => a.recordedAtClientMs - b.recordedAtClientMs),
+    [reservation],
+  );
+  const voidedPayments = useMemo(
+    () => (reservation?.payments ?? []).filter((p) => p.voidedAt).slice().sort((a, b) => a.recordedAtClientMs - b.recordedAtClientMs),
+    [reservation],
+  );
+  const paymentsTotal = useMemo(
+    () => activePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+    [activePayments],
   );
 
   const setStatus = async (
@@ -199,6 +223,75 @@ export default function ReservationDetailPage() {
               </div>
             )}
 
+            {/* Payments */}
+            <div className="rounded-lg border p-3 text-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Wallet className="h-3.5 w-3.5" /> Payments
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Total: <span className="font-semibold text-foreground tabular-nums">₱{fmtMoney(paymentsTotal)}</span>
+                </div>
+              </div>
+
+              {activePayments.length === 0 && voidedPayments.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No payments recorded yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {activePayments.map((p) => (
+                    <li key={p.id} className="flex items-start justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm">
+                          <span className="font-medium">{p.methodName}</span>
+                          <span className="tabular-nums"> · ₱{fmtMoney(p.amount)}</span>
+                          {p.reference ? <span className="text-muted-foreground"> · ref {p.reference}</span> : null}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {fmtDateTime(p.recordedAtClientMs)}{p.recordedByName ? ` · ${p.recordedByName}` : ""}
+                          {p.label ? ` · ${p.label}` : ""}
+                        </div>
+                        {p.note && <div className="text-[11px] text-muted-foreground mt-0.5 break-words">{p.note}</div>}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => setVoidTarget(p)}
+                        aria-label="Void payment"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                  {voidedPayments.map((p) => (
+                    <li key={p.id} className="flex items-start justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 opacity-70">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm line-through">
+                          <span className="font-medium">{p.methodName}</span>
+                          <span className="tabular-nums"> · ₱{fmtMoney(p.amount)}</span>
+                          {p.reference ? <span className="text-muted-foreground"> · ref {p.reference}</span> : null}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Voided{p.voidedAtClientMs ? ` ${fmtDateTime(p.voidedAtClientMs)}` : ""}
+                          {p.voidedByName ? ` · ${p.voidedByName}` : ""}
+                          {p.voidReason ? ` · ${p.voidReason}` : ""}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setPaymentModalOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Record payment
+              </Button>
+            </div>
+
             {/* Actions */}
             <div className="flex flex-wrap gap-2 pt-1">
               {isOpen && (
@@ -302,6 +395,19 @@ export default function ReservationDetailPage() {
         storeId={activeStore.id}
         editing={reservation}
         defaultDateMs={reservation.reservedForMs}
+      />
+      <ReservationPaymentModal
+        open={paymentModalOpen}
+        onOpenChange={setPaymentModalOpen}
+        storeId={activeStore.id}
+        reservation={reservation}
+      />
+      <ReservationPaymentVoidModal
+        open={!!voidTarget}
+        onOpenChange={(v) => { if (!v) setVoidTarget(null); }}
+        storeId={activeStore.id}
+        reservationId={reservation.id}
+        payment={voidTarget}
       />
       {ConfirmDialog}
     </>

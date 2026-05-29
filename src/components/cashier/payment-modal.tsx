@@ -11,13 +11,14 @@ import { Numpad } from "@/components/shared/Numpad";
 import { useToast } from "@/hooks/use-toast";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
 import { addToQueue } from "@/lib/offline/payment-queue";
-import type { Payment, ModeOfPayment, Store } from "@/lib/types";
+import type { Payment, ModeOfPayment, Store, Reservation } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
+import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 
 // --- Validation ---
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -86,6 +87,9 @@ interface PaymentModalProps {
   appUser: AppUser;
   firebaseUser: User | null;
   paymentMethods: ModeOfPayment[];
+  /** When the session was seated from a reservation, allow pre-applying any
+   *  reservation payments logged before bill-out. */
+  reservationId?: string | null;
 }
 
 export function PaymentModal({
@@ -98,6 +102,7 @@ export function PaymentModal({
   appUser,
   firebaseUser,
   paymentMethods,
+  reservationId,
 }: PaymentModalProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -113,25 +118,74 @@ export function PaymentModal({
   // Raw string buffer for the numpad-driven amount
   const [numpadBuffer, setNumpadBuffer] = useState<string>("");
 
-  // Initialize with one cash payment when modal opens
+  const [reservationApplied, setReservationApplied] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  // Initialize payment rows when modal opens. If the session was seated from
+  // a reservation, pre-seed one line per non-voided reservation payment
+  // (preserving original mode + reference) and add a cash row for any
+  // remaining balance. Cashier can delete pre-seeded lines to override.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    let cancelled = false;
+    setIsInitializing(true);
+    setReservationApplied(false);
+    (async () => {
+      let prepaidLines: Payment[] = [];
+      if (reservationId) {
+        try {
+          const snap = await getDoc(doc(db, "stores", storeId, "reservations", reservationId));
+          if (snap.exists()) {
+            const r = snap.data() as Reservation;
+            const alreadyApplied = r.paymentsAppliedToSessionId === sessionId;
+            setReservationApplied(alreadyApplied);
+            if (!alreadyApplied) {
+              prepaidLines = (r.payments ?? [])
+                .filter(p => !p.voidedAt)
+                .map(rp => ({
+                  id: `rp-${rp.id}`,
+                  methodId: rp.methodId,
+                  amount: Math.round((Number(rp.amount) || 0) * 100) / 100,
+                  reference: rp.reference ?? "",
+                  fromReservationPaymentId: rp.id,
+                }));
+            }
+          }
+        } catch (e) {
+          console.warn("[PaymentModal] Failed to load reservation payments:", e);
+        }
+      }
+      if (cancelled) return;
+
+      const seededTotal = prepaidLines.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const remainingCents = Math.max(0, Math.round(grandTotal * 100) - Math.round(seededTotal * 100));
+      const remaining = remainingCents / 100;
+
       const cashMethod = paymentMethods.find(pm => pm.type === "cash");
       const defaultMethodId = cashMethod?.id || (paymentMethods.length > 0 ? paymentMethods[0].id : "");
-      const initialId = `pay-${Date.now()}`;
-      setPayments([{
-        id: initialId,
-        methodId: defaultMethodId,
-        amount: Math.round(grandTotal * 100) / 100,
-        reference: "",
-      }]);
+
+      let lines: Payment[];
+      if (prepaidLines.length === 0) {
+        const initialId = `pay-${Date.now()}`;
+        lines = [{ id: initialId, methodId: defaultMethodId, amount: Math.round(grandTotal * 100) / 100, reference: "" }];
+      } else if (remaining > 0) {
+        const newId = `pay-${Date.now()}`;
+        lines = [...prepaidLines, { id: newId, methodId: defaultMethodId, amount: remaining, reference: "" }];
+      } else {
+        lines = prepaidLines;
+      }
+
+      setPayments(lines);
+      const focus = lines[lines.length - 1];
+      setActivePaymentId(focus?.id ?? null);
+      setNumpadBuffer(focus && focus.amount > 0 ? focus.amount.toFixed(2).replace(/\.?0+$/, "") : "");
       setIsProcessing(false);
       setShowSuccess(false);
       setPendingRedirect(null);
-      setActivePaymentId(initialId);
-      setNumpadBuffer(grandTotal.toFixed(2).replace(/\.?0+$/, ""));
-    }
-  }, [open, grandTotal, paymentMethods]);
+      setIsInitializing(false);
+    })();
+    return () => { cancelled = true; };
+  }, [open, grandTotal, paymentMethods, reservationId, storeId, sessionId]);
 
   const grandTotalCents = Math.round(grandTotal * 100);
   const totalPaid = useMemo(() => payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [payments]);
@@ -260,6 +314,25 @@ export function PaymentModal({
         activeStore, paymentMethods, grandTotal,
       );
 
+      // If this session pulled in reservation prepayments, mark the
+      // reservation so reopening this modal can't double-apply them.
+      if (reservationId && normalizedPayments.some(p => !!p.fromReservationPaymentId)) {
+        try {
+          const actorName = appUser?.displayName || appUser?.name || null;
+          await updateDoc(doc(db, "stores", storeId, "reservations", reservationId), {
+            paymentsAppliedToSessionId: sessionId,
+            history: appendReservationEvent(reservationEvent(
+              "payments_applied",
+              { uid: appUser?.uid ?? null, name: actorName },
+              `Applied to session ${sessionId}`,
+            )),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (e) {
+          console.warn("[PaymentModal] Failed to mark reservation payments applied:", e);
+        }
+      }
+
       const settingsSnap = await getDoc(doc(db, "stores", storeId, "receiptSettings", "main"));
       const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
       setShowSuccess(true);
@@ -334,12 +407,16 @@ export function PaymentModal({
         {payments.map((payment) => {
           const method = paymentMethods.find(pm => pm.id === payment.methodId);
           const isActive = activePaymentId === payment.id;
+          const fromReservation = !!payment.fromReservationPaymentId;
           return (
             <div
               key={payment.id}
               className={`rounded-lg border p-2.5 cursor-pointer transition-colors ${isActive ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border"} ${method?.hasRef ? "space-y-2" : ""}`}
               onClick={() => focusPayment(payment.id)}
             >
+              {fromReservation && (
+                <div className="text-[10px] uppercase tracking-wide text-primary font-medium mb-1">From reservation</div>
+              )}
               <div className="flex items-center gap-1.5">
                 <Select value={payment.methodId} onValueChange={(val) => updatePayment(payment.id, { methodId: val })} disabled={isProcessing}>
                   <SelectTrigger className="h-9 min-w-0 flex-1 text-sm"><SelectValue /></SelectTrigger>
