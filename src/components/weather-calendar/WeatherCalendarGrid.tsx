@@ -61,7 +61,7 @@ function DayCell({ cell, onClick }: { cell: DayCellData; onClick: () => void }) 
       type="button"
       onClick={onClick}
       title={holidayName ? `${holidayName} (${holidaySource})` : undefined}
-      className={`group relative aspect-square sm:aspect-auto sm:min-h-[112px] rounded-lg border bg-card p-1.5 sm:p-2 text-left flex flex-col gap-1 transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${cell.isInMonth ? "" : "opacity-40"} ${today ? "ring-2 ring-primary" : ""}`}
+      className={`group relative aspect-square sm:aspect-auto sm:min-h-[112px] rounded-lg border bg-card p-1.5 sm:p-2 text-left flex flex-col gap-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${cell.isInMonth ? "" : "opacity-40"} ${today ? "ring-2 ring-primary" : ""}`}
     >
       <div className="flex items-start justify-between gap-1">
         <span className={`text-xs sm:text-sm tabular-nums ${today ? "text-primary font-semibold" : "text-foreground"}`}>
