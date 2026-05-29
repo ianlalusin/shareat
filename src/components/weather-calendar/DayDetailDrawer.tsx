@@ -10,7 +10,7 @@ import { Loader2, PartyPopper, Wallet, CalendarHeart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { KNOWN_HOLIDAYS } from "@/lib/holidays/known-holidays";
-import { getWeatherIcon, isNightHour } from "@/lib/weather/icons";
+import { getCalendarWeatherIcon, isNightHour } from "@/lib/weather/icons";
 import { toJsDate } from "@/lib/utils/date";
 import type { DailyMetric } from "@/lib/types";
 import type { DayCellData } from "./WeatherCalendarGrid";
@@ -194,7 +194,7 @@ export function DayDetailDrawer({ open, onOpenChange, storeId, cell, dailyMetric
                 {sortedEntries.map((e, i) => {
                   const ts = toJsDate(e.timestamp);
                   const atNight = ts ? isNightHour(ts.getHours()) : false;
-                  const meta = getWeatherIcon(e.condition, atNight);
+                  const meta = getCalendarWeatherIcon(e.condition, atNight);
                   const Icon = meta.icon;
                   return (
                     <li key={i} className="flex items-center gap-2 rounded-md border bg-card px-2 py-1.5">

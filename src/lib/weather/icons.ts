@@ -22,6 +22,19 @@ const NIGHT_SUNNY_OVERRIDE: WeatherIconMeta = {
   iconColor: "text-amber-300",
 };
 
+// Calendar-only variant — white background with a colored glyph + thin
+// border so small icons stay legible at calendar-cell scale where the
+// dark gradients lose contrast. Logger modal + floating button keep the
+// colorful gradient look.
+const CALENDAR_GLYPH_COLOR: Record<WeatherCondition, string> = {
+  sunny: "text-amber-500",
+  cloudy: "text-slate-500",
+  light_rain: "text-sky-500",
+  heavy_rain: "text-indigo-600",
+};
+const CALENDAR_NIGHT_CLEAR_COLOR = "text-indigo-500";
+const CALENDAR_WHITE_BG = "from-white to-white border border-border";
+
 export function isNightHour(hour: number): boolean {
   return hour >= 18 || hour < 6;
 }
@@ -38,4 +51,15 @@ export function getWeatherOptions(atNight = false): Array<WeatherIconMeta & { va
     value,
     ...getWeatherIcon(value, atNight),
   }));
+}
+
+/** Calendar-cell variant: solid white bg + colored glyph for legibility at small sizes. */
+export function getCalendarWeatherIcon(condition: WeatherCondition, atNight = false): WeatherIconMeta {
+  const base = getWeatherIcon(condition, atNight);
+  const isNightClear = atNight && condition === "sunny";
+  return {
+    ...base,
+    gradient: CALENDAR_WHITE_BG,
+    iconColor: isNightClear ? CALENDAR_NIGHT_CLEAR_COLOR : CALENDAR_GLYPH_COLOR[condition],
+  };
 }

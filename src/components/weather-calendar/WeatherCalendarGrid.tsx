@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { PartyPopper, CalendarHeart } from "lucide-react";
 import type { WeatherEntry } from "@/lib/types";
-import { getWeatherIcon, isNightHour } from "@/lib/weather/icons";
+import { getCalendarWeatherIcon, isNightHour } from "@/lib/weather/icons";
 import { toJsDate } from "@/lib/utils/date";
 
 export type DayCellData = {
@@ -91,7 +91,7 @@ function DayCell({ cell, onClick }: { cell: DayCellData; onClick: () => void }) 
         {displayed.map((e, i) => {
           const ts = toJsDate(e.timestamp);
           const atNight = ts ? isNightHour(ts.getHours()) : false;
-          const meta = getWeatherIcon(e.condition, atNight);
+          const meta = getCalendarWeatherIcon(e.condition, atNight);
           const Icon = meta.icon;
           return (
             <span
