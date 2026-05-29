@@ -9,41 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sun, PartyPopper, Check, Loader } from "lucide-react";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { KNOWN_HOLIDAYS } from "@/lib/holidays/known-holidays";
 
 interface StartShiftModalProps {
   isOpen: boolean;
   onClose: () => void;
   storeId: string;
 }
-
-// Known PH holidays for autocomplete suggestions. User can still type custom names.
-const KNOWN_HOLIDAYS = [
-  "New Year's Day",
-  "Valentine's Day",
-  "Chinese New Year",
-  "Holy Week",
-  "Maundy Thursday",
-  "Good Friday",
-  "Black Saturday",
-  "Easter Sunday",
-  "Araw ng Kagitingan",
-  "Labor Day",
-  "Mother's Day",
-  "Independence Day",
-  "Father's Day",
-  "Eid'l Fitr",
-  "Eid'l Adha",
-  "Ninoy Aquino Day",
-  "National Heroes Day",
-  "Bonifacio Day",
-  "Halloween",
-  "All Saints' Day",
-  "All Souls' Day",
-  "Christmas Eve",
-  "Christmas Day",
-  "Rizal Day",
-  "New Year's Eve",
-];
 
 type Step = "prompt" | "picker" | "saved" | "saving";
 

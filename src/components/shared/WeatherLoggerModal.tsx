@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sun, Cloudy, CloudRain, CloudLightning, Moon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CalendarDays } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
 import { doc, setDoc, arrayUnion, getCountFromServer, collection, Timestamp } from "firebase/firestore";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import { getWeatherOptions, isNightHour, type WeatherIconMeta } from "@/lib/weather/icons";
 import type { WeatherCondition, WeatherEntry } from "@/lib/types";
 
 interface WeatherLoggerModalProps {
@@ -16,22 +19,12 @@ interface WeatherLoggerModalProps {
     storeId: string;
 }
 
-type WeatherOption = { label: string; value: WeatherCondition; icon: React.ElementType; gradient: string; iconColor: string };
-
-const baseWeatherOptions: WeatherOption[] = [
-    { label: "Sunny", value: "sunny", icon: Sun, gradient: "from-amber-400 to-orange-500", iconColor: "text-white" },
-    { label: "Cloudy", value: "cloudy", icon: Cloudy, gradient: "from-slate-300 to-slate-500", iconColor: "text-white" },
-    { label: "Light Rain", value: "light_rain", icon: CloudRain, gradient: "from-sky-400 to-blue-600", iconColor: "text-white" },
-    { label: "Heavy Rain", value: "heavy_rain", icon: CloudLightning, gradient: "from-indigo-500 to-purple-700", iconColor: "text-white" },
-];
-
-const nightSunnyOverride = { label: "Clear", icon: Moon, gradient: "from-indigo-900 to-slate-800", iconColor: "text-amber-300" };
+type WeatherOption = WeatherIconMeta & { value: WeatherCondition };
 
 const FOCUS_COUNTDOWN_SECONDS = 5;
 
 function isNightTime(): boolean {
-    const hour = new Date().getHours();
-    return hour >= 18 || hour < 6;
+    return isNightHour(new Date().getHours());
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -44,6 +37,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerModalProps) {
+    const router = useRouter();
     const { appUser } = useAuthContext();
     const { currentProfile } = useLocalProfile();
 
@@ -56,12 +50,7 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
 
     useEffect(() => {
         if (!isOpen) return;
-        const base = isNightTime()
-            ? baseWeatherOptions.map(option =>
-                option.value === 'sunny' ? { ...option, ...nightSunnyOverride } : option,
-            )
-            : baseWeatherOptions;
-        setWeatherOptions(shuffle(base));
+        setWeatherOptions(shuffle(getWeatherOptions(isNightTime())));
         setCountdown(FOCUS_COUNTDOWN_SECONDS);
         const tick = setInterval(() => {
             setCountdown(c => {
@@ -150,6 +139,18 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
                         </button>
                     ))}
                 </div>
+                {!isLocked && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-muted-foreground"
+                        onClick={() => { onClose(); router.push("/weather-calendar"); }}
+                    >
+                        <CalendarDays className="h-3.5 w-3.5 mr-1.5" />
+                        See monthly logs
+                    </Button>
+                )}
             </DialogContent>
         </Dialog>
     );

@@ -2,9 +2,10 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { useRouter } from "next/navigation";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Sun, Cloudy, CloudRain, CloudLightning, Moon, CloudSun } from "lucide-react";
+import { Sun, Cloudy, CloudRain, CloudLightning, Moon, CloudSun, CalendarDays } from "lucide-react";
 import { db } from "@/lib/firebase/client";
 import { doc, onSnapshot } from "firebase/firestore";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
@@ -35,6 +36,7 @@ function getWeatherDisplay(condition: string, timestamp?: Date) {
 
 
 export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
+    const router = useRouter();
     const [entries, setEntries] = useState<WeatherEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -121,6 +123,18 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                       )}
                   </div>
                 </ScrollArea>
+                <div className="border-t pt-3 pr-6">
+                    <SheetClose asChild>
+                        <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => router.push("/weather-calendar")}
+                        >
+                            <CalendarDays className="h-4 w-4 mr-2" />
+                            View calendar
+                        </Button>
+                    </SheetClose>
+                </div>
             </SheetContent>
         </Sheet>
     );
