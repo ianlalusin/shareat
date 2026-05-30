@@ -41,16 +41,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { ModeOfPayment } from "@/lib/types";
 
 interface PaymentConvertModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   storeId: string;
-  /** Known payment methods from current Payment Mix, used to seed the selects. */
-  knownMethods: string[];
 }
-
-const CUSTOM_SENTINEL = "__custom__";
 
 function formatPeso(n: number) {
   return `₱${n.toLocaleString("en-US", {
@@ -73,7 +70,6 @@ export function PaymentConvertModal({
   open,
   onOpenChange,
   storeId,
-  knownMethods,
 }: PaymentConvertModalProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
@@ -81,12 +77,14 @@ export function PaymentConvertModal({
 
   const [fromMethod, setFromMethod] = useState<string>("");
   const [toMethod, setToMethod] = useState<string>("");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [amountStr, setAmountStr] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+
+  // Active modes of payment from manager/collections — the only methods a
+  // conversion can move between (no free-text entry).
+  const [activeMethods, setActiveMethods] = useState<string[]>([]);
 
   const [todayConversions, setTodayConversions] = useState<
     (PaymentConversion & { id: string })[]
@@ -95,18 +93,44 @@ export function PaymentConvertModal({
 
   const todayDayId = useMemo(() => getDayIdFromTimestamp(new Date()), []);
 
-  // Seed selects when modal opens or methods change.
+  // Subscribe to the store's active modes of payment while the modal is open.
+  useEffect(() => {
+    if (!open || !storeId) return;
+    const q = query(
+      collection(db, "stores", storeId, "storeModesOfPayment"),
+      where("isArchived", "==", false),
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const names = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }) as ModeOfPayment)
+          .filter((m) => m.isActive)
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+          .map((m) => m.name)
+          .filter((n): n is string => !!n);
+        setActiveMethods(names);
+      },
+      (err) => console.error("[PaymentConvertModal] MOP subscription error", err),
+    );
+    return () => unsub();
+  }, [open, storeId]);
+
+  // Seed selects when the modal opens or the active methods change.
   useEffect(() => {
     if (!open) return;
-    const defaultFrom = knownMethods[0] ?? "";
-    const defaultTo = knownMethods.find((m) => m !== defaultFrom) ?? "";
-    setFromMethod(defaultFrom);
-    setToMethod(defaultTo);
-    setCustomFrom("");
-    setCustomTo("");
+    const defaultFrom = activeMethods[0] ?? "";
+    const defaultTo = activeMethods.find((m) => m !== defaultFrom) ?? "";
+    setFromMethod((prev) => (prev && activeMethods.includes(prev) ? prev : defaultFrom));
+    setToMethod((prev) => (prev && activeMethods.includes(prev) ? prev : defaultTo));
+  }, [open, activeMethods]);
+
+  // Reset the entry fields each time the modal opens.
+  useEffect(() => {
+    if (!open) return;
     setAmountStr("");
     setNote("");
-  }, [open, knownMethods]);
+  }, [open]);
 
   // Subscribe to today's conversions while modal is open.
   useEffect(() => {
@@ -134,8 +158,8 @@ export function PaymentConvertModal({
     return () => unsub();
   }, [open, storeId, todayDayId]);
 
-  const resolvedFrom = fromMethod === CUSTOM_SENTINEL ? customFrom.trim() : fromMethod;
-  const resolvedTo = toMethod === CUSTOM_SENTINEL ? customTo.trim() : toMethod;
+  const resolvedFrom = fromMethod;
+  const resolvedTo = toMethod;
 
   const parsedAmount = Number(amountStr);
   const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
@@ -215,33 +239,20 @@ export function PaymentConvertModal({
   const renderMethodSelect = (
     value: string,
     setValue: (v: string) => void,
-    customValue: string,
-    setCustomValue: (v: string) => void,
     placeholder: string,
   ) => (
-    <div className="space-y-2">
-      <Select value={value || ""} onValueChange={setValue}>
-        <SelectTrigger className="h-9">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {knownMethods.map((m) => (
-            <SelectItem key={m} value={m} className="capitalize">
-              {m}
-            </SelectItem>
-          ))}
-          <SelectItem value={CUSTOM_SENTINEL}>Other…</SelectItem>
-        </SelectContent>
-      </Select>
-      {value === CUSTOM_SENTINEL && (
-        <Input
-          placeholder="Method name"
-          value={customValue}
-          onChange={(e) => setCustomValue(e.target.value)}
-          className="h-9"
-        />
-      )}
-    </div>
+    <Select value={value || ""} onValueChange={setValue} disabled={activeMethods.length === 0}>
+      <SelectTrigger className="h-9">
+        <SelectValue placeholder={activeMethods.length === 0 ? "No active methods" : placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {activeMethods.map((m) => (
+          <SelectItem key={m} value={m} className="capitalize">
+            {m}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 
   return (
@@ -262,11 +273,21 @@ export function PaymentConvertModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>From (deducted)</Label>
-              {renderMethodSelect(fromMethod, setFromMethod, customFrom, setCustomFrom, "Select method")}
+              {renderMethodSelect(fromMethod, setFromMethod, "Select method")}
+              {amountValid && resolvedFrom && (
+                <div className="text-sm font-semibold tabular-nums text-destructive">
+                  −{formatPeso(parsedAmount)}
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>To (added)</Label>
-              {renderMethodSelect(toMethod, setToMethod, customTo, setCustomTo, "Select method")}
+              {renderMethodSelect(toMethod, setToMethod, "Select method")}
+              {amountValid && resolvedTo && (
+                <div className="text-sm font-semibold tabular-nums text-emerald-600">
+                  +{formatPeso(parsedAmount)}
+                </div>
+              )}
             </div>
           </div>
 

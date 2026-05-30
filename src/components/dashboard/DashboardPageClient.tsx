@@ -279,7 +279,6 @@ export default function DashboardPageClient() {
                     open={convertModalOpen}
                     onOpenChange={setConvertModalOpen}
                     storeId={activeStore.id}
-                    knownMethods={Object.keys(paymentMix || {})}
                 />
             )}
         </RoleGuard>
