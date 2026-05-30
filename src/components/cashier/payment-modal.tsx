@@ -354,6 +354,23 @@ export function PaymentModal({
         });
       }
 
+      // Lock in any Sharelebrator vouchers/redemptions used on this bill now
+      // that the session is paid. Until this runs an applied voucher could be
+      // removed and returned to "active" (reusable); this commits its used
+      // state. Fire-and-forget + idempotent — never blocks the receipt.
+      if (firebaseUser) {
+        try {
+          const token = await firebaseUser.getIdToken();
+          fetch("/api/loyalty/finalize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ storeId, sessionId, receiptId }),
+          }).catch((err) => console.warn("[Loyalty] voucher finalize failed (non-fatal):", err));
+        } catch (err) {
+          console.warn("[Loyalty] voucher finalize token failed (non-fatal):", err);
+        }
+      }
+
       // Sharelebrator loyalty earn (awaited so cashier sees failures)
       if (firebaseUser && linkedPhone) {
         try {

@@ -100,7 +100,11 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Remove failed");
-      toast({ title: "Reward removed", description: `${r.pointsCost} pts refunded.` });
+      const refunded = Number(json?.refunded ?? 0);
+      toast({
+        title: "Reward removed",
+        description: refunded > 0 ? `${refunded} pts refunded.` : "Voucher released — the code can be used again.",
+      });
       setBalance(null);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Remove failed", description: e?.message });

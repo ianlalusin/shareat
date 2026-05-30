@@ -299,7 +299,48 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
       const sessionRef = hasSession ? db.doc(`stores/${r.appliedStoreId}/sessions/${r.appliedSessionId}`) : null;
       const sessSnap = sessionRef ? await tx.get(sessionRef) : null;
 
-      // --- writes ---
+      // Shared writes used by both the reuse and refund paths below.
+      const releaseStoreCounter = () => {
+        // Free up the per-store claim counter the apply bumped.
+        if (r.rewardId && r.appliedStoreId) {
+          tx.set(db.doc(`loyaltyRewards/${r.rewardId}`), { claimsByStore: { [r.appliedStoreId]: FieldValue.increment(-1) }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+      };
+      const detachFromSession = () => {
+        // Drop this redemption from its session so the bill discount goes away.
+        if (sessionRef && sessSnap?.exists) {
+          const existing = ((sessSnap.data() as any).loyaltyRedemptions ?? []) as Array<{ redemptionId?: string }>;
+          const next = existing.filter((e) => e.redemptionId !== redemptionId);
+          tx.set(sessionRef, {
+            loyaltyRedemptions: next,
+            billingRevision: FieldValue.increment(1),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+      };
+
+      // A Hub voucher that the cashier removes BEFORE the session is paid was
+      // never truly consumed: its points were debited in the Hub (not here) and
+      // no receipt exists yet. Returning it to "active" lets the same code be
+      // re-entered — fixing the "accidentally deleted, now permanently blocked"
+      // bug. The voucher's used/blocked state is only committed once the session
+      // is paid (see finalizeLoyaltyVouchers), which stamps appliedReceiptId.
+      const isReusableVoucherRemoval = reason === "removed" && r.source === "hub" && !r.appliedReceiptId;
+      if (isReusableVoucherRemoval) {
+        tx.update(redRef, {
+          status: "active",
+          appliedStoreId: null,
+          appliedSessionId: null,
+          appliedByUid: null,
+          appliedAtMs: null,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        releaseStoreCounter();
+        detachFromSession();
+        return 0; // nothing refunded — the voucher itself is preserved for reuse
+      }
+
+      // --- refund path: POS redemptions, voids/refunds, and expiries ---
       const pointsCost = Math.floor(Number(r.pointsCost) || 0);
       const customerRef = db.doc(`customers/${r.phone}`);
       const ledgerRef = customerRef.collection("pointsLedger").doc();
@@ -313,21 +354,8 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
       tx.update(redRef, { status: reason === "expired" ? "expired" : "cancelled", refundedAtMs: Date.now(), updatedAt: FieldValue.serverTimestamp() });
       tx.set(statsRef, { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
-      // Free up the per-store claim counter.
-      if (r.rewardId && r.appliedStoreId) {
-        tx.set(db.doc(`loyaltyRewards/${r.rewardId}`), { claimsByStore: { [r.appliedStoreId]: FieldValue.increment(-1) }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      }
-
-      // Drop this redemption from its session so the bill discount goes away.
-      if (sessionRef && sessSnap?.exists) {
-        const existing = ((sessSnap.data() as any).loyaltyRedemptions ?? []) as Array<{ redemptionId?: string }>;
-        const next = existing.filter((e) => e.redemptionId !== redemptionId);
-        tx.set(sessionRef, {
-          loyaltyRedemptions: next,
-          billingRevision: FieldValue.increment(1),
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      }
+      releaseStoreCounter();
+      detachFromSession();
       return pointsCost;
     });
 
@@ -409,5 +437,64 @@ export async function applyLoyaltyVoucher({ storeId, sessionId, code, staffUid }
     const msg = err.message || String(err);
     console.error("[applyLoyaltyVoucher] failed:", msg);
     return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Commit the used/blocked state of every loyalty redemption attached to a
+ * session once that session has been PAID. Until this runs an applied voucher
+ * can be removed and returned to "active" (reusable); stamping appliedReceiptId
+ * here is the point of no return — the voucher is now permanently consumed by a
+ * real receipt and can never be re-applied. Idempotent and best-effort: a
+ * redemption already stamped is skipped, so retries / replays are safe.
+ */
+export async function finalizeLoyaltyVouchers({
+  storeId,
+  sessionId,
+  receiptId,
+}: {
+  storeId: string;
+  sessionId: string;
+  receiptId: string;
+}): Promise<{ ok: boolean; finalized: number; error?: string }> {
+  if (!storeId || !sessionId || !receiptId) return { ok: false, finalized: 0, error: "Missing required fields" };
+  const db = getAdminDb();
+
+  try {
+    const sessSnap = await db.doc(`stores/${storeId}/sessions/${sessionId}`).get();
+    if (!sessSnap.exists) return { ok: true, finalized: 0 };
+    const arr = (sessSnap.data() as any)?.loyaltyRedemptions;
+    const ids: string[] = Array.isArray(arr)
+      ? arr.map((e: any) => e?.redemptionId).filter((x: any): x is string => typeof x === "string" && !!x)
+      : [];
+    if (ids.length === 0) return { ok: true, finalized: 0 };
+
+    const nowMs = Date.now();
+    let finalized = 0;
+    for (const id of ids) {
+      const ref = db.doc(`loyaltyRedemptions/${id}`);
+      const done = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return false;
+        const r = snap.data() as any;
+        if (r.appliedReceiptId) return false; // already finalized — idempotent no-op
+        tx.update(ref, {
+          status: "applied",
+          appliedStoreId: storeId,
+          appliedSessionId: sessionId,
+          appliedReceiptId: receiptId,
+          appliedAtMs: typeof r.appliedAtMs === "number" ? r.appliedAtMs : nowMs,
+          lockedAtMs: nowMs,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (done) finalized++;
+    }
+    return { ok: true, finalized };
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    console.error("[finalizeLoyaltyVouchers] failed:", msg);
+    return { ok: false, finalized: 0, error: msg };
   }
 }

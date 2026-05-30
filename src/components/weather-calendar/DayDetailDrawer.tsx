@@ -89,13 +89,13 @@ export function DayDetailDrawer({ open, onOpenChange, storeId, cell, dailyMetric
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{fmtDateLong(cell.date)}</DialogTitle>
           <DialogDescription>Weather, sales, and holiday details for this day.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1">
           {/* Holiday block */}
           <div className="rounded-lg border p-3 space-y-2">
             <div className="text-xs text-muted-foreground flex items-center gap-1">
