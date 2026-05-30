@@ -121,7 +121,9 @@ export function OptionGroupEditDialog({
         name: trimmedName,
         selectionMode,
         required,
-        minSelections: selectionMode === "multi" ? min : undefined,
+        // Min only applies to a required multi group — keep it off optional
+        // groups so they can't silently behave as required.
+        minSelections: selectionMode === "multi" && required ? min : undefined,
         maxSelections: selectionMode === "multi" ? max : undefined,
         values: cleanValues.map((v, idx) => ({ ...v, sortOrder: idx })),
         isActive,
@@ -186,7 +188,9 @@ export function OptionGroupEditDialog({
               <div className="text-xs text-muted-foreground">
                 {selectionMode === "single"
                   ? "Customer must pick exactly one value."
-                  : `Customer must pick at least ${minSelections.trim() ? minSelections : "the minimum"} values.`}
+                  : required
+                    ? `Customer must pick at least ${minSelections.trim() ? minSelections : "1"} value(s).`
+                    : "Customer can skip this group entirely."}
               </div>
             </div>
             <Switch checked={required} onCheckedChange={setRequired} />
@@ -194,10 +198,14 @@ export function OptionGroupEditDialog({
 
           {selectionMode === "multi" && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-1.5">
-                <Label htmlFor="og-min">Min selections</Label>
-                <Input id="og-min" type="number" min={0} value={minSelections} onChange={(e) => setMinSelections(e.target.value)} placeholder="0" disabled={saving} />
-              </div>
+              {/* Min only matters for a required group; for an optional group it
+                  would contradict "Required = off", so it's hidden. */}
+              {required && (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="og-min">Min selections</Label>
+                  <Input id="og-min" type="number" min={1} value={minSelections} onChange={(e) => setMinSelections(e.target.value)} placeholder="1" disabled={saving} />
+                </div>
+              )}
               <div className="grid gap-1.5">
                 <Label htmlFor="og-max">Max selections</Label>
                 <Input id="og-max" type="number" min={1} value={maxSelections} onChange={(e) => setMaxSelections(e.target.value)} placeholder="unlimited" disabled={saving} />

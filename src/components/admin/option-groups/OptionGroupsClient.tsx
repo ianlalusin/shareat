@@ -138,7 +138,7 @@ export default function OptionGroupsClient() {
                         {g.selectionMode === "multi" && (
                           <>
                             {" · "}
-                            {g.minSelections != null ? `min ${g.minSelections}` : "min 0"}
+                            {`min ${g.required ? (g.minSelections ?? 1) : 0}`}
                             {g.maxSelections != null ? ` / max ${g.maxSelections}` : " / max unlimited"}
                           </>
                         )}

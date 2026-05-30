@@ -86,7 +86,10 @@ function ModifierPickerContent({
           out[g.id] = `Pick one ${g.name.toLowerCase()}.`;
         }
       } else {
-        const min = g.minSelections ?? (g.required ? 1 : 0);
+        // `required` is the master switch: minSelections only applies when the
+        // group is required. An optional group never forces a selection, even
+        // if a stale min was stored from an earlier edit.
+        const min = g.required ? (g.minSelections ?? 1) : 0;
         const max = g.maxSelections;
         if (sel.size < min) {
           out[g.id] = `Pick at least ${min}.`;

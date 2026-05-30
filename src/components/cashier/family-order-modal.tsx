@@ -147,7 +147,9 @@ function FamilyOrderContent({
       if (g.selectionMode === "single") {
         if (g.required && sel.size === 0) out[g.id] = `Pick one ${g.name.toLowerCase()}.`;
       } else {
-        const min = g.minSelections ?? (g.required ? 1 : 0);
+        // `required` is the master switch: minSelections only applies when the
+        // group is required, so an optional group never forces a selection.
+        const min = g.required ? (g.minSelections ?? 1) : 0;
         const max = g.maxSelections;
         if (sel.size < min) out[g.id] = `Pick at least ${min}.`;
         else if (max != null && sel.size > max) out[g.id] = `Pick at most ${max}.`;
