@@ -235,6 +235,9 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
         createdAt: FieldValue.serverTimestamp(), createdAtClientMs: now, expiresAtMs: now,
         appliedStoreId: storeId, appliedSessionId: sessionId, appliedReceiptId: null,
         appliedByUid: staffUid, appliedAtMs: now,
+        // POS-created redemptions debit points right here, so they are already
+        // spent and hold nothing — finalize's !pointsSpent guard skips them.
+        pointsSpent: true, pointsSpentAtMs: now, reservedPoints: 0,
       });
       tx.set(logRef, {
         type: "points_redeemed", phone, customerName: name, actorUid: staffUid,
@@ -340,23 +343,33 @@ export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: strin
         return 0; // nothing refunded — the voucher itself is preserved for reuse
       }
 
-      // --- refund path: POS redemptions, voids/refunds, and expiries ---
+      // --- refund / hold-release path: POS redemptions, voids/refunds, expiries ---
+      // Whether points were actually spent is the decider — NOT reason/source.
+      // Spent (POS redemption, or a Hub voucher already used in a paid bill) ->
+      // refund. Only held (pending Hub voucher, never paid) -> release the hold,
+      // no refund ledger and no outstanding change (nothing was ever spent).
       const pointsCost = Math.floor(Number(r.pointsCost) || 0);
+      const reservedPoints = Math.floor(Number(r.reservedPoints) || 0);
       const customerRef = db.doc(`customers/${r.phone}`);
-      const ledgerRef = customerRef.collection("pointsLedger").doc();
+      const terminalStatus = reason === "expired" ? "expired" : "cancelled";
 
-      tx.update(customerRef, { pointsBalance: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
-      tx.set(ledgerRef, {
-        type: "redeem_refund", points: pointsCost, amount: 0, storeId: r.appliedStoreId ?? "", storeName: "",
-        sessionId: r.appliedSessionId ?? "", redemptionId, rewardId: r.rewardId, rewardName: r.rewardName,
-        reason, createdAt: FieldValue.serverTimestamp(), createdByUid: actorUid,
-      });
-      tx.update(redRef, { status: reason === "expired" ? "expired" : "cancelled", refundedAtMs: Date.now(), updatedAt: FieldValue.serverTimestamp() });
-      tx.set(statsRef, { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      if (r.pointsSpent) {
+        const ledgerRef = customerRef.collection("pointsLedger").doc();
+        tx.update(customerRef, { pointsBalance: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
+        tx.set(ledgerRef, {
+          type: "redeem_refund", points: pointsCost, amount: 0, storeId: r.appliedStoreId ?? "", storeName: "",
+          sessionId: r.appliedSessionId ?? "", redemptionId, rewardId: r.rewardId, rewardName: r.rewardName,
+          reason, createdAt: FieldValue.serverTimestamp(), createdByUid: actorUid,
+        });
+        tx.set(statsRef, { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      } else if (reservedPoints > 0) {
+        tx.update(customerRef, { pointsReserved: FieldValue.increment(-reservedPoints), updatedAt: FieldValue.serverTimestamp() });
+      }
+      tx.update(redRef, { status: terminalStatus, refundedAtMs: Date.now(), reservedPoints: 0, updatedAt: FieldValue.serverTimestamp() });
 
       releaseStoreCounter();
       detachFromSession();
-      return pointsCost;
+      return r.pointsSpent ? pointsCost : 0;
     });
 
     return { ok: true, refunded };
@@ -478,6 +491,37 @@ export async function finalizeLoyaltyVouchers({
         if (!snap.exists) return false;
         const r = snap.data() as any;
         if (r.appliedReceiptId) return false; // already finalized — idempotent no-op
+
+        // The session is now PAID, so this is where a Hub voucher's points are
+        // actually spent (claim only placed a hold). Skip docs already spent
+        // (POS-created, or pointsSpent already true) via the guard below.
+        const pointsCost = Math.floor(Number(r.pointsCost) || 0);
+        const reservedPoints = Math.floor(Number(r.reservedPoints) || 0);
+        const needsDebit = !r.pointsSpent && pointsCost > 0 && !!r.phone;
+
+        if (needsDebit) {
+          const customerRef = db.doc(`customers/${r.phone}`);
+          tx.update(customerRef, {
+            pointsBalance: FieldValue.increment(-pointsCost),
+            pointsReserved: FieldValue.increment(-reservedPoints),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          // Deterministic ledger id so a torn retry of the fire-and-forget
+          // finalize can never write the same redeem twice.
+          const ledgerRef = customerRef.collection("pointsLedger").doc(`${receiptId}_${id}`);
+          tx.set(ledgerRef, {
+            type: "redeem", points: -pointsCost, amount: 0,
+            storeId, storeName: "", sessionId, receiptId,
+            rewardId: r.rewardId ?? null, rewardName: r.rewardName ?? "", redemptionId: id,
+            createdAt: FieldValue.serverTimestamp(), createdByUid: r.appliedByUid ?? null,
+          });
+          tx.set(db.doc("loyaltyStats/global"), {
+            totalPointsOutstanding: FieldValue.increment(-pointsCost),
+            totalPointsRedeemedEver: FieldValue.increment(pointsCost),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+
         tx.update(ref, {
           status: "applied",
           appliedStoreId: storeId,
@@ -485,6 +529,9 @@ export async function finalizeLoyaltyVouchers({
           appliedReceiptId: receiptId,
           appliedAtMs: typeof r.appliedAtMs === "number" ? r.appliedAtMs : nowMs,
           lockedAtMs: nowMs,
+          pointsSpent: true,
+          pointsSpentAtMs: needsDebit ? nowMs : (typeof r.pointsSpentAtMs === "number" ? r.pointsSpentAtMs : nowMs),
+          reservedPoints: 0,
           updatedAt: FieldValue.serverTimestamp(),
         });
         return true;
