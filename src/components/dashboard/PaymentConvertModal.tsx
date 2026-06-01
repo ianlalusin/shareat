@@ -18,6 +18,7 @@ import {
 } from "@/lib/analytics/applyPaymentConversion";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { useAuthContext } from "@/context/auth-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { toJsDate } from "@/lib/utils/date";
@@ -72,8 +73,14 @@ export function PaymentConvertModal({
   storeId,
 }: PaymentConvertModalProps) {
   const { appUser } = useAuthContext();
+  const { currentProfile } = useLocalProfile();
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
+
+  // Attribute conversions to the device's selected local profile (the actual
+  // person on shift), not the shared device account. Falls back to the account
+  // when no local profile is signed in.
+  const actorName = currentProfile?.name || appUser?.name || appUser?.displayName || appUser?.username || "Unknown";
 
   const [fromMethod, setFromMethod] = useState<string>("");
   const [toMethod, setToMethod] = useState<string>("");
@@ -188,7 +195,7 @@ export function PaymentConvertModal({
         note: note.trim() || undefined,
         actor: {
           uid: appUser.uid,
-          name: appUser.name || appUser.displayName || appUser.username || "Unknown",
+          name: actorName,
           role: appUser.role ?? null,
         },
       });
@@ -222,7 +229,7 @@ export function PaymentConvertModal({
     try {
       await voidPaymentConversion(db, storeId, id, {
         uid: appUser.uid,
-        name: appUser.name || appUser.displayName || appUser.username || "Unknown",
+        name: actorName,
       });
       toast({ title: "Conversion voided" });
     } catch (err: any) {
