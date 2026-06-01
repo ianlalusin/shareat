@@ -16,6 +16,25 @@ type StoreData = {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Each store = one Gemini call. Cap how many run at once so a large store
+// count can't burst past the Gemini free-tier rate limit (~10–15 req/min).
+const FORECAST_CONCURRENCY = 4;
+
+/** Map an async fn over items with bounded concurrency, preserving order. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /** Inclusive list of YYYY-MM month ids spanning two dates. */
 function monthsBetween(start: Date, end: Date): string[] {
   const out: string[] = [];
@@ -130,14 +149,13 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     const wfSnaps = await Promise.all(
       monthIds.map((ym) => db.doc(`stores/${store.id}/weatherForecasts/${ym}`).get()),
     );
-    const wfDays: Record<string, { date: string; condition: string }> = {};
+    const wfDays: Record<string, any> = {};
     for (const s of wfSnaps) {
       if (!s.exists) continue;
       const days = (s.data()?.days ?? {}) as Record<string, any>;
-      for (const id of Object.keys(days)) {
-        wfDays[id] = { date: days[id].date, condition: String(days[id].condition).replace("_", " ") };
-      }
+      for (const id of Object.keys(days)) wfDays[id] = days[id];
     }
+    const readable = (c: any) => (typeof c === "string" ? c.replace(/_/g, " ") : c);
 
     const todayDate = format(now, "yyyy-MM-dd");
     const histByDate = new Map<string, string>();
@@ -151,17 +169,45 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     });
     // API-logged days override for any past day they cover.
     for (const id of Object.keys(wfDays)) {
-      if (wfDays[id].date < todayDate) histByDate.set(wfDays[id].date, wfDays[id].condition);
+      if (wfDays[id].date < todayDate) histByDate.set(wfDays[id].date, readable(wfDays[id].condition));
     }
     const historicalWeather = [...histByDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, condition]) => ({ date, condition }));
 
-    // Upcoming forecast for the next 7 days (from the API-logged monthly docs).
-    const forecastWeather: { date: string; condition: string }[] = [];
+    // Per-store rain sensitivity: how this branch's sales move on rainy vs clear
+    // days (from its own history) — gives the model a store-specific weather weight.
+    const salesByDateStr = new Map(historicalSales.map((s) => [s.date, s.netSales]));
+    let rainSum = 0, rainN = 0, clearSum = 0, clearN = 0;
+    for (const [date, cond] of histByDate) {
+      const sales = salesByDateStr.get(date);
+      if (sales == null || sales <= 0) continue;
+      if (/rain/i.test(cond)) { rainSum += sales; rainN++; } else { clearSum += sales; clearN++; }
+    }
+    let weatherSensitivity: string | undefined;
+    if (rainN >= 2 && clearN >= 2) {
+      const rainAvg = rainSum / rainN, clearAvg = clearSum / clearN;
+      const pct = Math.round((1 - rainAvg / clearAvg) * 100);
+      if (pct > 3) weatherSensitivity = `Rainy days run ~${pct}% below clear days at this branch (₱${Math.round(rainAvg).toLocaleString()} vs ₱${Math.round(clearAvg).toLocaleString()} avg).`;
+      else if (pct < -3) weatherSensitivity = `Rainy days run ~${Math.abs(pct)}% ABOVE clear days here — rain doesn't hurt this branch.`;
+      else weatherSensitivity = `Rain has little measurable effect on sales at this branch (within a few %).`;
+    }
+
+    // Upcoming forecast for the next 7 days (from the API-logged monthly docs),
+    // enriched with AM/PM split, avg temp, and rain probability.
+    const forecastWeather: { date: string; condition: string; am: string; pm: string; tempC: number | null; popPct: number | null }[] = [];
     for (let i = 0; i < 7; i++) {
       const id = format(addDays(now, i), "yyyyMMdd");
-      if (wfDays[id]) forecastWeather.push({ date: wfDays[id].date, condition: wfDays[id].condition });
+      const w = wfDays[id];
+      if (!w) continue;
+      forecastWeather.push({
+        date: w.date,
+        condition: readable(w.condition),
+        am: readable(w.am ?? w.condition),
+        pm: readable(w.pm ?? w.condition),
+        tempC: typeof w.tempC === "number" ? Math.round(w.tempC) : null,
+        popPct: typeof w.pop === "number" ? Math.round(w.pop * 100) : null,
+      });
     }
 
     const dailyContextDocs = dailyContextSnap.docs.map(d => d.data() as DailyContext);
@@ -184,6 +230,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
       historicalSales,
       historicalWeather,
       forecastWeather,
+      weatherSensitivity,
       storeLocation: store.address ?? "",
       upcomingPayrollDates,
       upcomingHolidays,
@@ -252,7 +299,7 @@ export async function generateForecastsForAllActiveStores(): Promise<{
     };
   });
 
-  const results = await Promise.all(stores.map(generateForecastForStore));
+  const results = await mapWithConcurrency(stores, FORECAST_CONCURRENCY, generateForecastForStore);
   return { totalStores: stores.length, results };
 }
 

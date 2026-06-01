@@ -31,8 +31,13 @@ const ForecastInputSchema = z.object({
   })).describe("An array of historical daily weather data.").optional(),
   forecastWeather: z.array(z.object({
       date: z.string().describe("The date in YYYY-MM-DD format."),
-      condition: z.string().describe("Forecasted weather for an upcoming day, e.g., 'sunny', 'light rain', 'heavy rain'."),
-  })).describe("The weather forecast for the upcoming days being projected. Rain typically lowers dine-in sales.").optional(),
+      condition: z.string().describe("Whole-day forecasted condition, e.g., 'sunny', 'light rain', 'heavy rain'."),
+      am: z.string().optional().describe("Morning (00:00-12:00) condition."),
+      pm: z.string().optional().describe("Afternoon/evening (12:00-24:00) condition — dinner hours matter most for dine-in."),
+      tempC: z.number().nullable().optional().describe("Average temperature in °C."),
+      popPct: z.number().nullable().optional().describe("Chance of rain, 0-100%."),
+  })).describe("Weather forecast for the upcoming days being projected. Rain — especially in the afternoon/evening — typically lowers dine-in sales.").optional(),
+  weatherSensitivity: z.string().describe("How strongly THIS branch's sales react to rain, measured from its own history. Apply this rather than a generic assumption.").optional(),
   currentWeather: z.string().describe("The current weather condition, e.g., 'Sunny', 'Cloudy', 'Rainy'.").optional(),
   dayOfWeekAverages: z.array(DayOfWeekAverageSchema).describe("Pre-computed average sales per day of week from historical data.").optional(),
   trendDirection: z.enum(["up", "down", "flat"]).describe("Whether recent sales are trending up, down, or flat compared to the prior period.").optional(),
@@ -66,7 +71,7 @@ const prompt = ai.definePrompt({
 Your analysis must consider multiple factors:
 1.  **Historical Data**: Analyze the provided sales data to identify weekly trends, such as higher sales on weekends (Friday, Saturday, Sunday) and lower sales on weekdays. Use the pre-computed day-of-week averages as a baseline.
 2.  **Trend**: The recent trend is '{{{trendDirection}}}' with a ratio of {{{recentVsHistoricalRatio}}} (>1 means recent sales are above the prior period average). Factor this momentum into your forecast.
-3.  **Weather**: Use the upcoming weather forecast for each day being projected — rainy days (especially heavy rain) usually lower dine-in sales, while clear days can lift them. Cross-reference historical weather patterns to gauge how strongly this location reacts to rain.
+3.  **Weather**: Use the upcoming forecast per day — afternoon/evening (PM) rain and heavy rain hurt dine-in the most, while clear, mild days lift it. Apply THIS branch's measured rain sensitivity (listed below) instead of a generic rule, and treat heavy-rain or high rain-chance days as higher uncertainty.
 4.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
 5.  **Holidays**: Consider any upcoming local holidays. Some holidays boost sales (e.g., Christmas), while others might decrease them if people leave town.
 
@@ -100,10 +105,13 @@ Your analysis must consider multiple factors:
 *   **Upcoming Weather Forecast** (for the days you are projecting):
 {{#if forecastWeather}}
 {{#each forecastWeather}}
-    *   {{date}}: {{condition}}
+    *   {{date}}: {{condition}} — AM {{am}}, PM {{pm}}{{#if tempC}}, ~{{tempC}}°C{{/if}}{{#if popPct}}, {{popPct}}% rain{{/if}}
 {{/each}}
 {{else}}
     *   No forecast weather available.
+{{/if}}
+{{#if weatherSensitivity}}
+*   **This branch's rain sensitivity**: {{weatherSensitivity}}
 {{/if}}
 *   **Upcoming Payroll Dates**:
 {{#if upcomingPayrollDates}}
@@ -122,7 +130,7 @@ Your analysis must consider multiple factors:
     *   None specified.
 {{/if}}
 
-Provide the forecast for the next 7 days, starting from today. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday"), a 'forecastedSales' property, and a 'confidence' property ('high', 'medium', or 'low'). Set confidence to 'high' when the day has strong consistent patterns, 'medium' for moderate certainty, and 'low' when data is sparse or unusual factors (holidays, weather changes) introduce uncertainty. Do not include any other text or reasoning in your response.
+Provide the forecast for the next 7 days, starting from today. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday"), a 'forecastedSales' property, and a 'confidence' property ('high', 'medium', or 'low'). Set confidence to 'high' when the day has strong consistent patterns, 'medium' for moderate certainty, and 'low' when data is sparse or unusual factors (holidays, a heavy-rain or high rain-chance forecast, big weather swings) introduce uncertainty. Do not include any other text or reasoning in your response.
 `,
 });
 
