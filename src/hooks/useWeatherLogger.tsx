@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { useStoreContext } from '@/context/store-context';
@@ -9,6 +9,7 @@ import { useStoreContext } from '@/context/store-context';
 const LOG_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
 const CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 const API_STALE_MS = 3 * 60 * 60 * 1000; // API weather older than 3h ⇒ treat as down
+const API_FRESH_CACHE_MS = 45 * 60 * 1000; // once seen fresh, don't re-read for ~45 min
 
 /**
  * True when the OpenWeatherMap cron has already logged today's weather recently
@@ -34,6 +35,9 @@ async function apiWeatherFresh(storeId: string): Promise<boolean> {
 export function useWeatherLogger() {
     const { activeStore } = useStoreContext();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // Cache the "API weather is fresh" result so we don't read the monthly doc
+    // every 15-min tick — the forecast only changes hourly.
+    const apiFreshCache = useRef<{ ms: number; fresh: boolean } | null>(null);
 
     const openModal = useCallback(() => {
         // Prevent opening if another modal-like element is already present
@@ -57,8 +61,17 @@ export function useWeatherLogger() {
 
             // Primary source is the hourly API logger — only prompt the cashier
             // when the API hasn't logged today's weather recently (fallback).
-            if (activeStore?.id && await apiWeatherFresh(activeStore.id)) {
-                return;
+            // Cached when fresh so this doesn't read Firestore every tick.
+            if (activeStore?.id) {
+                const cached = apiFreshCache.current;
+                let fresh: boolean;
+                if (cached?.fresh && Date.now() - cached.ms < API_FRESH_CACHE_MS) {
+                    fresh = true;
+                } else {
+                    fresh = await apiWeatherFresh(activeStore.id);
+                    apiFreshCache.current = { ms: Date.now(), fresh };
+                }
+                if (fresh) return;
             }
 
             // If no store hours are set, show the modal as before.

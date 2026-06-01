@@ -91,15 +91,28 @@ export function WeatherCalendarPageClient() {
       const fcDateStrs = nextDays.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
       const fcDayIds = nextDays.map(d => getDayIdFromTimestamp(d));
 
+      // 42-cell grid spans a contiguous dayId range — one range query each beats
+      // 42 single-doc gets (and bills only for days that actually have a doc).
+      const startDayId = cellDayIds[0];
+      const endDayId = cellDayIds[41];
+
       try {
-        const [weatherSnaps, metricSnap, contextSnaps, monthSnaps, forecastSnaps] = await Promise.all([
-          Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "weatherRecords", id)))),
+        const [weatherSnap, metricSnap, contextSnap, monthSnaps, forecastSnaps] = await Promise.all([
+          getDocs(query(
+            collection(db, "stores", storeId, "weatherRecords"),
+            where("dayId", ">=", startDayId),
+            where("dayId", "<=", endDayId),
+          )),
           getDocs(query(
             collection(db, "stores", storeId, "analytics"),
             where("meta.dayStartMs", ">=", startMs),
             where("meta.dayStartMs", "<", endMs),
           )),
-          Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "dailyContext", id)))),
+          getDocs(query(
+            collection(db, "stores", storeId, "dailyContext"),
+            where("dayId", ">=", startDayId),
+            where("dayId", "<=", endDayId),
+          )),
           Promise.all(ymList.map(ym => getDoc(doc(db, "stores", storeId, "weatherForecasts", ym)))),
           Promise.all(fcDateStrs.map(ds => getDoc(doc(db, "stores", storeId, "salesForecasts", ds)))),
         ]);
@@ -111,11 +124,9 @@ export function WeatherCalendarPageClient() {
         });
 
         const weather: Record<string, WeatherEntry[]> = {};
-        weatherSnaps.forEach((snap, i) => {
-          if (snap.exists()) {
-            const r = snap.data() as WeatherRecord;
-            weather[cellDayIds[i]] = Array.isArray(r.entries) ? r.entries : [];
-          }
+        weatherSnap.docs.forEach((d) => {
+          const r = d.data() as WeatherRecord;
+          weather[d.id] = Array.isArray(r.entries) ? r.entries : [];
         });
 
         // API-logged conditions from the monthly weatherForecasts docs.
@@ -130,11 +141,10 @@ export function WeatherCalendarPageClient() {
         metricSnap.docs.forEach(d => { metrics[d.id] = d.data() as DailyMetric; });
 
         const cashHol: Record<string, string> = {};
-        contextSnaps.forEach((snap, i) => {
-          if (!snap.exists()) return;
-          const ctx = snap.data() as DailyContext;
+        contextSnap.docs.forEach((d) => {
+          const ctx = d.data() as DailyContext;
           const name = ctx.holiday?.name?.trim();
-          if (name && name !== "None") cashHol[cellDayIds[i]] = name;
+          if (name && name !== "None") cashHol[d.id] = name;
         });
 
         setWeatherByDayId(weather);
