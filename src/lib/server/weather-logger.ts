@@ -1,7 +1,8 @@
 import "server-only";
 
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { fetchOwmForecast, summarizeDays, type DaySummary } from "@/lib/weather/owm";
+import { fetchOwmForecast, mapOwmIdToCondition, summarizeDays, type DaySummary } from "@/lib/weather/owm";
 import type { DailyWeatherForecast } from "@/lib/types";
 
 export type StoreLogResult = {
@@ -63,6 +64,35 @@ export async function logWeatherForStore(store: { id: string; geo?: { lat?: numb
       batch.set(ref, { ym, storeId: store.id, updatedAtMs: now, days: daysMap }, { merge: true });
     }
     await batch.commit();
+
+    // Also append a live "OpenWeather" entry to today's observation log
+    // (weatherRecords) so the "Today's Weather Log" reflects the API hourly —
+    // the API is the primary logger now; the manual modal is only a fallback.
+    // Condition = the forecast slot nearest to now (the current conditions),
+    // not the whole-day summary.
+    try {
+      const nowS = Date.now() / 1000;
+      const nearest = slots.reduce((b, s) => (Math.abs((s.dt || 0) - nowS) < Math.abs((b.dt || 0) - nowS) ? s : b), slots[0]);
+      const currentCond = mapOwmIdToCondition(nearest?.weather?.[0]?.id);
+      const currentTemp = typeof nearest?.main?.temp === "number" ? Math.round(nearest.main.temp) : null;
+      const manila = new Date(Date.now() + 8 * 3600 * 1000); // shift to Manila, read UTC getters
+      const todayDayId = `${manila.getUTCFullYear()}${String(manila.getUTCMonth() + 1).padStart(2, "0")}${String(manila.getUTCDate()).padStart(2, "0")}`;
+      await db.doc(`stores/${store.id}/weatherRecords/${todayDayId}`).set({
+        dayId: todayDayId,
+        entries: FieldValue.arrayUnion({
+          timestamp: Timestamp.now(),
+          condition: currentCond,
+          tempC: currentTemp,
+          activeSessionCount: 0,
+          activeGuestCount: 0,
+          loggedByUid: "system",
+          loggedByProfileId: null,
+          loggedByProfileName: "System",
+        }),
+      }, { merge: true });
+    } catch (e) {
+      console.warn(`[weather-logger] observation-log append failed for ${store.id}:`, (e as any)?.message || e);
+    }
 
     return { storeId: store.id, ok: true, daysWritten };
   } catch (err: any) {

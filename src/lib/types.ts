@@ -1120,6 +1120,8 @@ export type WeatherEntry = {
   loggedByUid: string;
   loggedByProfileId?: string | null;
   loggedByProfileName?: string | null;
+  /** Avg/current temperature in °C. Populated by the API logger (source: system). */
+  tempC?: number | null;
 };
 
 export type WeatherRecord = {

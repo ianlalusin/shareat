@@ -110,7 +110,10 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                                           <Icon className="h-5 w-5 text-white" strokeWidth={1.8} />
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium">{display.label}</p>
+                                          <p className="text-sm font-medium">
+                                              {display.label}
+                                              {entry.tempC != null ? <span className="text-muted-foreground font-normal"> · {entry.tempC}°</span> : null}
+                                          </p>
                                           <p className="text-xs text-muted-foreground">
                                               {format(entryDate, 'h:mm a')}
                                               {entry.loggedByProfileName ? ` · ${entry.loggedByProfileName}` : ""}
