@@ -22,6 +22,6 @@ env:
   # forecast. The env var name is what the code reads; `secret` is the
   # Secret Manager secret name (must exist + be granted before rollout).
   - variable: OPENWEATHER_API_KEY
-    secret: weather_api_call
+    secret: OPENWEATHER_API_KEY
     availability:
       - RUNTIME
