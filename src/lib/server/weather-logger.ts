@@ -50,6 +50,8 @@ export async function logWeatherForStore(store: { id: string; geo?: { lat?: numb
         daysMap[s.dayId] = {
           date: s.date,
           condition: s.condition,
+          am: s.am,
+          pm: s.pm,
           tempC: s.tempC,
           pop: s.pop,
           owmMain: s.owmMain,

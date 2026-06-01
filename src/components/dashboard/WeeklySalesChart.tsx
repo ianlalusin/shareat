@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Customized } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
@@ -11,7 +11,8 @@ import { addDays, format } from "date-fns";
 import { Loader2, Sparkles, BarChart3 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useStoreContext } from "@/context/store-context";
-import type { DailyMetric } from "@/lib/types";
+import type { DailyMetric, DailyWeatherForecast, WeatherCondition } from "@/lib/types";
+import { getCalendarWeatherIcon } from "@/lib/weather/icons";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +21,8 @@ interface WeeklySalesChartProps {
   refreshKey?: number;
 }
 
+type DayWeather = { am: WeatherCondition; pm: WeatherCondition; tempC: number | null };
+
 type ChartRow = {
   name: string;
   date: string;
@@ -27,6 +30,7 @@ type ChartRow = {
   forecast: number | null;
   isToday: boolean;
   onTrack: boolean;
+  weather?: DayWeather;
 };
 
 function formatCurrency(value: number) {
@@ -64,6 +68,51 @@ function TodayDot(props: any) {
         <animate attributeName="r" values="6;14;6" dur="1.5s" repeatCount="indefinite" />
         <animate attributeName="opacity" values="0.5;0;0.5" dur="1.5s" repeatCount="indefinite" />
       </circle>
+    </g>
+  );
+}
+
+/**
+ * Frosted weather chips pinned above each day's data point. Rendered via
+ * recharts <Customized> so it reads the live x-scale and stays perfectly aligned
+ * to the line. Sits in the chart's top margin band, above the wave.
+ */
+function WeatherOverlay({ xAxisMap, data }: { xAxisMap?: any; data: ChartRow[] }) {
+  const axis = xAxisMap ? xAxisMap[Object.keys(xAxisMap)[0]] : null;
+  const scale = axis?.scale;
+  if (!scale) return null;
+  const bw = typeof scale.bandwidth === "function" ? scale.bandwidth() : 0;
+  const W = 56;
+  const H = 44;
+  return (
+    <g>
+      {data.map((row, i) => {
+        if (!row.weather) return null;
+        const cx = (scale(row.name) ?? 0) + bw / 2;
+        const amMeta = getCalendarWeatherIcon(row.weather.am, false);
+        const pmMeta = getCalendarWeatherIcon(row.weather.pm, false);
+        const AmIcon = amMeta.icon;
+        const PmIcon = pmMeta.icon;
+        return (
+          <foreignObject key={i} x={cx - W / 2} y={4} width={W} height={H} style={{ overflow: "visible" }}>
+            <div
+              className={`mx-auto flex w-[52px] flex-col items-center gap-0.5 rounded-lg border border-white/50 bg-white/30 px-1 py-1 shadow-sm backdrop-blur-md dark:bg-white/10 ${
+                row.isToday ? "ring-1 ring-primary/60" : ""
+              }`}
+            >
+              <div className="flex items-center gap-1">
+                <AmIcon className={`h-3.5 w-3.5 ${amMeta.iconColor}`} strokeWidth={2} />
+                <PmIcon className={`h-3.5 w-3.5 ${pmMeta.iconColor}`} strokeWidth={2} />
+              </div>
+              {row.weather.tempC != null && (
+                <span className="text-[10px] font-semibold leading-none tabular-nums text-foreground/80">
+                  {Math.round(row.weather.tempC)}°
+                </span>
+              )}
+            </div>
+          </foreignObject>
+        );
+      })}
     </g>
   );
 }
@@ -108,11 +157,24 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
 
         const todayAnalyticsDocRef = doc(db, "stores", storeId, "analytics", todayDayId);
 
-        const [salesSnap, forecastSnap, todayAnalyticsSnap] = await Promise.all([
+        // Weather for the 7-day window lives in the monthly weatherForecasts
+        // doc(s): past days were logged as they happened, today + next 3 are the
+        // current API forecast. The window spans at most two months.
+        const monthIds = [...new Set([-3, -2, -1, 0, 1, 2, 3].map(o => format(addDays(today, o), "yyyy-MM")))];
+
+        const [salesSnap, forecastSnap, todayAnalyticsSnap, weatherMonthSnaps] = await Promise.all([
           getDocs(salesQuery),
           getDocs(forecastQuery),
           getDoc(todayAnalyticsDocRef),
+          Promise.all(monthIds.map(ym => getDoc(doc(db, "stores", storeId, "weatherForecasts", ym)))),
         ]);
+
+        const weatherByDayId: Record<string, DailyWeatherForecast> = {};
+        weatherMonthSnaps.forEach(snap => {
+          if (!snap.exists()) return;
+          const days = (snap.data()?.days ?? {}) as Record<string, DailyWeatherForecast>;
+          Object.assign(weatherByDayId, days);
+        });
 
         const todayLiveSales = todayAnalyticsSnap.exists()
           ? (todayAnalyticsSnap.data() as DailyMetric).payments?.totalGross ?? 0
@@ -156,7 +218,12 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
             forecast = forecastByDate.get(dateStr) ?? 0;
           }
 
-          chartData.push({ name: label, date: dateStr, past, forecast, isToday, onTrack });
+          const w = weatherByDayId[format(d, "yyyyMMdd")];
+          const weather: DayWeather | undefined = w
+            ? { am: (w.am || w.condition) as WeatherCondition, pm: (w.pm || w.condition) as WeatherCondition, tempC: w.tempC ?? null }
+            : undefined;
+
+          chartData.push({ name: label, date: dateStr, past, forecast, isToday, onTrack, weather });
         }
 
         setData(chartData);
@@ -203,7 +270,8 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
         <CardDescription>
           <span className="text-green-600 font-semibold">Green</span> = actual sales ·{" "}
           <span className="text-red-600 font-semibold">red dashed</span> = projection. Today pulses
-          red when behind, green when on pace.
+          red when behind, green when on pace. Weather chips show AM/PM conditions + avg temp
+          (past = logged, today &amp; ahead = forecast).
           <span className="text-xs text-muted-foreground/80"> (AI forecast updated daily at 5 AM)</span>
         </CardDescription>
       </CardHeader>
@@ -224,7 +292,7 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
           </Alert>
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
-            <LineChart data={data} margin={{ top: 28, right: 24, left: -10, bottom: 24 }}>
+            <LineChart data={data} margin={{ top: 60, right: 24, left: -10, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 11 }} />
@@ -293,6 +361,7 @@ export function WeeklySalesChart({ storeId, refreshKey }: WeeklySalesChartProps)
                   style={{ fontSize: 11, fontWeight: 500, fill: "#dc2626", opacity: 0.75 }}
                 />
               </Line>
+              <Customized component={(p: any) => <WeatherOverlay {...p} data={data} />} />
             </LineChart>
           </ChartContainer>
         )}

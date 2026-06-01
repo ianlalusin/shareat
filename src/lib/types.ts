@@ -1134,7 +1134,9 @@ export type WeatherRecord = {
  */
 export type DailyWeatherForecast = {
   date: string;        // YYYY-MM-DD
-  condition: WeatherCondition;
+  condition: WeatherCondition;        // whole-day summary
+  am?: WeatherCondition | null;       // morning window (00:00–12:00)
+  pm?: WeatherCondition | null;       // afternoon/evening window (12:00–24:00)
   tempC?: number | null;
   pop?: number | null; // probability of precipitation 0..1 (max across the day)
   owmMain?: string | null;

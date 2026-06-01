@@ -60,29 +60,43 @@ function manilaDayParts(dtSeconds: number): { dayId: string; date: string; hour:
 export type DaySummary = {
   dayId: string;
   date: string;
-  condition: WeatherCondition;
+  condition: WeatherCondition; // whole-day summary
+  am: WeatherCondition;        // 00:00–12:00 (Manila)
+  pm: WeatherCondition;        // 12:00–24:00 (Manila)
   tempC: number | null;
   pop: number | null;
   owmMain: string | null;
 };
 
+/** Worst-rain-wins condition across a set of slots (sunny if empty). */
+function worstCond(slots: OwmSlot[]): WeatherCondition {
+  let worst: WeatherCondition = "sunny";
+  for (const s of slots) {
+    const c = mapOwmIdToCondition(s.weather?.[0]?.id);
+    if (SEVERITY[c] >= SEVERITY[worst]) worst = c;
+  }
+  return worst;
+}
+
 /**
- * Collapse 3-hourly slots into one summary per Manila day. Conditions are taken
- * with worst-rain precedence across store-operating hours (08:00–22:00); temp is
- * the daytime average and pop the daytime max.
+ * Collapse 3-hourly slots into one summary per Manila day. The whole-day
+ * condition uses worst-rain precedence across store hours (08:00–22:00); `am`
+ * and `pm` summarise the two 12-hour windows; temp is the daytime average and
+ * pop the daytime max.
  */
 export function summarizeDays(slots: OwmSlot[]): DaySummary[] {
-  const byDay = new Map<string, { date: string; day: OwmSlot[]; all: OwmSlot[] }>();
+  const byDay = new Map<string, { date: string; day: OwmSlot[]; all: OwmSlot[]; am: OwmSlot[]; pm: OwmSlot[] }>();
   for (const s of slots) {
     const { dayId, date, hour } = manilaDayParts(s.dt);
-    if (!byDay.has(dayId)) byDay.set(dayId, { date, day: [], all: [] });
-    const bucket = byDay.get(dayId)!;
-    bucket.all.push(s);
-    if (hour >= 8 && hour < 22) bucket.day.push(s);
+    if (!byDay.has(dayId)) byDay.set(dayId, { date, day: [], all: [], am: [], pm: [] });
+    const b = byDay.get(dayId)!;
+    b.all.push(s);
+    if (hour >= 8 && hour < 22) b.day.push(s);
+    (hour < 12 ? b.am : b.pm).push(s);
   }
 
   const out: DaySummary[] = [];
-  for (const [dayId, { date, day, all }] of byDay) {
+  for (const [dayId, { date, day, all, am, pm }] of byDay) {
     const slotsForDay = day.length > 0 ? day : all;
     let worst: WeatherCondition = "sunny";
     let owmMain: string | null = null;
@@ -96,6 +110,8 @@ export function summarizeDays(slots: OwmSlot[]): DaySummary[] {
     }
     out.push({
       dayId, date, condition: worst,
+      am: am.length ? worstCond(am) : worst,
+      pm: pm.length ? worstCond(pm) : worst,
       tempC: tempN > 0 ? Math.round((tempSum / tempN) * 10) / 10 : null,
       pop: popMax || null,
       owmMain,

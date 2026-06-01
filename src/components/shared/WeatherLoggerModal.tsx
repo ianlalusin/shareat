@@ -107,7 +107,7 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
             const monthRef = doc(db, 'stores', storeId, 'weatherForecasts', ym);
             await setDoc(monthRef, {
                 ym, storeId, updatedAtMs: Date.now(),
-                days: { [dayId]: { date, condition, tempC: null, pop: null, owmMain: null, source: "manual", fetchedAtMs: Date.now() } },
+                days: { [dayId]: { date, condition, am: condition, pm: condition, tempC: null, pop: null, owmMain: null, source: "manual", fetchedAtMs: Date.now() } },
             }, { merge: true });
 
         } catch (error) {
