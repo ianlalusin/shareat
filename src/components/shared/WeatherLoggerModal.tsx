@@ -99,6 +99,17 @@ export function WeatherLoggerModal({ isOpen, onClose, storeId }: WeatherLoggerMo
                 entries: arrayUnion(newEntry)
             }, { merge: true });
 
+            // Mirror into the monthly weatherForecasts doc (source: manual) so the
+            // sales projection — which reads that doc — picks it up when the API
+            // was unreachable. dayId is YYYYMMDD.
+            const ym = `${dayId.slice(0, 4)}-${dayId.slice(4, 6)}`;
+            const date = `${dayId.slice(0, 4)}-${dayId.slice(4, 6)}-${dayId.slice(6, 8)}`;
+            const monthRef = doc(db, 'stores', storeId, 'weatherForecasts', ym);
+            await setDoc(monthRef, {
+                ym, storeId, updatedAtMs: Date.now(),
+                days: { [dayId]: { date, condition, tempC: null, pop: null, owmMain: null, source: "manual", fetchedAtMs: Date.now() } },
+            }, { merge: true });
+
         } catch (error) {
             console.error("Failed to log weather:", error);
         }

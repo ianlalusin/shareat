@@ -12,6 +12,13 @@ externally by **Google Cloud Scheduler**.
 | -------------------------- | ----------------------------------- | ------------------------------- | ---------------- |
 | `update-forecast-accuracy` | `GET /api/cron/update-accuracy`     | `0 20 * * *` (8 PM)             | 180s             |
 | `generate-forecast`        | `GET /api/cron/generate-forecast`   | `0 21,22,23,0,1 * * *` (9 PM–1 AM) | 600s         |
+| `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
+
+`log-weather` polls OpenWeatherMap once per active store (geotagged via the store
+editor) and upserts each day's forecast into the monthly doc
+`stores/<storeId>/weatherForecasts/<YYYY-MM>`. The sales forecast reads those docs
+— it never calls the weather API itself, keeping usage well under the free tier.
+Stores without a geotag are skipped.
 
 `generate-forecast` fires up to five times because the route self-deduplicates
 via `system/forecastCronLog.runs[<date>]` — the first successful run marks the
@@ -54,7 +61,22 @@ gcloud scheduler jobs create http generate-forecast \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=600s
+
+gcloud scheduler jobs create http log-weather \
+  --location="$REGION" \
+  --schedule="0 * * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/log-weather" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=120s
 ```
+
+**Weather key**: `log-weather` also needs `OPENWEATHER_API_KEY` (declared in
+`apphosting.yaml`). Create + grant it before the first rollout, e.g.
+`firebase apphosting:secrets:set OPENWEATHER_API_KEY`. Optionally set
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (build-time) to enable the live map in the
+store geotag picker — without it the picker still accepts pasted coordinates.
 
 Cloud Console equivalent: https://console.cloud.google.com/cloudscheduler →
 **Create Job** → HTTP target → paste the URL and header as above.

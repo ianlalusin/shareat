@@ -18,3 +18,10 @@ env:
     secret: CUSTOMER_JOIN_TOKEN_SECRET
     availability:
       - RUNTIME
+  # OpenWeatherMap key used by /api/cron/log-weather to fetch each store's
+  # forecast. Create + grant the secret before rolling out, or the rollout
+  # fails: firebase apphosting:secrets:set OPENWEATHER_API_KEY
+  - variable: OPENWEATHER_API_KEY
+    secret: OPENWEATHER_API_KEY
+    availability:
+      - RUNTIME

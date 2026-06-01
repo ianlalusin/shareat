@@ -723,6 +723,8 @@ export type Store = {
   offersUnlimited?: boolean;
   forecastConfig?: ForecastConfig;
   loyaltyConfig?: LoyaltyConfig;
+  /** Geotag (from Google Maps) used to fetch this branch's weather forecast. */
+  geo?: { lat: number; lng: number; updatedAt?: any };
   createdAt: any;
   updatedAt: any;
 };
@@ -1123,6 +1125,33 @@ export type WeatherEntry = {
 export type WeatherRecord = {
   dayId: string;
   entries: WeatherEntry[];
+};
+
+/**
+ * One day's weather summary inside a monthly weather-forecast doc. Sourced
+ * hourly from OpenWeatherMap (`owm`) or, when the API is unreachable, from a
+ * manual cashier log (`manual`). This is what the sales projection reads.
+ */
+export type DailyWeatherForecast = {
+  date: string;        // YYYY-MM-DD
+  condition: WeatherCondition;
+  tempC?: number | null;
+  pop?: number | null; // probability of precipitation 0..1 (max across the day)
+  owmMain?: string | null;
+  source: "owm" | "manual";
+  fetchedAtMs: number;
+};
+
+/**
+ * One doc per month per store: `stores/{storeId}/weatherForecasts/{YYYY-MM}`.
+ * Keeps reads cheap — a 7-day window touches at most two docs. Past dayIds
+ * accumulate as the hourly logger runs (history); today..+5 are the forecast.
+ */
+export type WeatherForecastMonth = {
+  ym: string;       // YYYY-MM
+  storeId: string;
+  updatedAtMs: number;
+  days: Record<string, DailyWeatherForecast>; // keyed by dayId (YYYYMMDD)
 };
 
 export type DailyContext = {

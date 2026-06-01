@@ -29,6 +29,10 @@ const ForecastInputSchema = z.object({
       date: z.string().describe("The date in YYYY-MM-DD format."),
       condition: z.string().describe("A summary of weather conditions for that day, e.g., 'mostly sunny', 'rainy'."),
   })).describe("An array of historical daily weather data.").optional(),
+  forecastWeather: z.array(z.object({
+      date: z.string().describe("The date in YYYY-MM-DD format."),
+      condition: z.string().describe("Forecasted weather for an upcoming day, e.g., 'sunny', 'light rain', 'heavy rain'."),
+  })).describe("The weather forecast for the upcoming days being projected. Rain typically lowers dine-in sales.").optional(),
   currentWeather: z.string().describe("The current weather condition, e.g., 'Sunny', 'Cloudy', 'Rainy'.").optional(),
   dayOfWeekAverages: z.array(DayOfWeekAverageSchema).describe("Pre-computed average sales per day of week from historical data.").optional(),
   trendDirection: z.enum(["up", "down", "flat"]).describe("Whether recent sales are trending up, down, or flat compared to the prior period.").optional(),
@@ -62,7 +66,7 @@ const prompt = ai.definePrompt({
 Your analysis must consider multiple factors:
 1.  **Historical Data**: Analyze the provided sales data to identify weekly trends, such as higher sales on weekends (Friday, Saturday, Sunday) and lower sales on weekdays. Use the pre-computed day-of-week averages as a baseline.
 2.  **Trend**: The recent trend is '{{{trendDirection}}}' with a ratio of {{{recentVsHistoricalRatio}}} (>1 means recent sales are above the prior period average). Factor this momentum into your forecast.
-3.  **Weather**: The current weather is '{{{currentWeather}}}'. Consider historical weather patterns. Rainy days often lead to lower sales, while sunny days might increase them.
+3.  **Weather**: Use the upcoming weather forecast for each day being projected — rainy days (especially heavy rain) usually lower dine-in sales, while clear days can lift them. Cross-reference historical weather patterns to gauge how strongly this location reacts to rain.
 4.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
 5.  **Holidays**: Consider any upcoming local holidays. Some holidays boost sales (e.g., Christmas), while others might decrease them if people leave town.
 
@@ -92,6 +96,14 @@ Your analysis must consider multiple factors:
 {{/each}}
 {{else}}
     *   No historical weather data available.
+{{/if}}
+*   **Upcoming Weather Forecast** (for the days you are projecting):
+{{#if forecastWeather}}
+{{#each forecastWeather}}
+    *   {{date}}: {{condition}}
+{{/each}}
+{{else}}
+    *   No forecast weather available.
 {{/if}}
 *   **Upcoming Payroll Dates**:
 {{#if upcomingPayrollDates}}

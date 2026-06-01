@@ -16,6 +16,20 @@ type StoreData = {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** Inclusive list of YYYY-MM month ids spanning two dates. */
+function monthsBetween(start: Date, end: Date): string[] {
+  const out: string[] = [];
+  let y = start.getFullYear();
+  let m = start.getMonth();
+  const endY = end.getFullYear();
+  const endM = end.getMonth();
+  while (y < endY || (y === endY && m <= endM)) {
+    out.push(`${y}-${String(m + 1).padStart(2, "0")}`);
+    if (++m > 11) { m = 0; y++; }
+  }
+  return out;
+}
+
 /**
  * Idempotently fills `accuracy` and `actualSales` for any forecast doc within
  * the last `days` days that is missing them. Self-healing: if a previous cron
@@ -108,19 +122,47 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
       return { storeId: store.id, ok: false, error: "Not enough history (need ≥7 days)" };
     }
 
-    const historicalWeather = weatherSnap.docs.map(d => {
+    // Weather now lives primarily in monthly weatherForecasts docs (API-logged).
+    // Read the months covering the history window + the next 7 days, then build
+    // both the historical series and the upcoming forecast from them; fall back
+    // to legacy per-day weatherRecords for any day the API hasn't covered.
+    const monthIds = monthsBetween(historyStartDate, addDays(now, 7));
+    const wfSnaps = await Promise.all(
+      monthIds.map((ym) => db.doc(`stores/${store.id}/weatherForecasts/${ym}`).get()),
+    );
+    const wfDays: Record<string, { date: string; condition: string }> = {};
+    for (const s of wfSnaps) {
+      if (!s.exists) continue;
+      const days = (s.data()?.days ?? {}) as Record<string, any>;
+      for (const id of Object.keys(days)) {
+        wfDays[id] = { date: days[id].date, condition: String(days[id].condition).replace("_", " ") };
+      }
+    }
+
+    const todayDate = format(now, "yyyy-MM-dd");
+    const histByDate = new Map<string, string>();
+    // Legacy weatherRecords (fallback so pre-existing manual history still counts).
+    weatherSnap.docs.forEach((d) => {
       const data = d.data() as WeatherRecord;
-      const conditions = data.entries.map(e => e.condition);
-      const conditionCounts = conditions.reduce((acc, cond) => {
-        acc[cond] = (acc[cond] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      const summary = Object.keys(conditionCounts).sort((a, b) => conditionCounts[b] - conditionCounts[a])[0] || "clear";
-      return {
-        date: format(new Date(data.dayId.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")), "yyyy-MM-dd"),
-        condition: summary.replace("_", " "),
-      };
+      const counts = data.entries.reduce((acc, e) => { acc[e.condition] = (acc[e.condition] || 0) + 1; return acc; }, {} as Record<string, number>);
+      const summary = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || "clear";
+      const date = format(new Date(data.dayId.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")), "yyyy-MM-dd");
+      histByDate.set(date, summary.replace("_", " "));
     });
+    // API-logged days override for any past day they cover.
+    for (const id of Object.keys(wfDays)) {
+      if (wfDays[id].date < todayDate) histByDate.set(wfDays[id].date, wfDays[id].condition);
+    }
+    const historicalWeather = [...histByDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, condition]) => ({ date, condition }));
+
+    // Upcoming forecast for the next 7 days (from the API-logged monthly docs).
+    const forecastWeather: { date: string; condition: string }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const id = format(addDays(now, i), "yyyyMMdd");
+      if (wfDays[id]) forecastWeather.push({ date: wfDays[id].date, condition: wfDays[id].condition });
+    }
 
     const dailyContextDocs = dailyContextSnap.docs.map(d => d.data() as DailyContext);
     const loggedHolidays = dailyContextDocs
@@ -141,6 +183,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     const forecastInput: ForecastInput = {
       historicalSales,
       historicalWeather,
+      forecastWeather,
       storeLocation: store.address ?? "",
       upcomingPayrollDates,
       upcomingHolidays,

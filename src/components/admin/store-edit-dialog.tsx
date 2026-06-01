@@ -22,11 +22,14 @@ import { useToast } from "@/hooks/use-toast";
 import { uploadStoreLogo } from "@/lib/firebase/client";
 import { Timestamp } from "firebase/firestore";
 import { ImageBoundary } from "@/components/shared/ImageBoundary";
+import { StoreGeoPicker } from "@/components/admin/store-geo-picker";
 
 const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),
   code: z.string().min(2, "Code must be at least 2 characters.").max(10, "Code cannot be more than 10 characters.").toUpperCase(),
   address: z.string().min(5, "Address is required."),
+  geoLat: z.string().optional(),
+  geoLng: z.string().optional(),
   tin: z.string().optional(),
   taxType: z.enum(["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"]).optional(),
   taxRatePct: z.coerce.number().min(0).max(30).optional(),
@@ -93,7 +96,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", code: "", address: "", tin: "", isActive: true,
+      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
       reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -131,6 +134,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
       form.reset({
         name: store.name, code: store.code, address: store.address,
+        geoLat: store.geo?.lat != null ? String(store.geo.lat) : "",
+        geoLng: store.geo?.lng != null ? String(store.geo.lng) : "",
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
@@ -147,7 +152,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       });
     } else {
       form.reset({
-        name: "", code: "", address: "", tin: "", isActive: true,
+        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
         reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -179,7 +184,11 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
 
   const onSubmit = (data: StoreFormValues) => {
-    onSave(data);
+    const { geoLat, geoLng, ...rest } = data;
+    const lat = geoLat && geoLat.trim() !== "" ? Number(geoLat) : NaN;
+    const lng = geoLng && geoLng.trim() !== "" ? Number(geoLng) : NaN;
+    const geo = !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : undefined;
+    onSave({ ...rest, ...(geo ? { geo } : {}) } as any);
   };
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: any) => {
@@ -222,6 +231,19 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                     <FormField control={form.control} name="code" render={({ field }) => ( <FormItem><FormLabel>Store Code</FormLabel><FormControl><Input placeholder="e.g., MAIN" {...field} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
                 <FormField control={form.control} name="address" render={({ field }) => ( <FormItem><FormLabel>Address</FormLabel><FormControl><Input placeholder="e.g., 123 Main St, Anytown" {...field} /></FormControl><FormMessage /></FormItem> )} />
+
+                <FormItem>
+                  <FormLabel>Geotag (for weather forecast)</FormLabel>
+                  <StoreGeoPicker
+                    lat={form.watch("geoLat") ?? ""}
+                    lng={form.watch("geoLng") ?? ""}
+                    onChange={(la, ln) => {
+                      form.setValue("geoLat", la, { shouldDirty: true });
+                      form.setValue("geoLng", ln, { shouldDirty: true });
+                    }}
+                  />
+                  <FormDescription>Pin the branch on the map (or paste coordinates) so weather is fetched for the right location.</FormDescription>
+                </FormItem>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="contactNumber" render={({ field }) => ( <FormItem><FormLabel>Contact Number</FormLabel><FormControl><Input placeholder="e.g., +1 234 567 890" {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="e.g., contact@store.com" {...field} /></FormControl><FormMessage /></FormItem> )} />

@@ -2,10 +2,34 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase/client';
 import { useStoreContext } from '@/context/store-context';
 
 const LOG_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
 const CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const API_STALE_MS = 3 * 60 * 60 * 1000; // API weather older than 3h ⇒ treat as down
+
+/**
+ * True when the OpenWeatherMap cron has already logged today's weather recently
+ * for this store. When it has, the manual modal stays closed — manual logging is
+ * only a fallback for when the API is unreachable.
+ */
+async function apiWeatherFresh(storeId: string): Promise<boolean> {
+  try {
+    const manila = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    const y = manila.getFullYear();
+    const m = String(manila.getMonth() + 1).padStart(2, '0');
+    const d = String(manila.getDate()).padStart(2, '0');
+    const snap = await getDoc(doc(db, 'stores', storeId, 'weatherForecasts', `${y}-${m}`));
+    if (!snap.exists()) return false;
+    const day = (snap.data()?.days ?? {})[`${y}${m}${d}`];
+    if (!day || day.source !== 'owm') return false;
+    return Date.now() - (day.fetchedAtMs ?? 0) < API_STALE_MS;
+  } catch {
+    return false; // on any read error, fall back to prompting
+  }
+}
 
 export function useWeatherLogger() {
     const { activeStore } = useStoreContext();
@@ -25,10 +49,16 @@ export function useWeatherLogger() {
     }, []);
 
     useEffect(() => {
-        const checkTime = () => {
+        const checkTime = async () => {
             const lastLogTime = parseInt(localStorage.getItem('lastWeatherLogTime') || '0', 10);
             if (Date.now() - lastLogTime < LOG_INTERVAL) {
                 return; // Don't show if logged recently
+            }
+
+            // Primary source is the hourly API logger — only prompt the cashier
+            // when the API hasn't logged today's weather recently (fallback).
+            if (activeStore?.id && await apiWeatherFresh(activeStore.id)) {
+                return;
             }
 
             // If no store hours are set, show the modal as before.
