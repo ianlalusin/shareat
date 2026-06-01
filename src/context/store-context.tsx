@@ -70,12 +70,13 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
               .map(snap => ({ id: snap.id, ...snap.data() } as Store));
       }
       
-      // Guard against malformed/partial store docs: a store with no name would
-      // throw in the localeCompare sort below and wipe the entire list (the
-      // switcher then sticks on "Loading stores..."). Skip nameless docs.
+      // Null-safe sort: a store doc with a missing name must NOT throw (that
+      // would wipe the whole list and stick the switcher on "Loading
+      // stores..."). Keep such docs visible — with a fallback label downstream —
+      // so an admin can actually see and fix them instead of them vanishing.
       const validStores = fetchedStores
-        .filter(s => (s as any).isActive !== false && typeof s.name === "string" && s.name.trim() !== "")
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter(s => (s as any).isActive !== false)
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       
       setStores(validStores);
 

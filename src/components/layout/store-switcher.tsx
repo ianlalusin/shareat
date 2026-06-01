@@ -120,7 +120,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
           className={cn('w-[200px] justify-between', className)}
         >
           <Store className="mr-2 h-4 w-4" />
-          {activeStore ? activeStore.name : "Select a store"}
+          {activeStore ? (activeStore.name || "(unnamed store)") : "Select a store"}
           <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -140,7 +140,7 @@ export function StoreSwitcher({ className, variant = "desktop", onSelected }: St
                   className="text-sm"
                 >
                   <Store className="mr-2 h-4 w-4" />
-                  {store.name}
+                  {store.name || "(unnamed store)"}
                 </CommandItem>
               ))}
             </CommandGroup>
