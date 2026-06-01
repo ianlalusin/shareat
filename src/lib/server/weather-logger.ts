@@ -14,12 +14,31 @@ export type StoreLogResult = {
   error?: string;
 };
 
+/** True if the current Manila time is within the store's opening–closing window.
+ *  No hours configured ⇒ treated as always open (don't drop data). */
+function isWithinStoreHours(openingTime?: string | null, closingTime?: string | null): boolean {
+  if (!openingTime || !closingTime) return true;
+  const manila = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+  const cur = manila.getHours() * 60 + manila.getMinutes();
+  const [oh, om] = openingTime.split(":").map(Number);
+  const [ch, cm] = closingTime.split(":").map(Number);
+  if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return true;
+  const start = oh * 60 + om;
+  const end = ch * 60 + cm;
+  return start <= end ? cur >= start && cur < end : cur >= start || cur < end; // overnight-aware
+}
+
 /**
  * Fetch this store's weather forecast from OpenWeatherMap and upsert each day's
  * summary into the monthly doc `stores/{storeId}/weatherForecasts/{YYYY-MM}`.
  * One API call per store. Stores without a geotag are skipped (reported).
  */
-export async function logWeatherForStore(store: { id: string; geo?: { lat?: number; lng?: number } | null }): Promise<StoreLogResult> {
+export async function logWeatherForStore(store: {
+  id: string;
+  geo?: { lat?: number; lng?: number } | null;
+  openingTime?: string | null;
+  closingTime?: string | null;
+}): Promise<StoreLogResult> {
   const lat = store.geo?.lat;
   const lng = store.geo?.lng;
   if (typeof lat !== "number" || typeof lng !== "number") {
@@ -65,12 +84,13 @@ export async function logWeatherForStore(store: { id: string; geo?: { lat?: numb
     }
     await batch.commit();
 
-    // Also append a live "OpenWeather" entry to today's observation log
+    // Also append a live "System" entry to today's observation log
     // (weatherRecords) so the "Today's Weather Log" reflects the API hourly —
     // the API is the primary logger now; the manual modal is only a fallback.
+    // Only during store hours (skip overnight when the store is closed).
     // Condition = the forecast slot nearest to now (the current conditions),
     // not the whole-day summary.
-    try {
+    if (isWithinStoreHours(store.openingTime, store.closingTime)) try {
       const nowS = Date.now() / 1000;
       const nearest = slots.reduce((b, s) => (Math.abs((s.dt || 0) - nowS) < Math.abs((b.dt || 0) - nowS) ? s : b), slots[0]);
       const currentCond = mapOwmIdToCondition(nearest?.weather?.[0]?.id);
@@ -104,7 +124,10 @@ export async function logWeatherForStore(store: { id: string; geo?: { lat?: numb
 export async function logWeatherForAllActiveStores(): Promise<{ totalStores: number; results: StoreLogResult[] }> {
   const db = getAdminDb();
   const snap = await db.collection("stores").where("isActive", "==", true).get();
-  const stores = snap.docs.map((d) => ({ id: d.id, geo: (d.data() as any).geo ?? null }));
+  const stores = snap.docs.map((d) => {
+    const data = d.data() as any;
+    return { id: d.id, geo: data.geo ?? null, openingTime: data.openingTime ?? null, closingTime: data.closingTime ?? null };
+  });
   const results = await Promise.all(stores.map(logWeatherForStore));
   return { totalStores: stores.length, results };
 }

@@ -15,6 +15,8 @@ export type DayCellData = {
   salesColor: "red" | "amber" | "green" | "muted";
   cashierHoliday: string | null;
   presetHoliday: string | null;
+  /** Projected sales (AI forecast) for an upcoming day with no actual sales yet. */
+  projectedSales?: number | null;
 };
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -106,7 +108,13 @@ function DayCell({ cell, onClick }: { cell: DayCellData; onClick: () => void }) 
       </div>
 
       <div className={`text-[11px] sm:text-xs tabular-nums ${SALES_COLOR_CLASS[cell.salesColor]}`}>
-        {cell.netSales > 0 ? `₱${compactPHP.format(cell.netSales)}` : "—"}
+        {cell.netSales > 0 ? (
+          `₱${compactPHP.format(cell.netSales)}`
+        ) : cell.projectedSales != null && cell.projectedSales > 0 ? (
+          <span className="italic text-blue-500" title="AI projected sales">~₱{compactPHP.format(cell.projectedSales)}</span>
+        ) : (
+          "—"
+        )}
       </div>
     </button>
   );

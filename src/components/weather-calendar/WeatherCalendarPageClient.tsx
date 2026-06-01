@@ -66,6 +66,7 @@ export function WeatherCalendarPageClient() {
   const [apiWeatherByDayId, setApiWeatherByDayId] = useState<Record<string, DailyWeatherForecast>>({});
   const [metricByDayId, setMetricByDayId] = useState<Record<string, DailyMetric>>({});
   const [cashierHolidayByDayId, setCashierHolidayByDayId] = useState<Record<string, string>>({});
+  const [forecastByDayId, setForecastByDayId] = useState<Record<string, number>>({});
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
 
   const cells = useMemo(() => build42(monthCursor), [monthCursor]);
@@ -84,8 +85,14 @@ export function WeatherCalendarPageClient() {
       // Months spanned by the 42-cell grid (1–3) — for the monthly API logs.
       const ymList = [...new Set(cells.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`))];
 
+      // Next 3 days → projected sales from the AI forecast (salesForecasts/{YYYY-MM-DD}).
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const nextDays = [1, 2, 3].map((o) => { const d = new Date(today0); d.setDate(d.getDate() + o); return d; });
+      const fcDateStrs = nextDays.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      const fcDayIds = nextDays.map(d => getDayIdFromTimestamp(d));
+
       try {
-        const [weatherSnaps, metricSnap, contextSnaps, monthSnaps] = await Promise.all([
+        const [weatherSnaps, metricSnap, contextSnaps, monthSnaps, forecastSnaps] = await Promise.all([
           Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "weatherRecords", id)))),
           getDocs(query(
             collection(db, "stores", storeId, "analytics"),
@@ -94,8 +101,14 @@ export function WeatherCalendarPageClient() {
           )),
           Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "dailyContext", id)))),
           Promise.all(ymList.map(ym => getDoc(doc(db, "stores", storeId, "weatherForecasts", ym)))),
+          Promise.all(fcDateStrs.map(ds => getDoc(doc(db, "stores", storeId, "salesForecasts", ds)))),
         ]);
         if (cancelled) return;
+
+        const forecast: Record<string, number> = {};
+        forecastSnaps.forEach((snap, i) => {
+          if (snap.exists()) forecast[fcDayIds[i]] = Number(snap.data()?.projectedSales ?? 0);
+        });
 
         const weather: Record<string, WeatherEntry[]> = {};
         weatherSnaps.forEach((snap, i) => {
@@ -128,6 +141,7 @@ export function WeatherCalendarPageClient() {
         setApiWeatherByDayId(apiWeather);
         setMetricByDayId(metrics);
         setCashierHolidayByDayId(cashHol);
+        setForecastByDayId(forecast);
       } catch (err) {
         console.error("[WeatherCalendar] load failed", err);
       } finally {
@@ -200,9 +214,12 @@ export function WeatherCalendarPageClient() {
         salesColor: pickColor(net, colorThresholds.lo, colorThresholds.hi, colorThresholds.fewSamples),
         cashierHoliday,
         presetHoliday,
+        // Projected sales for the next 3 days (only set on those cells, and only
+        // shown when there's no actual sales yet).
+        projectedSales: net > 0 ? null : (forecastByDayId[dayId] ?? null),
       };
     });
-  }, [cells, cellDayIds, weatherByDayId, apiWeatherByDayId, metricByDayId, cashierHolidayByDayId, colorThresholds, monthCursor]);
+  }, [cells, cellDayIds, weatherByDayId, apiWeatherByDayId, metricByDayId, cashierHolidayByDayId, forecastByDayId, colorThresholds, monthCursor]);
 
   const selectedCell = useMemo(
     () => (selectedDayId ? dayCells.find(c => c.dayId === selectedDayId) ?? null : null),
@@ -250,6 +267,7 @@ export function WeatherCalendarPageClient() {
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Low</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Mid</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-green-600" /> High</span>
+        <span className="flex items-center gap-1 text-blue-500 italic">~₱ projected (next 3 days)</span>
       </div>
 
       {selectedCell && activeStore && (
