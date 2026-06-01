@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { getPresetHolidayName } from "@/lib/holidays/ph-regular-holidays";
-import type { DailyContext, DailyMetric, WeatherEntry, WeatherRecord } from "@/lib/types";
+import type { DailyContext, DailyMetric, DailyWeatherForecast, WeatherEntry, WeatherRecord } from "@/lib/types";
 import { WeatherCalendarGrid, type DayCellData } from "./WeatherCalendarGrid";
 import { DayDetailDrawer } from "./DayDetailDrawer";
 
@@ -63,6 +63,7 @@ export function WeatherCalendarPageClient() {
   const [monthCursor, setMonthCursor] = useState<Date>(() => startOfMonth(new Date()));
   const [isLoading, setIsLoading] = useState(true);
   const [weatherByDayId, setWeatherByDayId] = useState<Record<string, WeatherEntry[]>>({});
+  const [apiWeatherByDayId, setApiWeatherByDayId] = useState<Record<string, DailyWeatherForecast>>({});
   const [metricByDayId, setMetricByDayId] = useState<Record<string, DailyMetric>>({});
   const [cashierHolidayByDayId, setCashierHolidayByDayId] = useState<Record<string, string>>({});
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
@@ -80,8 +81,11 @@ export function WeatherCalendarPageClient() {
       const startMs = cells[0].getTime();
       const endMs = new Date(cells[41].getFullYear(), cells[41].getMonth(), cells[41].getDate() + 1).getTime();
 
+      // Months spanned by the 42-cell grid (1–3) — for the monthly API logs.
+      const ymList = [...new Set(cells.map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`))];
+
       try {
-        const [weatherSnaps, metricSnap, contextSnaps] = await Promise.all([
+        const [weatherSnaps, metricSnap, contextSnaps, monthSnaps] = await Promise.all([
           Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "weatherRecords", id)))),
           getDocs(query(
             collection(db, "stores", storeId, "analytics"),
@@ -89,6 +93,7 @@ export function WeatherCalendarPageClient() {
             where("meta.dayStartMs", "<", endMs),
           )),
           Promise.all(cellDayIds.map(id => getDoc(doc(db, "stores", storeId, "dailyContext", id)))),
+          Promise.all(ymList.map(ym => getDoc(doc(db, "stores", storeId, "weatherForecasts", ym)))),
         ]);
         if (cancelled) return;
 
@@ -98,6 +103,14 @@ export function WeatherCalendarPageClient() {
             const r = snap.data() as WeatherRecord;
             weather[cellDayIds[i]] = Array.isArray(r.entries) ? r.entries : [];
           }
+        });
+
+        // API-logged conditions from the monthly weatherForecasts docs.
+        const apiWeather: Record<string, DailyWeatherForecast> = {};
+        monthSnaps.forEach(snap => {
+          if (!snap.exists()) return;
+          const days = (snap.data()?.days ?? {}) as Record<string, DailyWeatherForecast>;
+          for (const k of Object.keys(days)) apiWeather[k] = days[k];
         });
 
         const metrics: Record<string, DailyMetric> = {};
@@ -112,6 +125,7 @@ export function WeatherCalendarPageClient() {
         });
 
         setWeatherByDayId(weather);
+        setApiWeatherByDayId(apiWeather);
         setMetricByDayId(metrics);
         setCashierHolidayByDayId(cashHol);
       } catch (err) {
@@ -155,18 +169,40 @@ export function WeatherCalendarPageClient() {
       const net = netSalesOf(metricByDayId[dayId]);
       const presetHoliday = getPresetHolidayName(dayId);
       const cashierHoliday = cashierHolidayByDayId[dayId] ?? null;
+
+      // Manual observations stay as-is; surface the API-logged condition too as
+      // a synthetic "OpenWeather" entry (skip manual-sourced days — those are
+      // already shown via weatherRecords). Timestamp at local noon so the
+      // day/night icon picks the daytime variant.
+      const manual = weatherByDayId[dayId] ?? [];
+      const api = apiWeatherByDayId[dayId];
+      let weatherEntries = manual;
+      if (api && api.source === "owm") {
+        const noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+        const synthetic: WeatherEntry = {
+          timestamp: Timestamp.fromDate(noon),
+          condition: api.condition,
+          activeSessionCount: 0,
+          activeGuestCount: 0,
+          loggedByUid: "openweather",
+          loggedByProfileId: null,
+          loggedByProfileName: "OpenWeather",
+        };
+        weatherEntries = [...manual, synthetic];
+      }
+
       return {
         date: d,
         dayId,
         isInMonth,
-        weatherEntries: weatherByDayId[dayId] ?? [],
+        weatherEntries,
         netSales: net,
         salesColor: pickColor(net, colorThresholds.lo, colorThresholds.hi, colorThresholds.fewSamples),
         cashierHoliday,
         presetHoliday,
       };
     });
-  }, [cells, cellDayIds, weatherByDayId, metricByDayId, cashierHolidayByDayId, colorThresholds, monthCursor]);
+  }, [cells, cellDayIds, weatherByDayId, apiWeatherByDayId, metricByDayId, cashierHolidayByDayId, colorThresholds, monthCursor]);
 
   const selectedCell = useMemo(
     () => (selectedDayId ? dayCells.find(c => c.dayId === selectedDayId) ?? null : null),
