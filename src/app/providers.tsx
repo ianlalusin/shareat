@@ -8,6 +8,7 @@ import { Capacitor } from '@capacitor/core';
 import { useEffect } from 'react';
 import { getLastPrinterAddress } from '@/lib/printing/printHub';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
+import { AndroidBackHandler } from '@/components/shared/AndroidBackHandler';
 
 export function Providers({ children }: { children: React.ReactNode }) {
     useEffect(() => {
@@ -46,6 +47,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             <AuthContextProvider>
                 <StoreContextProvider>
                     <LocalProfileProvider>
+                        <AndroidBackHandler />
                         {children}
                     </LocalProfileProvider>
                 </StoreContextProvider>
