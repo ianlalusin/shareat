@@ -119,6 +119,25 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
     const riceQty = unlimitedForm.watch("riceQty");
     const cheeseQty = unlimitedForm.watch("cheeseQty");
 
+    // Bundle packages cap the headcount the cashier can enter.
+    const selectedPackageId = unlimitedForm.watch("packageId");
+    const selectedPackage = packages.find(p => p.packageId === selectedPackageId);
+    const isBundle = !!selectedPackage?.isBundle;
+    const bundleCap = Number(selectedPackage?.bundleMaxCap ?? 0);
+
+    const setGuestCount = (val: number) => {
+        let v = Math.max(1, Math.floor(Number(val) || 1));
+        if (isBundle && bundleCap > 0) v = Math.min(v, bundleCap);
+        unlimitedForm.setValue('guestCount', v);
+    };
+
+    // Clamp down when switching to a bundle whose cap is below the current count.
+    useEffect(() => {
+        if (isBundle && bundleCap > 0 && guestCount > bundleCap) {
+            unlimitedForm.setValue('guestCount', bundleCap);
+        }
+    }, [isBundle, bundleCap, guestCount, unlimitedForm]);
+
     // Seat-from-waitlist: prefill form when parent sets a pending seat.
     const formRef = useRef<HTMLDivElement>(null);
     const lastSeatIdRef = useRef<string | null>(null);
@@ -181,6 +200,15 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
             toast({ variant: 'destructive', title: 'Error', description: 'Selected table or package not found.' });
             setIsSubmitting(false);
             return;
+        }
+
+        if (chosenPackage.isBundle) {
+            const cap = Number(chosenPackage.bundleMaxCap ?? 0);
+            if (cap > 0 && data.guestCount > cap) {
+                toast({ variant: 'destructive', title: 'Too many guests', description: `This bundle is good for up to ${cap} guests.` });
+                setIsSubmitting(false);
+                return;
+            }
         }
         
         const normOpt = (v: any) => {
@@ -319,15 +347,15 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                                         )}
                                     />
                                     <div className="space-y-2">
-                                        <Label>Guests</Label>
+                                        <Label>Guests{isBundle && bundleCap > 0 ? ` (max ${bundleCap})` : ''}</Label>
                                         <div className="flex items-center gap-2">
-                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', Math.max(1, guestCount - 1))}><Minus /></Button>
+                                            <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount - 1)}><Minus /></Button>
                                             <QuantityInput
                                                 value={guestCount}
-                                                onChange={(val) => unlimitedForm.setValue('guestCount', val)}
+                                                onChange={(val) => setGuestCount(val)}
                                                 className="w-16 text-center"
                                             />
-                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', guestCount + 1)}><Plus /></Button>
+                                            <Button type="button" variant="outline" size="icon" disabled={isBundle && bundleCap > 0 && guestCount >= bundleCap} onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
                                         </div>
                                     </div>
                                 </div>
@@ -347,7 +375,9 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                                             <SelectContent>
                                                 {packages.map(pkg => (
                                                     <SelectItem key={pkg.packageId} value={pkg.packageId}>
-                                                        {pkg.packageName} - ₱{pkg.pricePerHead}/head
+                                                        {pkg.isBundle
+                                                            ? `${pkg.packageName} - ₱${pkg.bundlePrice ?? 0} (≤${pkg.bundleMaxCap ?? 1} pax)`
+                                                            : `${pkg.packageName} - ₱${pkg.pricePerHead}/head`}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>

@@ -130,6 +130,20 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const tableDisplayName = payload.displayName || `Table ${payload.tableNumber}`;
   const sessionLabel = computeSessionLabel({ sessionMode: payload.sessionMode, customerName, tableDisplayName: tableDisplayName });
 
+  // Bundle packages bill as a single flat-priced unit (qty 1 @ bundlePrice)
+  // while the entered guestCount stays the headcount that drives PINs, covers,
+  // kitchen prep, and analytics.
+  const isBundle = !!payload.package?.isBundle;
+  const bundlePrice = Number(payload.package?.bundlePrice ?? 0);
+  const bundleMaxCap = Number(payload.package?.bundleMaxCap ?? 0);
+  const packageSnapshot = payload.package
+    ? {
+        name: payload.package.packageName,
+        pricePerHead: payload.package.pricePerHead,
+        ...(isBundle ? { isBundle: true, bundlePrice, bundleMaxCap } : {}),
+      }
+    : null;
+
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
     storeId,
@@ -151,9 +165,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     verifiedAt: null,
     verifiedByUid: null,
     packageOfferingId: payload.package?.packageId || null,
-    packageSnapshot: payload.package
-      ? { name: payload.package.packageName, pricePerHead: payload.package.pricePerHead }
-      : null,
+    packageSnapshot,
     initialFlavorIds: payload.initialFlavorIds || [],
     customer: payload.customer,
     notes: payload.notes || '',
@@ -199,9 +211,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       customerName: customerName,
       packageOfferingId: payload.package?.packageId || null,
       packageName: payload.package?.packageName || null, // Denormalize for server page
-      packageSnapshot: payload.package
-        ? { name: payload.package.packageName, pricePerHead: payload.package.pricePerHead }
-        : null,
+      packageSnapshot,
       guestCountCashierInitial: payload.guestCount,
       guestCountFinal: isAlaCarte ? null : payload.guestCount,
       startedAt: serverTimestamp(),
@@ -221,8 +231,9 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         type: 'package',
         itemId: payload.package.packageId,
         itemName: payload.package.packageName,
-        unitPrice: payload.package.pricePerHead,
-        qtyOrdered: payload.guestCount,
+        // Bundle: one flat-priced unit. Per-head: pricePerHead × guestCount.
+        unitPrice: isBundle ? bundlePrice : payload.package.pricePerHead,
+        qtyOrdered: isBundle ? 1 : payload.guestCount,
         discountType: null,
         discountValue: 0,
         discountQty: 0,
@@ -598,11 +609,15 @@ export async function completePaymentFromUnits(
       const serverVerified = sessionData.guestCountServerVerified ?? 0;
       const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
       const pkgLine = billLines.find((l) => l.type === 'package');
-      const billedPackageCovers = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
+      const billableUnits = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
+      const isBundle = !!sessionData.packageSnapshot?.isBundle;
+      // Bundles bill flat units, not per-cover. Treat headcount as fully covered
+      // so the package-count check shows no false discrepancy.
+      const billedPackageCovers = isBundle ? finalGuestCount : billableUnits;
       const discrepancy = billedPackageCovers - finalGuestCount;
       const packageOfferingId = sessionData.packageOfferingId ?? null;
       const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
-      guestCountSnapshot = { packageOfferingId, packageName, finalGuestCount, billedPackageCovers, discrepancy, computedAtClientMs: Date.now(), rule: 'MAX', };
+      guestCountSnapshot = { packageOfferingId, packageName, finalGuestCount, billedPackageCovers, discrepancy, computedAtClientMs: Date.now(), rule: 'MAX', ...(isBundle ? { isBundle: true, billedUnits: billableUnits } : {}) };
     }
 
     const analyticsV2: ReceiptAnalyticsV2 = {
@@ -952,6 +967,13 @@ export async function approveGuestCountChange({
       throw new Error('This session has already been closed.');
     }
 
+    // Bundles bill a flat unit, so an approved count only changes the headcount
+    // (PINs/covers/analytics), never the package line qty. The count is also
+    // clamped to the bundle cap.
+    const isBundle = !!sessionData.packageSnapshot?.isBundle;
+    const cap = Number(sessionData.packageSnapshot?.bundleMaxCap ?? 0);
+    const effectiveCount = isBundle && cap > 0 ? Math.min(count, cap) : count;
+
     const packageOfferingId: string | undefined = sessionData.packageOfferingId || undefined;
     const pkgLineRef = packageOfferingId
       ? doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `package_${packageOfferingId}`)
@@ -965,26 +987,30 @@ export async function approveGuestCountChange({
       clearedVoidQty: 0,
       clampedFreeQty: 0,
       clampedDiscountQty: 0,
-      newBillable: count,
+      newBillable: effectiveCount,
     };
 
-    if (pkgLineRef && pkgSnap?.exists()) {
+    if (isBundle && pkgLineRef && pkgSnap?.exists()) {
+      // Flat-billed bundle: leave the package line (qty 1) untouched.
+      const line = pkgSnap.data() as any;
+      summary.newBillable = Math.max(0, (line.qtyOrdered ?? 1) - (line.voidedQty ?? 0) - (line.freeQty ?? 0));
+    } else if (pkgLineRef && pkgSnap?.exists()) {
       const line = pkgSnap.data() as any;
       const prevVoid = Math.max(0, line.voidedQty ?? 0);
       const prevFree = Math.max(0, line.freeQty ?? 0);
       const prevDiscount = Math.max(0, line.discountQty ?? 0);
 
-      const newFree = Math.min(prevFree, count);
-      const newDiscount = Math.min(prevDiscount, Math.max(0, count - newFree));
+      const newFree = Math.min(prevFree, effectiveCount);
+      const newDiscount = Math.min(prevDiscount, Math.max(0, effectiveCount - newFree));
 
       summary.clearedVoidQty = prevVoid;
       summary.clampedFreeQty = prevFree - newFree;
       summary.clampedDiscountQty = prevDiscount - newDiscount;
-      summary.newBillable = Math.max(0, count - newFree);
+      summary.newBillable = Math.max(0, effectiveCount - newFree);
 
       const reqAt = sessionData.guestCountChange?.requestedAt;
       const linePatch: Record<string, any> = {
-        qtyOrdered: count,
+        qtyOrdered: effectiveCount,
         voidedQty: 0,
         freeQty: newFree,
         discountQty: newDiscount,
@@ -1005,7 +1031,7 @@ export async function approveGuestCountChange({
     }
 
     tx.update(sessionRef, {
-      guestCountFinal: count,
+      guestCountFinal: effectiveCount,
       'guestCountChange.status': 'approved',
       'guestCountChange.approvedByUid': stamp.uid,
       'guestCountChange.approvedAt': serverTimestamp(),
@@ -1015,7 +1041,7 @@ export async function approveGuestCountChange({
 
     if (projSnap.exists()) {
       tx.update(projectionRef, {
-        guestCountFinal: count,
+        guestCountFinal: effectiveCount,
         'guestCountChange.status': 'approved',
         updatedAt: serverTimestamp(),
       });

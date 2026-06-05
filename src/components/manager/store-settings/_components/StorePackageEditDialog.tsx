@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import type { StorePackage, StoreRefill, StoreFlavor, KitchenLocation, MenuSchedule } from "@/lib/types";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -22,6 +23,16 @@ const formSchema = z.object({
     menuScheduleId: z.string().nullable(),
     refillsAllowed: z.array(z.string()).optional(),
     flavorsAllowed: z.array(z.string()).optional(),
+    // Bundle package: flat-priced unit good for up to `bundleMaxCap` guests.
+    isBundle: z.boolean().optional(),
+    bundlePrice: z.coerce.number().min(0).optional(),
+    bundleMaxCap: z.coerce.number().min(1).optional(),
+}).refine((d) => !d.isBundle || (Number(d.bundlePrice) > 0), {
+    message: "Bundle price is required.",
+    path: ["bundlePrice"],
+}).refine((d) => !d.isBundle || (Number(d.bundleMaxCap) >= 1), {
+    message: "Max pax must be at least 1.",
+    path: ["bundleMaxCap"],
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -44,12 +55,33 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
   availableRefills: StoreRefill[];
   availableFlavors: StoreFlavor[];
 }) {
+  const isBundle = form.watch("isBundle");
   return (
     <>
+      <FormField control={form.control} name="isBundle" render={({ field }) => (
+          <FormItem className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                  <FormLabel>Bundle package</FormLabel>
+                  <p className="text-xs text-muted-foreground">Bills as one flat-priced unit good for up to N guests.</p>
+              </div>
+              <FormControl><Switch checked={!!field.value} onCheckedChange={field.onChange} /></FormControl>
+          </FormItem>
+      )} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField control={form.control} name="pricePerHead" render={({ field }) => (
-              <FormItem><FormLabel>Price per Head</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          {isBundle ? (
+            <>
+              <FormField control={form.control} name="bundlePrice" render={({ field }) => (
+                  <FormItem><FormLabel>Bundle Price</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="bundleMaxCap" render={({ field }) => (
+                  <FormItem><FormLabel>Max Pax (cap)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </>
+          ) : (
+              <FormField control={form.control} name="pricePerHead" render={({ field }) => (
+                  <FormItem><FormLabel>Price per Head</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+          )}
           <FormField control={form.control} name="sortOrder" render={({ field }) => (
               <FormItem><FormLabel>Sort Order</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
@@ -121,6 +153,9 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
         menuScheduleId: null,
         refillsAllowed: [],
         flavorsAllowed: [],
+        isBundle: false,
+        bundlePrice: 0,
+        bundleMaxCap: 1,
     },
   });
 
@@ -132,6 +167,9 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
         menuScheduleId: item.menuScheduleId,
         refillsAllowed: item.refillsAllowed || [],
         flavorsAllowed: item.flavorsAllowed || [],
+        isBundle: item.isBundle ?? false,
+        bundlePrice: item.bundlePrice ?? 0,
+        bundleMaxCap: item.bundleMaxCap ?? 1,
     });
   }, [item, form]);
 

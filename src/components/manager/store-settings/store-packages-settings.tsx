@@ -211,8 +211,15 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                             <TableBody>
                                 {filteredPackages.map(pkg => (
                                     <TableRow key={pkg.packageId} className={!pkg.isEnabled ? "text-muted-foreground" : ""}>
-                                        <TableCell className="font-medium">{pkg.packageName}</TableCell>
-                                        <TableCell>₱{pkg.pricePerHead.toFixed(2)}</TableCell>
+                                        <TableCell className="font-medium">
+                                            {pkg.packageName}
+                                            {pkg.isBundle && <Badge variant="secondary" className="ml-2 font-normal">Bundle</Badge>}
+                                        </TableCell>
+                                        <TableCell>
+                                            {pkg.isBundle
+                                                ? <>₱{(pkg.bundlePrice ?? 0).toFixed(2)} <span className="text-xs text-muted-foreground">/ ≤{pkg.bundleMaxCap ?? 1} pax</span></>
+                                                : <>₱{pkg.pricePerHead.toFixed(2)} <span className="text-xs text-muted-foreground">/head</span></>}
+                                        </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className="font-normal">
                                                 {schedules.get(pkg.menuScheduleId || "")?.name || "Always On"}

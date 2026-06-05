@@ -175,6 +175,17 @@ export type StorePackage = {
     flavorsAllowed: string[];
     sortOrder: number;
     menuScheduleId: string | null;
+    /**
+     * Bundle package: billed as a single flat-priced unit that seats up to
+     * `bundleMaxCap` guests. When true, billing uses `bundlePrice` (qty 1)
+     * instead of `pricePerHead × guestCount`, but the entered headcount still
+     * drives PIN slots, covers, kitchen prep, and guest analytics.
+     */
+    isBundle?: boolean;
+    /** Flat price for the whole bundle (used when `isBundle`). */
+    bundlePrice?: number;
+    /** Upper cap on headcount for a bundle ("good for N pax"). */
+    bundleMaxCap?: number;
 };
 
 export type StoreFlavor = {
@@ -754,7 +765,7 @@ export type PendingSession = {
   // to fetch and pre-apply reservation payments.
   reservationId?: string | null;
   packageOfferingId: string;
-  packageSnapshot?: { id?: string; name?: string; pricePerHead?: number } | null;
+  packageSnapshot?: { id?: string; name?: string; pricePerHead?: number; isBundle?: boolean; bundlePrice?: number; bundleMaxCap?: number } | null;
   initialFlavorIds?: string[];
   startedAt: Timestamp;
   startedAtClientMs?: number | null;
@@ -904,6 +915,10 @@ export type ReceiptAnalyticsV2 = {
     discrepancy: number;
     computedAtClientMs: number;
     rule: "MAX";
+    /** Set for bundle packages: covers are flat-satisfied, so no discrepancy. */
+    isBundle?: boolean;
+    /** Number of bundle units billed (1 per bundle). Undefined for per-head. */
+    billedUnits?: number;
   };
 };
 

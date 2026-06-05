@@ -152,8 +152,12 @@ export function ServerPageClient() {
   const handleVerify = async (session: PendingSession, serverCount: number) => {
     if (!activeStore || !appUser || !session.tableId) return;
 
+    const isBundle = !!session.packageSnapshot?.isBundle;
+    const bundleCap = Number(session.packageSnapshot?.bundleMaxCap ?? 0);
     const cashierInitial = session.guestCountCashierInitial ?? 0;
-    const finalCount = Math.max(cashierInitial, serverCount);
+    let finalCount = Math.max(cashierInitial, serverCount);
+    // Bundles cap the headcount; billing stays a flat unit regardless.
+    if (isBundle && bundleCap > 0) finalCount = Math.min(finalCount, bundleCap);
     const startedMs = (session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime()) ?? null;
     const verifyDurationMs = startedMs != null ? Math.max(0, Date.now() - startedMs) : null;
 
@@ -174,12 +178,15 @@ export function ServerPageClient() {
       updatedAt: serverTimestamp(),
     });
 
-    // Also update the quantity on the package billable line item
-    const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
-    batch.update(packageLineRef, {
-        qtyOrdered: finalCount,
-        updatedAt: serverTimestamp(),
-    });
+    // Also update the quantity on the package billable line item — but only for
+    // per-head packages. Bundle lines stay at qty 1 (flat price).
+    if (!isBundle) {
+      const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
+      batch.update(packageLineRef, {
+          qtyOrdered: finalCount,
+          updatedAt: serverTimestamp(),
+      });
+    }
     
     // Update session projection in the NEW location
     const sessionProjectionRef = doc(db, `stores/${activeStore.id}/activeSessions`, session.id);
