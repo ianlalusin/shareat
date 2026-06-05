@@ -149,6 +149,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     const packageLine = billLines.find(line => line.type === 'package');
     if (!packageLine) return;
 
+    // Bundle packages bill a flat unit (qty 1) regardless of headcount — never
+    // sync the line qty to the guest count, or a "good for N" bundle would be
+    // billed N× its flat price. Self-heal any line that drifted off 1 (e.g. a
+    // session created before this guard existed), then stop.
+    if (session.packageSnapshot?.isBundle) {
+      const editable = session.status === 'active' && !session.isPaid;
+      if (editable && packageLine.qtyOrdered !== 1) {
+        updateSessionBillLine(storeId, sessionId, packageLine.id, { qtyOrdered: 1 }, appUser)
+          .catch(err => console.error("Failed to normalize bundle qty:", err));
+      }
+      return;
+    }
+
     const guestChange = session.guestCountChange;
     const approvedAt = guestChange?.status === 'approved' ? guestChange.approvedAt : null;
 
