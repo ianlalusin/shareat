@@ -136,11 +136,12 @@ export async function startSession(storeId: string, payload: StartSessionPayload
   const isBundle = !!payload.package?.isBundle;
   const bundlePrice = Number(payload.package?.bundlePrice ?? 0);
   const bundleMaxCap = Number(payload.package?.bundleMaxCap ?? 0);
+  const bundleExtraHeadPrice = Number(payload.package?.bundleExtraHeadPrice ?? 0);
   const packageSnapshot = payload.package
     ? {
         name: payload.package.packageName,
         pricePerHead: payload.package.pricePerHead,
-        ...(isBundle ? { isBundle: true, bundlePrice, bundleMaxCap } : {}),
+        ...(isBundle ? { isBundle: true, bundlePrice, bundleMaxCap, bundleExtraHeadPrice } : {}),
       }
     : null;
 
@@ -244,6 +245,34 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         updatedByUid: user.uid,
         updatedByName: getActorStamp(user).username,
       });
+
+      // Bundle overflow: guests beyond the cap are billed per-head on a separate
+      // "Extra Pax" addon line. Only when the bundle has an extra-head price.
+      const extraQty = Math.max(0, payload.guestCount - bundleMaxCap);
+      if (isBundle && bundleExtraHeadPrice > 0 && extraQty > 0) {
+        const extraLineId = `bundleextra_${payload.package.packageId}`;
+        const extraLineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, extraLineId);
+        transaction.set(extraLineRef, {
+          id: extraLineId,
+          type: 'addon',
+          itemId: extraLineId,
+          itemName: `Extra Pax — ${payload.package.packageName}`,
+          category: 'Extra Pax',
+          unitPrice: bundleExtraHeadPrice,
+          qtyOrdered: extraQty,
+          discountType: null,
+          discountValue: 0,
+          discountQty: 0,
+          freeQty: 0,
+          voidedQty: 0,
+          kitchenLocationId: null,
+          kitchenLocationName: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          updatedByUid: user.uid,
+          updatedByName: getActorStamp(user).username,
+        });
+      }
 
       const stationKey = payload.package.kitchenLocationId;
       if (!stationKey) {
@@ -972,7 +1001,10 @@ export async function approveGuestCountChange({
     // clamped to the bundle cap.
     const isBundle = !!sessionData.packageSnapshot?.isBundle;
     const cap = Number(sessionData.packageSnapshot?.bundleMaxCap ?? 0);
-    const effectiveCount = isBundle && cap > 0 ? Math.min(count, cap) : count;
+    const extraPrice = Number(sessionData.packageSnapshot?.bundleExtraHeadPrice ?? 0);
+    // Hard-cap bundles clamp to cap; overflow-priced bundles allow beyond it
+    // (the excess is billed on the Extra Pax line, reconciled on the bill view).
+    const effectiveCount = isBundle && cap > 0 && extraPrice <= 0 ? Math.min(count, cap) : count;
 
     const packageOfferingId: string | undefined = sessionData.packageOfferingId || undefined;
     const pkgLineRef = packageOfferingId

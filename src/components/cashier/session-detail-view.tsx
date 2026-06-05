@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { isDiscountDateActive } from "@/lib/collections/globalCollections";
-import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets, recomputeSessionAdjustmentFlags } from "@/components/cashier/firestore";
 import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
@@ -155,9 +155,46 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     // session created before this guard existed), then stop.
     if (session.packageSnapshot?.isBundle) {
       const editable = session.status === 'active' && !session.isPaid;
-      if (editable && packageLine.qtyOrdered !== 1) {
+      if (!editable) return;
+      // Keep the flat bundle line at qty 1.
+      if (packageLine.qtyOrdered !== 1) {
         updateSessionBillLine(storeId, sessionId, packageLine.id, { qtyOrdered: 1 }, appUser)
           .catch(err => console.error("Failed to normalize bundle qty:", err));
+      }
+      // Reconcile the overflow "Extra Pax" line to guests beyond the cap. A qty-0
+      // line is invisible everywhere, so we update rather than delete.
+      const cap = Number(session.packageSnapshot.bundleMaxCap ?? 0);
+      const extraPrice = Number(session.packageSnapshot.bundleExtraHeadPrice ?? 0);
+      const desiredExtra = Math.max(0, (session.guestCountFinal ?? 0) - cap);
+      const extraLineId = `bundleextra_${session.packageOfferingId}`;
+      const extraLine = billLines.find(l => l.id === extraLineId);
+      if (extraLine) {
+        if (extraLine.qtyOrdered !== desiredExtra) {
+          updateSessionBillLine(storeId, sessionId, extraLineId, { qtyOrdered: desiredExtra }, appUser)
+            .catch(err => console.error("Failed to sync extra-pax qty:", err));
+        }
+      } else if (extraPrice > 0 && desiredExtra > 0) {
+        const actor = getActorStamp(appUser);
+        setDoc(doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', extraLineId), {
+          id: extraLineId,
+          type: 'addon',
+          itemId: extraLineId,
+          itemName: `Extra Pax — ${session.packageSnapshot.name ?? 'Bundle'}`,
+          category: 'Extra Pax',
+          unitPrice: extraPrice,
+          qtyOrdered: desiredExtra,
+          discountType: null,
+          discountValue: 0,
+          discountQty: 0,
+          freeQty: 0,
+          voidedQty: 0,
+          kitchenLocationId: null,
+          kitchenLocationName: null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          updatedByUid: actor.uid,
+          updatedByName: actor.username,
+        }).catch(err => console.error("Failed to create extra-pax line:", err));
       }
       return;
     }

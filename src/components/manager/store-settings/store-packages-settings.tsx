@@ -233,7 +233,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                                         </TableCell>
                                         <TableCell>
                                             {pkg.isBundle
-                                                ? <>₱{(pkg.bundlePrice ?? 0).toFixed(2)} <span className="text-xs text-muted-foreground">/ ≤{pkg.bundleMaxCap ?? 1} pax</span></>
+                                                ? <>₱{(pkg.bundlePrice ?? 0).toFixed(2)} <span className="text-xs text-muted-foreground">/ ≤{pkg.bundleMaxCap ?? 1} pax{(pkg.bundleExtraHeadPrice ?? 0) > 0 ? ` · +₱${pkg.bundleExtraHeadPrice}/extra` : ""}</span></>
                                                 : <>₱{pkg.pricePerHead.toFixed(2)} <span className="text-xs text-muted-foreground">/head</span></>}
                                         </TableCell>
                                         <TableCell>

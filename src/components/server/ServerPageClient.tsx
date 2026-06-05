@@ -154,10 +154,12 @@ export function ServerPageClient() {
 
     const isBundle = !!session.packageSnapshot?.isBundle;
     const bundleCap = Number(session.packageSnapshot?.bundleMaxCap ?? 0);
+    const bundleExtraPrice = Number(session.packageSnapshot?.bundleExtraHeadPrice ?? 0);
     const cashierInitial = session.guestCountCashierInitial ?? 0;
     let finalCount = Math.max(cashierInitial, serverCount);
-    // Bundles cap the headcount; billing stays a flat unit regardless.
-    if (isBundle && bundleCap > 0) finalCount = Math.min(finalCount, bundleCap);
+    // Hard-cap bundles clamp the headcount; overflow-priced bundles allow beyond
+    // the cap (excess billed on the Extra Pax line, reconciled on the bill view).
+    if (isBundle && bundleCap > 0 && bundleExtraPrice <= 0) finalCount = Math.min(finalCount, bundleCap);
     const startedMs = (session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime()) ?? null;
     const verifyDurationMs = startedMs != null ? Math.max(0, Date.now() - startedMs) : null;
 

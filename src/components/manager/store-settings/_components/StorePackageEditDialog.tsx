@@ -27,6 +27,7 @@ const formSchema = z.object({
     isBundle: z.boolean().optional(),
     bundlePrice: z.coerce.number().min(0).optional(),
     bundleMaxCap: z.coerce.number().min(1).optional(),
+    bundleExtraHeadPrice: z.coerce.number().min(0).optional(),
 }).refine((d) => !d.isBundle || (Number(d.bundlePrice) > 0), {
     message: "Bundle price is required.",
     path: ["bundlePrice"],
@@ -75,6 +76,9 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
               )} />
               <FormField control={form.control} name="bundleMaxCap" render={({ field }) => (
                   <FormItem><FormLabel>Max Pax (cap)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="bundleExtraHeadPrice" render={({ field }) => (
+                  <FormItem className="sm:col-span-2"><FormLabel>Extra Head Price (optional)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><p className="text-xs text-muted-foreground">Per-head charge for guests beyond the cap. Leave 0 for a hard cap.</p><FormMessage /></FormItem>
               )} />
             </>
           ) : (
@@ -156,6 +160,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
         isBundle: false,
         bundlePrice: 0,
         bundleMaxCap: 1,
+        bundleExtraHeadPrice: 0,
     },
   });
 
@@ -170,6 +175,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
         isBundle: item.isBundle ?? false,
         bundlePrice: item.bundlePrice ?? 0,
         bundleMaxCap: item.bundleMaxCap ?? 1,
+        bundleExtraHeadPrice: item.bundleExtraHeadPrice ?? 0,
     });
   }, [item, form]);
 

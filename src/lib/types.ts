@@ -186,6 +186,12 @@ export type StorePackage = {
     bundlePrice?: number;
     /** Upper cap on headcount for a bundle ("good for N pax"). */
     bundleMaxCap?: number;
+    /**
+     * Optional per-head price for guests beyond `bundleMaxCap`. When > 0 the cap
+     * is soft (overflow guests billed at this rate via a separate "Extra Pax"
+     * line); when unset/0 the cap is a hard limit.
+     */
+    bundleExtraHeadPrice?: number;
 };
 
 export type StoreFlavor = {
@@ -765,7 +771,7 @@ export type PendingSession = {
   // to fetch and pre-apply reservation payments.
   reservationId?: string | null;
   packageOfferingId: string;
-  packageSnapshot?: { id?: string; name?: string; pricePerHead?: number; isBundle?: boolean; bundlePrice?: number; bundleMaxCap?: number } | null;
+  packageSnapshot?: { id?: string; name?: string; pricePerHead?: number; isBundle?: boolean; bundlePrice?: number; bundleMaxCap?: number; bundleExtraHeadPrice?: number } | null;
   initialFlavorIds?: string[];
   startedAt: Timestamp;
   startedAtClientMs?: number | null;

@@ -124,19 +124,24 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
     const selectedPackage = packages.find(p => p.packageId === selectedPackageId);
     const isBundle = !!selectedPackage?.isBundle;
     const bundleCap = Number(selectedPackage?.bundleMaxCap ?? 0);
+    const bundleExtraPrice = Number(selectedPackage?.bundleExtraHeadPrice ?? 0);
+    // Hard cap only when the bundle has no overflow price; otherwise guests may
+    // exceed the cap and the excess is billed per-head.
+    const isHardCap = isBundle && bundleCap > 0 && bundleExtraPrice <= 0;
+    const extraPax = isBundle && bundleCap > 0 ? Math.max(0, guestCount - bundleCap) : 0;
 
     const setGuestCount = (val: number) => {
         let v = Math.max(1, Math.floor(Number(val) || 1));
-        if (isBundle && bundleCap > 0) v = Math.min(v, bundleCap);
+        if (isHardCap) v = Math.min(v, bundleCap);
         unlimitedForm.setValue('guestCount', v);
     };
 
-    // Clamp down when switching to a bundle whose cap is below the current count.
+    // Clamp down when switching to a hard-cap bundle whose cap is below the count.
     useEffect(() => {
-        if (isBundle && bundleCap > 0 && guestCount > bundleCap) {
+        if (isHardCap && guestCount > bundleCap) {
             unlimitedForm.setValue('guestCount', bundleCap);
         }
-    }, [isBundle, bundleCap, guestCount, unlimitedForm]);
+    }, [isHardCap, bundleCap, guestCount, unlimitedForm]);
 
     // Seat-from-waitlist: prefill form when parent sets a pending seat.
     const formRef = useRef<HTMLDivElement>(null);
@@ -204,7 +209,8 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
 
         if (chosenPackage.isBundle) {
             const cap = Number(chosenPackage.bundleMaxCap ?? 0);
-            if (cap > 0 && data.guestCount > cap) {
+            const extra = Number(chosenPackage.bundleExtraHeadPrice ?? 0);
+            if (cap > 0 && extra <= 0 && data.guestCount > cap) {
                 toast({ variant: 'destructive', title: 'Too many guests', description: `This bundle is good for up to ${cap} guests.` });
                 setIsSubmitting(false);
                 return;
@@ -347,7 +353,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                                         )}
                                     />
                                     <div className="space-y-2">
-                                        <Label>Guests{isBundle && bundleCap > 0 ? ` (max ${bundleCap})` : ''}</Label>
+                                        <Label>Guests{isHardCap ? ` (max ${bundleCap})` : isBundle && bundleCap > 0 ? ` (incl ${bundleCap})` : ''}</Label>
                                         <div className="flex items-center gap-2">
                                             <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount - 1)}><Minus /></Button>
                                             <QuantityInput
@@ -355,8 +361,11 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                                                 onChange={(val) => setGuestCount(val)}
                                                 className="w-16 text-center"
                                             />
-                                            <Button type="button" variant="outline" size="icon" disabled={isBundle && bundleCap > 0 && guestCount >= bundleCap} onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
+                                            <Button type="button" variant="outline" size="icon" disabled={isHardCap && guestCount >= bundleCap} onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
                                         </div>
+                                        {extraPax > 0 && (
+                                            <p className="text-xs text-amber-600">+{extraPax} extra pax @ ₱{bundleExtraPrice} each</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

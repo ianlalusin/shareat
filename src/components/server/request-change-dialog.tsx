@@ -98,8 +98,9 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
         if (!pkg.isEnabled) return false;
-        // Hide bundles whose capacity can't cover the confirmed headcount.
-        if (pkg.isBundle && Number(pkg.bundleMaxCap ?? 0) < guestCount) return false;
+        // Hide bundles that can't seat the confirmed headcount — but only when
+        // they're hard-capped. Overflow-priced bundles can absorb extra pax.
+        if (pkg.isBundle && Number(pkg.bundleMaxCap ?? 0) < guestCount && Number(pkg.bundleExtraHeadPrice ?? 0) <= 0) return false;
         if (!pkg.menuScheduleId) return true; // Always available if no schedule
         const schedule = schedules.get(pkg.menuScheduleId);
         if (!schedule) return true; // Fail open if schedule not found
@@ -187,6 +188,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
                     isBundle: true,
                     bundlePrice: Number(selectedPackage.bundlePrice ?? 0),
                     bundleMaxCap: Number(selectedPackage.bundleMaxCap ?? 0),
+                    bundleExtraHeadPrice: Number(selectedPackage.bundleExtraHeadPrice ?? 0),
                   }
                 : {}),
         };

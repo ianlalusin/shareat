@@ -149,6 +149,8 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 const newPackageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageChange.requestedPackageId}`);
                 
                 batch.delete(oldPackageLineRef);
+                // Drop any overflow "Extra Pax" line tied to the old package.
+                batch.delete(doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/bundleextra_${session.packageOfferingId}`));
 
                 // Build the new line for the target package type. Bundles bill a
                 // flat unit (qty 1 @ bundlePrice); per-head packages bill
@@ -173,6 +175,33 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     updatedByUid: appUser?.uid,
                     updatedByName: appUser?.displayName || appUser?.name || 'System'
                 });
+
+                // Overflow line for the new bundle when guests exceed its cap.
+                const newExtraPrice = Number(reqSnap.bundleExtraHeadPrice ?? 0);
+                const newDesiredExtra = Math.max(0, (session.guestCountFinal ?? 0) - Number(reqSnap.bundleMaxCap ?? 0));
+                if (toBundle && newExtraPrice > 0 && newDesiredExtra > 0) {
+                    const newExtraLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/bundleextra_${session.packageChange.requestedPackageId}`);
+                    batch.set(newExtraLineRef, {
+                        id: newExtraLineRef.id,
+                        type: 'addon',
+                        itemId: newExtraLineRef.id,
+                        itemName: `Extra Pax — ${reqSnap.name}`,
+                        category: 'Extra Pax',
+                        unitPrice: newExtraPrice,
+                        qtyOrdered: newDesiredExtra,
+                        discountType: null,
+                        discountValue: 0,
+                        discountQty: 0,
+                        freeQty: 0,
+                        voidedQty: 0,
+                        kitchenLocationId: null,
+                        kitchenLocationName: null,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                        updatedByUid: appUser?.uid,
+                        updatedByName: appUser?.displayName || appUser?.name || 'System'
+                    });
+                }
 
                 batch.update(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
