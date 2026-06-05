@@ -91,15 +91,21 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   const watchedPackageReason = packageForm.watch("reason");
   const guestCountValue = guestForm.watch("requestedCount");
 
+  // Confirmed headcount this session must fit. Bundles smaller than this are
+  // hidden — a "good for N" bundle can't seat more than N guests.
+  const guestCount = session.guestCountFinal ?? session.guestCountCashierInitial ?? 0;
+
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
         if (!pkg.isEnabled) return false;
+        // Hide bundles whose capacity can't cover the confirmed headcount.
+        if (pkg.isBundle && Number(pkg.bundleMaxCap ?? 0) < guestCount) return false;
         if (!pkg.menuScheduleId) return true; // Always available if no schedule
         const schedule = schedules.get(pkg.menuScheduleId);
         if (!schedule) return true; // Fail open if schedule not found
         return isScheduleActiveNow(schedule);
     });
-  }, [storePackages, schedules]);
+  }, [storePackages, schedules, guestCount]);
 
 
   const lastSessionIdRef = useRef<string | null>(null);
@@ -176,6 +182,13 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         const requestedPackageSnapshot = {
             name: selectedPackage.packageName,
             pricePerHead: selectedPackage.pricePerHead,
+            ...(selectedPackage.isBundle
+                ? {
+                    isBundle: true,
+                    bundlePrice: Number(selectedPackage.bundlePrice ?? 0),
+                    bundleMaxCap: Number(selectedPackage.bundleMaxCap ?? 0),
+                  }
+                : {}),
         };
 
         batch.update(sessionRef, {
@@ -328,7 +341,9 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
                             {availablePackages.length > 0 ? (
                                 availablePackages.map(p => (
                                 <SelectItem key={p.packageId} value={p.packageId}>
-                                    {p.packageName} - ₱{p.pricePerHead}/head
+                                    {p.isBundle
+                                        ? `${p.packageName} - ₱${p.bundlePrice ?? 0} (≤${p.bundleMaxCap ?? 1} pax)`
+                                        : `${p.packageName} - ₱${p.pricePerHead}/head`}
                                 </SelectItem>
                                 ))
                             ) : (

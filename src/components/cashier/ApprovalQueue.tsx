@@ -149,14 +149,20 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 const newPackageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageChange.requestedPackageId}`);
                 
                 batch.delete(oldPackageLineRef);
-                
+
+                // Build the new line for the target package type. Bundles bill a
+                // flat unit (qty 1 @ bundlePrice); per-head packages bill
+                // guestCount × pricePerHead.
+                const reqSnap = session.packageChange.requestedPackageSnapshot;
+                const toBundle = !!reqSnap.isBundle;
+
                 batch.set(newPackageLineRef, {
                     id: newPackageLineRef.id,
                     type: 'package',
                     itemId: session.packageChange.requestedPackageId,
-                    itemName: session.packageChange.requestedPackageSnapshot.name,
-                    unitPrice: session.packageChange.requestedPackageSnapshot.pricePerHead,
-                    qtyOrdered: session.guestCountFinal,
+                    itemName: reqSnap.name,
+                    unitPrice: toBundle ? Number(reqSnap.bundlePrice ?? 0) : Number(reqSnap.pricePerHead ?? 0),
+                    qtyOrdered: toBundle ? 1 : session.guestCountFinal,
                     discountType: null,
                     discountValue: 0,
                     discountQty: 0,
