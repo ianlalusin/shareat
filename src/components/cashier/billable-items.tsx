@@ -80,8 +80,12 @@ export function BillableItems({
   const { appUser } = useAuthContext();
   
   const { activeLines, voidedLines } = useMemo(() => {
-    const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
-    const voided = lines.filter(line => line.voidedQty > 0);
+    // Keep the package/bundle line pinned to the top (dine-in sessions). Stable
+    // sort preserves the createdAt order of everything else.
+    const packageFirst = (a: SessionBillLine, b: SessionBillLine) =>
+      (a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1);
+    const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0).sort(packageFirst);
+    const voided = lines.filter(line => line.voidedQty > 0).sort(packageFirst);
     return { activeLines: active, voidedLines: voided };
   }, [lines]);
 

@@ -37,7 +37,10 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
 
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
-    const activeLines = useMemo(() => (lines || []).filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0), [lines]);
+    const activeLines = useMemo(() => (lines || [])
+        .filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0)
+        // Pin the package/bundle line to the top (dine-in); stable for the rest.
+        .sort((a, b) => (a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)), [lines]);
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();

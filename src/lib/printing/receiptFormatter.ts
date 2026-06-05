@@ -52,7 +52,10 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   const headerRow = 'Qty'.padEnd(qtyWidth) + 'Item'.padEnd(nameWidth) + 'Total'.padStart(priceWidth);
   lines.push(headerRow);
 
-  const activeLines = (data.lines || []).filter(l => (l.qtyOrdered - (l.voidedQty || 0)) > 0);
+  const activeLines = (data.lines || [])
+    .filter(l => (l.qtyOrdered - (l.voidedQty || 0)) > 0)
+    // Pin the package/bundle line to the top (dine-in); stable for the rest.
+    .sort((a, b) => ((a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)));
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
     const lineTotal = (billableQty * line.unitPrice).toFixed(2);
