@@ -248,7 +248,8 @@ export async function startSession(storeId: string, payload: StartSessionPayload
 
       // Bundle overflow: guests beyond the cap are billed per-head on a separate
       // "Extra Pax" addon line. Only when the bundle has an extra-head price.
-      const extraQty = Math.max(0, payload.guestCount - bundleMaxCap);
+      // Defensive: a missing/zero cap must not bill every guest as overflow.
+      const extraQty = bundleMaxCap > 0 ? Math.max(0, payload.guestCount - bundleMaxCap) : 0;
       if (isBundle && bundleExtraHeadPrice > 0 && extraQty > 0) {
         const extraLineId = `bundleextra_${payload.package.packageId}`;
         const extraLineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, extraLineId);
@@ -1084,7 +1085,74 @@ export async function approveGuestCountChange({
 
   // Void/free/discount on the package line may have changed; reconverge badges.
   await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  // Keep the bundle's flat line at qty 1 and its Extra Pax line in step with the
+  // approved headcount immediately (don't wait for the cashier to open the bill).
+  await reconcileBundleLines(storeId, sessionId, actor);
   return result;
+}
+
+/**
+ * Reconcile a bundle session's bill lines to its current `guestCountFinal`:
+ * force the flat package line to qty 1, and upsert/zero the "Extra Pax" overflow
+ * line to `max(0, guests - cap)` (only when the bundle has an extra-head price and
+ * a positive cap). No-op for non-bundle, closed, or paid sessions. Idempotent —
+ * writes only when a value actually differs. Runs in its own transaction so it
+ * can be called after any headcount-changing mutation (verify, approve) for
+ * immediate, race-free correctness; the cashier-bill self-heal remains a backstop.
+ */
+export async function reconcileBundleLines(storeId: string, sessionId: string, actor: AppUser) {
+  const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+  const stamp = getActorStamp(actor);
+  await runTransaction(db, async (tx: Transaction) => {
+    const sSnap = await tx.get(sessionRef);
+    if (!sSnap.exists()) return;
+    const s = sSnap.data() as any;
+    if (!s.packageSnapshot?.isBundle) return;
+    if (s.status === 'closed' || s.status === 'voided' || s.isPaid) return;
+    const pkgId = s.packageOfferingId;
+    if (!pkgId) return;
+
+    const cap = Number(s.packageSnapshot.bundleMaxCap ?? 0);
+    const extraPrice = Number(s.packageSnapshot.bundleExtraHeadPrice ?? 0);
+    const guests = Number(s.guestCountFinal ?? 0);
+    // Defensive: a missing/zero cap must not bill every guest as overflow.
+    const desiredExtra = cap > 0 ? Math.max(0, guests - cap) : 0;
+
+    const pkgRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `package_${pkgId}`);
+    const extraRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `bundleextra_${pkgId}`);
+    const [pkgSnap, extraSnap] = await Promise.all([tx.get(pkgRef), tx.get(extraRef)]);
+
+    if (pkgSnap.exists() && (pkgSnap.data() as any).qtyOrdered !== 1) {
+      tx.update(pkgRef, { qtyOrdered: 1, updatedAt: serverTimestamp(), updatedByUid: stamp.uid, updatedByName: stamp.username });
+    }
+
+    if (extraSnap.exists()) {
+      if ((extraSnap.data() as any).qtyOrdered !== desiredExtra) {
+        tx.update(extraRef, { qtyOrdered: desiredExtra, updatedAt: serverTimestamp(), updatedByUid: stamp.uid, updatedByName: stamp.username });
+      }
+    } else if (extraPrice > 0 && desiredExtra > 0) {
+      tx.set(extraRef, {
+        id: `bundleextra_${pkgId}`,
+        type: 'addon',
+        itemId: `bundleextra_${pkgId}`,
+        itemName: `Extra Pax — ${s.packageSnapshot.name ?? 'Bundle'}`,
+        category: 'Extra Pax',
+        unitPrice: extraPrice,
+        qtyOrdered: desiredExtra,
+        discountType: null,
+        discountValue: 0,
+        discountQty: 0,
+        freeQty: 0,
+        voidedQty: 0,
+        kitchenLocationId: null,
+        kitchenLocationName: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: stamp.uid,
+        updatedByName: stamp.username,
+      });
+    }
+  });
 }
 
 /**

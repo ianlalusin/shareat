@@ -17,6 +17,7 @@ import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { writeActivityLog } from "@/components/cashier/activity-log";
+import { reconcileBundleLines } from "@/components/cashier/firestore";
 import { toJsDate } from "@/lib/utils/date";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
@@ -224,6 +225,9 @@ export function ServerPageClient() {
 
     try {
       await batch.commit();
+      // Bundle: keep the flat line at qty 1 and the Extra Pax overflow line in
+      // step with the verified headcount immediately (no bill-view dependency).
+      if (isBundle) await reconcileBundleLines(activeStore.id, session.id, appUser);
       const durationStr = verifyDurationMs != null ? formatElapsedShort(verifyDurationMs) : "unknown";
       writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount, verifyDurationMs } as any, note: `Verified ${finalCount} guests after ${durationStr}`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
       toast({ title: 'Session Verified' });
