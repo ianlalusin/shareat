@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Flavor, Store, StoreFlavor } from "@/lib/types";
+import { rebuildStoreConfig } from "@/lib/manager/dataManagement";
 
 function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
   const data = d.data() ?? {};
@@ -99,6 +100,16 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         return globalFlavors.filter(f => !storeFlavorIds.has(f.id));
     }, [globalFlavors, storeFlavors]);
 
+    // The cashier reads flavors from the denormalized storeConfig/current cache,
+    // so an edit must rebuild it or the change never reaches the POS.
+    const syncConfigCache = async () => {
+        try {
+            await rebuildStoreConfig(db, store.id);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "POS cache not refreshed", description: "Saved, but the POS config cache didn't rebuild. Run Data Management → Rebuild." });
+        }
+    };
+
     const handleAddFlavor = async (flavor: Flavor) => {
         if (!appUser || !store) return;
         const docRef = doc(db, "stores", store.id, "storeFlavors", flavor.id);
@@ -109,12 +120,13 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                 isEnabled: true,
                 sortOrder: 1000,
             }, { merge: true });
+            await syncConfigCache();
             toast({ title: "Flavor Added" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Add Failed", description: error.message });
         }
     };
-    
+
     const handleToggleEnabled = async (flavor: StoreFlavor) => {
         if (!appUser || !store) return;
         const newStatus = !flavor.isEnabled;
@@ -122,17 +134,19 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "storeFlavors", flavor.flavorId);
         try {
             await updateDoc(docRef, { isEnabled: newStatus });
+            await syncConfigCache();
             toast({ title: "Status Updated" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Update Failed", description: error.message });
         }
     };
-    
+
     const handleSaveSortOrder = async (flavorId: string) => {
         if (!appUser || !store) return;
         const docRef = doc(db, "stores", store.id, "storeFlavors", flavorId);
         try {
              await updateDoc(docRef, { sortOrder: editingSortOrder });
+            await syncConfigCache();
             toast({ title: "Sort Order Saved" });
             setEditingId(null);
         } catch (error: any) {

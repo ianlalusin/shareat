@@ -163,7 +163,7 @@ function POSContent({
         const bIsInitial = initialFlavorIds.has(b.flavorId);
         if (aIsInitial && !bIsInitial) return -1;
         if (!aIsInitial && bIsInitial) return 1;
-        return a.flavorName.localeCompare(b.flavorName);
+        return ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.flavorName.localeCompare(b.flavorName);
     });
 }, [activeCartItem, storeFlavors, globalRefills, session.initialFlavorIds]);
 

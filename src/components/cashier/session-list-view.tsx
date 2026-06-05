@@ -207,18 +207,22 @@ export function SessionListView() {
 
     const availablePackages = useMemo(() => {
         if (!storeConfig?.packages) return [];
-        return storeConfig.packages.filter(pkg => {
-            if (!pkg.isEnabled) return false;
-            if (!pkg.menuScheduleId) return true; // Always available if no schedule
-            const schedule = schedulesMap.get(pkg.menuScheduleId);
-            if (!schedule) return true; // Fail open if schedule not found
-            return isScheduleActiveNow(schedule);
-        });
+        return storeConfig.packages
+            .filter(pkg => {
+                if (!pkg.isEnabled) return false;
+                if (!pkg.menuScheduleId) return true; // Always available if no schedule
+                const schedule = schedulesMap.get(pkg.menuScheduleId);
+                if (!schedule) return true; // Fail open if schedule not found
+                return isScheduleActiveNow(schedule);
+            })
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     }, [storeConfig?.packages, schedulesMap]);
-    
+
     const enabledFlavors = useMemo(() => {
         if (!storeConfig?.flavors) return [];
-        return storeConfig.flavors.filter(f => f.isEnabled !== false);
+        return storeConfig.flavors
+            .filter(f => f.isEnabled !== false)
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     }, [storeConfig?.flavors]);
 
 
