@@ -12,6 +12,7 @@ externally by **Google Cloud Scheduler**.
 | -------------------------- | ----------------------------------- | ------------------------------- | ---------------- |
 | `update-forecast-accuracy` | `GET /api/cron/update-accuracy`     | `0 20 * * *` (8 PM)             | 180s             |
 | `generate-forecast`        | `GET /api/cron/generate-forecast`   | `0 21,22,23,0,1 * * *` (9 PM–1 AM) | 600s         |
+| `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 6,7,8 * * *` (6–8 AM)     | 300s             |
 | `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
@@ -24,6 +25,14 @@ Stores without a geotag are skipped.
 via `system/forecastCronLog.runs[<date>]` — the first successful run marks the
 day "success" and later attempts short-circuit. The extra fires only exist as
 fallbacks for transient Gemini or Firestore failures.
+
+`generate-daily-insight` analyzes **yesterday's** performance per active store
+(one Gemini call each, bounded concurrency) and writes
+`stores/<storeId>/aiInsights/<YYYYMMDD>` for the manager dashboard badge/report
+and the cashier/server/kitchen shift-start briefs. It self-deduplicates via
+`system/insightCronLog.runs[<date>]`, so the 6/7/8 AM fires are just fallbacks —
+the first success wins. It reuses `CRON_SECRET` (auth) and `GEMINI_API_KEY`
+(model); no new secret is required.
 
 ## Auth
 
@@ -70,7 +79,21 @@ gcloud scheduler jobs create http log-weather \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=120s
+
+gcloud scheduler jobs create http generate-daily-insight \
+  --location="$REGION" \
+  --schedule="0 6,7,8 * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/generate-daily-insight" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=300s
 ```
+
+**Secrets**: `generate-daily-insight` needs no new secret — it reuses
+`CRON_SECRET` and `GEMINI_API_KEY`, both already declared in `apphosting.yaml`
+and provisioned for the forecast jobs. Just ensure the new route is deployed
+(rolled out) before creating the job.
 
 **Weather key**: `log-weather` also needs `OPENWEATHER_API_KEY` (declared in
 `apphosting.yaml`). Create + grant it before the first rollout, e.g.
