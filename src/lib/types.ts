@@ -894,6 +894,50 @@ export type DailyMetric = {
         refundTotal: number;
     };
 }
+
+/* ------------------------------------------------------------------ */
+/*  AI Daily Insight  (stored at stores/{storeId}/aiInsights/{dayId}) */
+/* ------------------------------------------------------------------ */
+
+/** One deterministic, server-computed figure shown as a chip. Never AI-authored. */
+export type InsightMetric = {
+  label: string;
+  value: string;            // pre-formatted (₱, %, min, count)
+  sub?: string | null;      // e.g. "vs ₱42,300 same Sat" or "+12% vs 7-day avg"
+  direction?: "up" | "down" | "flat" | null;
+};
+
+/** A report section: deterministic metrics + AI narrative/flags. */
+export type InsightSectionData = {
+  headline: string;         // AI
+  metrics: InsightMetric[];  // server-computed (source of truth for numbers)
+  narrative: string;        // AI
+  flags: string[];          // AI
+};
+
+export type DailyInsightSuggestion = {
+  text: string;
+  area: "sales" | "ops" | "inventory" | "general";
+  priority: "high" | "medium" | "low";
+};
+
+export type DailyInsight = {
+  dayId: string;            // the analyzed day (yesterday), YYYYMMDD (Asia/Manila)
+  storeId: string;
+  status: "ok" | "no_data" | "error";
+  source: "manual" | "cron";
+  model: string;
+  generatedAt: any;         // serverTimestamp
+  generatedAtMs: number;
+  summary: { headline: string; bullets: string[]; sentiment: "good" | "mixed" | "poor" };
+  sales: InsightSectionData;
+  operations: InsightSectionData;
+  inventory: InsightSectionData;
+  anomalies: InsightSectionData;
+  suggestions: DailyInsightSuggestion[];
+  error?: string | null;
+};
+
 export type ReceiptAnalyticsV2 = {
   v: 2;
   sessionStartedAt: any | null;
