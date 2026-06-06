@@ -8,6 +8,7 @@ import { useStoreContext } from '@/context/store-context';
 import { useLocalProfile } from '@/context/local-profile-context';
 import { bypassesLocalUserGate } from '@/lib/server-profiles/localGate';
 import { ServerSignInGate } from '@/components/server/ServerSignInGate';
+import { RoleBriefGate } from '@/components/insights/RoleBriefGate';
 
 // This is a helper function to merge FirebaseUser and AppUser
 function combineUser(
@@ -67,7 +68,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 {needsLocalUser ? (
                     <ServerSignInGate {...gateProps} />
                 ) : (
-                    children
+                    <>
+                        {children}
+                        <RoleBriefGate />
+                    </>
                 )}
             </main>
         </div>
