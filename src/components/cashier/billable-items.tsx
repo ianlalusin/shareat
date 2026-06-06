@@ -40,6 +40,9 @@ function BillableLineRow({
     const modTotal = Number((line as any).modifiersTotal ?? 0);
     const effectiveUnit = unitPrice + modTotal;
     const modifiersText = (line as any).modifiersText as string | undefined;
+    // The bundle overflow line is system-managed (driven by guest count) — it
+    // must not be hand-edited or voided, or it would drift from the headcount.
+    const isSystemManaged = line.id.startsWith('bundleextra_');
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
@@ -57,9 +60,13 @@ function BillableLineRow({
                 </div>
                 {!isLocked && (
                     <div className="flex items-center gap-2">
-                       <Button variant="outline" size="sm" onClick={() => onEdit(line)}>
-                            <Edit className="mr-2"/> Edit
-                        </Button>
+                       {isSystemManaged ? (
+                            <Badge variant="outline" className="text-muted-foreground font-normal">Auto · from guests</Badge>
+                       ) : (
+                            <Button variant="outline" size="sm" onClick={() => onEdit(line)}>
+                                <Edit className="mr-2"/> Edit
+                            </Button>
+                       )}
                     </div>
                 )}
             </div>

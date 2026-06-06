@@ -1103,7 +1103,10 @@ export async function approveGuestCountChange({
 export async function reconcileBundleLines(storeId: string, sessionId: string, actor: AppUser) {
   const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
   const stamp = getActorStamp(actor);
+  type ExtraChange = { before: number; after: number; itemName: string; ctx: any };
+  let extraChange: ExtraChange | null = null;
   await runTransaction(db, async (tx: Transaction) => {
+    extraChange = null; // reset on transaction retry
     const sSnap = await tx.get(sessionRef);
     if (!sSnap.exists()) return;
     const s = sSnap.data() as any;
@@ -1117,6 +1120,15 @@ export async function reconcileBundleLines(storeId: string, sessionId: string, a
     const guests = Number(s.guestCountFinal ?? 0);
     // Defensive: a missing/zero cap must not bill every guest as overflow.
     const desiredExtra = cap > 0 ? Math.max(0, guests - cap) : 0;
+    const itemName = `Extra Pax — ${s.packageSnapshot.name ?? 'Bundle'}`;
+    const ctx = {
+      sessionStatus: s.status,
+      sessionStartedAt: s.startedAt,
+      sessionMode: s.sessionMode,
+      customerName: s.customer?.name ?? s.customerName ?? null,
+      tableNumber: s.tableNumber ?? null,
+      tableDisplayName: s.tableDisplayName ?? null,
+    };
 
     const pkgRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `package_${pkgId}`);
     const extraRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', `bundleextra_${pkgId}`);
@@ -1127,15 +1139,17 @@ export async function reconcileBundleLines(storeId: string, sessionId: string, a
     }
 
     if (extraSnap.exists()) {
-      if ((extraSnap.data() as any).qtyOrdered !== desiredExtra) {
+      const before = Number((extraSnap.data() as any).qtyOrdered ?? 0);
+      if (before !== desiredExtra) {
         tx.update(extraRef, { qtyOrdered: desiredExtra, updatedAt: serverTimestamp(), updatedByUid: stamp.uid, updatedByName: stamp.username });
+        extraChange = { before, after: desiredExtra, itemName, ctx };
       }
     } else if (extraPrice > 0 && desiredExtra > 0) {
       tx.set(extraRef, {
         id: `bundleextra_${pkgId}`,
         type: 'addon',
         itemId: `bundleextra_${pkgId}`,
-        itemName: `Extra Pax — ${s.packageSnapshot.name ?? 'Bundle'}`,
+        itemName,
         category: 'Extra Pax',
         unitPrice: extraPrice,
         qtyOrdered: desiredExtra,
@@ -1151,8 +1165,24 @@ export async function reconcileBundleLines(storeId: string, sessionId: string, a
         updatedByUid: stamp.uid,
         updatedByName: stamp.username,
       });
+      extraChange = { before: 0, after: desiredExtra, itemName, ctx };
     }
   });
+
+  // Audit the overflow change (draft-stage, best-effort). The headcount change
+  // itself is already logged by verify/approve; this records the derived effect.
+  if (extraChange) {
+    const c = extraChange as ExtraChange;
+    await writeActivityLog({
+      action: 'BUNDLE_EXTRA_PAX_SYNCED',
+      storeId,
+      sessionId,
+      user: actor,
+      meta: { itemName: c.itemName, beforeQty: c.before, afterQty: c.after } as any,
+      note: `Extra Pax synced ${c.before} → ${c.after}`,
+      sessionContext: c.ctx,
+    });
+  }
 }
 
 /**

@@ -686,6 +686,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             discounts={itemDiscounts}
             charges={itemCharges}
             isLocked={isBillingLocked}
+            lockQty={!!session?.packageSnapshot?.isBundle && editingLine.type === 'package'}
             onSave={handleUpdateLine}
             onAddLineAdjustment={handleAddLineAdjustment}
         />

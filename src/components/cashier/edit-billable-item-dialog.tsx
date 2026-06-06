@@ -74,6 +74,8 @@ interface EditBillableItemDialogProps {
     discounts: Discount[];
     charges?: Charge[];
     isLocked?: boolean;
+    /** Bundle flat line: lock the qty at 1 (a bundle is one unit, not per-cover). */
+    lockQty?: boolean;
     onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void | Promise<void>;
     onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void | Promise<void>;
     refundedQty?: number;
@@ -85,29 +87,31 @@ function normalizeDiscountType(t: any): "fixed" | "percent" | null {
     return null;
 }
 
-function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true, allowDecimal = false }: { 
-    label: string, 
-    value: number, 
-    onChange: (val: number) => void, 
-    max: number, 
-    min?: number, 
-    description?: string, 
-    step?: number, 
+function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true, allowDecimal = false, disabled = false }: {
+    label: string,
+    value: number,
+    onChange: (val: number) => void,
+    max: number,
+    min?: number,
+    description?: string,
+    step?: number,
     canDecrease?: boolean,
     allowDecimal?: boolean,
+    disabled?: boolean,
 }) {
     return (
         <FormItem>
             <FormLabel>{label}</FormLabel>
             <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - step))} disabled={!canDecrease}><Minus/></Button>
-                <QuantityInput 
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - step))} disabled={!canDecrease || disabled}><Minus/></Button>
+                <QuantityInput
                     value={value}
                     onChange={onChange}
                     className="text-center"
                     allowDecimal={allowDecimal}
+                    disabled={disabled}
                 />
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))}><Plus/></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))} disabled={disabled}><Plus/></Button>
             </div>
             {description && <FormDescription className="text-xs">{description}</FormDescription>}
              <FormMessage />
@@ -122,6 +126,7 @@ export function EditBillableItemDialog({
     discounts,
     charges = [],
     isLocked,
+    lockQty = false,
     onSave,
     onAddLineAdjustment,
   refundedQty = 0,
@@ -417,7 +422,7 @@ export function EditBillableItemDialog({
                                 <div className="grid grid-cols-2 gap-4">
                                      <FormField name="unitPrice" control={control} render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
+                                            <FormLabel>{lockQty ? 'Bundle Price' : isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
                                             <div className="flex items-center gap-2">
                                             <FormControl><Input type="number" step="0.01" {...field} readOnly/></FormControl>
                                             {showSyncPrice && (
@@ -427,15 +432,16 @@ export function EditBillableItemDialog({
                                         </FormItem>
                                     )} />
                                     <FormField name="qtyOrdered" control={control} render={({ field }) => (
-                                        <QuantityStepper 
-                                            label={isPackage ? "Total Covers" : "Total Quantity"} 
-                                            value={field.value} 
-                                            onChange={handleQtyOrderedChange} 
-                                            max={50} 
+                                        <QuantityStepper
+                                            label={lockQty ? "Bundle (flat)" : isPackage ? "Total Covers" : "Total Quantity"}
+                                            value={field.value}
+                                            onChange={handleQtyOrderedChange}
+                                            max={50}
                                             min={canDecreaseQty ? 0 : line.qtyOrdered}
                                             canDecrease={canDecreaseQty}
                                             allowDecimal={allowDecimal}
                                             step={allowDecimal ? 0.1 : 1}
+                                            disabled={lockQty}
                                         />
                                     )} />
                                 </div>
