@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getDayIdFromTimestamp } from '@/lib/analytics/daily';
 import type { DailyInsight } from '@/lib/types';
@@ -46,4 +46,38 @@ export function useDailyInsight(storeId?: string | null) {
   }, [storeId]);
 
   return { insight, isLoading, error };
+}
+
+/**
+ * Lists a store's recent daily-insight docs (newest first) for the history view.
+ * Doc ids are YYYYMMDD so `dayId` desc is chronological.
+ */
+export function useInsightList(storeId?: string | null, max = 60) {
+  const [items, setItems] = useState<DailyInsight[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!storeId) {
+      setItems([]);
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    const q = query(collection(db, 'stores', storeId, 'aiInsights'), orderBy('dayId', 'desc'), limit(max));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setItems(snap.docs.map((d) => d.data() as DailyInsight));
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error('useInsightList listener failed:', err);
+        setItems([]);
+        setIsLoading(false);
+      },
+    );
+    return () => unsub();
+  }, [storeId, max]);
+
+  return { items, isLoading };
 }

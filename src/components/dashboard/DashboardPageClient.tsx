@@ -34,7 +34,6 @@ import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
 import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
-import { InsightFloatingBadge } from "@/components/dashboard/InsightFloatingBadge";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
 import { useToast } from "@/hooks/use-toast";
@@ -271,10 +270,6 @@ export default function DashboardPageClient() {
             
             {activeStore?.id && (
                 <WeatherLogFloatingButton storeId={activeStore.id} />
-            )}
-
-            {activeStore?.id && (
-                <InsightFloatingBadge storeId={activeStore.id} />
             )}
 
             <PrintSalesReportDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen} />

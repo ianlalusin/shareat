@@ -9,6 +9,7 @@ import { useLocalProfile } from '@/context/local-profile-context';
 import { bypassesLocalUserGate } from '@/lib/server-profiles/localGate';
 import { ServerSignInGate } from '@/components/server/ServerSignInGate';
 import { RoleBriefGate } from '@/components/insights/RoleBriefGate';
+import { InsightFloatingBadge } from '@/components/dashboard/InsightFloatingBadge';
 
 // This is a helper function to merge FirebaseUser and AppUser
 function combineUser(
@@ -71,6 +72,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <>
                         {children}
                         <RoleBriefGate />
+                        <InsightFloatingBadge />
                     </>
                 )}
             </main>
