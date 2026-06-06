@@ -9,7 +9,6 @@ import { useInsightList } from "@/hooks/useDailyInsight";
 import { InsightReport } from "@/components/insights/InsightReport";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Loader2, RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
@@ -106,7 +105,7 @@ export default function AiInsightsPage() {
   return (
     <RoleGuard allow={["admin", "manager"]}>
       <PageHeader title="AI Daily Insights" description="Yesterday's performance, analyzed — pick a date to read its brief." />
-      <div className="mx-auto w-full max-w-6xl px-4 py-4">
+      <div className="w-full px-4 py-4">
         <div className="mb-3 flex items-center justify-end">
           <Button variant="outline" onClick={() => generate(true)} disabled={busy || !activeStore}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -130,18 +129,16 @@ export default function AiInsightsPage() {
                   </Button>
                 </div>
               ) : (
-                <ScrollArea className="md:h-[calc(100vh-200px)]">
-                  <div className="space-y-1.5 pr-2">
-                    {items.map((item) => (
-                      <DateListItem
-                        key={item.dayId}
-                        item={item}
-                        selected={item.dayId === selectedDayId}
-                        onClick={() => setSelectedDayId(item.dayId)}
-                      />
-                    ))}
-                  </div>
-                </ScrollArea>
+                <div className="max-h-[70vh] space-y-1.5 overflow-y-auto p-1">
+                  {items.map((item) => (
+                    <DateListItem
+                      key={item.dayId}
+                      item={item}
+                      selected={item.dayId === selectedDayId}
+                      onClick={() => setSelectedDayId(item.dayId)}
+                    />
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
