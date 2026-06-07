@@ -37,7 +37,7 @@ const DailyInsightOutputSchema = z.object({
     sentiment: z.enum(['good', 'mixed', 'poor']).describe('Overall sentiment for the day.'),
   }),
   sales: SectionSchema.describe('Sales performance: revenue, covers, avg basket, package mix, peak/slow hours, dine-in vs walk-in, payment mix, vs prior days.'),
-  operations: SectionSchema.describe('Operations: time to attend (server confirm), kitchen serve times, avg session duration, guest inflow by hour, busiest/idle windows, cancellations.'),
+  operations: SectionSchema.describe("Operations: time to attend (server confirm), kitchen serve times, avg session duration, guest inflow by hour, busiest/idle windows, cancellations, AND staff responsiveness to customer 'need assistance' taps (request count, answered vs unanswered, avg/slowest response, % within 2 min)."),
   inventory: SectionSchema.describe('Menu-item movement (from sales): fast movers and items that barely moved among add-ons/refills/packages, plus weather/day-driven push tactics for today. Note this is sell-through, not raw stock.'),
   anomalies: SectionSchema.describe('Anomalies worth attention: high voids/discounts/free items, refunds, high charges, payment-method skew, long no-guest hours (possible closure), and anything unusual.'),
   suggestions: z.array(z.object({

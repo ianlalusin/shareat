@@ -285,6 +285,67 @@ async function buildDayContext(storeId: string, yesterday: Date, today: Date): P
   return parts.length ? parts.join(" ") : undefined;
 }
 
+/** Absolute epoch ms for Asia/Manila midnight of the given date. */
+function manilaDayStartMs(d: Date): number {
+  const s = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Manila" }).format(d);
+  return new Date(`${s}T00:00:00+08:00`).getTime();
+}
+
+/**
+ * Staff responsiveness to customer "need assistance" taps (customer app) for
+ * yesterday — count, answered/unanswered, avg & slowest response, % within 2 min.
+ * Source: stores/{id}/customerRequests (same data as admin/customer-requests).
+ */
+async function buildAssistanceMetrics(
+  storeId: string,
+  now: Date,
+  yesterday: Date,
+): Promise<{ chips: InsightMetric[]; digest: string }> {
+  const db = getAdminDb();
+  const start = manilaDayStartMs(yesterday);
+  const end = manilaDayStartMs(now); // today's midnight = end of yesterday
+  const snap = await db
+    .collection(`stores/${storeId}/customerRequests`)
+    .where("createdAtClientMs", ">=", start)
+    .where("createdAtClientMs", "<", end)
+    .get();
+
+  const rows = snap.docs.map((d) => d.data() as any);
+  if (rows.length === 0) return { chips: [], digest: "" };
+
+  const total = rows.length;
+  const doneRows = rows.filter((r) => r.status === "done");
+  const pending = total - doneRows.length;
+  let sum = 0, cnt = 0, maxMs = 0, under2 = 0;
+  for (const r of doneRows) {
+    const doneMs = typeof r.doneAtClientMs === "number" ? r.doneAtClientMs : (r.doneAt?.toMillis ? r.doneAt.toMillis() : null);
+    if (doneMs == null) continue;
+    const ms = Math.max(0, doneMs - Number(r.createdAtClientMs || 0));
+    sum += ms; cnt += 1;
+    if (ms > maxMs) maxMs = ms;
+    if (ms <= 120000) under2 += 1;
+  }
+  const avgMs = cnt > 0 ? sum / cnt : null;
+  const within2Pct = cnt > 0 ? Math.round((under2 / cnt) * 100) : null;
+
+  const chips: InsightMetric[] = [
+    { label: "Assistance requests", value: count(total), sub: `${count(doneRows.length)} answered${pending > 0 ? `, ${count(pending)} unanswered` : ""}`, direction: pending > 0 ? "down" : null },
+  ];
+  if (avgMs != null) chips.push({ label: "Avg response", value: minutes(avgMs), sub: "tap → done", direction: null });
+  if (maxMs > 0) chips.push({ label: "Slowest response", value: minutes(maxMs), sub: null, direction: null });
+  if (within2Pct != null) chips.push({ label: "Answered ≤2 min", value: `${within2Pct}%`, sub: null, direction: within2Pct < 80 ? "down" : null });
+
+  const digest = [
+    "ASSISTANCE / RESPONSIVENESS (customer 'need assistance' taps)",
+    `- Requests: ${total} (${doneRows.length} answered${pending > 0 ? `, ${pending} unanswered` : ""})`,
+    avgMs != null ? `- Avg response (tap → done): ${minutes(avgMs)}` : "",
+    maxMs > 0 ? `- Slowest response: ${minutes(maxMs)}` : "",
+    within2Pct != null ? `- Answered within 2 min: ${within2Pct}%` : "",
+  ].filter(Boolean).join("\n");
+
+  return { chips, digest };
+}
+
 /* ----------------------------- main entry ------------------------------- */
 
 type StoreData = { id: string; name?: string; isActive?: boolean };
@@ -355,10 +416,15 @@ export async function generateDailyInsightForStore(
 
     const { sections, digest } = buildMetricsAndDigest(yest, prevDay, sameDowAvgGross, avg7Gross, sameDowAvgCovers, DAY_NAMES[yDow]);
 
-    const [weatherContext, dayContext] = await Promise.all([
+    const [weatherContext, dayContext, assistance] = await Promise.all([
       buildWeatherContext(store.id, now).catch(() => undefined),
       buildDayContext(store.id, yesterday, now).catch(() => undefined),
+      buildAssistanceMetrics(store.id, now, yesterday).catch(() => ({ chips: [] as InsightMetric[], digest: "" })),
     ]);
+
+    // Staff responsiveness is an operations signal — fold it into that section.
+    const opsMetrics = [...sections.operations, ...assistance.chips];
+    const fullDigest = assistance.digest ? `${digest}\n\n${assistance.digest}` : digest;
 
     const p = manilaParts(yesterday);
     const dateLabel = `${DAY_NAMES[yDow]}, ${p.day} ${MONTH_NAMES[p.m - 1]} ${p.y}`;
@@ -367,14 +433,14 @@ export async function generateDailyInsightForStore(
       storeName: store.name || store.id,
       dateLabel,
       dayOfWeek: DAY_NAMES[yDow],
-      metricsDigest: digest,
+      metricsDigest: fullDigest,
       weatherContext,
       dayContext,
     });
 
     const merge = (key: "sales" | "operations" | "inventory" | "anomalies"): InsightSectionData => ({
       headline: ai[key].headline,
-      metrics: sections[key],
+      metrics: key === "operations" ? opsMetrics : sections[key],
       narrative: ai[key].narrative,
       flags: ai[key].flags ?? [],
     });
