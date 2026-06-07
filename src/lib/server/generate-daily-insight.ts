@@ -11,7 +11,12 @@ import type {
 } from "@/lib/types";
 
 const MODEL = "googleai/gemini-2.5-flash";
-const INSIGHT_CONCURRENCY = 4;
+// Keep bursts well under the Gemini rate limit (gentle off-peak generation).
+const INSIGHT_CONCURRENCY = 2;
+// Max NEW (not-yet-done) stores generated per cron fire. With several off-peak
+// fires + per-store skip-if-done, the work spreads into small batches and no
+// store is ever generated twice in a day.
+const INSIGHT_BATCH = 4;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -291,12 +296,23 @@ const emptySection = (headline: string, metrics: InsightMetric[]): InsightSectio
 export async function generateDailyInsightForStore(
   store: StoreData,
   source: "manual" | "cron" = "manual",
-): Promise<{ storeId: string; ok: boolean; status?: string; error?: string }> {
+  opts: { force?: boolean } = {},
+): Promise<{ storeId: string; ok: boolean; status?: string; error?: string; skipped?: boolean }> {
   const db = getAdminDb();
   const now = new Date();
   const yesterday = addDays(now, -1);
   const dayId = dayIdOf(yesterday);
   const insightRef = db.doc(`stores/${store.id}/aiInsights/${dayId}`);
+
+  // Cost guard: a store already analyzed today needs no second Gemini call.
+  // (Manual "Regenerate" passes force=true to override.)
+  if (!opts.force) {
+    const existing = await insightRef.get();
+    const st = existing.exists ? (existing.data() as any)?.status : null;
+    if (st === "ok" || st === "no_data") {
+      return { storeId: store.id, ok: true, status: st, skipped: true };
+    }
+  }
 
   try {
     // Read yesterday + prior 20 days by id (deterministic batch).
@@ -398,12 +414,31 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-export async function generateInsightsForAllActiveStores() {
+export async function generateInsightsForAllActiveStores(opts: { batchSize?: number } = {}) {
   const db = getAdminDb();
+  const dayId = getInsightDayId();
   const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
   const stores: StoreData[] = storesSnap.docs.map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive }));
-  const results = await mapWithConcurrency(stores, INSIGHT_CONCURRENCY, (s) => generateDailyInsightForStore(s, "cron"));
-  return { totalStores: stores.length, results };
+  if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof generateDailyInsightForStore>>[] };
+
+  // Skip stores already done today (output doc ok/no_data) — no Gemini call.
+  const doneSnaps = await db.getAll(...stores.map((s) => db.doc(`stores/${s.id}/aiInsights/${dayId}`)));
+  const pending = stores.filter((_, i) => {
+    const st = doneSnaps[i].exists ? (doneSnaps[i].data() as any)?.status : null;
+    return !(st === "ok" || st === "no_data");
+  });
+
+  // Process only a batch of pending stores per fire (the rest wait for the next
+  // off-peak fire), keeping each burst small.
+  const slice = opts.batchSize ? pending.slice(0, opts.batchSize) : pending;
+  const results = await mapWithConcurrency(slice, INSIGHT_CONCURRENCY, (s) => generateDailyInsightForStore(s, "cron"));
+  return {
+    totalStores: stores.length,
+    pending: pending.length,
+    processed: slice.length,
+    remaining: pending.length - slice.length,
+    results,
+  };
 }
 
 function getManilaDateStr(): string {
@@ -423,10 +458,21 @@ export async function runInsightWithTracking(): Promise<{ skipped: boolean; reas
 
   const attempts = (log?.attempts ?? 0) + 1;
   try {
-    const result = await generateInsightsForAllActiveStores();
-    const allOk = result.results.every((r) => r.ok);
-    await db.doc(CRON_LOG_DOC).set({ runs: { [dateStr]: { status: allOk ? "success" : "failed", attempts, lastAttemptAt: Timestamp.now() } } }, { merge: true });
-    return { skipped: false, reason: allOk ? "Insights generated." : "Partially failed.", result };
+    const result = await generateInsightsForAllActiveStores({ batchSize: INSIGHT_BATCH });
+    const batchOk = result.results.every((r) => r.ok);
+    // "success" only when no stores remain pending AND this batch had no errors;
+    // otherwise stay "pending" so the next off-peak fire picks up the rest /
+    // retries failures (capped by MAX_DAILY_ATTEMPTS).
+    const allDone = result.remaining === 0 && batchOk;
+    await db.doc(CRON_LOG_DOC).set(
+      { runs: { [dateStr]: { status: allDone ? "success" : "pending", attempts, lastAttemptAt: Timestamp.now() } } },
+      { merge: true },
+    );
+    return {
+      skipped: false,
+      reason: allDone ? "All insights generated." : `Processed ${result.processed}; ${result.remaining} store(s) remaining.`,
+      result,
+    };
   } catch (err) {
     await db.doc(CRON_LOG_DOC).set({ runs: { [dateStr]: { status: "failed", attempts, lastAttemptAt: Timestamp.now() } } }, { merge: true });
     throw err;

@@ -18,7 +18,11 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 // Each store = one Gemini call. Cap how many run at once so a large store
 // count can't burst past the Gemini free-tier rate limit (~10–15 req/min).
-const FORECAST_CONCURRENCY = 4;
+const FORECAST_CONCURRENCY = 2;
+// Max NEW (not-yet-done) stores forecast per cron fire. Combined with per-store
+// done-tracking + the multiple evening fires, this spreads the Gemini calls and
+// never re-forecasts a store that already succeeded today.
+const FORECAST_BATCH = 4;
 
 /** Map an async fn over items with bounded concurrency, preserving order. */
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -282,8 +286,12 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
   }
 }
 
-export async function generateForecastsForAllActiveStores(): Promise<{
+export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?: Set<string>; batchSize?: number } = {}): Promise<{
   totalStores: number;
+  pending: number;
+  processed: number;
+  remaining: number;
+  okStoreIds: string[];
   results: { storeId: string; ok: boolean; error?: string; forecastsWritten?: number }[];
 }> {
   const db = getAdminDb();
@@ -299,8 +307,21 @@ export async function generateForecastsForAllActiveStores(): Promise<{
     };
   });
 
-  const results = await mapWithConcurrency(stores, FORECAST_CONCURRENCY, generateForecastForStore);
-  return { totalStores: stores.length, results };
+  // Skip stores already forecast today (tracked in the cron log), then cap the
+  // batch so each fire stays a small burst.
+  const done = opts.doneStoreIds ?? new Set<string>();
+  const pending = stores.filter((s) => !done.has(s.id));
+  const slice = opts.batchSize ? pending.slice(0, opts.batchSize) : pending;
+  const results = await mapWithConcurrency(slice, FORECAST_CONCURRENCY, generateForecastForStore);
+  const okStoreIds = results.filter((r) => r.ok).map((r) => r.storeId);
+  return {
+    totalStores: stores.length,
+    pending: pending.length,
+    processed: slice.length,
+    remaining: pending.length - slice.length,
+    okStoreIds,
+    results,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -345,10 +366,12 @@ function getManilaDateStr(): string {
 }
 
 type DayRunLog = {
-  status: "success" | "failed";
+  status: "success" | "failed" | "pending";
   attempts: number;
   lastAttemptAt: Timestamp;
   successAt: Timestamp | null;
+  /** Store ids already forecast successfully today — skipped on later fires. */
+  doneStoreIds?: string[];
 };
 
 const CRON_LOG_DOC = "system/forecastCronLog";
@@ -392,29 +415,36 @@ export async function runForecastWithTracking(): Promise<{
 
   const dateStr = getManilaDateStr();
   const attempts = (currentLog?.attempts ?? 0) + 1;
+  const done = new Set<string>(currentLog?.doneStoreIds ?? []);
 
   try {
-    const result = await generateForecastsForAllActiveStores();
-    const allOk = result.results.every((r) => r.ok);
+    const result = await generateForecastsForAllActiveStores({ doneStoreIds: done, batchSize: FORECAST_BATCH });
+    for (const id of result.okStoreIds) done.add(id);
+    const batchOk = result.results.every((r) => r.ok);
+    // "success" only when no stores remain AND this batch had no failures;
+    // otherwise "pending" so a later fire forecasts the rest / retries failures.
+    const allDone = result.remaining === 0 && batchOk;
 
     await writeDayRunLog(dateStr, {
-      status: allOk ? "success" : "failed",
+      status: allDone ? "success" : "pending",
       attempts,
       lastAttemptAt: Timestamp.now(),
-      successAt: allOk ? Timestamp.now() : null,
+      successAt: allDone ? Timestamp.now() : null,
+      doneStoreIds: [...done],
     });
 
     return {
       skipped: false,
-      reason: allOk ? "Forecast succeeded." : "Forecast partially failed.",
+      reason: allDone ? "Forecast succeeded." : `Processed ${result.processed}; ${result.remaining} store(s) remaining.`,
       result,
     };
   } catch (err) {
     await writeDayRunLog(dateStr, {
-      status: "failed",
+      status: "pending",
       attempts,
       lastAttemptAt: Timestamp.now(),
       successAt: null,
+      doneStoreIds: [...done],
     });
     throw err;
   }

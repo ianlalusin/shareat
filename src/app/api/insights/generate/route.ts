@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     const storeSnap = await adminDb.doc(`stores/${storeId}`).get();
     const storeName = (storeSnap.data() as any)?.name || storeId;
 
-    const result = await generateDailyInsightForStore({ id: storeId, name: storeName }, "manual");
+    const result = await generateDailyInsightForStore({ id: storeId, name: storeName }, "manual", { force: true });
     if (!result.ok) {
       return NextResponse.json({ error: result.error || "Insight generation failed." }, { status: 500 });
     }

@@ -12,7 +12,7 @@ externally by **Google Cloud Scheduler**.
 | -------------------------- | ----------------------------------- | ------------------------------- | ---------------- |
 | `update-forecast-accuracy` | `GET /api/cron/update-accuracy`     | `0 20 * * *` (8 PM)             | 180s             |
 | `generate-forecast`        | `GET /api/cron/generate-forecast`   | `0 21,22,23,0,1 * * *` (9 PM–1 AM) | 600s         |
-| `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 6,7,8 * * *` (6–8 AM)     | 300s             |
+| `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 1-5 * * *` (1–5 AM, batched) | 300s          |
 | `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
@@ -27,12 +27,20 @@ day "success" and later attempts short-circuit. The extra fires only exist as
 fallbacks for transient Gemini or Firestore failures.
 
 `generate-daily-insight` analyzes **yesterday's** performance per active store
-(one Gemini call each, bounded concurrency) and writes
-`stores/<storeId>/aiInsights/<YYYYMMDD>` for the manager dashboard badge/report
-and the cashier/server/kitchen shift-start briefs. It self-deduplicates via
-`system/insightCronLog.runs[<date>]`, so the 6/7/8 AM fires are just fallbacks —
-the first success wins. It reuses `CRON_SECRET` (auth) and `GEMINI_API_KEY`
-(model); no new secret is required.
+and writes `stores/<storeId>/aiInsights/<YYYYMMDD>` for the manager dashboard
+badge/report and the cashier/server/kitchen shift-start briefs. It reuses
+`CRON_SECRET` (auth) and `GEMINI_API_KEY` (model); no new secret is required.
+
+**Cost control (both AI crons):** generation is **per-store idempotent** — a
+store already done for the day is skipped (no Gemini call), so a single flaky
+store never re-runs the whole fleet. Each fire processes only a small **batch**
+of not-yet-done stores at low concurrency, so the work spreads across the
+multiple off-peak fires (insight: `0 1-5 * * *`; forecast keeps its evening
+window) and bursts stay under the Gemini rate limit. A day is marked `success`
+only once every active store is done; otherwise it stays `pending` and the next
+fire picks up the remainder / retries failures (capped by `MAX_DAILY_ATTEMPTS`).
+The forecast tracks completed stores in `system/forecastCronLog.runs[<date>].doneStoreIds`;
+the insight uses the presence of each store's `aiInsights/<date>` doc.
 
 ## Auth
 
@@ -82,7 +90,7 @@ gcloud scheduler jobs create http log-weather \
 
 gcloud scheduler jobs create http generate-daily-insight \
   --location="$REGION" \
-  --schedule="0 6,7,8 * * *" \
+  --schedule="0 1-5 * * *" \
   --time-zone="Asia/Manila" \
   --uri="$BACKEND_URL/api/cron/generate-daily-insight" \
   --http-method=GET \
