@@ -9,9 +9,13 @@ import { useEffect } from 'react';
 import { getLastPrinterAddress } from '@/lib/printing/printHub';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { AndroidBackHandler } from '@/components/shared/AndroidBackHandler';
+import { installApiBaseFetch } from '@/lib/api-base';
 
 export function Providers({ children }: { children: React.ReactNode }) {
     useEffect(() => {
+        // Capacitor build: redirect relative /api calls to the deployed backend.
+        installApiBaseFetch();
+
         // Register the service worker only in the browser, not in the native app.
         if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
             const isWorkstation = window.location.hostname.endsWith('.cloudworkstations.dev');

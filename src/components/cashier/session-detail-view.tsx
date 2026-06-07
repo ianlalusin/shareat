@@ -609,7 +609,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 <History className="mr-2 h-4 w-4" /> View Timeline
             </Button>
             {session.isPaid && (
-              <Button variant="outline" size="sm" onClick={() => router.push(`/receipt/${sessionId}`)}>
+              <Button variant="outline" size="sm" onClick={() => router.push(`/receipt?id=${sessionId}`)}>
                   <Receipt className="mr-2 h-4 w-4" /> View Receipt
               </Button>
             )}

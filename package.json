@@ -7,6 +7,7 @@
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "NEXT_DISABLE_TURBOPACK=1 NEXT_PRIVATE_MAX_WORKERS=1 next build",
+    "build:cap": "node scripts/build-capacitor.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

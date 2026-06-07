@@ -336,7 +336,7 @@ export function PaymentModal({
       const settingsSnap = await getDoc(doc(db, "stores", storeId, "receiptSettings", "main"));
       const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
       setShowSuccess(true);
-      setPendingRedirect(`/receipt/${receiptId}${autoPrint ? "?autoprint=1" : ""}`);
+      setPendingRedirect(`/receipt?id=${receiptId}${autoPrint ? "&autoprint=1" : ""}`);
 
       // PIN cleanup (fire-and-forget)
       if (firebaseUser && currentPin) {

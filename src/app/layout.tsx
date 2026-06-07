@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Suspense } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { Baloo_2, Poppins } from 'next/font/google';
@@ -86,7 +87,7 @@ export default function RootLayout({
           <OfflineBanner />
             <PaymentQueueSyncProvider />
           <FirstLoginGuard>
-            {children}
+            <Suspense>{children}</Suspense>
           </FirstLoginGuard>
         </Providers>
         <Toaster />
