@@ -99,6 +99,73 @@ function bottomEntry(o: Record<string, number> | undefined): { key: string; val:
 const grossOf = (dm: DM) => Number(dm?.payments?.totalGross ?? 0);
 const txOf = (dm: DM) => Number(dm?.payments?.txCount ?? 0);
 const coversOf = (dm: DM) => Number(dm?.guests?.guestCountFinalTotal ?? 0);
+const leakageAmt = (dm: DM) =>
+  Number(dm?.items?.voidedAmount ?? 0) + Number(dm?.items?.discountedAmount ?? 0) + Number(dm?.items?.freeAmount ?? 0);
+const leakagePctOf = (dm: DM): number | null => {
+  const g = grossOf(dm);
+  return g > 0 ? (leakageAmt(dm) / g) * 100 : null;
+};
+
+/** 7-day momentum: recent-7 vs prior-7 avg, plus day-over-day rise/fall streak. */
+function computeTrend(byOffset: Map<number, DM>): { trendPct: number | null; streakDir: 1 | -1 | 0; streakDays: number } {
+  const g = (o: number) => { const d = byOffset.get(o); return d ? grossOf(d) : null; };
+  const avgRange = (a: number, b: number) => {
+    let s = 0, n = 0;
+    for (let o = a; o <= b; o++) { const v = g(o); if (v != null && v > 0) { s += v; n++; } }
+    return n ? s / n : null;
+  };
+  const recent = avgRange(1, 7), prior = avgRange(8, 14);
+  const trendPct = recent != null && prior != null && prior > 0 ? ((recent - prior) / prior) * 100 : null;
+  let dir: 1 | -1 | 0 = 0, days = 0;
+  for (let o = 1; o <= 13; o++) {
+    const a = g(o), b = g(o + 1);
+    if (a == null || b == null) break;
+    const cmp: 1 | -1 | 0 = a > b ? 1 : a < b ? -1 : 0;
+    if (cmp === 0) break;
+    if (dir === 0) { dir = cmp; days = 1; }
+    else if (cmp === dir) days++;
+    else break;
+  }
+  return { trendPct, streakDir: dir, streakDays: days };
+}
+
+/** Average comps-leakage % over the prior ~14 days (baseline for trending). */
+function computeLeakageBaseline(byOffset: Map<number, DM>): number | null {
+  let s = 0, n = 0;
+  for (let o = 2; o <= 15; o++) { const d = byOffset.get(o); if (!d) continue; const p = leakagePctOf(d); if (p != null) { s += p; n++; } }
+  return n ? s / n : null;
+}
+
+/** Per-local-user operations leaders (server confirm + kitchen serve) for yesterday. */
+function computeStaffOps(yest: DM): { chips: InsightMetric[]; digest: string } {
+  const names = (yest?.staffNames ?? {}) as Record<string, string>;
+  const nm = (id: string) => names[id] || id.slice(0, 6);
+  const chips: InsightMetric[] = [];
+  const lines: string[] = [];
+
+  const avgsFrom = (sum: Record<string, number> = {}, cnt: Record<string, number> = {}, minN = 3) =>
+    Object.keys(cnt)
+      .filter((id) => Number(cnt[id]) >= minN)
+      .map((id) => ({ id, avg: Number(sum[id]) / Number(cnt[id]), n: Number(cnt[id]) }))
+      .sort((a, b) => a.avg - b.avg);
+
+  const servers = avgsFrom(yest?.server?.confirmMsSumByUser, yest?.server?.confirmCountByUser);
+  if (servers.length) {
+    const fast = servers[0];
+    chips.push({ label: "Fastest to confirm", value: nm(fast.id), sub: `${minutes(fast.avg)} avg`, direction: null });
+    lines.push(`- Fastest server confirm: ${nm(fast.id)} (${minutes(fast.avg)} avg over ${fast.n})`);
+    if (servers.length > 1) { const slow = servers[servers.length - 1]; lines.push(`- Slowest server confirm: ${nm(slow.id)} (${minutes(slow.avg)} avg)`); }
+  }
+  const kitchen = avgsFrom(yest?.kitchen?.servingMsSumByUser, yest?.kitchen?.servingCountByUser);
+  if (kitchen.length) {
+    const fast = kitchen[0];
+    chips.push({ label: "Fastest kitchen serve", value: nm(fast.id), sub: `${minutes(fast.avg)} avg`, direction: null });
+    lines.push(`- Fastest kitchen serve: ${nm(fast.id)} (${minutes(fast.avg)} avg over ${fast.n})`);
+  }
+
+  const digest = lines.length ? ["STAFF (per local user)", ...lines].join("\n") : "";
+  return { chips, digest };
+}
 
 /* ----------------------------- core builder ----------------------------- */
 
@@ -112,6 +179,14 @@ type BuiltInput = {
   digest: string;
 };
 
+type DigestExtras = {
+  forecastProjected: number | null;
+  trendPct: number | null;
+  streakDir: 1 | -1 | 0;
+  streakDays: number;
+  leakageBaselinePct: number | null;
+};
+
 function buildMetricsAndDigest(
   yest: DM,
   prevDay: DM | null,
@@ -119,6 +194,7 @@ function buildMetricsAndDigest(
   avg7Gross: number | null,
   sameDowAvgCovers: number | null,
   dowName: string,
+  extras: DigestExtras,
 ): BuiltInput {
   const gross = grossOf(yest);
   const tx = txOf(yest);
@@ -148,6 +224,13 @@ function buildMetricsAndDigest(
     sales.push({ label: "Avg basket", value: peso(basket), sub: prevBasket != null ? deltaSub(basket, prevBasket, "prev day").sub : null, direction: prevBasket != null ? dirOf(pct(basket, prevBasket)) : null });
     sales.push({ label: "Covers", value: count(covers), sub: sameDowAvgCovers != null ? deltaSub(covers, sameDowAvgCovers, "weekday avg").sub : null, direction: sameDowAvgCovers != null ? dirOf(pct(covers, sameDowAvgCovers)) : null });
     sales.push({ label: "Dine-in / Walk-in", value: `${count(dineInTx)} / ${count(walkInTx)}`, sub: "transactions", direction: null });
+    if (extras.forecastProjected != null && extras.forecastProjected > 0) {
+      const vsFc = deltaSub(gross, extras.forecastProjected, "forecast");
+      sales.push({ label: "vs forecast", value: peso(extras.forecastProjected), sub: vsFc.sub, direction: vsFc.direction });
+    }
+    if (extras.trendPct != null) {
+      sales.push({ label: "7-day trend", value: `${extras.trendPct >= 0 ? "+" : ""}${extras.trendPct.toFixed(0)}%`, sub: "vs prior 7 days", direction: dirOf(extras.trendPct) });
+    }
     if (topPkg) sales.push({ label: "Top package", value: topPkg.key, sub: peso(topPkg.val), direction: null });
     if (peakHour) sales.push({ label: "Peak hour", value: `${peakHour.key}:00`, sub: peso(peakHour.val), direction: null });
     if (topMethod) sales.push({ label: "Top payment", value: topMethod.key, sub: peso(topMethod.val), direction: null });
@@ -203,20 +286,36 @@ function buildMetricsAndDigest(
     if (hours.length >= 2) {
       for (let h = hours[0]; h <= hours[hours.length - 1]; h++) if (!(Number(sch[String(h)]) > 0)) noGuestHours++;
     }
-    if (voided > 0) anomalies.push({ label: "Voided", value: peso(voided), sub: `${count(yest?.items?.voidedQty ?? 0)} items`, direction: null });
-    if (discounted > 0) anomalies.push({ label: "Discounts", value: peso(discounted), sub: `${count(yest?.items?.discountedQty ?? 0)} items`, direction: null });
-    if (free > 0) anomalies.push({ label: "Free items", value: peso(free), sub: `${count(yest?.items?.freeQty ?? 0)} items`, direction: null });
+    const ofSales = (amt: number) => (gross > 0 ? ` · ${((amt / gross) * 100).toFixed(1)}% of sales` : "");
+    if (voided > 0) anomalies.push({ label: "Voided", value: peso(voided), sub: `${count(yest?.items?.voidedQty ?? 0)} items${ofSales(voided)}`, direction: null });
+    if (discounted > 0) anomalies.push({ label: "Discounts", value: peso(discounted), sub: `${count(yest?.items?.discountedQty ?? 0)} items${ofSales(discounted)}`, direction: null });
+    if (free > 0) anomalies.push({ label: "Free items", value: peso(free), sub: `${count(yest?.items?.freeQty ?? 0)} items${ofSales(free)}`, direction: null });
     if (refundCount > 0) anomalies.push({ label: "Refunds", value: peso(refundTotal), sub: `${count(refundCount)} refund(s)`, direction: null });
+    // Combined comps/leakage rate vs the 14-day baseline.
+    const leakTotal = voided + discounted + free;
+    const leakPct = gross > 0 ? (leakTotal / gross) * 100 : null;
+    if (leakPct != null && leakTotal > 0) {
+      const base = extras.leakageBaselinePct;
+      const sub = base != null
+        ? `${leakPct - base >= 0 ? "+" : ""}${(leakPct - base).toFixed(1)} pts vs ${base.toFixed(1)}% avg`
+        : "of sales (void+disc+free)";
+      const direction = base != null ? (leakPct > base + 0.3 ? "up" : leakPct < base - 0.3 ? "down" : "flat") : null;
+      anomalies.push({ label: "Comps & leakage", value: `${leakPct.toFixed(1)}%`, sub, direction });
+    }
     if (charges > 0) anomalies.push({ label: "Extra charges", value: peso(charges), sub: null, direction: null });
     if (noGuestHours > 0) anomalies.push({ label: "Idle hours (within open window)", value: count(noGuestHours), sub: "no sessions", direction: "down" });
   }
 
   // Digest text (what the model reads)
   const line = (m: InsightMetric) => `- ${m.label}: ${m.value}${m.sub ? ` (${m.sub})` : ""}`;
+  const streakLine = extras.streakDays >= 2 && extras.streakDir !== 0
+    ? `- Momentum: sales ${extras.streakDir > 0 ? "rose" : "fell"} ${extras.streakDays} days in a row (through yesterday)`
+    : "";
   const digest = [
     "SALES",
     ...sales.map(line),
     slowPkg && slowPkg.key !== topPkg?.key ? `- Lowest-selling package: ${slowPkg.key} (${peso(slowPkg.val)})` : "",
+    streakLine,
     "",
     "OPERATIONS",
     ...operations.map(line),
@@ -328,12 +427,21 @@ async function buildAssistanceMetrics(
   const avgMs = cnt > 0 ? sum / cnt : null;
   const within2Pct = cnt > 0 ? Math.round((under2 / cnt) * 100) : null;
 
+  // Who answered the most (per local user).
+  const byHandler: Record<string, number> = {};
+  for (const r of doneRows) {
+    const h = r.doneByProfileName || r.doneByUsername;
+    if (h) byHandler[h] = (byHandler[h] || 0) + 1;
+  }
+  const topHandler = topEntry(byHandler);
+
   const chips: InsightMetric[] = [
     { label: "Assistance requests", value: count(total), sub: `${count(doneRows.length)} answered${pending > 0 ? `, ${count(pending)} unanswered` : ""}`, direction: pending > 0 ? "down" : null },
   ];
   if (avgMs != null) chips.push({ label: "Avg response", value: minutes(avgMs), sub: "tap → done", direction: null });
   if (maxMs > 0) chips.push({ label: "Slowest response", value: minutes(maxMs), sub: null, direction: null });
   if (within2Pct != null) chips.push({ label: "Answered ≤2 min", value: `${within2Pct}%`, sub: null, direction: within2Pct < 80 ? "down" : null });
+  if (topHandler) chips.push({ label: "Most assists handled", value: topHandler.key, sub: `${count(topHandler.val)} handled`, direction: null });
 
   const digest = [
     "ASSISTANCE / RESPONSIVENESS (customer 'need assistance' taps)",
@@ -341,6 +449,7 @@ async function buildAssistanceMetrics(
     avgMs != null ? `- Avg response (tap → done): ${minutes(avgMs)}` : "",
     maxMs > 0 ? `- Slowest response: ${minutes(maxMs)}` : "",
     within2Pct != null ? `- Answered within 2 min: ${within2Pct}%` : "",
+    topHandler ? `- Most handled by: ${topHandler.key} (${topHandler.val})` : "",
   ].filter(Boolean).join("\n");
 
   return { chips, digest };
@@ -414,7 +523,23 @@ export async function generateDailyInsightForStore(
     const avg7Gross = avg(last7, grossOf);
     const sameDowAvgCovers = avg(sameDow, coversOf);
 
-    const { sections, digest } = buildMetricsAndDigest(yest, prevDay, sameDowAvgGross, avg7Gross, sameDowAvgCovers, DAY_NAMES[yDow]);
+    // Momentum + comps baseline from the loaded history.
+    const { trendPct, streakDir, streakDays } = computeTrend(byOffset);
+    const leakageBaselinePct = computeLeakageBaseline(byOffset);
+
+    // Forecast vs actual — closes the loop with the sales forecaster.
+    const yp = manilaParts(yesterday);
+    const yMd = `${yp.y}-${String(yp.m).padStart(2, "0")}-${String(yp.day).padStart(2, "0")}`;
+    let forecastProjected: number | null = null;
+    try {
+      const fc = await db.doc(`stores/${store.id}/salesForecasts/${yMd}`).get();
+      if (fc.exists) forecastProjected = Number((fc.data() as any)?.projectedSales ?? 0) || null;
+    } catch { /* forecast optional */ }
+
+    const extras: DigestExtras = { forecastProjected, trendPct, streakDir, streakDays, leakageBaselinePct };
+    const { sections, digest } = buildMetricsAndDigest(yest, prevDay, sameDowAvgGross, avg7Gross, sameDowAvgCovers, DAY_NAMES[yDow], extras);
+
+    const staffOps = computeStaffOps(yest);
 
     const [weatherContext, dayContext, assistance] = await Promise.all([
       buildWeatherContext(store.id, now).catch(() => undefined),
@@ -422,9 +547,9 @@ export async function generateDailyInsightForStore(
       buildAssistanceMetrics(store.id, now, yesterday).catch(() => ({ chips: [] as InsightMetric[], digest: "" })),
     ]);
 
-    // Staff responsiveness is an operations signal — fold it into that section.
-    const opsMetrics = [...sections.operations, ...assistance.chips];
-    const fullDigest = assistance.digest ? `${digest}\n\n${assistance.digest}` : digest;
+    // Per-staff leaders + assistance responsiveness both belong in operations.
+    const opsMetrics = [...sections.operations, ...staffOps.chips, ...assistance.chips];
+    const fullDigest = [digest, staffOps.digest, assistance.digest].filter(Boolean).join("\n\n");
 
     const p = manilaParts(yesterday);
     const dateLabel = `${DAY_NAMES[yDow]}, ${p.day} ${MONTH_NAMES[p.m - 1]} ${p.y}`;

@@ -36,10 +36,10 @@ const DailyInsightOutputSchema = z.object({
     bullets: z.array(z.string()).describe('3-5 quick-glance bullets covering the most important takeaways across all areas.'),
     sentiment: z.enum(['good', 'mixed', 'poor']).describe('Overall sentiment for the day.'),
   }),
-  sales: SectionSchema.describe('Sales performance: revenue, covers, avg basket, package mix, peak/slow hours, dine-in vs walk-in, payment mix, vs prior days.'),
-  operations: SectionSchema.describe("Operations: time to attend (server confirm), kitchen serve times, avg session duration, guest inflow by hour, busiest/idle windows, cancellations, AND staff responsiveness to customer 'need assistance' taps (request count, answered vs unanswered, avg/slowest response, % within 2 min)."),
+  sales: SectionSchema.describe('Sales performance: revenue, covers, avg basket, package mix, peak/slow hours, dine-in vs walk-in, payment mix, comparison vs prior day / same weekday / 7-day avg, performance vs the sales FORECAST (beat/missed), and multi-day momentum (7-day trend + any rise/fall streak).'),
+  operations: SectionSchema.describe("Operations: time to attend (server confirm), kitchen serve times, avg session duration, guest inflow by hour, busiest/idle windows, cancellations, per-staff leaders (fastest/slowest server confirm & kitchen serve when present), AND staff responsiveness to customer 'need assistance' taps (request count, answered vs unanswered, avg/slowest response, % within 2 min, who handled most). When naming staff, be constructive — recognize top performers, frame slow ones as coaching."),
   inventory: SectionSchema.describe('Menu-item movement (from sales): fast movers and items that barely moved among add-ons/refills/packages, plus weather/day-driven push tactics for today. Note this is sell-through, not raw stock.'),
-  anomalies: SectionSchema.describe('Anomalies worth attention: high voids/discounts/free items, refunds, high charges, payment-method skew, long no-guest hours (possible closure), and anything unusual.'),
+  anomalies: SectionSchema.describe('Anomalies worth attention: voids/discounts/free items (and the combined comps & leakage rate as a % of sales vs the 14-day baseline — call out if it is creeping up), refunds, high charges, payment-method skew, long no-guest hours (possible closure), and anything unusual.'),
   suggestions: z.array(z.object({
     text: z.string().describe('A concrete, actionable suggestion.'),
     area: z.enum(['sales', 'ops', 'inventory', 'general']),
