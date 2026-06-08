@@ -69,7 +69,10 @@ export default function PrintPinPage() {
   // even though `printPin`'s identity can change as `isPrintingPin` toggles.
   const hasAutoPrintedRef = useRef(false);
   useEffect(() => {
-    if (pin && !isLoading && !error && joinUrlStatus === "ready" && !hasAutoPrintedRef.current) {
+    // Print once the join URL has settled — either it's ready, or it failed/timed out
+    // and we proceed with the fallback QR. Never block the auto-print indefinitely.
+    const joinUrlSettled = joinUrlStatus === "ready" || joinUrlStatus === "error";
+    if (pin && !isLoading && !error && joinUrlSettled && !hasAutoPrintedRef.current) {
       hasAutoPrintedRef.current = true;
       const timer = setTimeout(() => printPin(), 500);
       return () => clearTimeout(timer);
@@ -78,6 +81,11 @@ export default function PrintPinPage() {
 
   useEffect(() => {
     if (!pin || !activeStore?.id || !sessionId) return;
+    // Bound the join-URL fetch: the App Hosting backend can cold-start for 30-60s,
+    // and we must never block the print that long. After 6s we give up and print
+    // with the generic fallback QR (manual-PIN join) — the slip still works.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     async function fetchJoinUrl() {
       setJoinUrlStatus("loading");
       try {
@@ -90,7 +98,7 @@ export default function PrintPinPage() {
         const idToken = await user.getIdToken();
         const res = await fetch(
           `/api/pins/join-url?storeId=${activeStore!.id}&sessionId=${sessionId}`,
-          { headers: { Authorization: `Bearer ${idToken}` } }
+          { headers: { Authorization: `Bearer ${idToken}` }, signal: controller.signal }
         );
         const json = await res.json();
         if (json.ok && json.joinUrl) {
@@ -102,6 +110,7 @@ export default function PrintPinPage() {
       setJoinUrlStatus("error");
     }
     fetchJoinUrl();
+    return () => { clearTimeout(timeout); controller.abort(); };
   }, [pin, activeStore?.id, sessionId]);
 
   useEffect(() => {
@@ -210,7 +219,7 @@ export default function PrintPinPage() {
           Back
         </Button>
 
-        <Button onClick={printPin} disabled={isLoading || !pin || isPrintingPin || joinUrlStatus !== "ready"}>
+        <Button onClick={printPin} disabled={isLoading || !pin || isPrintingPin || joinUrlStatus === "loading"}>
           <Printer className="mr-2" /> Print
         </Button>
       </div>

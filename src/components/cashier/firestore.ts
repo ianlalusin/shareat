@@ -48,6 +48,7 @@ import type {
 import { stripUndefined } from '@/lib/firebase/utils';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
+import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile';
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
@@ -58,7 +59,14 @@ import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 export type ActorStamp = { uid: string; username: string; email?: string | null };
 
 export function getActorStamp(user: AppUser): ActorStamp {
+  // Prefer the device's signed-in local profile — the actual cashier/server operating
+  // the POS — for the display name. Admin/manager bypass the local-user gate, so for
+  // them this is null and we fall back to their own account name. The receipt's
+  // CASHIER line and all action attribution should read the operator, not the
+  // shared/admin login. uid stays the authenticated account for audit integrity.
+  const localName = getActiveLocalProfile()?.name?.trim();
   const username =
+    localName ||
     (user.displayName && user.displayName.trim()) ||
     ((user as any).name && String((user as any).name).trim()) ||
     (user.email ? user.email.split('@')[0] : '') ||

@@ -554,8 +554,12 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
     /**
-     * Convert a monochrome bitmap to ESC/POS GS v 0 raster bit-image format.
-     * Each row is padded to maxWidthPx (printer's full dot width).
+     * Convert a monochrome bitmap to ESC/POS GS v 0 raster, emitted as a series of
+     * short horizontal BANDS (one GS v 0 command per band). A single tall raster can
+     * overflow a buffer-limited Bluetooth printer and corrupt the middle of the image;
+     * banding keeps each command small and gives the firmware a re-sync point between
+     * commands. Each row is left-padded so the image is centered within the printer's
+     * full dot width (maxWidthPx).
      */
     private byte[] bitmapToEscPosRaster(Bitmap mono, int maxWidthPx) {
         int imgWidth = mono.getWidth();
@@ -565,43 +569,46 @@ public class ThermalPrinterPlugin extends Plugin {
         int bytesPerRow = (maxWidthPx + 7) / 8;
         int imgBytesPerRow = (imgWidth + 7) / 8;
         int leftPadBytes = (bytesPerRow - imgBytesPerRow) / 2;
+        if (leftPadBytes < 0) leftPadBytes = 0;
 
-        // GS v 0: 1D 76 30 m xL xH yL yH [data]
-        // m=0 (normal), xL/xH = bytes per row, yL/yH = rows
-        byte xL = (byte) (bytesPerRow & 0xFF);
-        byte xH = (byte) ((bytesPerRow >> 8) & 0xFF);
-        byte yL = (byte) (imgHeight & 0xFF);
-        byte yH = (byte) ((imgHeight >> 8) & 0xFF);
+        // Rows per GS v 0 command. Small bands print reliably on cheap printers.
+        final int BAND_ROWS = 24;
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        // Command header
-        baos.write(0x1D); // GS
-        baos.write(0x76); // v
-        baos.write(0x30); // 0
-        baos.write(0x00); // m = normal density
-        baos.write(xL);
-        baos.write(xH);
-        baos.write(yL);
-        baos.write(yH);
-
-        // Pixel data, row by row
         int[] rowPixels = new int[imgWidth];
-        for (int y = 0; y < imgHeight; y++) {
-            mono.getPixels(rowPixels, 0, imgWidth, 0, y, imgWidth, 1);
 
-            byte[] rowBytes = new byte[bytesPerRow]; // zero-filled = white padding
+        for (int bandStart = 0; bandStart < imgHeight; bandStart += BAND_ROWS) {
+            int bandRows = Math.min(BAND_ROWS, imgHeight - bandStart);
 
-            for (int x = 0; x < imgWidth; x++) {
-                // Black pixel = bit set to 1
-                if ((rowPixels[x] & 0xFF) == 0) { // black
-                    int byteIndex = leftPadBytes + (x / 8);
-                    int bitIndex = 7 - (x % 8);
-                    if (byteIndex < bytesPerRow) {
-                        rowBytes[byteIndex] |= (1 << bitIndex);
+            // GS v 0: 1D 76 30 m xL xH yL yH [data]
+            // m=0 (normal), xL/xH = bytes per row, yL/yH = rows in this band
+            baos.write(0x1D); // GS
+            baos.write(0x76); // v
+            baos.write(0x30); // 0
+            baos.write(0x00); // m = normal density
+            baos.write(bytesPerRow & 0xFF);
+            baos.write((bytesPerRow >> 8) & 0xFF);
+            baos.write(bandRows & 0xFF);
+            baos.write((bandRows >> 8) & 0xFF);
+
+            for (int r = 0; r < bandRows; r++) {
+                int y = bandStart + r;
+                mono.getPixels(rowPixels, 0, imgWidth, 0, y, imgWidth, 1);
+
+                byte[] rowBytes = new byte[bytesPerRow]; // zero-filled = white padding
+
+                for (int x = 0; x < imgWidth; x++) {
+                    // Black pixel = bit set to 1
+                    if ((rowPixels[x] & 0xFF) == 0) { // black
+                        int byteIndex = leftPadBytes + (x / 8);
+                        int bitIndex = 7 - (x % 8);
+                        if (byteIndex < bytesPerRow) {
+                            rowBytes[byteIndex] |= (1 << bitIndex);
+                        }
                     }
                 }
+                baos.write(rowBytes, 0, bytesPerRow);
             }
-            baos.write(rowBytes, 0, bytesPerRow);
         }
 
         return baos.toByteArray();
