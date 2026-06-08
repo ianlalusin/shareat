@@ -17,8 +17,8 @@ const STASH = path.join(ROOT, ".cap-stash");
 const EXCLUDE = [
   "src/app/api", // all server route handlers — backend stays on App Hosting
   "src/app/reservations/[id]", // online/admin
-  "src/app/print/session-pin", // PIN flow is a server feature (online-only)
   "src/app/logs/sessions/[storeId]", // audit logs (online/admin)
+  "src/middleware.ts", // CORS middleware — App Hosting only; output:export forbids middleware
 ];
 
 const key = (rel) => rel.replace(/[\\/]/g, "__");

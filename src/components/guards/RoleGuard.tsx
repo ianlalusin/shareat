@@ -29,7 +29,13 @@ function roleHome(role?: string) {
 export function RoleGuard({ allow, children }: Props) {
   const { user, appUser, loading } = useAuthContext();
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  // Normalize the APK build's trailing slash (trailingSlash export) so the home-path
+  // comparison below can't trigger a redirect loop (e.g. "/cashier/" vs "/cashier").
+  const pathname =
+    rawPathname && rawPathname.length > 1 && rawPathname.endsWith("/")
+      ? rawPathname.slice(0, -1)
+      : rawPathname;
 
   useEffect(() => {
     if (loading) return;

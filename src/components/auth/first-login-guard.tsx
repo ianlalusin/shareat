@@ -33,7 +33,14 @@ const NEEDS_PROFILE_ALLOWED = ["/signup", "/support"];
 export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   const { user, appUser, loading, isSigningOut, staffError, signOut } = useAuthContext();
   const router = useRouter();
-  const pathname = usePathname() ?? "/";
+  const rawPathname = usePathname() ?? "/";
+  // The APK (static export) build uses trailingSlash, so usePathname() returns e.g.
+  // "/signup/". Strip the trailing slash so the route allow-lists below match in both
+  // the web and APK builds — otherwise needs_profile users loop forever on "/signup/".
+  const pathname =
+    rawPathname.length > 1 && rawPathname.endsWith("/")
+      ? rawPathname.slice(0, -1)
+      : rawPathname;
 
   useEffect(() => {
     // Don't perform any redirects while loading or signing out.

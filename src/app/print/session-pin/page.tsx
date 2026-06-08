@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { useStoreContext } from '@/context/store-context';
@@ -11,8 +11,9 @@ import { usePinPrint } from '@/hooks/use-print';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function PrintPinPage() {
-  const params = useParams<{ sessionId: string }>();
-  const { sessionId } = params;
+  // Query-param route (static-export / APK friendly): /print/session-pin?sessionId=<id>.
+  const searchParams = useSearchParams();
+  const sessionId = searchParams?.get("sessionId") ?? undefined;
   const { activeStore } = useStoreContext();
 
   const [pin, setPin] = useState<string | null>(null);
@@ -117,7 +118,7 @@ export default function PrintPinPage() {
     try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}
   }, [paperSize]);
 
-  
+
 
   const renderContent = () => {
     if (isLoading) {

@@ -167,7 +167,7 @@ export default function PinsClient() {
     autoIssueAttemptedRef.current = targetSessionId;
 
     if (hasActivePin) {
-      router.replace(`/print/session-pin/${targetSessionId}`);
+      router.replace(`/print/session-pin?sessionId=${targetSessionId}`);
       return;
     }
 
@@ -185,7 +185,7 @@ export default function PinsClient() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
-        router.replace(`/print/session-pin/${targetSessionId}`);
+        router.replace(`/print/session-pin?sessionId=${targetSessionId}`);
       } catch (error) {
         console.error("Auto-issue PIN failed:", error);
         autoIssueAttemptedRef.current = null;
@@ -460,7 +460,7 @@ export default function PinsClient() {
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
                           disabled={!s.customerPin}
-                          onClick={() => router.push(`/print/session-pin/${s.id}`)}
+                          onClick={() => router.push(`/print/session-pin?sessionId=${s.id}`)}
                           type="button"
                         >
                           Print
@@ -606,7 +606,7 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
-                                  router.push(`/print/session-pin/${s.id}`);
+                                  router.push(`/print/session-pin?sessionId=${s.id}`);
                                 } catch (error: any) {
                                   console.error("Reissue PIN failed:", error);
                                   toast({ variant: "destructive", title: "Failed to issue PIN", description: error?.message });
@@ -740,7 +740,7 @@ export default function PinsClient() {
                                       });
                                       const data = await res.json();
                                       if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
-                                      router.push(`/print/session-pin/${pin.sessionId}`);
+                                      router.push(`/print/session-pin?sessionId=${pin.sessionId}`);
                                     } catch (error: any) {
                                       console.error("Revive PIN failed:", error);
                                       toast({ variant: "destructive", title: "Failed to revive PIN", description: error?.message });
