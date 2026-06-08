@@ -183,19 +183,16 @@ export function usePinPrint({
         // physical size + density precisely. scale = dots per QR module.
         // scale 4 → ~25mm-wide compact QR with sharp edges, easy to scan.
         const qrText = joinUrl || 'https://customer.shareat.net';
-        // The join URL is a long signed token, so the QR is high-density (many small
-        // modules). On a 203dpi thermal head, fixed scale-4 modules (~0.5mm) bleed
-        // together in the dense center and the QR becomes hard to scan. Pick the
-        // largest dot-scale that still fits the paper width so modules are as large
-        // and crisp as possible (80mm paper yields a noticeably bigger, sharper QR).
-        const qrMargin = 2;
-        const moduleCount = QRCode.create(qrText, { errorCorrectionLevel: 'M' }).modules.size;
-        const maxQrDots = paperWidth === 58 ? 376 : 568; // stay under the 384/576 print width
-        const qrScale = Math.min(8, Math.max(4, Math.floor(maxQrDots / (moduleCount + qrMargin * 2))));
+        // Compact QR: scale 4 = 4 printer dots per module (~25mm), which prints and
+        // scans reliably. A larger QR means a much bigger raster that is actually MORE
+        // prone to mid-print distortion, so we keep it small. The print head is a fixed
+        // 203dpi — there is no higher-DPI mode to sharpen a same-size QR in software;
+        // a genuinely smaller+crisper QR would require shortening the join URL. The
+        // banding in the native raster path is what removes the mid-image distortion.
         const qrDataUrl = await QRCode.toDataURL(qrText, {
           errorCorrectionLevel: 'M',
-          margin: qrMargin,
-          scale: qrScale,
+          margin: 1,
+          scale: 4,
         });
         const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
 
