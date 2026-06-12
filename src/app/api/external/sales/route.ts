@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { validateExternalApiKey } from "@/lib/server/external-auth";
+import { resolveExternalKeyScope, storeAllowed } from "@/lib/server/external-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const authError = validateExternalApiKey(request);
-  if (authError) return authError;
+  const scope = resolveExternalKeyScope(request);
+  if (scope.response) return scope.response;
 
   const { searchParams } = new URL(request.url);
   const storeId = searchParams.get("storeId");
   const date = searchParams.get("date"); // YYYY-MM-DD
 
   if (!storeId) return NextResponse.json({ error: "Missing storeId." }, { status: 400 });
+  if (!storeAllowed(scope, storeId)) return NextResponse.json({ error: "Forbidden for this store." }, { status: 403 });
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Missing or invalid date. Use YYYY-MM-DD." }, { status: 400 });
   }

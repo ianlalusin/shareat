@@ -22,21 +22,22 @@ function isVoidReceipt(r: any): boolean {
  * @returns The millisecond epoch time for midnight.
  */
 export function getDayStartMs(ts: Timestamp | Date | number): number {
-    const date = toJsDate(ts);
-    if (!date) {
-        // Fallback to current time if timestamp is invalid to avoid crashing.
-        const now = new Date();
-        now.setHours(0,0,0,0);
-        return now.getTime();
-    };
-    
-    // Create a new Date object representing midnight in the UTC of the *local* machine,
-    // but with the date parts from the 'Asia/Manila' timezone.
-    const dateInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-    const midnightInManila = new Date(dateInManila);
-    midnightInManila.setHours(0, 0, 0, 0);
+    // Use "now" when the timestamp is invalid, to avoid crashing.
+    const base = toJsDate(ts) ?? new Date();
 
-    return midnightInManila.getTime();
+    // Epoch ms of Manila midnight for this instant. We take the Manila calendar
+    // date (PHT = UTC+8, no DST) then anchor it at the +08:00 offset. This is
+    // correct regardless of the machine's local timezone — the old approach used
+    // setHours(), which produced *local-machine* midnight, not Manila midnight,
+    // on any device not set to UTC+8. Matches getDayIdFromTimestamp's day split.
+    const manilaYmd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(base);
+
+    return new Date(`${manilaYmd}T00:00:00+08:00`).getTime();
 }
 
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyRedeem, reverseLoyaltyRedeem } from "@/lib/server/loyalty";
+import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 
 export const runtime = "nodejs";
 
@@ -8,30 +10,25 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-async function requireStaff(req: Request, storeId?: string) {
+async function verifyToken(req: Request): Promise<DecodedIdToken> {
   const authHeader = req.headers.get("authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return { error: bad("Missing bearer token.", 401) };
-  let decoded: any;
+  if (!match) throw new Error("Missing bearer token.");
   try {
-    decoded = await getAdminAuth().verifyIdToken(match[1]);
+    return await getAdminAuth().verifyIdToken(match[1]);
   } catch {
-    return { error: bad("Invalid token.", 401) };
+    throw new Error("Invalid token.");
   }
-  const uid = decoded.uid;
-  if (!uid) return { error: bad("Invalid token.", 401) };
+}
 
-  const db = getAdminDb();
-  const staffSnap = await db.doc(`staff/${uid}`).get();
-  if (!staffSnap.exists) return { error: bad("Not a staff member.", 403) };
-  const staffData = staffSnap.data() as any;
-  if (staffData.status !== "active") return { error: bad("Staff not active.", 403) };
-  const assigned: string[] = Array.isArray(staffData.assignedStoreIds) ? staffData.assignedStoreIds : [];
-  const isAdmin = staffData.role === "admin" || decoded.platformAdmin === true;
-  if (storeId && !isAdmin && !assigned.includes(storeId)) {
-    return { error: bad("No access to this store.", 403) };
-  }
-  return { uid };
+// Map thrown auth/access errors to HTTP statuses (same convention as the PIN routes).
+function mapError(e: any) {
+  const message = e?.message || "Request failed.";
+  const status =
+    /Missing bearer token|Invalid token/i.test(message) ? 401 :
+    /not allowed|No access|Not a staff member|Staff not active/i.test(message) ? 403 :
+    500;
+  return NextResponse.json({ ok: false, error: message }, { status });
 }
 
 // Apply a reward: debit points + create an applied redemption linked to the session.
@@ -48,15 +45,19 @@ export async function POST(req: Request) {
   const rewardId = String(body.rewardId || "");
   if (!storeId || !sessionId || !phone || !rewardId) return bad("Missing required fields.");
 
-  const auth = await requireStaff(req, storeId);
-  if ("error" in auth) return auth.error;
+  try {
+    const decoded = await verifyToken(req);
+    const { uid } = await requireStaffStoreAccess(getAdminDb(), decoded, storeId, ["admin", "manager", "cashier"]);
 
-  const result = await writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, staffUid: auth.uid });
-  if (!result.ok) return bad(result.error || "Failed to redeem.", result.error === "Insufficient points" ? 400 : 500);
-  return NextResponse.json({ ok: true, redemptionId: result.redemptionId, code: result.code, reward: result.reward });
+    const result = await writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, staffUid: uid });
+    if (!result.ok) return bad(result.error || "Failed to redeem.", result.error === "Insufficient points" ? 400 : 500);
+    return NextResponse.json({ ok: true, redemptionId: result.redemptionId, code: result.code, reward: result.reward });
+  } catch (e) {
+    return mapError(e);
+  }
 }
 
-// Reverse a redemption (cashier removes the reward before payment).
+// Reverse a redemption (cashier removes the reward before payment, or session void).
 export async function DELETE(req: Request) {
   let body: any;
   try {
@@ -67,10 +68,28 @@ export async function DELETE(req: Request) {
   const redemptionId = String(body.redemptionId || "");
   if (!redemptionId) return bad("Missing redemptionId.");
 
-  const auth = await requireStaff(req);
-  if ("error" in auth) return auth.error;
+  try {
+    const decoded = await verifyToken(req);
+    const db = getAdminDb();
 
-  const result = await reverseLoyaltyRedeem(redemptionId, auth.uid, String(body.reason || "removed"));
-  if (!result.ok) return bad(result.error || "Failed to reverse.", 500);
-  return NextResponse.json({ ok: true, refunded: result.refunded });
+    const result = await reverseLoyaltyRedeem(redemptionId, decoded.uid, String(body.reason || "removed"), {
+      // Authorize against the redemption's OWN store, not a caller-supplied id.
+      authorize: async (appliedStoreId) => {
+        if (appliedStoreId) {
+          await requireStaffStoreAccess(db, decoded, appliedStoreId, ["admin", "manager", "cashier"]);
+          return;
+        }
+        // Unapplied / null-store redemption (e.g. a pending Hub voucher): only a
+        // platform admin may reverse it. POS never reverses these in normal flow.
+        if (decoded.platformAdmin === true) return;
+        const staffSnap = await db.doc(`staff/${decoded.uid}`).get();
+        const role = staffSnap.exists ? String((staffSnap.data() as any)?.role || "") : "";
+        if (role !== "admin") throw new Error("No access to this store.");
+      },
+    });
+    if (!result.ok) return bad(result.error || "Failed to reverse.", 500);
+    return NextResponse.json({ ok: true, refunded: result.refunded });
+  } catch (e) {
+    return mapError(e);
+  }
 }

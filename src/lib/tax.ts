@@ -82,6 +82,10 @@ export function calculateBillTotals(
     grossSubtotal += billableQty * unitPrice;
 
     const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
+    // Discounts apply to the gross (VAT-inclusive) shelf price; VAT is derived
+    // afterward. For VAT-exclusive / non-VAT stores unitPrice already is net,
+    // so this matches their existing behavior.
+    const discountUnitBase = unitPrice;
     const adjs = Object.values((line as any).lineAdjustments ?? {}).sort((a: any, b: any) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0)) as LineAdjustment[];
     const hasAdjDiscount = adjs.some(a => a.kind === "discount");
     
@@ -94,9 +98,9 @@ export function calculateBillTotals(
             if (qtyToApply <= 0) continue;
 
             if (adj.type === "percent") {
-                lineDiscountsTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
+                lineDiscountsTotal += (qtyToApply * discountUnitBase) * (Number(adj.value || 0) / 100);
             } else { // fixed
-                lineDiscountsTotal += Math.min(baseUnitPrice, Number(adj.value || 0)) * qtyToApply;
+                lineDiscountsTotal += Math.min(discountUnitBase, Number(adj.value || 0)) * qtyToApply;
             }
             remainingQtyForDiscounts -= qtyToApply;
 
@@ -117,9 +121,9 @@ export function calculateBillTotals(
       const discountedQty = Math.min(line.discountQty, billableQty);
       
       if (line.discountType === "percent") {
-        lineDiscountsTotal += (discountedQty * baseUnitPrice) * ((line.discountValue ?? 0) / 100);
+        lineDiscountsTotal += (discountedQty * discountUnitBase) * ((line.discountValue ?? 0) / 100);
       } else { // fixed
-        lineDiscountsTotal += Math.min(baseUnitPrice, (line.discountValue ?? 0)) * discountedQty;
+        lineDiscountsTotal += Math.min(discountUnitBase, (line.discountValue ?? 0)) * discountedQty;
       }
     }
   });
@@ -128,57 +132,71 @@ export function calculateBillTotals(
   lineDiscountsTotal = round(lineDiscountsTotal);
   lineChargesTotal = round(lineChargesTotal);
 
+  // Bill-level discount (gross-world). A VAT-exempt (senior/PWD) bill discount
+  // is special: the whole bill becomes VAT-exempt AND the discount (e.g. 20%) is
+  // taken on the VAT-removed net price. It is handled as its own branch and is
+  // not stacked with loyalty rewards.
+  const isVatExemptBill = !!billDiscount?.vatExempt;
   let billDiscountTotal = 0;
-  if (billDiscount) {
-    const subtotalForBillDiscount = grossSubtotal - lineDiscountsTotal;
-    
-    const discountBaseTotal = isVatInclusive && taxRate > 0
-      ? (subtotalForBillDiscount / (1 + taxRate))
-      : subtotalForBillDiscount;
-      
-    if (billDiscount.type === 'percent') {
-      billDiscountTotal = discountBaseTotal * (billDiscount.value / 100);
-    } else { // fixed
-      billDiscountTotal = Math.min(discountBaseTotal, billDiscount.value);
-    }
-  }
-  
-  billDiscountTotal = round(billDiscountTotal);
-
-  // Loyalty rewards stack AFTER line + bill discounts, each applied on the
-  // running remaining base (VAT-exclusive when the store is VAT-inclusive, to
-  // mirror billDiscount). Multiple rewards compound on what's left.
   let loyaltyDiscountTotal = 0;
-  if (Array.isArray(loyaltyDiscount) && loyaltyDiscount.length > 0) {
-    let remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
-    for (const lr of loyaltyDiscount) {
-      if (!lr || !(lr.value > 0) || remainingGross <= 0) continue;
-      const base = isVatInclusive && taxRate > 0 ? remainingGross / (1 + taxRate) : remainingGross;
-      const amt = lr.type === "percent" ? base * (lr.value / 100) : Math.min(base, lr.value);
-      const grossAmt = isVatInclusive && taxRate > 0 ? amt * (1 + taxRate) : amt;
-      loyaltyDiscountTotal += amt;
-      remainingGross -= grossAmt;
+
+  if (isVatExemptBill && billDiscount) {
+    const grossAfterLine = grossSubtotal - lineDiscountsTotal;
+    const netBeforeExempt = (isVatInclusive && taxRate > 0)
+      ? grossAfterLine / (1 + taxRate)
+      : grossAfterLine;
+    const exemptDiscount = billDiscount.type === "percent"
+      ? netBeforeExempt * (billDiscount.value / 100)
+      : Math.min(netBeforeExempt, billDiscount.value);
+    billDiscountTotal = round(exemptDiscount);
+    vatExemptSales = round(Math.max(0, netBeforeExempt - exemptDiscount));
+    vatableSales = 0;
+    taxTotal = 0;
+  } else {
+    if (billDiscount) {
+      // Discount taken on the gross (VAT-inclusive) amount after line discounts.
+      const discountBaseTotal = grossSubtotal - lineDiscountsTotal;
+      if (billDiscount.type === 'percent') {
+        billDiscountTotal = discountBaseTotal * (billDiscount.value / 100);
+      } else { // fixed
+        billDiscountTotal = Math.min(discountBaseTotal, billDiscount.value);
+      }
     }
+    billDiscountTotal = round(billDiscountTotal);
+
+    // Loyalty rewards stack after line + bill discounts on the running remaining
+    // gross. Multiple rewards compound on what's left. Reward values are gross
+    // (peso off the shelf price), matching the corrected discount model.
+    if (Array.isArray(loyaltyDiscount) && loyaltyDiscount.length > 0) {
+      let remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
+      for (const lr of loyaltyDiscount) {
+        if (!lr || !(lr.value > 0) || remainingGross <= 0) continue;
+        const amt = lr.type === "percent" ? remainingGross * (lr.value / 100) : Math.min(remainingGross, lr.value);
+        loyaltyDiscountTotal += amt;
+        remainingGross -= amt;
+      }
+    }
+    loyaltyDiscountTotal = round(Math.max(0, loyaltyDiscountTotal));
   }
-  loyaltyDiscountTotal = round(Math.max(0, loyaltyDiscountTotal));
 
   const totalDiscounts = lineDiscountsTotal + billDiscountTotal + loyaltyDiscountTotal;
-  const netSalesAfterAllDiscounts = grossSubtotal - totalDiscounts;
+  const netSalesAfterAllDiscounts = isVatExemptBill ? vatExemptSales : (grossSubtotal - totalDiscounts);
 
-
-  if (isVatInclusive) {
-      vatableSales = netSalesAfterAllDiscounts / (1 + taxRate);
-      taxTotal = netSalesAfterAllDiscounts - vatableSales;
-  } else if (isVatExclusive) {
-      vatableSales = netSalesAfterAllDiscounts;
-      taxTotal = vatableSales * taxRate;
-  } else { // NON_VAT
-      vatableSales = netSalesAfterAllDiscounts;
-      taxTotal = 0;
+  if (!isVatExemptBill) {
+    if (isVatInclusive) {
+        vatableSales = netSalesAfterAllDiscounts / (1 + taxRate);
+        taxTotal = netSalesAfterAllDiscounts - vatableSales;
+    } else if (isVatExclusive) {
+        vatableSales = netSalesAfterAllDiscounts;
+        taxTotal = vatableSales * taxRate;
+    } else { // NON_VAT
+        vatableSales = netSalesAfterAllDiscounts;
+        taxTotal = 0;
+    }
   }
-  
-  // Corrected grand total calculation
-  const totalBeforeCharges = isVatExclusive
+
+  // Corrected grand total calculation (VAT-exclusive adds tax on top of net).
+  const totalBeforeCharges = (isVatExclusive && !isVatExemptBill)
     ? netSalesAfterAllDiscounts + taxTotal
     : netSalesAfterAllDiscounts;
 

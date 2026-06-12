@@ -188,7 +188,15 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
     const logRef = db.collection("loyaltyLogs").doc();
     const statsRef = db.doc("loyaltyStats/global");
     const now = Date.now();
-    const code = genRedemptionCode();
+    // Codes are looked up by value (applyLoyaltyVoucher), so re-roll on the rare
+    // chance of a collision with an existing voucher. Done before the tx because
+    // queries aren't allowed inside a transaction.
+    let code = genRedemptionCode();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const clash = await db.collection("loyaltyRedemptions").where("code", "==", code).limit(1).get();
+      if (clash.empty) break;
+      code = genRedemptionCode();
+    }
 
     const result = await db.runTransaction(async (tx) => {
       const [cSnap, rewardSnap, sessSnap] = await Promise.all([tx.get(customerRef), tx.get(rewardRef), tx.get(sessionRef)]);
@@ -284,13 +292,28 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
  * cashier removes a reward, or a session that used it is voided/refunded, or a
  * Hub voucher expires unused.
  */
-export async function reverseLoyaltyRedeem(redemptionId: string, actorUid: string, reason: string): Promise<{ ok: boolean; error?: string; refunded?: number }> {
+export async function reverseLoyaltyRedeem(
+  redemptionId: string,
+  actorUid: string,
+  reason: string,
+  opts?: { authorize?: (appliedStoreId: string | null) => Promise<void> | void }
+): Promise<{ ok: boolean; error?: string; refunded?: number }> {
   if (!redemptionId) return { ok: false, error: "Missing redemptionId" };
   const db = getAdminDb();
   const redRef = db.doc(`loyaltyRedemptions/${redemptionId}`);
   const statsRef = db.doc("loyaltyStats/global");
 
   try {
+    // Authorize the caller against the redemption's own store BEFORE mutating
+    // anything. Done once here (not inside the tx) so a transaction retry does
+    // not re-run the staff lookup. The tx re-reads the doc authoritatively; a
+    // redemption's appliedStoreId is stable across this gap in normal flows.
+    if (opts?.authorize) {
+      const preSnap = await redRef.get();
+      const appliedStoreId = preSnap.exists ? ((preSnap.data() as any)?.appliedStoreId ?? null) : null;
+      await opts.authorize(appliedStoreId);
+    }
+
     const refunded = await db.runTransaction(async (tx) => {
       // --- reads (all before writes) ---
       const rSnap = await tx.get(redRef);

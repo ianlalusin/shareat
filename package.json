@@ -11,6 +11,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
     "build:storeConfig": "tsx scripts/build-store-config.ts"
@@ -92,6 +94,7 @@
     "tailwindcss": "^3.4.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }

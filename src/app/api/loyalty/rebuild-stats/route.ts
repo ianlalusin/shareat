@@ -38,22 +38,49 @@ export async function POST(req: Request) {
   if (!isAdmin) return bad("Admin role required.", 403);
 
   try {
-    const snap = await db.collection("customers").get();
+    // Paginate both scans so a large customer base / ledger can't exhaust
+    // function memory. Cursor on document id (__name__) — no composite index
+    // needed (single equality + name ordering uses the automatic index).
     let totalAccounts = 0;
     let totalPointsOutstanding = 0;
-    snap.docs.forEach((d) => {
-      const data = d.data() as any;
-      totalAccounts += 1;
-      totalPointsOutstanding += Number(data.pointsBalance) || 0;
-    });
+    {
+      const pageSize = 500;
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (;;) {
+        let q = db.collection("customers").orderBy("__name__").limit(pageSize);
+        if (last) q = q.startAfter(last);
+        const page = await q.get();
+        if (page.empty) break;
+        for (const d of page.docs) {
+          totalAccounts += 1;
+          totalPointsOutstanding += Number((d.data() as any).pointsBalance) || 0;
+        }
+        if (page.size < pageSize) break;
+        last = page.docs[page.docs.length - 1];
+      }
+    }
 
-    // totalPointsEarnedEver — best effort: scan ledgerentries with type earn
-    // across all customers. Expensive but one-shot.
+    // totalPointsEarnedEver — scan earn ledger entries across all customers.
     let totalPointsEarnedEver = 0;
-    const earnQ = await db.collectionGroup("pointsLedger").where("type", "==", "earn").get();
-    earnQ.docs.forEach((d) => {
-      totalPointsEarnedEver += Number(d.data().points) || 0;
-    });
+    {
+      const pageSize = 1000;
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (;;) {
+        let q = db
+          .collectionGroup("pointsLedger")
+          .where("type", "==", "earn")
+          .orderBy("__name__")
+          .limit(pageSize);
+        if (last) q = q.startAfter(last);
+        const page = await q.get();
+        if (page.empty) break;
+        for (const d of page.docs) {
+          totalPointsEarnedEver += Number((d.data() as any).points) || 0;
+        }
+        if (page.size < pageSize) break;
+        last = page.docs[page.docs.length - 1];
+      }
+    }
 
     await db.doc("loyaltyStats/global").set(
       {

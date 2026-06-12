@@ -573,6 +573,9 @@ export type Discount = {
   adminSuspended?: boolean;
   adminSuspendedAt?: any;
   adminSuspendedBy?: string;
+  // VAT-exempt (senior/PWD): when applied as a bill discount, the whole bill is
+  // VAT-exempt and the discount is taken on the VAT-removed net price.
+  vatExempt?: boolean;
   // UI-runtime marker (not persisted) — added when merging global entries client-side
   source?: "store" | "global";
 };
@@ -947,6 +950,10 @@ export type ReceiptAnalyticsV2 = {
   discountsTotal: number;
   chargesTotal: number;
   taxAmount: number;
+  // VAT split persisted on the receipt so reprints/exports don't recompute it.
+  // Optional: historical receipts predate these and fall back at render time.
+  vatableSales?: number;
+  vatExemptSales?: number;
   grandTotal: number;
   totalPaid: number;
   change: number;
