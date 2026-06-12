@@ -33,6 +33,7 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
@@ -483,26 +484,32 @@ export default function ReceiptsPageContents() {
       }
       
       try {
-        const batch = writeBatch(db);
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-      
-        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
-        
-        const applyId = uuidv4();
-      
-        batch.update(receiptRef, {
+
+        // 1. Commit the void (status + audit metadata) first. The analytics
+        //    reversal is applied separately, server-first, so the analytics
+        //    collections can be locked down to server writes only.
+        await updateDoc(receiptRef, {
           status: "voided",
           voidedAt: serverTimestamp(),
           voidedByUid: appUser.uid,
           voidedByEmail: appUser.email,
           voidReason: reason,
-          analyticsApplied: true,
-          analyticsAppliedAt: serverTimestamp(),
-          analyticsApplyId: applyId,
         });
-      
-        await batch.commit();
-      
+
+        // 2. Reverse the receipt's analytics contribution server-first; fall back
+        //    to the client delta on failure. `receipt` here is the in-memory,
+        //    still-`final` object, so its contribution reconstructs correctly even
+        //    though the doc is now voided. Idempotent on `analyticsReversed`.
+        await applyReceiptDeltaServerFirst(activeStore.id, receipt.id, "void", async () => {
+          const rSnap = await getDoc(receiptRef);
+          if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
+          const ab = writeBatch(db);
+          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch: ab });
+          await ab.commit();
+          await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
+        });
+
         await writeActivityLog({
           action: "RECEIPT_VOIDED",
           storeId: activeStore.id,

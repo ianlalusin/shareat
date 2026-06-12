@@ -52,6 +52,7 @@ import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile'
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
+import { applyReceiptDeltaServerFirst } from '@/lib/analytics/applyReceiptDeltaServerFirst';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { toJsDate } from '@/lib/utils/date';
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
@@ -1418,7 +1419,7 @@ export async function createRefundReceipt(
   refundLines.forEach(l => { qtyIncrements[`refundedQtys.${l.id}`] = increment(l.qtyOrdered); });
 
   const batch = writeBatch(db);
-  batch.set(refundRef, { ...refundPayload, createdAt: serverTs });
+  batch.set(refundRef, { ...refundPayload, createdAt: serverTs, analyticsApplied: false });
   batch.update(parentRef, {
     ...qtyIncrements,
     totalRefunded: increment(refundTotal),
@@ -1426,16 +1427,19 @@ export async function createRefundReceipt(
   });
   await batch.commit();
 
-  // Apply analytics delta for the refund receipt (non-fatal)
-  try {
-    const { writeBatch: wb } = await import("firebase/firestore");
-    const analyticsBatch = wb(db);
+  // Apply analytics for the refund receipt server-first (authoritative, server
+  // clock, idempotent on analyticsApplied); fall back to the client delta on
+  // failure. Non-fatal — the refund receipt is already committed.
+  await applyReceiptDeltaServerFirst(storeId, refundId, "refund", async () => {
+    const rRef = doc(db, `stores/${storeId}/receipts`, refundId);
+    const rSnap = await getDoc(rRef);
+    if (rSnap.exists() && (rSnap.data() as any)?.analyticsApplied === true) return;
+    const analyticsBatch = writeBatch(db);
     const refundReceiptForAnalytics = { ...refundPayload, createdAt: new Date(), isRefund: true } as any;
     await applyAnalyticsDeltaV2(db, storeId, null, refundReceiptForAnalytics, { batch: analyticsBatch });
     await analyticsBatch.commit();
-  } catch (analyticsErr) {
-    console.error("[Analytics] Failed to apply delta for refund receipt", refundId, analyticsErr);
-  }
+    await updateDoc(rRef, { analyticsApplied: true, analyticsAppliedAt: serverTimestamp() });
+  });
 
   return refundId;
 }
