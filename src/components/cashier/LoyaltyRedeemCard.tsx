@@ -96,7 +96,7 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
       const res = await fetch("/api/loyalty/redeem", {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
-        body: JSON.stringify({ redemptionId: r.redemptionId, reason: "removed" }),
+        body: JSON.stringify({ redemptionId: r.redemptionId, storeId, reason: "removed" }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Remove failed");

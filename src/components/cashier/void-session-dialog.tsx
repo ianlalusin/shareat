@@ -59,7 +59,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
             fetch("/api/loyalty/redeem", {
               method: "DELETE",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ redemptionId, reason: "void" }),
+              body: JSON.stringify({ redemptionId, storeId, reason: "void" }),
             }).catch((e) => console.warn("[Loyalty] reverse on void failed (non-fatal):", e)),
           ),
         );
