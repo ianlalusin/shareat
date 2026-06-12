@@ -81,7 +81,10 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
     } = analytics;
 
     const paymentsFromAnalytics = Object.entries(mop).map(([methodId, amount]) => ({ methodId, amount: amount as number }));
-    const vatableSales = grandTotal - taxAmount;
+    // Prefer the VAT split persisted on the receipt; historical receipts predate
+    // these fields, so fall back to the old derivation (no exempt portion).
+    const vatExemptSales = (analytics as any)?.vatExemptSales ?? 0;
+    const vatableSales = (analytics as any)?.vatableSales ?? (grandTotal - taxAmount - vatExemptSales);
 
     const receiptStyles: React.CSSProperties = {
         fontFamily: settings?.fontFamily || undefined,
@@ -208,12 +211,12 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                 )}
              </section>
              
-             {(taxAmount > 0) && (
+             {(taxAmount > 0 || vatExemptSales > 0) && (
                  <>
                     <hr className="border-dashed border-black my-2" />
                     <section className="space-y-px mb-2 receipt-section">
                          <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
-                         <ReceiptRow label="VAT-Exempt Sales" value={0} isCurrency />
+                         <ReceiptRow label="VAT-Exempt Sales" value={vatExemptSales} isCurrency />
                          <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
                     </section>
                 </>

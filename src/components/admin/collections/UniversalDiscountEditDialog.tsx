@@ -25,6 +25,7 @@ const formSchema = z.object({
   stackable: z.boolean().default(false),
   sortOrder: z.coerce.number().int().default(1000),
   isEnabled: z.boolean().default(true),
+  vatExempt: z.boolean().default(false),
   applicableStoreIds: z.array(z.string()).min(1, "Select at least one store."),
   startDate: dateStringSchema,
   endDate: dateStringSchema,
@@ -62,6 +63,7 @@ export function UniversalDiscountEditDialog({ isOpen, onClose, onSave, item, sto
       stackable: false,
       sortOrder: 1000,
       isEnabled: true,
+      vatExempt: false,
       applicableStoreIds: [],
       startDate: "",
       endDate: "",
@@ -83,6 +85,7 @@ export function UniversalDiscountEditDialog({ isOpen, onClose, onSave, item, sto
         stackable: item.stackable,
         sortOrder: item.sortOrder,
         isEnabled: item.isEnabled,
+        vatExempt: item.vatExempt ?? false,
         applicableStoreIds: Array.isArray(item.applicableStoreIds) ? item.applicableStoreIds : [],
         startDate: item.startDate || "",
         endDate: item.endDate || "",
@@ -96,6 +99,7 @@ export function UniversalDiscountEditDialog({ isOpen, onClose, onSave, item, sto
         stackable: false,
         sortOrder: 1000,
         isEnabled: true,
+        vatExempt: false,
         applicableStoreIds: [],
         startDate: "",
         endDate: "",
@@ -225,6 +229,16 @@ export function UniversalDiscountEditDialog({ isOpen, onClose, onSave, item, sto
             <FormField control={form.control} name="isEnabled" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <FormLabel>Enabled</FormLabel>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="vatExempt" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <FormLabel>VAT-Exempt (Senior / PWD)</FormLabel>
+                  <p className="text-xs text-muted-foreground">Removes VAT from the whole bill; the discount is taken on the net price.</p>
+                </div>
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />

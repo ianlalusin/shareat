@@ -233,6 +233,8 @@ function EditReceiptContent({
         discountsTotal: billTotals.totalDiscounts,
         chargesTotal: billTotals.chargesTotal,
         taxAmount: billTotals.taxTotal,
+        vatableSales: billTotals.vatableSales,
+        vatExemptSales: billTotals.vatExemptSales,
         grandTotal: billTotals.grandTotal,
         totalPaid: totalPaid,
         change: change,
