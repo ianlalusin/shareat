@@ -81,6 +81,23 @@ describe("void op — contribution reconstruction", () => {
   });
 });
 
+describe("edit op — old->new (both non-null) delta", () => {
+  it("raising total 100->150 and shifting the method mix nets the difference, txCount unchanged", () => {
+    const oldR = finalReceipt(); // total 100, gcash 60 / cash 40
+    const newR = {
+      ...(oldR as any),
+      total: 150,
+      analytics: { v: 2, grandTotal: 150, mop: { gcash: 90, cash: 60 }, discountsTotal: 11.2, chargesTotal: 0 },
+    } as unknown as Receipt;
+
+    const inc = buildDeltaIncrements(getContributions(oldR), getContributions(newR));
+    expect(inc["payments.totalGross"]).toBe(50); // 150 - 100
+    expect("payments.txCount" in inc).toBe(false); // edit doesn't add a tx
+    expect(inc["payments.byMethod.gcash"]).toBe(30); // 90 - 60
+    expect(inc["payments.byMethod.cash"]).toBe(20); // 60 - 40
+  });
+});
+
 describe("refund op — payment-shape", () => {
   it("a refund receipt applies a negative gross with one tx (same shape as payment)", () => {
     const refund = {

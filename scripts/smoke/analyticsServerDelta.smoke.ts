@@ -47,6 +47,14 @@ function finalReceipt(): Receipt {
     lines: [],
   } as unknown as Receipt;
 }
+// Same receipt corrected to a higher total + shifted method mix (the "edit" new state).
+function editedReceipt(): Receipt {
+  return {
+    ...(finalReceipt() as any),
+    total: 150,
+    analytics: { v: 2, grandTotal: 150, mop: { gcash: 90, cash: 60 }, discountsTotal: 11.2, chargesTotal: 0 },
+  } as unknown as Receipt;
+}
 function asOriginal(r: Receipt): Receipt {
   return { ...(r as any), isVoided: false, status: (r as any).status === "voided" ? "final" : (r as any).status } as Receipt;
 }
@@ -59,8 +67,9 @@ async function readAll(sub: string) {
 async function main() {
   console.log(`\n[analytics smoke] store=${RUN}\n`);
   const receipt = finalReceipt();
+  const edited = editedReceipt();
 
-  // 1) Apply payment: null -> receipt
+  // 1) Apply payment: null -> receipt(100)
   const b1 = db.batch();
   applyAnalyticsDeltaServer(db, RUN, null, receipt, b1, NOW);
   await b1.commit();
@@ -79,8 +88,22 @@ async function main() {
   if (months.length === 1 && near(months[0]?.payments?.totalGross, 100)) ok("month rollup == 100"); else bad(`month rollup = ${months[0]?.payments?.totalGross}`);
   if (years.length === 1 && near(years[0]?.payments?.totalGross, 100)) ok("year rollup == 100"); else bad(`year rollup = ${years[0]?.payments?.totalGross}`);
 
-  // 2) Void reverse: read-back is a voided doc → reconstruct original, reverse to null
-  const voided = { ...(receipt as any), status: "voided" } as Receipt;
+  // 2) Edit: receipt(100) -> edited(150). Both non-null — the op:"edit" delta path.
+  const bEdit = db.batch();
+  applyAnalyticsDeltaServer(db, RUN, receipt, edited, bEdit, NOW);
+  await bEdit.commit();
+
+  {
+    const de = (await readAll("analytics"))[0] || {};
+    console.log("\nAfter edit (100 -> 150):");
+    if (near(de?.payments?.totalGross, 150)) ok("payments.totalGross == 150"); else bad(`totalGross = ${de?.payments?.totalGross}`);
+    if (near(de?.payments?.txCount, 1)) ok("payments.txCount still 1 (edit, not a new tx)"); else bad(`txCount = ${de?.payments?.txCount}`);
+    if (near(de?.payments?.byMethod?.gcash, 90)) ok("byMethod.gcash == 90"); else bad(`gcash = ${de?.payments?.byMethod?.gcash}`);
+    if (near(de?.payments?.byMethod?.cash, 60)) ok("byMethod.cash == 60"); else bad(`cash = ${de?.payments?.byMethod?.cash}`);
+  }
+
+  // 3) Void reverse the CURRENT (edited) receipt → nets to zero
+  const voided = { ...(edited as any), status: "voided" } as Receipt;
   const b2 = db.batch();
   applyAnalyticsDeltaServer(db, RUN, asOriginal(voided), null, b2, NOW);
   await b2.commit();

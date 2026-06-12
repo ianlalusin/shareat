@@ -25,7 +25,7 @@ export const runtime = "nodejs";
  * "edit" still needs old+new reconstruction (the edit overwrites the doc) and is
  * not yet supported here — it is moved server-side in a later increment.
  */
-const SUPPORTED_OPS = new Set(["payment", "refund", "void"]);
+const SUPPORTED_OPS = new Set(["payment", "refund", "void", "edit"]);
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -104,6 +104,30 @@ export async function POST(req: Request) {
         tx.update(receiptRef, {
           analyticsReversed: true,
           analyticsReversedAt: FieldValue.serverTimestamp(),
+        });
+        return { skipped: false as const };
+      }
+
+      if (op === "edit") {
+        // Old state = the revision snapshot the client wrote; new state = the
+        // (already-committed) edited receipt doc. Both server-read, so totals are
+        // never trusted from the request. Idempotent on analyticsEditVersion.
+        const revisionId = String(body.revisionId || "");
+        if (!revisionId) throw new Error("Missing revisionId for edit.");
+        const revRef = db.doc(`stores/${storeId}/receipts/${receiptId}/revisions/${revisionId}`);
+        const revSnap = await tx.get(revRef);
+        if (!revSnap.exists) throw new Error("Revision not found.");
+        const rev = revSnap.data() as any;
+        const version = Number(rev?.version || 0);
+        const oldReceipt = rev?.snapshot as Receipt | undefined;
+        if (!oldReceipt) throw new Error("Revision snapshot missing.");
+        if (version > 0 && Number((receipt as any).analyticsEditVersion || 0) >= version) {
+          return { skipped: true as const };
+        }
+        applyAnalyticsDeltaServer(db, storeId, oldReceipt, receipt, tx, new Date());
+        tx.update(receiptRef, {
+          analyticsEditVersion: version,
+          analyticsEditAppliedAt: FieldValue.serverTimestamp(),
         });
         return { skipped: false as const };
       }

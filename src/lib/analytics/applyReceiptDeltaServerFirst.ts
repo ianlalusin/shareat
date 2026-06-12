@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/firebase/client';
 
-export type ReceiptDeltaOp = 'payment' | 'refund' | 'void';
+export type ReceiptDeltaOp = 'payment' | 'refund' | 'void' | 'edit';
 
 /**
  * Apply a receipt analytics delta server-first.
@@ -22,6 +22,7 @@ export async function applyReceiptDeltaServerFirst(
   receiptId: string,
   op: ReceiptDeltaOp,
   clientFallback: () => Promise<void>,
+  extra?: Record<string, unknown>,
 ): Promise<{ appliedViaServer: boolean }> {
   let appliedViaServer = false;
   try {
@@ -30,7 +31,7 @@ export async function applyReceiptDeltaServerFirst(
       const res = await fetch('/api/analytics/apply-delta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ storeId, receiptId, op }),
+        body: JSON.stringify({ storeId, receiptId, op, ...(extra || {}) }),
       });
       if (res.ok) {
         appliedViaServer = true;

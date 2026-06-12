@@ -379,17 +379,28 @@ export default function ReceiptsPage() {
         };
         batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
     
-        // 3. Calculate and apply the analytics delta within the same atomic batch.
-        await applyAnalyticsDeltaV2(
-          db,
-          activeStore.id,
-          editingReceipt, // Pass the original receipt as the "before" state
-          updatedReceiptData as ReceiptType, // Pass the new data as the "after" state
-          { batch } // Join the existing batch
-        );
+        // 3. (analytics delta applied separately, server-first — see step 4)
     
-        // 4. Commit all operations atomically.
+        // 4. Commit the revision + edited receipt, then apply the edit analytics
+        //    delta server-first (server reads old=revision snapshot + new=receipt
+        //    doc, idempotent on analyticsEditVersion; client fallback applies
+        //    old->new locally).
         await batch.commit();
+
+        await applyReceiptDeltaServerFirst(
+          activeStore.id,
+          editingReceipt.id,
+          "edit",
+          async () => {
+            const rSnap = await getDoc(originalReceiptRef);
+            if (rSnap.exists() && Number((rSnap.data() as any)?.analyticsEditVersion || 0) >= nextVersion) return;
+            const ab = writeBatch(db);
+            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceiptData as ReceiptType, { batch: ab });
+            await ab.commit();
+            await updateDoc(originalReceiptRef, { analyticsEditVersion: nextVersion, analyticsEditAppliedAt: serverTimestamp() });
+          },
+          { revisionId },
+        );
 
         // 5. Update local state immediately after successful commit
         setReceipts(prev =>
