@@ -12,8 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { addDays, format } from "date-fns";
 import { Loader2, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
-import { rebuildDailyAnalyticsFromReceipts, backfillSessionDurationRollups, rebuildDashboardPresets } from "@/lib/analytics/backfill";
-import { db } from "@/lib/firebase/client";
+import { rebuildDailyViaServer, rebuildRollupsViaServer, rebuildPresetsViaServer } from "@/lib/analytics/backfillViaServer";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { cn } from "@/lib/utils";
@@ -63,17 +62,9 @@ export default function BackfillPage() {
     toast({ title: "Backfill Started", description: "Processing historical receipts. This may take some time." });
 
     try {
-      await rebuildDailyAnalyticsFromReceipts(
-        db,
-        activeStore.id,
-        dateRange.start,
-        dateRange.end,
-        (message) => {
-          console.log(`[Backfill]: ${message}`);
-          setProgressMessage(message);
-        }
-      );
-      toast({ title: "Backfill Complete", description: "Analytics data has been successfully rebuilt." });
+      const result = await rebuildDailyViaServer(activeStore.id, dateRange.start, dateRange.end);
+      setProgressMessage(`Rebuilt ${result.days} day(s) from ${result.receipts} receipt(s).`);
+      toast({ title: "Backfill Complete", description: `Rebuilt ${result.days} day(s) from ${result.receipts} receipts.` });
     } catch (error: any) {
       console.error("Backfill failed:", error);
       toast({ variant: 'destructive', title: "Backfill Failed", description: error.message });
@@ -96,17 +87,9 @@ export default function BackfillPage() {
     toast({ title: "Rollup Recompute Started", description: "Updating month/year session-time rollups." });
 
     try {
-      await backfillSessionDurationRollups(
-        db,
-        activeStore.id,
-        rollupDateRange.start,
-        rollupDateRange.end,
-        (message) => {
-          console.log(`[Rollup]: ${message}`);
-          setRollupProgress(message);
-        }
-      );
-      toast({ title: "Rollups Updated", description: "Month/year session-time rollups recomputed from daily docs." });
+      const result = await rebuildRollupsViaServer(activeStore.id, rollupDateRange.start, rollupDateRange.end);
+      setRollupProgress(`Updated ${result.months} month(s) and ${result.years} year(s).`);
+      toast({ title: "Rollups Updated", description: `Recomputed ${result.months} month(s) / ${result.years} year(s) from daily docs.` });
     } catch (error: any) {
       console.error("Rollup recompute failed:", error);
       toast({ variant: 'destructive', title: "Rollup Failed", description: error.message });
@@ -129,14 +112,8 @@ export default function BackfillPage() {
     toast({ title: "Preset Rebuild Started", description: "Recomputing dashboard preset rollups from daily docs." });
 
     try {
-      await rebuildDashboardPresets(
-        db,
-        activeStore.id,
-        (message) => {
-          console.log(`[Presets]: ${message}`);
-          setPresetProgress(message);
-        }
-      );
+      const result = await rebuildPresetsViaServer(activeStore.id);
+      setPresetProgress(`Rebuilt ${result.presets} preset(s).`);
       toast({ title: "Presets Rebuilt", description: "Dashboard preset tiles now reflect the daily docs." });
     } catch (error: any) {
       console.error("Preset rebuild failed:", error);

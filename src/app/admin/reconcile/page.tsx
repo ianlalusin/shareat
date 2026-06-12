@@ -2,9 +2,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { db } from "@/lib/firebase/client";
 import { reconcileRange, type ReconcileRow } from "@/lib/analytics/reconcile";
-import { rebuildDailyAnalyticsFromReceipts } from "@/lib/analytics/backfill";
+import { rebuildDailyViaServer } from "@/lib/analytics/backfillViaServer";
 import { reconcileMonthsFromDays, reconcileYearFromMonths, type RollupReconcileRow } from "@/lib/analytics/reconcile-rollups";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -104,7 +103,7 @@ export default function AdminReconcilePage() {
     setIsRunning(true);
     setProgress(`Rebuilding ${dayId}…`);
     try {
-      await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, dayStart, dayEnd, (msg) => setProgress(msg));
+      await rebuildDailyViaServer(activeStore.id, dayStart, dayEnd);
       toast({ title: "Rebuild complete", description: `Rebuilt analytics for ${dayId}. Re-run reconcile to confirm.` });
     } catch (e: any) {
       console.error(e);
@@ -139,9 +138,7 @@ export default function AdminReconcilePage() {
         const dayEnd = new Date(y, m, d);
         dayEnd.setHours(23, 59, 59, 999);
 
-        await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, dayStart, dayEnd, (msg) =>
-          setProgress(`${dayId}: ${msg}`)
-        );
+        await rebuildDailyViaServer(activeStore.id, dayStart, dayEnd);
       }
 
       toast({ title: "Bulk rebuild complete", description: `Rebuilt ${targets.length} day(s). Re-run reconcile to confirm.` });
@@ -164,7 +161,7 @@ export default function AdminReconcilePage() {
     setIsRunning(true);
     setProgress(`Rebuilding ${monthId}...`);
     try {
-      await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, startDate, endDate, (msg) => setProgress(`${monthId}: ${msg}`));
+      await rebuildDailyViaServer(activeStore.id, startDate, endDate);
       toast({ title: `Month ${monthId} rebuilt`, description: "Re-run rollup reconcile to confirm." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Rebuild failed", description: e.message });
@@ -182,7 +179,7 @@ export default function AdminReconcilePage() {
     setIsRunning(true);
     try {
         setProgress(`Rebuilding ${year}…`);
-        await rebuildDailyAnalyticsFromReceipts(db, activeStore.id, yearStart, yearEnd, (msg) => setProgress(`${year}: ${msg}`));
+        await rebuildDailyViaServer(activeStore.id, yearStart, yearEnd);
         toast({ title: "Year rebuild complete", description: `Rebuilt days for ${year}. Re-run rollup reconcile.` });
     } catch (e: any) {
         console.error(e);
