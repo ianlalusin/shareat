@@ -26,7 +26,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-import { db } from '@/lib/firebase/client';
+import { db, auth } from '@/lib/firebase/client';
 import { AppUser } from '@/context/auth-context';
 import type {
   Store,
@@ -739,22 +739,53 @@ export async function completePaymentFromUnits(
   }
 
   if (finalReceipt && receiptId) {
-    const MAX_ANALYTICS_RETRIES = 2;
-    for (let attempt = 0; attempt <= MAX_ANALYTICS_RETRIES; attempt++) {
-      try {
-        const { writeBatch: wb, doc: docRef, updateDoc: ud, serverTimestamp: st } = await import("firebase/firestore");
-        const analyticsBatch = wb(db);
-        await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
-        await analyticsBatch.commit();
-        // Mark receipt as analytics-applied only after successful commit
-        const rRef = docRef(db, `stores/${storeId}/receipts`, receiptId);
-        await ud(rRef, { analyticsApplied: true, analyticsAppliedAt: st() });
-        console.log("[Analytics] Delta applied successfully for receipt", receiptId);
-        break;
-      } catch (analyticsErr) {
-        console.error(`[Analytics] Attempt ${attempt + 1} failed for receipt ${receiptId}:`, analyticsErr);
-        if (attempt === MAX_ANALYTICS_RETRIES) {
-          console.error("[Analytics] All retries exhausted. Receipt", receiptId, "needs manual analytics reconciliation.");
+    // Prefer the server endpoint (authoritative, server clock, idempotent on
+    // analyticsApplied). If it fails for any reason, fall back to the existing
+    // client delta so analytics is never silently dropped and payment is never
+    // blocked. Both paths are non-fatal — the receipt itself is already committed.
+    let appliedViaServer = false;
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (token) {
+        const res = await fetch("/api/analytics/apply-delta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ storeId, receiptId, op: "payment" }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j?.ok) {
+          appliedViaServer = true;
+          console.log("[Analytics] Delta applied server-side for receipt", receiptId, j?.skipped ? "(already applied)" : "");
+        }
+      }
+    } catch (serverErr) {
+      console.warn("[Analytics] Server apply-delta failed; falling back to client delta:", serverErr);
+    }
+
+    if (!appliedViaServer) {
+      const MAX_ANALYTICS_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_ANALYTICS_RETRIES; attempt++) {
+        try {
+          const { writeBatch: wb, doc: docRef, updateDoc: ud, serverTimestamp: st, getDoc: gd } = await import("firebase/firestore");
+          const rRef = docRef(db, `stores/${storeId}/receipts`, receiptId);
+          // Guard against double-apply: the server may have committed even if the
+          // request appeared to fail (e.g. a timeout after the transaction ran).
+          const rSnap = await gd(rRef);
+          if (rSnap.exists() && (rSnap.data() as any)?.analyticsApplied === true) {
+            console.log("[Analytics] Already applied (server); skipping client fallback for", receiptId);
+            break;
+          }
+          const analyticsBatch = wb(db);
+          await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
+          await analyticsBatch.commit();
+          await ud(rRef, { analyticsApplied: true, analyticsAppliedAt: st() });
+          console.log("[Analytics] Delta applied (client fallback) for receipt", receiptId);
+          break;
+        } catch (analyticsErr) {
+          console.error(`[Analytics] Client fallback attempt ${attempt + 1} failed for receipt ${receiptId}:`, analyticsErr);
+          if (attempt === MAX_ANALYTICS_RETRIES) {
+            console.error("[Analytics] All retries exhausted. Receipt", receiptId, "needs manual analytics reconciliation.");
+          }
         }
       }
     }
