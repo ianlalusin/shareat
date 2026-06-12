@@ -1,8 +1,9 @@
 
-'use client';
-
+// Universal module: pure contribution math + a client doc-ref helper. No
+// 'use client' so server (admin-SDK) code can reuse the contribution functions.
+// `doc`/Firestore are only used by dailyAnalyticsDocRef (client callers).
 import { doc, type Firestore } from "firebase/firestore";
-import { Timestamp } from "firebase/firestore";
+import type { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, Store, LineAdjustment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
