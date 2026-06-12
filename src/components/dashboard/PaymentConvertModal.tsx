@@ -11,11 +11,11 @@ import {
 import { ArrowRight, Loader2, Trash2 } from "lucide-react";
 
 import { db } from "@/lib/firebase/client";
+import { type PaymentConversion } from "@/lib/analytics/applyPaymentConversion";
 import {
-  createPaymentConversion,
-  voidPaymentConversion,
-  type PaymentConversion,
-} from "@/lib/analytics/applyPaymentConversion";
+  createPaymentConversionViaServer,
+  voidPaymentConversionViaServer,
+} from "@/lib/analytics/paymentConversionClient";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { useAuthContext } from "@/context/auth-context";
 import { useLocalProfile } from "@/context/local-profile-context";
@@ -188,16 +188,12 @@ export function PaymentConvertModal({
     }
     setSubmitting(true);
     try {
-      await createPaymentConversion(db, storeId, {
+      await createPaymentConversionViaServer(storeId, {
         amount: parsedAmount,
         fromMethod: resolvedFrom,
         toMethod: resolvedTo,
         note: note.trim() || undefined,
-        actor: {
-          uid: appUser.uid,
-          name: actorName,
-          role: appUser.role ?? null,
-        },
+        actorName,
       });
       toast({
         title: "Conversion recorded",
@@ -227,10 +223,7 @@ export function PaymentConvertModal({
     if (!confirmed) return;
     setVoidingId(id);
     try {
-      await voidPaymentConversion(db, storeId, id, {
-        uid: appUser.uid,
-        name: actorName,
-      });
+      await voidPaymentConversionViaServer(storeId, id, actorName);
       toast({ title: "Conversion voided" });
     } catch (err: any) {
       toast({
