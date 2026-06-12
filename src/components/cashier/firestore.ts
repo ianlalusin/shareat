@@ -54,6 +54,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyReceiptDeltaServerFirst } from '@/lib/analytics/applyReceiptDeltaServerFirst';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
+import { applyKdsDeltaServerFirst } from '@/lib/analytics/applyKdsDeltaServerFirst';
+import { computeKdsTargets } from '@/lib/analytics/kdsTargets';
 import { toJsDate } from '@/lib/utils/date';
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
@@ -731,12 +733,22 @@ export async function completePaymentFromUnits(
   }
 
   if (kdsDeltas.length > 0) {
-    const { writeBatch: wb2 } = await import("firebase/firestore");
-    const kdsBatch = wb2(db);
-    for (const d of kdsDeltas) {
-      await applyKdsTicketDelta(db, storeId, d.old, d.new, { batch: kdsBatch });
-    }
-    await kdsBatch.commit();
+    // Server-first KDS analytics (marker-based, idempotent). Fallback also writes
+    // the ticket markers so a later server call doesn't double-count.
+    const ticketIds = kdsDeltas.map((d) => String(d.new.id)).filter(Boolean);
+    await applyKdsDeltaServerFirst(storeId, sessionId, ticketIds, undefined, async () => {
+      const { writeBatch: wb2 } = await import("firebase/firestore");
+      const kdsBatch = wb2(db);
+      for (const d of kdsDeltas) {
+        await applyKdsTicketDelta(db, storeId, d.old, d.new, { batch: kdsBatch });
+        const tg = computeKdsTargets(d.new);
+        kdsBatch.update(doc(db, "stores", storeId, "sessions", sessionId, "kitchentickets", d.new.id), {
+          analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
+          analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
+        });
+      }
+      await kdsBatch.commit();
+    });
   }
 
   if (finalReceipt && receiptId) {

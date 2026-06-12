@@ -27,6 +27,8 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
+import { applyKdsDeltaServerFirst } from "@/lib/analytics/applyKdsDeltaServerFirst";
+import { computeKdsTargets } from "@/lib/analytics/kdsTargets";
 import { cn } from "@/lib/utils";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { SyncKdsTicketsTool } from "@/components/kitchen/SyncKdsTicketsTool";
@@ -538,13 +540,21 @@ export default function KitchenPage() {
         });
 
         if (kdsDelta) {
-          const { writeBatch: wb } = await import('firebase/firestore');
-          const batch = wb(db);
-          await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, {
-            batch,
-            actor: { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null },
+          const delta = kdsDelta;
+          const actor = { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null };
+          // Server-first (marker-based, idempotent). Fallback also writes the
+          // ticket markers so a later server call doesn't double-count.
+          await applyKdsDeltaServerFirst(activeStore.id, sessionId, [ticketId], actor, async () => {
+            const { writeBatch: wb } = await import('firebase/firestore');
+            const batch = wb(db);
+            await applyKdsTicketDelta(db, activeStore.id, delta.old, delta.new, { batch, actor });
+            const tg = computeKdsTargets(delta.new);
+            batch.update(doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId), {
+              analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
+              analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
+            });
+            await batch.commit();
           });
-          await batch.commit();
         }
         const ticket = ticketsWithData.find(t => t.id === ticketId);
         const flashType = newStatus === "cancelled" ? "cancelled" : "served";
@@ -620,13 +630,19 @@ export default function KitchenPage() {
         return { old, new: { ...old, ...updatePayload } as KitchenTicket };
       });
       if (kdsDelta) {
-        const { writeBatch: wb } = await import('firebase/firestore');
-        const batch = wb(db);
-        await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, {
-          batch,
-          actor: { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null },
+        const delta = kdsDelta;
+        const actor = { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null };
+        await applyKdsDeltaServerFirst(activeStore.id, sessionId, [ticketId], actor, async () => {
+          const { writeBatch: wb } = await import('firebase/firestore');
+          const batch = wb(db);
+          await applyKdsTicketDelta(db, activeStore.id, delta.old, delta.new, { batch, actor });
+          const tg = computeKdsTargets(delta.new);
+          batch.update(doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId), {
+            analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
+            analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
+          });
+          await batch.commit();
         });
-        await batch.commit();
       }
       const ticket = ticketsWithData.find(t => t.id === ticketId);
       showFlash("served", `${qtyToServe} pcs served`);
