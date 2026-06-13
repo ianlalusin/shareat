@@ -568,7 +568,7 @@ export default function UserManagementPage() {
                     </div>
 
                     {effectiveLocalStore ? (
-                      <ServerProfilesManagerCard storeId={effectiveLocalStore} />
+                      <ServerProfilesManagerCard storeId={effectiveLocalStore} allowDelete />
                     ) : (
                       <p className="text-sm text-muted-foreground py-6 text-center">Select a store to manage its local users.</p>
                     )}

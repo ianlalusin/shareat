@@ -21,9 +21,11 @@ interface ProfileDoc {
 
 interface Props {
   storeId: string;
+  /** When true, show the per-user Delete button (admin-only surfaces). */
+  allowDelete?: boolean;
 }
 
-export function ServerProfilesManagerCard({ storeId }: Props) {
+export function ServerProfilesManagerCard({ storeId, allowDelete = false }: Props) {
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [profiles, setProfiles] = useState<ProfileDoc[]>([]);
@@ -118,9 +120,11 @@ export function ServerProfilesManagerCard({ storeId }: Props) {
                   <Button variant="outline" size="sm" onClick={() => { setResetTarget(p); setNewPasscode(""); }}>
                     <KeyRound className="h-3.5 w-3.5 mr-1" /> Reset passcode
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {allowDelete && (
+                    <Button variant="outline" size="sm" className="border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => handleDelete(p)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
