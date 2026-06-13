@@ -57,7 +57,11 @@ export async function POST(req: Request) {
   try {
     const decoded = await verifyToken(req);
     const db = getAdminDb();
-    await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "server"]);
+    // Any signed-in staff with access to this store may record a verify-confirm
+    // (matches the kds-delta endpoint). The verify UI is currently Server Station
+    // only (admin/manager/server), but allowing cashier/kitchen here keeps the
+    // analytics write from silently 403-ing if the verify surface is widened.
+    await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier", "kitchen", "server"]);
 
     const nowMs = Date.now();
     const dayId = getDayIdFromTimestamp(nowMs);
