@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
+import { auth } from "@/lib/firebase/client";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader } from "lucide-react";
@@ -19,7 +20,6 @@ import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { reconcileBundleLines } from "@/components/cashier/firestore";
 import { toJsDate } from "@/lib/utils/date";
-import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
 import { useLocalProfile } from "@/context/local-profile-context";
@@ -199,35 +199,29 @@ export function ServerPageClient() {
       updatedAt: serverTimestamp(),
     });
 
-    // Roll the confirmation time into daily/month/year analytics (overall + per
-    // local user) so the sales report reads it cheaply — no scanning sessions.
-    if (verifyDurationMs != null) {
-      const nowMs = Date.now();
-      const dayId = getDayIdFromTimestamp(nowMs);
-      const pid = currentProfile?.profileId ?? null;
-      const serverAgg: Record<string, any> = {
-        confirmMsSum: increment(verifyDurationMs),
-        confirmCount: increment(1),
-      };
-      if (pid) {
-        serverAgg.confirmMsSumByUser = { [pid]: increment(verifyDurationMs) };
-        serverAgg.confirmCountByUser = { [pid]: increment(1) };
-      }
-      const buildPayload = (idKey: string, idVal: string) => ({
-        meta: { [idKey]: idVal, storeId: activeStore.id, updatedAt: serverTimestamp() },
-        server: serverAgg,
-        ...(pid && currentProfile?.name ? { staffNames: { [pid]: currentProfile.name } } : {}),
-      });
-      batch.set(doc(db, "stores", activeStore.id, "analytics", dayId), buildPayload("dayId", dayId), { merge: true });
-      batch.set(doc(db, "stores", activeStore.id, "analyticsMonths", dayId.slice(0, 6)), buildPayload("monthId", dayId.slice(0, 6)), { merge: true });
-      batch.set(doc(db, "stores", activeStore.id, "analyticsYears", dayId.slice(0, 4)), buildPayload("yearId", dayId.slice(0, 4)), { merge: true });
-    }
-
     try {
       await batch.commit();
       // Bundle: keep the flat line at qty 1 and the Extra Pax overflow line in
       // step with the verified headcount immediately (no bill-view dependency).
       if (isBundle) await reconcileBundleLines(activeStore.id, session.id, appUser);
+
+      // Fire-and-forget: analytics writes are server-only (M-1 lockdown) so the
+      // batch above cannot include them. Send them through the server endpoint.
+      if (verifyDurationMs != null) {
+        auth.currentUser?.getIdToken().then((token) => {
+          fetch("/api/analytics/verify-confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              storeId: activeStore.id,
+              verifyDurationMs,
+              profileId: currentProfile?.profileId ?? null,
+              profileName: currentProfile?.name ?? null,
+            }),
+          }).catch(() => {/* non-fatal */});
+        }).catch(() => {/* non-fatal */});
+      }
+
       const durationStr = verifyDurationMs != null ? formatElapsedShort(verifyDurationMs) : "unknown";
       writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount, verifyDurationMs } as any, note: `Verified ${finalCount} guests after ${durationStr}`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
       toast({ title: 'Session Verified' });
