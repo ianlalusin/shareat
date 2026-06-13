@@ -147,15 +147,30 @@ export async function rebuildDashboardPresetsServer(
   now: Date = new Date(),
 ): Promise<{ presets: number }> {
   const ranges = presetRanges(now);
+
+  // Read the daily docs ONCE over the union of every preset window, then compute
+  // each tile in memory. The windows overlap heavily (last7 ⊂ last30, etc.), so a
+  // per-preset query re-reads the same docs up to 6–8×. Using the true min-start
+  // (not just Jan 1) keeps lastMonth/last30/thisWeek correct across the year
+  // boundary, where they reach into the prior year.
+  const minStartMs = Math.min(...ranges.map((r) => r.start.getTime()));
+  const maxEndMs = Math.max(...ranges.map((r) => r.end.getTime()));
+  const unionSnap = await db.collection(`stores/${storeId}/analytics`)
+    .where("meta.dayStartMs", ">=", minStartMs)
+    .where("meta.dayStartMs", "<=", maxEndMs)
+    .get();
+  const days = unionSnap.docs.map((d) => d.data() as any);
+
   const batch = db.batch();
   for (const { presetId, start, end } of ranges) {
-    const snap = await db.collection(`stores/${storeId}/analytics`)
-      .where("meta.dayStartMs", ">=", start.getTime())
-      .where("meta.dayStartMs", "<=", end.getTime())
-      .get();
+    const startMs = start.getTime();
+    const endMs = end.getTime();
 
     const agg: any = {};
-    snap.forEach((d) => sumDailyBodyInto(agg, d.data()));
+    for (const day of days) {
+      const ms = Number(day?.meta?.dayStartMs);
+      if (Number.isFinite(ms) && ms >= startMs && ms <= endMs) sumDailyBodyInto(agg, day);
+    }
 
     const presetData = {
       ...agg,
