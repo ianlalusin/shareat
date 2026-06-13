@@ -15,6 +15,7 @@ externally by **Google Cloud Scheduler**.
 | `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 1-5 * * *` (1–5 AM, batched) | 300s          |
 | `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
 | `reconcile-analytics`      | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` (every 15 min)   | 120s             |
+| `rebuild-presets`          | `GET /api/cron/rebuild-presets`     | `30 0 * * *` (12:30 AM)         | 300s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
 editor) and upserts each day's forecast into the monthly doc
@@ -53,6 +54,16 @@ This job sweeps each active store for those via **cheap single-field queries**
 server writer, so analytics is never permanently dropped. It reuses `CRON_SECRET`;
 no new secret. (KDS ticket and receipt-edit deltas are not in this sweep — they
 rely on endpoint retry plus the admin **Backfill** tool as the manual backstop.)
+
+`rebuild-presets` re-sums the dashboard preset tiles (today / yesterday / last7 /
+last30 / thisMonth / lastMonth / thisWeek / ytd) from the per-day analytics docs
+for every active store, once daily. The live delta path only **adds** to a preset
+doc for whichever windows include an event when it happens — it never rolls a day
+back **off** once it leaves the rolling window, so the tiles inflate over time
+(observed in prod: a "This Month" tile reading 3×–11× the true receipt total). The
+per-day analytics docs are always correct (keyed by `dayId`), so re-summing them
+resets the tiles; the deltas keep them live during the day. Reuses `CRON_SECRET`;
+no new secret. Cheap (≈8 windowed reads per store).
 
 ## Auth
 
@@ -117,6 +128,15 @@ gcloud scheduler jobs create http reconcile-analytics \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=120s
+
+gcloud scheduler jobs create http rebuild-presets \
+  --location="$REGION" \
+  --schedule="30 0 * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/rebuild-presets" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=300s
 ```
 
 **Secrets**: `generate-daily-insight` needs no new secret — it reuses

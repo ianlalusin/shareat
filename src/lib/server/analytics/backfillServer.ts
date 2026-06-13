@@ -175,3 +175,28 @@ export async function rebuildDashboardPresetsServer(
   await batch.commit();
   return { presets: ranges.length };
 }
+
+/**
+ * Rebuild dashboard preset rollups for every active store.
+ *
+ * The live delta path only ever *adds* to the rolling-window preset docs
+ * (today/yesterday/last7/last30/thisMonth/...) for whichever windows include an
+ * event at the time it happens — it never subtracts a day once it rolls out of
+ * the window. So those tiles inflate over time (observed: a "This Month" reading
+ * 3×–11× the true receipt total). Re-summing from the per-day analytics docs
+ * (which are always correct, being keyed by dayId) is the authoritative reset.
+ * Scheduled daily so the tiles self-heal each morning; deltas keep them live
+ * during the day.
+ */
+export async function rebuildDashboardPresetsForAllStores(
+  db: Firestore,
+  now: Date = new Date(),
+): Promise<{ totalStores: number; presets: number; results: Array<{ storeId: string; presets: number }> }> {
+  const stores = await db.collection("stores").where("isActive", "==", true).get();
+  const results: Array<{ storeId: string; presets: number }> = [];
+  for (const s of stores.docs) {
+    const r = await rebuildDashboardPresetsServer(db, s.id, now);
+    results.push({ storeId: s.id, presets: r.presets });
+  }
+  return { totalStores: stores.size, presets: results.reduce((n, r) => n + r.presets, 0), results };
+}
