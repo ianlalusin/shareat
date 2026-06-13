@@ -139,9 +139,21 @@ service cloud.firestore {
       allow read, write: if hasStoreAccess(storeId);
     }
 
-    // Store scoped (everything else)
-    match /stores/{storeId}/{docPath=**} {
+    // The store document itself (kept separate so the collection-scoped rule
+    // below can inspect the top-level collection name as a plain string).
+    match /stores/{storeId} {
       allow read, write, delete: if hasStoreAccess(storeId);
+    }
+
+    // Store scoped (everything else). Analytics rollups
+    // (analytics / analyticsMonths / analyticsYears / dashPresets) are SERVER-ONLY
+    // writes: every writer goes through the admin SDK (which bypasses these rules),
+    // so clients may READ them but not write/delete. `coll` is a single-segment
+    // wildcard (a string), so the membership check is unambiguous.
+    match /stores/{storeId}/{coll}/{docPath=**} {
+      allow read: if hasStoreAccess(storeId);
+      allow write, delete: if hasStoreAccess(storeId)
+        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets']);
     }
 
     // -----------------------------
