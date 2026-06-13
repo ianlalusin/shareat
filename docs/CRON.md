@@ -14,6 +14,7 @@ externally by **Google Cloud Scheduler**.
 | `generate-forecast`        | `GET /api/cron/generate-forecast`   | `0 21,22,23,0,1 * * *` (9 PM–1 AM) | 600s         |
 | `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 1-5 * * *` (1–5 AM, batched) | 300s          |
 | `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
+| `reconcile-analytics`      | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` (every 15 min)   | 120s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
 editor) and upserts each day's forecast into the monthly doc
@@ -41,6 +42,17 @@ only once every active store is done; otherwise it stays `pending` and the next
 fire picks up the remainder / retries failures (capped by `MAX_DAILY_ATTEMPTS`).
 The forecast tracks completed stores in `system/forecastCronLog.runs[<date>].doneStoreIds`;
 the insight uses the presence of each store's `aiInsights/<date>` doc.
+
+`reconcile-analytics` is the durable backstop for the analytics server lockdown
+(M-1). Analytics rollups are server-write-only (Firestore rules), and the client
+applies each delta through a server endpoint with retry. If a call still fails
+transiently, the receipt is left with a pending flag — `analyticsApplied:false`
+(payment/refund not applied) or `analyticsReversed:false` (void not reversed).
+This job sweeps each active store for those via **cheap single-field queries**
+(≈0 docs on a healthy system) and applies them with the same **idempotent**
+server writer, so analytics is never permanently dropped. It reuses `CRON_SECRET`;
+no new secret. (KDS ticket and receipt-edit deltas are not in this sweep — they
+rely on endpoint retry plus the admin **Backfill** tool as the manual backstop.)
 
 ## Auth
 
@@ -96,6 +108,15 @@ gcloud scheduler jobs create http generate-daily-insight \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=300s
+
+gcloud scheduler jobs create http reconcile-analytics \
+  --location="$REGION" \
+  --schedule="*/15 * * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/reconcile-analytics" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=120s
 ```
 
 **Secrets**: `generate-daily-insight` needs no new secret — it reuses

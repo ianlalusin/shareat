@@ -506,6 +506,7 @@ export default function ReceiptsPageContents() {
           voidedByUid: appUser.uid,
           voidedByEmail: appUser.email,
           voidReason: reason,
+          analyticsReversed: false, // set true by the server/reconcile cron once reversed
         });
 
         // 2. Reverse the receipt's analytics contribution server-first; fall back
