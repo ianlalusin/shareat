@@ -11,13 +11,14 @@ import { startOfDay, endOfDay, isSameDay, fmtDate } from '@/lib/utils/date';
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "last30" | "lastMonth" | "ytd" | "custom";
 // avgDineIn  = avg net per dine-in PACKAGE guest (covers w/ a headcount snapshot).
 // avgAlacarte = avg net per ala carte (non-package "walkIn") BILL — no headcount.
-export type DashboardStats = { netSales: number; transactions: number; avgDineIn: number; avgAlacarte: number; };
+// txDineIn / txAlacarte = transaction (session) count by mode; sum == transactions.
+export type DashboardStats = { netSales: number; transactions: number; avgDineIn: number; avgAlacarte: number; txDineIn: number; txAlacarte: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
 export type TopRefillRow = { name: string; qty: number };
 export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
 
-const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgDineIn: 0, avgAlacarte: 0, mop: {} };
+const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgDineIn: 0, avgAlacarte: 0, txDineIn: 0, txAlacarte: 0, mop: {} };
 
 // --- Data Aggregation Helpers ---
 function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {
@@ -60,6 +61,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     // headcount, so the average is per BILL (net per transaction).
     const walkInNet = dailyMetrics.reduce((sum, m) => sum + ((m.sales as any)?.netSalesByMode?.walkIn || 0), 0);
     const walkInTx = dailyMetrics.reduce((sum, m) => sum + ((m.payments as any)?.txCountByMode?.walkIn || 0), 0);
+    const dineInTx = dailyMetrics.reduce((sum, m) => sum + ((m.payments as any)?.txCountByMode?.dineIn || 0), 0);
     const avgAlacarte = walkInTx > 0 ? walkInNet / walkInTx : 0;
 
     const mop: Record<string, number> = {};
@@ -69,7 +71,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
             mop[method] = (mop[method] || 0) + amount;
         }
     });
-    return { netSales, transactions, avgDineIn, avgAlacarte, mop };
+    return { netSales, transactions, avgDineIn, avgAlacarte, txDineIn: dineInTx, txAlacarte: walkInTx, mop };
 }
 
 function aggregateRefills(metrics: DailyMetric[], topN: number = 5): TopRefillRow[] {

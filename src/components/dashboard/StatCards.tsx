@@ -31,6 +31,8 @@ export type DashboardStats = {
     transactions: number;
     avgDineIn: number;    // avg net per dine-in package guest (per head)
     avgAlacarte: number;  // avg net per ala carte (non-package) bill
+    txDineIn: number;     // dine-in session count
+    txAlacarte: number;   // ala carte session count
 };
 
 function peso(n: number) {
@@ -38,13 +40,20 @@ function peso(n: number) {
     return `₱${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Single card with two columns: Dine In (per guest) | Ala carte (per bill).
-function AverageBasketCard({ dineIn, alacarte, isLoading }: { dineIn: number; alacarte: number; isLoading: boolean }) {
+// A stat card split into two columns: Dine In | Ala carte.
+function SplitStatCard({ title, icon, left, right, footnote, isLoading }: {
+    title: string;
+    icon: React.ReactNode;
+    left: string;
+    right: string;
+    footnote?: string;
+    isLoading: boolean;
+}) {
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average Basket</CardTitle>
-                <BarChart className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">{title}</CardTitle>
+                {icon}
             </CardHeader>
             <CardContent>
                 {isLoading ? (
@@ -54,14 +63,14 @@ function AverageBasketCard({ dineIn, alacarte, isLoading }: { dineIn: number; al
                         <div className="flex items-stretch divide-x">
                             <div className="flex-1 pr-4">
                                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Dine In</p>
-                                <p className="text-xl font-bold tabular-nums">{dineIn > 0 ? peso(dineIn) : "—"}</p>
+                                <p className="text-xl font-bold tabular-nums">{left}</p>
                             </div>
                             <div className="flex-1 pl-4">
                                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ala carte</p>
-                                <p className="text-xl font-bold tabular-nums">{alacarte > 0 ? peso(alacarte) : "—"}</p>
+                                <p className="text-xl font-bold tabular-nums">{right}</p>
                             </div>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-2">Dine-in: per guest · Ala carte: per bill</p>
+                        {footnote && <p className="text-[10px] text-muted-foreground mt-2">{footnote}</p>}
                     </>
                 )}
             </CardContent>
@@ -115,7 +124,14 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
             <Link href="/receipts">
               <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" className="hover:bg-muted/50 transition-colors" />
             </Link>
-            <StatCard title="Transactions" value={stats.transactions} icon={<Receipt className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} />
+            <SplitStatCard
+              title="Transactions"
+              icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
+              left={stats.txDineIn.toLocaleString("en-US")}
+              right={stats.txAlacarte.toLocaleString("en-US")}
+              footnote={`${stats.transactions.toLocaleString("en-US")} total sessions`}
+              isLoading={isLoading}
+            />
             {activeSessions !== undefined && (
               <Link href="/cashier">
                 <StatCard 
@@ -127,7 +143,14 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
                 />
               </Link>
             )}
-            <AverageBasketCard dineIn={stats.avgDineIn} alacarte={stats.avgAlacarte} isLoading={isLoading} />
+            <SplitStatCard
+              title="Average Basket"
+              icon={<BarChart className="h-4 w-4 text-muted-foreground" />}
+              left={stats.avgDineIn > 0 ? peso(stats.avgDineIn) : "—"}
+              right={stats.avgAlacarte > 0 ? peso(stats.avgAlacarte) : "—"}
+              footnote="Dine-in: per guest · Ala carte: per bill"
+              isLoading={isLoading}
+            />
         </>
     );
 }
