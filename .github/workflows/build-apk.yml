@@ -73,13 +73,28 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
+      - name: Decode release keystore (if configured)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
+            echo "Decoded release keystore -> in-place updates enabled."
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set. Building debug-signed; in-place updates will NOT work until the release keystore is added."
+          fi
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
         working-directory: android
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SharEat-POS-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: SharEat-POS-release
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
