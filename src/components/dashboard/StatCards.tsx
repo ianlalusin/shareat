@@ -29,9 +29,45 @@ const PesoSign = ({ className }: { className?: string }) => (
 export type DashboardStats = {
     netSales: number;
     transactions: number;
-    avgBasket: number;   // avg net per dine-in package guest (covers w/ a headcount)
-    avgPerBill: number;  // avg net per transaction (incl. alacarte / walk-in)
+    avgDineIn: number;    // avg net per dine-in package guest (per head)
+    avgAlacarte: number;  // avg net per ala carte (non-package) bill
 };
+
+function peso(n: number) {
+    const v = Number.isFinite(n) ? n : 0;
+    return `₱${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Single card with two columns: Dine In (per guest) | Ala carte (per bill).
+function AverageBasketCard({ dineIn, alacarte, isLoading }: { dineIn: number; alacarte: number; isLoading: boolean }) {
+    return (
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Average Basket</CardTitle>
+                <BarChart className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                {isLoading ? (
+                    <Skeleton className="h-8 w-3/4" />
+                ) : (
+                    <>
+                        <div className="flex items-stretch divide-x">
+                            <div className="flex-1 pr-4">
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Dine In</p>
+                                <p className="text-xl font-bold tabular-nums">{dineIn > 0 ? peso(dineIn) : "—"}</p>
+                            </div>
+                            <div className="flex-1 pl-4">
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ala carte</p>
+                                <p className="text-xl font-bold tabular-nums">{alacarte > 0 ? peso(alacarte) : "—"}</p>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-2">Dine-in: per guest · Ala carte: per bill</p>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
 
 interface StatCardsProps {
     stats: DashboardStats;
@@ -91,22 +127,7 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
                 />
               </Link>
             )}
-            <StatCard
-              title="Avg / Dine-in Guest"
-              value={stats.avgBasket > 0 ? stats.avgBasket : "—"}
-              description="Per package dine-in guest"
-              icon={<Users className="h-4 w-4 text-muted-foreground" />}
-              isLoading={isLoading}
-              format="currency"
-            />
-            <StatCard
-              title="Avg / Bill"
-              value={stats.avgPerBill}
-              description="Per transaction (incl. alacarte)"
-              icon={<BarChart className="h-4 w-4 text-muted-foreground" />}
-              isLoading={isLoading}
-              format="currency"
-            />
+            <AverageBasketCard dineIn={stats.avgDineIn} alacarte={stats.avgAlacarte} isLoading={isLoading} />
         </>
     );
 }
