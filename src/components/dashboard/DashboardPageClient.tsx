@@ -7,8 +7,8 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCards } from "@/components/dashboard/StatCards";
-import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { PaymentConvertModal } from "@/components/dashboard/PaymentConvertModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, AlertTriangle, Printer, ArrowRightLeft } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportDialog";
@@ -116,7 +116,10 @@ export default function DashboardPageClient() {
         actualSalesToday,
         isLoading: isForecastLoading
     } = useForecastAnalytics(activeStore?.id, activeStore ?? undefined);
-    
+
+    const canConvert = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin;
+    const paymentEntries = Object.entries(paymentMix ?? {}).sort(([, a], [, b]) => (b as number) - (a as number));
+
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
           today: "today", 
@@ -196,6 +199,47 @@ export default function DashboardPageClient() {
                     <StatCards stats={stats} activeSessions={activeSessions} dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
 
+                {/* Payment Mix — compact full-width row between groups 1 and 2.
+                    Single inline line on md+, falls back to the regular stacked
+                    card on mobile. */}
+                <Card>
+                    <CardContent className="p-3 md:py-2.5">
+                        {isLoading ? (
+                            <Skeleton className="h-6 w-full" />
+                        ) : (
+                            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                                <div className="flex items-center justify-between gap-2 md:shrink-0">
+                                    <span className="text-sm font-semibold">Payment Mix</span>
+                                    {canConvert && (
+                                        <Button variant="outline" size="sm" className="h-7 md:hidden" onClick={() => setConvertModalOpen(true)}>
+                                            <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                            Convert
+                                        </Button>
+                                    )}
+                                </div>
+                                {paymentEntries.length === 0 ? (
+                                    <span className="text-sm text-muted-foreground">No payments recorded in this range.</span>
+                                ) : (
+                                    <div className="flex flex-1 flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-x-4">
+                                        {paymentEntries.map(([method, amount]) => (
+                                            <div key={method} className="flex items-center justify-between gap-2 md:justify-start md:border-l md:pl-4 md:first:border-l-0 md:first:pl-0">
+                                                <span className="text-sm capitalize text-muted-foreground">{method}</span>
+                                                <span className="text-sm font-medium tabular-nums">₱{(amount as number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {canConvert && (
+                                    <Button variant="outline" size="sm" className="hidden h-7 md:ml-auto md:inline-flex md:shrink-0" onClick={() => setConvertModalOpen(true)}>
+                                        <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                        Convert
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
                 {/* Group 2 — the two graphs, equal size */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                     <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
@@ -218,25 +262,10 @@ export default function DashboardPageClient() {
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
 
-                {/* Group 4 — remaining breakdown cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                    <Card>
-                        <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-base">Payment Mix</CardTitle>
-                            {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin) && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7"
-                                    onClick={() => setConvertModalOpen(true)}
-                                >
-                                    <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
-                                    Convert
-                                </Button>
-                            )}
-                        </CardHeader>
-                        <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                    </Card>
+                {/* Group 4 — remaining breakdown cards (Top Add-ons + Top Refills
+                    keep their position; Package Count Check stays in group 3 where
+                    it has room to grow tall). */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                     <TopCategoryCard
                         categorySales={topCategories}
                         topAddonItems={topAddonItems}
