@@ -1,6 +1,6 @@
 'use client';
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { webusbPrint } from '@/lib/printing/webusbPrinter';
 
@@ -40,6 +40,20 @@ const LOGO_URL_PREFIX = 'logoCacheUrl:';
  */
 async function fetchImageAsBase64(url: string): Promise<string | null> {
   try {
+    // Native (Capacitor) build: fetch through the native HTTP client, which is
+    // NOT subject to the WebView's CORS policy. A Storage image read as a blob
+    // via window.fetch otherwise needs a bucket CORS rule (origin
+    // https://localhost) — without it the fetch is blocked and the logo silently
+    // never prints. CapacitorHttp returns the body as base64 for a blob response.
+    if (Capacitor.isNativePlatform()) {
+      const res = await CapacitorHttp.get({ url, responseType: 'blob' });
+      const data = res?.data;
+      if (typeof data === 'string' && data.length > 0) {
+        return data.includes(',') ? data.split(',')[1] : data;
+      }
+      return null;
+    }
+
     const response = await fetch(url);
     if (!response.ok) return null;
     const blob = await response.blob();
