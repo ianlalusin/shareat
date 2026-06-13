@@ -9,7 +9,6 @@ import {
   serverTimestamp,
   doc,
 } from 'firebase/firestore';
-import { toast } from '@/hooks/use-toast';
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, LineAdjustment } from '@/lib/types';
 import {
   dailyAnalyticsDocRef,
@@ -23,7 +22,6 @@ import {
   getItemAdjustmentContribution,
   getDayOfWeekContribution,
 } from './daily';
-import { rebuildDailyAnalyticsFromReceipts } from './backfill';
 import { toJsDate } from '@/lib/utils/date';
 
 type ContributionSet = {
@@ -452,37 +450,10 @@ export async function applyAnalyticsDeltaV2(
     }
   }
 
-  // If the caller is not providing a transaction or batch, we create our own and commit it.
-  if (!opts?.tx && !opts?.batch) {
-       try {
-          // This path is not currently used by the app, but could be for a standalone script.
-          const batch = db ? (await import("firebase/firestore")).writeBatch(db) : null;
-          if (batch) {
-             // Re-run with the created batch
-             await applyAnalyticsDeltaV2(db, storeId, oldReceipt, newReceipt, { batch });
-             await batch.commit();
-          } else {
-             throw new Error("Firestore instance not available for standalone batch.");
-          }
-       } catch (error) {
-            console.error("Failed to apply analytics delta:", error);
-            toast({
-                variant: "destructive",
-                title: 'Analytics Update Failed',
-                description: 'Attempting to rebuild daily analytics. The dashboard may be out of sync temporarily.',
-            });
-            // Fallback: Rebuild analytics for the affected days
-            const dates = Array.from(affectedDayIds).map(id => new Date(`${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`));
-            if (dates.length > 0) {
-                const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-                const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-                rebuildDailyAnalyticsFromReceipts(db, storeId, minDate, maxDate, (msg) => console.log(`[Analytics Fallback]: ${msg}`)).catch(e => {
-                    console.error("Analytics fallback rebuild also failed:", e);
-                    toast({ variant: 'destructive', title: 'Critical Analytics Failure', description: 'Please contact support.' });
-                });
-            }
-       }
-   }
+  // NOTE: callers always pass a `tx` or `batch` (payment / refund / void / edit
+  // paths). The former standalone-commit branch (which fell back to a client-side
+  // rebuild) was removed when the analytics rollup collections became server-only
+  // writes — the server endpoints + reconcile cron own that path now.
 }
 
     
