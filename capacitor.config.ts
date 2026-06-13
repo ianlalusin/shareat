@@ -1,7 +1,7 @@
 import { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'net.shareat.pos',
-  appName: 'SharEat POS',
+  appName: 'SHAREAT POS',
   webDir: 'out',
   // No `server.url`: the app loads the locally-bundled static export from
   // `webDir`, so it opens and runs offline. Online-only features call the

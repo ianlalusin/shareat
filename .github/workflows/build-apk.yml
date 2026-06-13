@@ -85,7 +85,10 @@ jobs:
           fi
 
       - name: Build release APK
-        run: ./gradlew assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+        # versionName stays "1.0" (what users see — "version 1"). versionCode is the
+        # hidden monotonic counter Android needs to accept each build as an update;
+        # it tracks the build number and is never shown to users.
+        run: ./gradlew assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0
         working-directory: android
         env:
           RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
