@@ -20,6 +20,50 @@ import { Textarea } from "../ui/textarea";
 import { useAuthContext } from "@/context/auth-context";
 import { writeActivityLog } from "../cashier/activity-log";
 
+/**
+ * Settle a set of payments down to `targetTotal`, refunding any excess.
+ *
+ * When a correction lowers an already-settled bill below what was collected, the
+ * over-collected amount is a REFUND, not "change". We reduce the recorded payment
+ * mix (cash first — refunds come from the drawer, mirroring the payment modal's
+ * "overpayment must be covered by cash" rule) so the receipt's `mop` always sums
+ * to its `grandTotal`. Without this the receipt is internally inconsistent
+ * (mop > grandTotal) and the daily rollup shows net sales dropping while the
+ * payment mix stays high → the "Payment mix mismatch vs Net Sales" warning.
+ */
+function settlePaymentsToTotal(
+  payments: Payment[],
+  targetTotal: number,
+  paymentMethods: ModeOfPayment[],
+): { settled: Payment[]; refund: number } {
+  const targetCents = Math.round(targetTotal * 100);
+  const totalCents = payments.reduce((s, p) => s + Math.round((p.amount || 0) * 100), 0);
+  if (totalCents <= targetCents) return { settled: payments, refund: 0 };
+
+  const cashIds = new Set(
+    paymentMethods
+      .filter((pm) => String(pm.type || "").toLowerCase() === "cash" || String(pm.name || "").toLowerCase().includes("cash"))
+      .map((pm) => pm.id),
+  );
+  // Drain the refund from cash lines first, then the rest, in display order.
+  const drainOrder = [...payments].sort(
+    (a, b) => (cashIds.has(b.methodId) ? 1 : 0) - (cashIds.has(a.methodId) ? 1 : 0),
+  );
+  const remainingById = new Map<string, number>(payments.map((p) => [p.id, Math.round((p.amount || 0) * 100)]));
+  let toRefundCents = totalCents - targetCents;
+  for (const p of drainOrder) {
+    if (toRefundCents <= 0) break;
+    const cur = remainingById.get(p.id) || 0;
+    const cut = Math.min(cur, toRefundCents);
+    remainingById.set(p.id, cur - cut);
+    toRefundCents -= cut;
+  }
+  const settled = payments
+    .map((p) => ({ ...p, amount: (remainingById.get(p.id) || 0) / 100 }))
+    .filter((p) => p.amount > 0);
+  return { settled, refund: (totalCents - targetCents) / 100 };
+}
+
 interface EditReceiptDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -208,8 +252,18 @@ function EditReceiptContent({
         }
     );
 
+    // Refund any over-collection so the recorded payment mix matches the new
+    // grand total (keeps daily analytics consistent — see settlePaymentsToTotal).
+    const { settled: settledPayments, refund: refundAmount } = settlePaymentsToTotal(payments, grandTotal, paymentMethods);
+    const settledTotalPaid = settledPayments.reduce((sum, p) => sum + p.amount, 0);
+    const settledMop = settledPayments.reduce((acc, p) => {
+        const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
+        acc[key] = (acc[key] || 0) + p.amount;
+        return acc;
+    }, {} as Record<string, number>);
+
     // Reconstruct the receipt data
-    const updatedReceiptData: Partial<Receipt> = {
+    const updatedReceiptData: Partial<Receipt> & { refundedTotal?: number } = {
       ...receipt,
       customerName,
       customerTin,
@@ -218,8 +272,9 @@ function EditReceiptContent({
       billDiscount: billDiscount ?? null,
       customAdjustments: customAdjustments ?? [],
       total: grandTotal,
-      totalPaid: totalPaid,
-      change: change,
+      totalPaid: settledTotalPaid,
+      change: 0,
+      ...(refundAmount > 0.005 ? { refundedTotal: ((receipt as any).refundedTotal || 0) + refundAmount } : {}),
       analytics: {
         v: 2,
         sessionStartedAt: receipt.analytics?.sessionStartedAt,
@@ -236,13 +291,9 @@ function EditReceiptContent({
         vatableSales: billTotals.vatableSales,
         vatExemptSales: billTotals.vatExemptSales,
         grandTotal: billTotals.grandTotal,
-        totalPaid: totalPaid,
-        change: change,
-        mop: payments.reduce((acc, p) => {
-            const key = paymentMethods.find(pm => pm.id === p.methodId)?.name || p.methodId || "unknown";
-            acc[key] = (acc[key] || 0) + p.amount;
-            return acc;
-        }, {} as Record<string, number>),
+        totalPaid: settledTotalPaid,
+        change: 0,
+        mop: settledMop,
         salesByItem: salesAnalytics.salesByItem,
         salesByCategory: salesAnalytics.salesByCategory,
       },
@@ -250,7 +301,25 @@ function EditReceiptContent({
 
     try {
         await onSave(updatedReceiptData, editReason);
-        
+
+        // Audit the refund when a correction lowered an already-settled bill.
+        if (refundAmount > 0.005 && appUser) {
+          await writeActivityLog({
+            action: "RECEIPT_REFUND",
+            storeId: store.id,
+            sessionId: receipt.sessionId,
+            user: appUser,
+            note: editReason,
+            meta: {
+                receiptNumber: receipt.receiptNumber,
+                refundAmount,
+                previousTotalPaid: totalPaid,
+                newGrandTotal: grandTotal,
+                reason: "Correction lowered a settled bill",
+            },
+          });
+        }
+
         const oldDiscountTotal = receipt.analytics?.discountsTotal ?? 0;
         const newDiscountTotal = billTotals.totalDiscounts;
         const discountDelta = newDiscountTotal - oldDiscountTotal;

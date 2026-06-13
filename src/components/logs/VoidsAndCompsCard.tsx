@@ -29,6 +29,11 @@ function formatAmount(log: ActivityLog): string {
         return total > 0 ? `- ₱${total.toFixed(2)}` : "—";
     }
 
+    if (log.action === "RECEIPT_REFUND") {
+        const amt = Number(meta.refundAmount ?? 0);
+        return amt > 0 ? `- ₱${amt.toFixed(2)}` : "—";
+    }
+
     if (log.action === "SESSION_VOIDED") {
         return '—'; // Sessions are voided pre-payment, so no amount.
     }
@@ -81,7 +86,7 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
 
     const filteredLogs = useMemo(() => {
         if (filter === 'all') return [...logs, ...discountLogs].sort((a,b) => (toJsDate(b.createdAt)?.getTime() ?? 0) - (toJsDate(a.createdAt)?.getTime() ?? 0));
-        if (filter === 'voids') return logs.filter(log => log.action === 'VOID_TICKETS' || log.action === 'SESSION_VOIDED' || log.action === "RECEIPT_VOIDED");
+        if (filter === 'voids') return logs.filter(log => log.action === 'VOID_TICKETS' || log.action === 'SESSION_VOIDED' || log.action === "RECEIPT_VOIDED" || log.action === "RECEIPT_REFUND");
         if (filter === 'free') return logs.filter(log => log.action === 'MARK_FREE');
         if (filter === 'discounted') return discountLogs;
         return [];
@@ -127,6 +132,8 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                     let itemLabel = "SESSION VOIDED";
                                     if (log.action === "RECEIPT_VOIDED") {
                                         itemLabel = `Receipt ${meta.receiptNumber} VOIDED`;
+                                    } else if (log.action === "RECEIPT_REFUND") {
+                                        itemLabel = `Receipt ${meta.receiptNumber} REFUND`;
                                     } else if (log.action === "VOID_TICKETS") {
                                         itemLabel = `${meta.itemName} (VOID x${meta.qty ?? 1})`;
                                     } else if (log.action === "MARK_FREE") {

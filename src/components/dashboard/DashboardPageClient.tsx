@@ -68,6 +68,12 @@ export default function DashboardPageClient() {
     const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
 
     const isAdmin = appUser?.isPlatformAdmin || appUser?.role === "admin";
+    // Visibility-only flag for manager/admin-only dashboard content. Do NOT use
+    // <RoleGuard> for inline content: RoleGuard *redirects* disallowed roles to
+    // their role-home, so wrapping the warning alert in it bounced cashiers to
+    // /cashier the moment a non-"today" preset produced a warning. A plain flag
+    // just hides the content and keeps the cashier on the dashboard.
+    const canSeeManagerContent = isAdmin || appUser?.role === "manager";
 
     const handleRefreshForecast = async () => {
         if (!activeStore?.id) return;
@@ -180,18 +186,16 @@ export default function DashboardPageClient() {
             </PageHeader>
             <div className="grid gap-6">
                 
-                {warnings && warnings.length > 0 && (
-                    <RoleGuard allow={['admin', 'manager']}>
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Data Integrity Warning</AlertTitle>
-                            <AlertDescription>
-                                <ul className="list-disc pl-5">
-                                    {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
-                                </ul>
-                            </AlertDescription>
-                        </Alert>
-                    </RoleGuard>
+                {canSeeManagerContent && warnings && warnings.length > 0 && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Data Integrity Warning</AlertTitle>
+                        <AlertDescription>
+                            <ul className="list-disc pl-5">
+                                {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
+                            </ul>
+                        </AlertDescription>
+                    </Alert>
                 )}
 
                 {/* Group 1 — top stat cards (equal height) */}

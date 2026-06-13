@@ -10,6 +10,7 @@ import { bypassesLocalUserGate } from '@/lib/server-profiles/localGate';
 import { ServerSignInGate } from '@/components/server/ServerSignInGate';
 import { RoleBriefGate } from '@/components/insights/RoleBriefGate';
 import { InsightFloatingBadge } from '@/components/dashboard/InsightFloatingBadge';
+import { Loader2 } from 'lucide-react';
 
 // This is a helper function to merge FirebaseUser and AppUser
 function combineUser(
@@ -43,7 +44,7 @@ function combineUser(
 export function AppLayout({ children }: { children: React.ReactNode }) {
     const { user, appUser } = useAuthContext();
     const { activeStore } = useStoreContext();
-    const { currentProfile } = useLocalProfile();
+    const { currentProfile, isReady: localProfileReady } = useLocalProfile();
     const combinedUser = combineUser(user, appUser);
 
     // This component now *only* renders if the user is authenticated and active.
@@ -53,7 +54,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     // App-wide local-user gate: every role except admin/manager must be signed
     // into a local user account before using any page, so shared-account actions
     // are always attributed. Admins/managers are attributed by their own account.
-    const needsLocalUser = !bypassesLocalUserGate(appUser) && !!activeStore && !currentProfile;
+    //
+    // `localProfileReady` is critical: on a fresh mount/remount (e.g. opening a
+    // logs session-audit deep link) the profile is rehydrated from localStorage
+    // one tick after `activeStore` resolves. Without waiting for readiness, that
+    // one render had activeStore set + currentProfile still null, which flashed
+    // this sign-in gate at already-signed-in cashiers. Only gate once we've
+    // actually read storage for the current store.
+    const mustResolveLocalUser = !bypassesLocalUserGate(appUser) && !!activeStore;
+    const needsLocalUser = mustResolveLocalUser && localProfileReady && !currentProfile;
 
     // Role-aware sign-in copy.
     const gateProps =
@@ -66,7 +75,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-screen w-full flex-col">
             <Header user={combinedUser as any} />
             <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8 mt-14">
-                {needsLocalUser ? (
+                {mustResolveLocalUser && !localProfileReady ? (
+                    // Local-user status for this store is still resolving — show a
+                    // brief loader rather than flashing the page or the sign-in gate.
+                    <div className="flex flex-1 items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                ) : needsLocalUser ? (
                     <ServerSignInGate {...gateProps} />
                 ) : (
                     <>

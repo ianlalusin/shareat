@@ -191,7 +191,7 @@ export default function LogsPage() {
   }, [activeStore?.id, start, end, appUser, isSigningOut]);
 
   const voidAndFreeLogs = useMemo(() => {
-    const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE", "RECEIPT_VOIDED"];
+    const relevantActions: ActivityLog['action'][] = ["SESSION_VOIDED", "VOID_TICKETS", "MARK_FREE", "RECEIPT_VOIDED", "RECEIPT_REFUND"];
     return groupedLogs
         .flatMap(({ session, logs }) => 
             logs
