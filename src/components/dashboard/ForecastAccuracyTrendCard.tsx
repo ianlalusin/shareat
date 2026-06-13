@@ -7,11 +7,22 @@ import { format, subDays } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer, Cell } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
-import { Loader2, TrendingUp } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ForecastAccuracyTrendCardProps {
   storeId?: string;
+  // Today's forecast (folded in from the former TodayForecastCard).
+  projectedSales?: number | null;
+  actualSalesToday?: number | null;
+  confidence?: string | null;
+  isForecastLoading?: boolean;
+  isAdmin?: boolean;
+  onRefresh?: () => Promise<void>;
+  isRefreshing?: boolean;
 }
 
 function accuracyColor(pct: number): string {
@@ -20,7 +31,96 @@ function accuracyColor(pct: number): string {
   return "hsl(0, 84%, 60%)";                   // red
 }
 
-export function ForecastAccuracyTrendCard({ storeId }: ForecastAccuracyTrendCardProps) {
+function formatCurrency(value: number) {
+  if (value >= 1_000_000) return `₱${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `₱${(value / 1_000).toFixed(1)}k`;
+  return `₱${value.toFixed(0)}`;
+}
+
+function getTimeOfDayFraction(): number {
+  const now = new Date();
+  const openHour = 10;
+  const closeHour = 22;
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  if (currentHour <= openHour) return 0;
+  if (currentHour >= closeHour) return 1;
+  return (currentHour - openHour) / (closeHour - openHour);
+}
+
+function getPacingLabel(actual: number, projected: number, timeFraction: number): { label: string; color: string } {
+  if (timeFraction <= 0 || projected <= 0) return { label: "", color: "" };
+  const expectedSoFar = projected * timeFraction;
+  const ratio = actual / expectedSoFar;
+  if (ratio >= 1.1) return { label: "Ahead", color: "text-green-600" };
+  if (ratio >= 0.9) return { label: "On track", color: "text-blue-600" };
+  return { label: "Behind", color: "text-amber-600" };
+}
+
+function confidenceBadge(confidence?: string | null) {
+  if (!confidence) return null;
+  const variant = confidence === "high" ? "default" : confidence === "low" ? "destructive" : "secondary";
+  return (
+    <Badge variant={variant} className="text-[10px] px-1.5 py-0">
+      {confidence}
+    </Badge>
+  );
+}
+
+// Today's forecast progress: actual [====progress====] target.
+function TodayForecastRow({ projectedSales, actualSalesToday, isForecastLoading }: {
+  projectedSales?: number | null;
+  actualSalesToday?: number | null;
+  isForecastLoading?: boolean;
+}) {
+  if (isForecastLoading) {
+    return (
+      <div className="mt-4 border-t pt-3 flex items-center justify-center h-12">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (projectedSales == null || projectedSales <= 0) {
+    return (
+      <div className="mt-4 border-t pt-3">
+        <p className="text-xs text-muted-foreground">Today&apos;s Forecast</p>
+        <p className="text-sm text-muted-foreground">No forecast available for today.</p>
+      </div>
+    );
+  }
+  const actual = actualSalesToday ?? 0;
+  const timeFraction = getTimeOfDayFraction();
+  const pacing = getPacingLabel(actual, projectedSales, timeFraction);
+  const progressPct = Math.min(100, Math.round((actual / projectedSales) * 100));
+  return (
+    <div className="mt-4 border-t pt-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium">Today&apos;s Forecast</p>
+        {pacing.label && <span className={cn("text-xs font-semibold", pacing.color)}>{pacing.label}</span>}
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <span className="shrink-0 text-xs font-mono font-medium tabular-nums text-foreground" title="Actual today">
+          {formatCurrency(actual)}
+        </span>
+        <Progress value={progressPct} className="h-2 flex-1" />
+        <span className="shrink-0 text-xs font-mono tabular-nums text-muted-foreground" title="Target (projected)">
+          {formatCurrency(projectedSales)}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground text-center">{progressPct}% of forecast</p>
+    </div>
+  );
+}
+
+export function ForecastAccuracyTrendCard({
+  storeId,
+  projectedSales,
+  actualSalesToday,
+  confidence,
+  isForecastLoading,
+  isAdmin,
+  onRefresh,
+  isRefreshing,
+}: ForecastAccuracyTrendCardProps) {
   const [data, setData] = useState<{ date: string; accuracy: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,11 +170,24 @@ export function ForecastAccuracyTrendCard({ storeId }: ForecastAccuracyTrendCard
   };
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <TrendingUp />
           Forecast Accuracy
+          {confidenceBadge(confidence)}
+          {isAdmin && onRefresh && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-7 w-7"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              title="Refresh forecast"
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            </Button>
+          )}
         </CardTitle>
         <CardDescription>Last 14 days — forecast vs. actual sales.</CardDescription>
       </CardHeader>
@@ -130,6 +243,12 @@ export function ForecastAccuracyTrendCard({ storeId }: ForecastAccuracyTrendCard
             </ChartContainer>
           </>
         )}
+
+        <TodayForecastRow
+          projectedSales={projectedSales}
+          actualSalesToday={actualSalesToday}
+          isForecastLoading={isForecastLoading}
+        />
       </CardContent>
     </Card>
   );

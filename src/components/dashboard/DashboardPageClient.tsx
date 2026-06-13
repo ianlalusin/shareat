@@ -14,8 +14,6 @@ import { useAuthContext } from "@/context/auth-context";
 import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportDialog";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
-import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
-import { AvgSessionTimeCard } from "@/components/dashboard/avg-session-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { Button } from "@/components/ui/button";
@@ -27,12 +25,10 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
-import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-card";
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
-import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
@@ -195,67 +191,63 @@ export default function DashboardPageClient() {
                     </RoleGuard>
                 )}
 
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                    <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
-                </div>
-                
-                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                    <div className="lg:col-span-2 space-y-6">
-                      <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <ForecastAccuracyTrendCard storeId={activeStore.id} />
-                        <TodayForecastCard
-                          projectedSales={todaysProjectedSales}
-                          confidence={todaysConfidence}
-                          actualSalesToday={actualSalesToday}
-                          isLoading={isForecastLoading}
-                          isAdmin={isAdmin}
-                          onRefresh={handleRefreshForecast}
-                          isRefreshing={isRefreshingForecast}
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
-                        <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                        <ItemAdjustmentsCard dailyMetrics={dailyMetrics} />
-                      </div>
-                    </div>
-                    <div className="space-y-6">
-                      <Card>
-                          <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                              <CardTitle className="text-base">Payment Mix</CardTitle>
-                              {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin) && (
-                                  <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7"
-                                      onClick={() => setConvertModalOpen(true)}
-                                  >
-                                      <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
-                                      Convert
-                                  </Button>
-                              )}
-                          </CardHeader>
-                          <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                      </Card>
-                      <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    </div>
+                {/* Group 1 — top stat cards (equal height) */}
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 items-stretch">
+                    <StatCards stats={stats} activeSessions={activeSessions} dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                    <TopCategoryCard 
+                {/* Group 2 — the two graphs, equal size */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                    <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
+                    <ForecastAccuracyTrendCard
+                        storeId={activeStore.id}
+                        projectedSales={todaysProjectedSales}
+                        actualSalesToday={actualSalesToday}
+                        confidence={todaysConfidence}
+                        isForecastLoading={isForecastLoading}
+                        isAdmin={isAdmin}
+                        onRefresh={handleRefreshForecast}
+                        isRefreshing={isRefreshingForecast}
+                    />
+                </div>
+
+                {/* Group 3 — operational checks */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                    <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <ItemAdjustmentsCard dailyMetrics={dailyMetrics} />
+                    <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                </div>
+
+                {/* Group 4 — remaining breakdown cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                    <Card>
+                        <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-base">Payment Mix</CardTitle>
+                            {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin) && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7"
+                                    onClick={() => setConvertModalOpen(true)}
+                                >
+                                    <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                    Convert
+                                </Button>
+                            )}
+                        </CardHeader>
+                        <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
+                    </Card>
+                    <TopCategoryCard
                         categorySales={topCategories}
                         topAddonItems={topAddonItems}
                         hasTopAddonItems={hasTopAddonItems}
                         dailyMetrics={dailyMetrics}
-                        isLoading={isLoading} 
+                        isLoading={isLoading}
                     />
-                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <AvgSessionTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                     <TopRefillsCard
-                        dailyMetrics={dailyMetrics} 
-                        isLoading={isLoading} 
-                        topRefills={topRefills} 
+                        dailyMetrics={dailyMetrics}
+                        isLoading={isLoading}
+                        topRefills={topRefills}
                     />
                 </div>
             </div>

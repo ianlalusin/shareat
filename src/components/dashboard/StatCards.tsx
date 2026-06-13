@@ -1,9 +1,11 @@
 
 "use client";
 
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Receipt, Users, BarChart } from "lucide-react";
+import type { DailyMetric } from "@/lib/types";
 import Link from "next/link";
 
 // Inline SVG for Peso Sign
@@ -40,17 +42,31 @@ function peso(n: number) {
     return `₱${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// A stat card split into two columns: Dine In | Ala carte.
-function SplitStatCard({ title, icon, left, right, footnote, isLoading }: {
+// Verbose "1 hour 30 minutes" / "45 minutes" label (no seconds — these are averages).
+function fmtDurationShort(ms: number): string {
+    if (!Number.isFinite(ms) || ms <= 0) return "—";
+    const totalMinutes = Math.round(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts: string[] = [];
+    if (hours > 0) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+    if (minutes > 0 || hours === 0) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+    return parts.join(" ");
+}
+
+// A stat card split into two labelled columns.
+function SplitStatCard({ title, icon, leftLabel = "Dine In", rightLabel = "Ala carte", left, right, footnote, isLoading }: {
     title: string;
     icon: React.ReactNode;
+    leftLabel?: string;
+    rightLabel?: string;
     left: string;
     right: string;
     footnote?: string;
     isLoading: boolean;
 }) {
     return (
-        <Card>
+        <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{title}</CardTitle>
                 {icon}
@@ -62,11 +78,11 @@ function SplitStatCard({ title, icon, left, right, footnote, isLoading }: {
                     <>
                         <div className="flex items-stretch divide-x">
                             <div className="flex-1 pr-4">
-                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Dine In</p>
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{leftLabel}</p>
                                 <p className="text-xl font-bold tabular-nums">{left}</p>
                             </div>
                             <div className="flex-1 pl-4">
-                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ala carte</p>
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{rightLabel}</p>
                                 <p className="text-xl font-bold tabular-nums">{right}</p>
                             </div>
                         </div>
@@ -81,49 +97,108 @@ function SplitStatCard({ title, icon, left, right, footnote, isLoading }: {
 interface StatCardsProps {
     stats: DashboardStats;
     activeSessions?: { count: number; guests: number };
+    dailyMetrics?: DailyMetric[];
     isLoading: boolean;
 }
 
-function StatCard({ title, value, description, icon, isLoading, format = "number", className }: { title: string, value: string | number, description?: string, icon: React.ReactNode, isLoading: boolean, format?: "currency" | "number", className?: string }) {
-    
-    const formattedValue = () => {
-        if (isLoading) return "—";
-        if (typeof value === "string") return value;
-
-        const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
-
-        if (format === "currency") {
-            return `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        }
-        return n.toLocaleString("en-US");
-    };
-
+// Net Sales: big bold total, then a discount | charges footer (matches the
+// two-data height of the Transactions / Average Basket split cards).
+function NetSalesCard({ netSales, discounts, charges, isLoading }: {
+    netSales: number;
+    discounts: number;
+    charges: number;
+    isLoading: boolean;
+}) {
     return (
-        <Card className={className}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                {icon}
-            </CardHeader>
-            <CardContent>
-                {isLoading ? (
-                    <Skeleton className="h-8 w-3/4" />
-                ) : (
-                    <>
-                        <div className="text-2xl font-bold">{formattedValue()}</div>
-                        {description && <p className="text-xs text-muted-foreground">{description}</p>}
-                    </>
-                )}
-            </CardContent>
-        </Card>
-    )
+        <Link href="/receipts" className="block h-full">
+            <Card className="h-full hover:bg-muted/50 transition-colors">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Net Sales</CardTitle>
+                    <PesoSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    {isLoading ? (
+                        <Skeleton className="h-8 w-3/4" />
+                    ) : (
+                        <>
+                            <div className="text-2xl font-bold tabular-nums">{peso(netSales)}</div>
+                            <div className="mt-3 flex items-stretch divide-x border-t pt-2">
+                                <div className="flex-1 pr-4">
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Discount</p>
+                                    <p className="text-sm font-semibold tabular-nums text-destructive">- {peso(discounts)}</p>
+                                </div>
+                                <div className="flex-1 pl-4">
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Charges</p>
+                                    <p className="text-sm font-semibold tabular-nums text-green-600">+ {peso(charges)}</p>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </CardContent>
+            </Card>
+        </Link>
+    );
 }
 
-export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) {
+// Active Sessions: sessions | guests split, with the avg dine-in session
+// duration as a footnote (so its height matches the other split cards).
+function ActiveSessionsCard({ count, guests, avgSessionMs, isLoading }: {
+    count: number;
+    guests: number;
+    avgSessionMs: number;
+    isLoading: boolean;
+}) {
+    return (
+        <Link href="/cashier" className="block h-full">
+            <Card className="h-full hover:bg-muted/50 transition-colors">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Sessions</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    {isLoading ? (
+                        <Skeleton className="h-8 w-3/4" />
+                    ) : (
+                        <>
+                            <div className="flex items-stretch divide-x">
+                                <div className="flex-1 pr-4">
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Sessions</p>
+                                    <p className="text-xl font-bold tabular-nums">{count.toLocaleString("en-US")}</p>
+                                </div>
+                                <div className="flex-1 pl-4">
+                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Guests</p>
+                                    <p className="text-xl font-bold tabular-nums">{guests.toLocaleString("en-US")}</p>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-2">
+                                Average dine-in session: <span className="font-medium text-foreground">{fmtDurationShort(avgSessionMs)}</span>
+                            </p>
+                        </>
+                    )}
+                </CardContent>
+            </Card>
+        </Link>
+    );
+}
+
+export function StatCards({ stats, activeSessions, dailyMetrics = [], isLoading }: StatCardsProps) {
+    const { discounts, charges, avgSessionMs } = useMemo(() => {
+        let d = 0;
+        let c = 0;
+        let durMs = 0;
+        let durCount = 0;
+        dailyMetrics.forEach((m) => {
+            d += m.payments?.discountsTotal ?? 0;
+            c += m.payments?.chargesTotal ?? 0;
+            durMs += m.sessions?.dineInDurationMsSum ?? 0;
+            durCount += m.sessions?.dineInDurationCount ?? 0;
+        });
+        return { discounts: d, charges: c, avgSessionMs: durCount > 0 ? durMs / durCount : 0 };
+    }, [dailyMetrics]);
+
     return (
         <>
-            <Link href="/receipts">
-              <StatCard title="Net Sales" value={stats.netSales} icon={<PesoSign className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" className="hover:bg-muted/50 transition-colors" />
-            </Link>
+            <NetSalesCard netSales={stats.netSales} discounts={discounts} charges={charges} isLoading={isLoading} />
             <SplitStatCard
               title="Transactions"
               icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
@@ -133,15 +208,12 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
               isLoading={isLoading}
             />
             {activeSessions !== undefined && (
-              <Link href="/cashier">
-                <StatCard 
-                  title="Active Sessions" 
-                  value={`${activeSessions.count} - ${activeSessions.guests} guests`} 
-                  icon={<Users className="h-4 w-4 text-muted-foreground" />} 
-                  isLoading={isLoading} 
-                  className="hover:bg-muted/50 transition-colors"
-                />
-              </Link>
+              <ActiveSessionsCard
+                count={activeSessions.count}
+                guests={activeSessions.guests}
+                avgSessionMs={avgSessionMs}
+                isLoading={isLoading}
+              />
             )}
             <SplitStatCard
               title="Average Basket"
