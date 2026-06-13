@@ -16,7 +16,8 @@ const STASH = path.join(ROOT, ".cap-stash");
 // Paths excluded from the static export (online-only / not statically renderable).
 const EXCLUDE = [
   "src/app/api", // all server route handlers — backend stays on App Hosting
-  "src/app/reservations/[id]", // online/admin
+  // reservations detail is now a static query-param page (/reservations/details?id=)
+  // so it ships in the export and works for cashiers offline.
   "src/app/logs/sessions/[storeId]", // audit logs (online/admin)
   "src/middleware.ts", // CORS middleware — App Hosting only; output:export forbids middleware
 ];

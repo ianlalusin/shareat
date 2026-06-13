@@ -247,7 +247,7 @@ export function ReservationsClient() {
                 return (
                   <li
                     key={r.id}
-                    onClick={() => router.push(`/reservations/${r.id}`)}
+                    onClick={() => router.push(`/reservations/details?id=${r.id}`)}
                     className="rounded-lg border p-3 flex items-start gap-3 cursor-pointer hover:bg-muted/40 transition"
                   >
                     <div className="flex flex-col items-center justify-center rounded-md bg-muted px-3 py-2 min-w-[78px]">

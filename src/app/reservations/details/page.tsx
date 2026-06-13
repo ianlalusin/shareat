@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
 import { useLocalProfile } from "@/context/local-profile-context";
+import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,9 +49,11 @@ function fmtDateTime(ms: number): string {
   });
 }
 
-export default function ReservationDetailPage() {
-  const params = useParams();
-  const id = String(params?.id || "");
+function ReservationDetailInner() {
+  // Query-param route (static-export friendly so the cashier APK can open it):
+  // /reservations/details?id=<reservationId>.
+  const searchParams = useSearchParams();
+  const id = String(searchParams?.get("id") || "");
   const router = useRouter();
   const { activeStore, loading } = useStoreContext();
   const { appUser } = useAuthContext();
@@ -411,5 +414,13 @@ export default function ReservationDetailPage() {
       />
       {ConfirmDialog}
     </>
+  );
+}
+
+export default function ReservationDetailPage() {
+  return (
+    <RoleGuard allow={["admin", "manager", "cashier"]}>
+      <ReservationDetailInner />
+    </RoleGuard>
   );
 }
