@@ -9,13 +9,15 @@ import { differenceInDays, addDays } from 'date-fns';
 import { startOfDay, endOfDay, isSameDay, fmtDate } from '@/lib/utils/date';
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "last30" | "lastMonth" | "ytd" | "custom";
-export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
+// avgBasket = avg net per dine-in PACKAGE guest (covers w/ a headcount snapshot).
+// avgPerBill = avg net per transaction — includes alacarte/walk-in (no headcount).
+export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; avgPerBill: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
 export type TopRefillRow = { name: string; qty: number };
 export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
 
-const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
+const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, avgPerBill: 0, mop: {} };
 
 // --- Data Aggregation Helpers ---
 function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {
@@ -54,7 +56,11 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     const totalDineInNet = totalDineInSalesGross - totalDineInDiscounts - totalDineInCharges;
     const totalDineInGuests = dailyMetrics.reduce((sum, metric) => sum + (metric.guests?.guestCountFinalTotal || 0), 0);
     const avgSpending = totalDineInGuests > 0 ? totalDineInNet / totalDineInGuests : 0;
-    
+    // Per-transaction average — includes alacarte / walk-in sessions (which have no
+    // dine-in package headcount), so it never reads 0 just because a period has no
+    // package_dinein sessions.
+    const avgPerBill = transactions > 0 ? netSales / transactions : 0;
+
     const mop: Record<string, number> = {};
     dailyMetrics.forEach(metric => {
         const methods = metric.payments?.byMethod ?? {};
@@ -62,7 +68,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
             mop[method] = (mop[method] || 0) + amount;
         }
     });
-    return { netSales, transactions, avgBasket: avgSpending, mop };
+    return { netSales, transactions, avgBasket: avgSpending, avgPerBill, mop };
 }
 
 function aggregateRefills(metrics: DailyMetric[], topN: number = 5): TopRefillRow[] {

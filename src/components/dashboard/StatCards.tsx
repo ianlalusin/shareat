@@ -29,7 +29,8 @@ const PesoSign = ({ className }: { className?: string }) => (
 export type DashboardStats = {
     netSales: number;
     transactions: number;
-    avgBasket: number;
+    avgBasket: number;   // avg net per dine-in package guest (covers w/ a headcount)
+    avgPerBill: number;  // avg net per transaction (incl. alacarte / walk-in)
 };
 
 interface StatCardsProps {
@@ -90,7 +91,22 @@ export function StatCards({ stats, activeSessions, isLoading }: StatCardsProps) 
                 />
               </Link>
             )}
-            <StatCard title="Avg Spending" value={stats.avgBasket} icon={<BarChart className="h-4 w-4 text-muted-foreground" />} isLoading={isLoading} format="currency" />
+            <StatCard
+              title="Avg / Dine-in Guest"
+              value={stats.avgBasket > 0 ? stats.avgBasket : "—"}
+              description="Per package dine-in guest"
+              icon={<Users className="h-4 w-4 text-muted-foreground" />}
+              isLoading={isLoading}
+              format="currency"
+            />
+            <StatCard
+              title="Avg / Bill"
+              value={stats.avgPerBill}
+              description="Per transaction (incl. alacarte)"
+              icon={<BarChart className="h-4 w-4 text-muted-foreground" />}
+              isLoading={isLoading}
+              format="currency"
+            />
         </>
     );
 }
