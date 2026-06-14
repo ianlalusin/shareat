@@ -331,7 +331,13 @@ export default function ProductManagementPage() {
             
             toast({ title: "Product Created" });
         }
-        
+
+        // Auto-publish the storefront if this save affects it: the product was on
+        // the storefront before (edits/turn-off) or is on it now (turn-on/create).
+        const wasOnStorefront = !!(editingProduct as any)?.showOnStorefront;
+        const nowOnStorefront = !!dataToSave.showOnStorefront;
+        if (wasOnStorefront || nowOnStorefront) scheduleAutoPublish();
+
         handleCloseDialog();
     } catch (error: any) {
         toast({ variant: "destructive", title: "Save Failed", description: error.message });
