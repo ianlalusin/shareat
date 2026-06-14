@@ -83,6 +83,15 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             };
             setAppUser(baseAppUser);
           } else {
+            // No staff doc for this uid. With offline persistence enabled, the
+            // first snapshot can be a negative *cache* hit for a doc that does
+            // exist on the server. Concluding "needs_profile" from that cached
+            // miss bounced real users (including admins) to /signup, where the
+            // profile-creation flow could overwrite and demote them. Wait for
+            // the authoritative server snapshot before treating it as missing.
+            if (snap.metadata.fromCache) {
+              return; // stay in loading; the server emission will follow
+            }
             // User exists in Firebase Auth, but no staff doc found.
             // This is the "needs_profile" state for new sign-ups.
             setAppUser({

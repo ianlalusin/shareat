@@ -18,6 +18,7 @@ import { getAuth } from "firebase/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { ProductMergeDialog } from "@/components/admin/product-merge-dialog";
@@ -530,6 +531,22 @@ export default function ProductManagementPage() {
         }
     };
 
+    // Row-level quick toggle for "Show on online store". Optimistic + per-id
+    // in-flight guard (no confirm dialog — this is the fast path). The snapshot
+    // isn't republished until "Rebuild Storefront" is pressed.
+    const [storefrontPending, setStorefrontPending] = useState<Set<string>>(new Set());
+    const handleToggleStorefront = async (p: Product, next: boolean) => {
+        if (!appUser || storefrontPending.has(p.id)) return;
+        setStorefrontPending((prev) => new Set(prev).add(p.id));
+        try {
+            await updateDoc(doc(db, "products", p.id), { showOnStorefront: next, updatedAt: serverTimestamp() });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "Update failed", description: e?.message });
+        } finally {
+            setStorefrontPending((prev) => { const n = new Set(prev); n.delete(p.id); return n; });
+        }
+    };
+
     const handleExportTemplate = () => {
         const headers = ["name", "variantLabel", "uom", "category", "subCategory", "barcode", "isActive"];
         const sampleData = [{
@@ -686,7 +703,7 @@ export default function ProductManagementPage() {
                                 onClick={() => toggleSubCategoryCollapsed(subCategory)}
                                 className="cursor-pointer hover:bg-muted/70"
                             >
-                                <TableHead colSpan={8} className="text-lg font-semibold text-foreground">
+                                <TableHead colSpan={9} className="text-lg font-semibold text-foreground">
                                     <div className="flex items-center gap-2">
                                         {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                         <span>{subCategory}</span>
@@ -703,6 +720,7 @@ export default function ProductManagementPage() {
                                 <TableHead>UOM</TableHead>
                                 <TableHead>Barcode</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead className="text-center">Online</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                               </TableRow>
                             )}
@@ -768,6 +786,19 @@ export default function ProductManagementPage() {
                                                 {p.isActive ? "Active" : "Inactive"}
                                             </Badge>
                                         </TableCell>
+                                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                                            {!isOrphan ? (
+                                              <Switch
+                                                checked={!!(p as any).showOnStorefront}
+                                                onCheckedChange={(v) => handleToggleStorefront(p, v)}
+                                                disabled={storefrontPending.has(p.id)}
+                                                aria-label={`Show ${getDisplayName(p)} on online store`}
+                                                title={isGroup ? "Show this family on the online store (variants inherit)" : "Show on the online store"}
+                                              />
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground">—</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(p); }} className="mr-2">
                                                 Edit
@@ -826,6 +857,9 @@ export default function ProductManagementPage() {
                                                 {v.isActive ? "Active" : "Inactive"}
                                             </Badge>
                                         </TableCell>
+                                        <TableCell className="text-center">
+                                            <span className="text-xs text-muted-foreground" title="Controlled by the family">inherits</span>
+                                        </TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(v); }} className="mr-2">Edit</Button>
                                             <Button
@@ -869,7 +903,7 @@ export default function ProductManagementPage() {
                         onClick={() => toggleSubCategoryCollapsed("__archived__")}
                         className="cursor-pointer hover:bg-muted/60"
                       >
-                        <TableHead colSpan={8} className="text-lg font-semibold text-muted-foreground">
+                        <TableHead colSpan={9} className="text-lg font-semibold text-muted-foreground">
                           <div className="flex items-center gap-2">
                             {archivedCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             <Archive className="h-4 w-4" />
@@ -887,6 +921,7 @@ export default function ProductManagementPage() {
                           <TableHead>UOM</TableHead>
                           <TableHead>Barcode</TableHead>
                           <TableHead>Status</TableHead>
+                          <TableHead className="text-center">Online</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       )}
@@ -945,6 +980,9 @@ export default function ProductManagementPage() {
                               <TableCell>
                                 <Badge variant="secondary">Archived</Badge>
                               </TableCell>
+                              <TableCell className="text-center">
+                                <span className="text-xs text-muted-foreground">—</span>
+                              </TableCell>
                               <TableCell className="text-right">
                                 {appUser?.isPlatformAdmin && (
                                   <Button
@@ -981,6 +1019,9 @@ export default function ProductManagementPage() {
                                 <TableCell>{v.barcode || '—'}</TableCell>
                                 <TableCell>
                                   <Badge variant="secondary">Archived</Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="text-xs text-muted-foreground">—</span>
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {appUser?.isPlatformAdmin && (
