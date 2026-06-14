@@ -269,6 +269,7 @@ export default function ProductManagementPage() {
         subCategory: productData.subCategory || "Uncategorized",
         kind: isGroup ? "group" : "single",
         isSku: !isGroup,
+        showOnStorefront: !!(productData as any).showOnStorefront,
         optionGroupIds,
     };
 
@@ -497,6 +498,38 @@ export default function ProductManagementPage() {
         }
     };
 
+    // Rebuild the public website storefront catalog snapshot for the pilot store.
+    // The pilot store id is config (NEXT_PUBLIC_STOREFRONT_STORE_ID). The snapshot
+    // is what shareat.net/shop reads, so it must be rebuilt after toggling
+    // "Show on online store" on products or changing their store prices.
+    const [isRebuildingStorefront, setIsRebuildingStorefront] = useState(false);
+    const handleRebuildStorefront = async () => {
+        if (isRebuildingStorefront) return;
+        const storeId = process.env.NEXT_PUBLIC_STOREFRONT_STORE_ID;
+        if (!storeId) {
+            toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
+            return;
+        }
+        setIsRebuildingStorefront(true);
+        try {
+            const user = getAuth().currentUser;
+            if (!user) throw new Error("Not signed in.");
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/admin/storefront-catalog", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ op: "rebuild", storeId }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) throw new Error(json?.error || `Rebuild failed (${res.status})`);
+            toast({ title: "Storefront catalog rebuilt", description: `${json.itemCount} item${json.itemCount === 1 ? "" : "s"} now live on the website.` });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "Rebuild failed", description: e?.message });
+        } finally {
+            setIsRebuildingStorefront(false);
+        }
+    };
+
     const handleExportTemplate = () => {
         const headers = ["name", "variantLabel", "uom", "category", "subCategory", "barcode", "isActive"];
         const sampleData = [{
@@ -607,6 +640,9 @@ export default function ProductManagementPage() {
             )}
             <Button variant="outline" onClick={handleSyncInventoryMetadata} disabled={isSyncingInventory} title="Push the latest family / variant info from the products catalog into every store's inventory">
                 {isSyncingInventory ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Sync Inventory
+            </Button>
+            <Button variant="outline" onClick={handleRebuildStorefront} disabled={isRebuildingStorefront} title="Rebuild the public website (shareat.net/shop) catalog from products toggled 'Show on online store'">
+                {isRebuildingStorefront ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Rebuild Storefront
             </Button>
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
             <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>

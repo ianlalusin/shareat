@@ -150,10 +150,16 @@ service cloud.firestore {
     // writes: every writer goes through the admin SDK (which bypasses these rules),
     // so clients may READ them but not write/delete. `coll` is a single-segment
     // wildcard (a string), so the membership check is unambiguous.
+    //
+    // The online storefront collections are likewise server-only writes: the
+    // catalog snapshot + config are built by the admin API, online orders are
+    // created by the website Cloud Function and advanced by the transition API.
+    // Staff may READ them (the Online Orders inbox listens live) but never write.
     match /stores/{storeId}/{coll}/{docPath=**} {
       allow read: if hasStoreAccess(storeId);
       allow write, delete: if hasStoreAccess(storeId)
-        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets']);
+        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets',
+                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders']);
     }
 
     // -----------------------------

@@ -62,6 +62,14 @@ export type Product = {
    * the restore action.
    */
   isArchived?: boolean;
+  /**
+   * When true, this product is purchasable on the public SharEat website
+   * storefront (shareat.net/shop). The storefront catalog snapshot is built
+   * from products with this flag set that also have an active, positively
+   * priced inventory record at the storefront's pilot store. Pricing always
+   * comes from that store's inventory.sellingPrice — never from the product.
+   */
+  showOnStorefront?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };

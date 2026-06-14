@@ -45,6 +45,7 @@ const formSchema = z.object({
   uom: z.string().optional(),
   barcode: z.string().optional(),
   isActive: z.boolean().default(true),
+  showOnStorefront: z.boolean().default(false),
   optionGroupIds: z.array(z.string()).optional(),
 });
 
@@ -138,7 +139,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, optionGroupIds: [], },
+    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, showOnStorefront: false, optionGroupIds: [], },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
   
@@ -159,6 +160,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         uom: product ? normalizeUom(product.uom) : 'pcs',
         barcode: product?.barcode || "",
         isActive: product?.isActive ?? true,
+        showOnStorefront: (product as any)?.showOnStorefront ?? false,
         optionGroupIds: (product as any)?.optionGroupIds || [],
       });
       setSubCategoryInput(product?.subCategory || "");
@@ -324,6 +326,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                   </FormItem>
 
                   <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+
+                  <FormField control={form.control} name="showOnStorefront" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Show on online store</FormLabel><FormDescription className="text-xs">Purchasable on the public SharEat website. Uses the storefront store&apos;s price; needs an active inventory record there. Rebuild the storefront catalog after changing this.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
 
                   <Separator />
 
