@@ -501,16 +501,23 @@ export default function ProductManagementPage() {
 
     // Rebuild the public website storefront catalog snapshot for the pilot store.
     // The pilot store id is config (NEXT_PUBLIC_STOREFRONT_STORE_ID). The snapshot
-    // is what shareat.net/shop reads, so it must be rebuilt after toggling
+    // is what shareat.net/shop reads, so it is rebuilt after toggling
     // "Show on online store" on products or changing their store prices.
     const [isRebuildingStorefront, setIsRebuildingStorefront] = useState(false);
-    const handleRebuildStorefront = async () => {
-        if (isRebuildingStorefront) return;
+    const rebuildInFlight = useRef(false);
+    const autoPublishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Core publish: builds the snapshot. `silent` = the auto-publish path after a
+    // row toggle (quieter copy, no missing-config nag). Overlap-guarded so a
+    // debounced rebuild can't stack on a manual one.
+    const doRebuildStorefront = async (silent: boolean) => {
         const storeId = process.env.NEXT_PUBLIC_STOREFRONT_STORE_ID;
         if (!storeId) {
-            toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
+            if (!silent) toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
             return;
         }
+        if (rebuildInFlight.current) return;
+        rebuildInFlight.current = true;
         setIsRebuildingStorefront(true);
         try {
             const user = getAuth().currentUser;
@@ -523,23 +530,42 @@ export default function ProductManagementPage() {
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok || !json?.ok) throw new Error(json?.error || `Rebuild failed (${res.status})`);
-            toast({ title: "Storefront catalog rebuilt", description: `${json.itemCount} item${json.itemCount === 1 ? "" : "s"} now live on the website.` });
+            toast({ title: silent ? "Storefront updated" : "Storefront catalog rebuilt", description: `${json.itemCount} item${json.itemCount === 1 ? "" : "s"} live on the website.` });
         } catch (e: any) {
-            toast({ variant: "destructive", title: "Rebuild failed", description: e?.message });
+            toast({ variant: "destructive", title: silent ? "Auto-publish failed" : "Rebuild failed", description: e?.message });
         } finally {
+            rebuildInFlight.current = false;
             setIsRebuildingStorefront(false);
         }
     };
 
+    const handleRebuildStorefront = () => { if (!isRebuildingStorefront) void doRebuildStorefront(false); };
+
+    // Debounced auto-publish: after the last toggle in a burst settles (~1.5s),
+    // publish once. If a rebuild is mid-flight when it fires, wait and retry so
+    // the final state is always the one published.
+    const scheduleAutoPublish = () => {
+        if (!process.env.NEXT_PUBLIC_STOREFRONT_STORE_ID) return;
+        if (autoPublishTimer.current) clearTimeout(autoPublishTimer.current);
+        const fire = () => {
+            if (rebuildInFlight.current) { autoPublishTimer.current = setTimeout(fire, 800); return; }
+            void doRebuildStorefront(true);
+        };
+        autoPublishTimer.current = setTimeout(fire, 1500);
+    };
+
+    useEffect(() => () => { if (autoPublishTimer.current) clearTimeout(autoPublishTimer.current); }, []);
+
     // Row-level quick toggle for "Show on online store". Optimistic + per-id
-    // in-flight guard (no confirm dialog — this is the fast path). The snapshot
-    // isn't republished until "Rebuild Storefront" is pressed.
+    // in-flight guard (no confirm dialog — this is the fast path). A successful
+    // flip schedules a debounced auto-publish so the live site updates itself.
     const [storefrontPending, setStorefrontPending] = useState<Set<string>>(new Set());
     const handleToggleStorefront = async (p: Product, next: boolean) => {
         if (!appUser || storefrontPending.has(p.id)) return;
         setStorefrontPending((prev) => new Set(prev).add(p.id));
         try {
             await updateDoc(doc(db, "products", p.id), { showOnStorefront: next, updatedAt: serverTimestamp() });
+            scheduleAutoPublish();
         } catch (e: any) {
             toast({ variant: "destructive", title: "Update failed", description: e?.message });
         } finally {
