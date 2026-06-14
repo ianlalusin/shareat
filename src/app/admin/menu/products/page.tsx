@@ -26,6 +26,7 @@ import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
+import { scheduleStorefrontAutoPublish, publishStorefrontNow, getStorefrontStoreId, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { read, utils } from "xlsx";
 import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
@@ -336,7 +337,7 @@ export default function ProductManagementPage() {
         // the storefront before (edits/turn-off) or is on it now (turn-on/create).
         const wasOnStorefront = !!(editingProduct as any)?.showOnStorefront;
         const nowOnStorefront = !!dataToSave.showOnStorefront;
-        if (wasOnStorefront || nowOnStorefront) scheduleAutoPublish();
+        if (wasOnStorefront || nowOnStorefront) autoPublishStorefront();
 
         handleCloseDialog();
     } catch (error: any) {
@@ -505,62 +506,35 @@ export default function ProductManagementPage() {
         }
     };
 
-    // Rebuild the public website storefront catalog snapshot for the pilot store.
-    // The pilot store id is config (NEXT_PUBLIC_STOREFRONT_STORE_ID). The snapshot
-    // is what shareat.net/shop reads, so it is rebuilt after toggling
-    // "Show on online store" on products or changing their store prices.
+    // Publish the public website storefront catalog snapshot (shareat.net/shop).
+    // The snapshot is rebuilt after toggling "Show on online store", saving an
+    // on-storefront product/variant, or editing the pilot store's inventory.
+    // Debounce + overlap handling live in the shared helper (one source of truth,
+    // also used by /manager/inventory). Targets the pilot store
+    // (NEXT_PUBLIC_STOREFRONT_STORE_ID).
     const [isRebuildingStorefront, setIsRebuildingStorefront] = useState(false);
-    const rebuildInFlight = useRef(false);
-    const autoPublishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Core publish: builds the snapshot. `silent` = the auto-publish path after a
-    // row toggle (quieter copy, no missing-config nag). Overlap-guarded so a
-    // debounced rebuild can't stack on a manual one.
-    const doRebuildStorefront = async (silent: boolean) => {
-        const storeId = process.env.NEXT_PUBLIC_STOREFRONT_STORE_ID;
+    const notifyAutoPublish = (r: StorefrontPublishResult) => {
+        if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
+        else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+    };
+    const autoPublishStorefront = () => scheduleStorefrontAutoPublish(getStorefrontStoreId(), notifyAutoPublish);
+
+    // Manual "Rebuild Storefront" button — immediate, with loud config error.
+    const handleRebuildStorefront = async () => {
+        if (isRebuildingStorefront) return;
+        const storeId = getStorefrontStoreId();
         if (!storeId) {
-            if (!silent) toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
+            toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
             return;
         }
-        if (rebuildInFlight.current) return;
-        rebuildInFlight.current = true;
         setIsRebuildingStorefront(true);
-        try {
-            const user = getAuth().currentUser;
-            if (!user) throw new Error("Not signed in.");
-            const idToken = await user.getIdToken();
-            const res = await fetch("/api/admin/storefront-catalog", {
-                method: "POST",
-                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ op: "rebuild", storeId }),
-            });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.ok) throw new Error(json?.error || `Rebuild failed (${res.status})`);
-            toast({ title: silent ? "Storefront updated" : "Storefront catalog rebuilt", description: `${json.itemCount} item${json.itemCount === 1 ? "" : "s"} live on the website.` });
-        } catch (e: any) {
-            toast({ variant: "destructive", title: silent ? "Auto-publish failed" : "Rebuild failed", description: e?.message });
-        } finally {
-            rebuildInFlight.current = false;
-            setIsRebuildingStorefront(false);
-        }
+        await publishStorefrontNow(storeId, (r) => {
+            if (r.ok) toast({ title: "Storefront catalog rebuilt", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} now live on the website.` });
+            else toast({ variant: "destructive", title: "Rebuild failed", description: r.error });
+        });
+        setIsRebuildingStorefront(false);
     };
-
-    const handleRebuildStorefront = () => { if (!isRebuildingStorefront) void doRebuildStorefront(false); };
-
-    // Debounced auto-publish: after the last toggle in a burst settles (~1.5s),
-    // publish once. If a rebuild is mid-flight when it fires, wait and retry so
-    // the final state is always the one published.
-    const scheduleAutoPublish = () => {
-        if (!process.env.NEXT_PUBLIC_STOREFRONT_STORE_ID) return;
-        if (autoPublishTimer.current) clearTimeout(autoPublishTimer.current);
-        const fire = () => {
-            if (rebuildInFlight.current) { autoPublishTimer.current = setTimeout(fire, 800); return; }
-            void doRebuildStorefront(true);
-        };
-        autoPublishTimer.current = setTimeout(fire, 1500);
-    };
-
-    useEffect(() => () => { if (autoPublishTimer.current) clearTimeout(autoPublishTimer.current); }, []);
 
     // Row-level quick toggle for "Show on online store". Optimistic + per-id
     // in-flight guard (no confirm dialog — this is the fast path). A successful
@@ -571,7 +545,7 @@ export default function ProductManagementPage() {
         setStorefrontPending((prev) => new Set(prev).add(p.id));
         try {
             await updateDoc(doc(db, "products", p.id), { showOnStorefront: next, updatedAt: serverTimestamp() });
-            scheduleAutoPublish();
+            autoPublishStorefront();
         } catch (e: any) {
             toast({ variant: "destructive", title: "Update failed", description: e?.message });
         } finally {
@@ -1101,7 +1075,7 @@ export default function ProductManagementPage() {
           onSave={handleSaveProduct}
           product={editingProduct}
           isSubmitting={isSubmitting}
-          onStorefrontMayChange={scheduleAutoPublish}
+          onStorefrontMayChange={autoPublishStorefront}
         />
       )}
       
