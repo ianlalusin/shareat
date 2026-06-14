@@ -401,7 +401,7 @@ export function CustomersAdmin() {
     <div className="space-y-4">
       {Dialog}
 
-      <div className="grid gap-4 lg:grid-cols-2 items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0">
       {/* LEFT COLUMN WRAPPER — will hold Cardholder+Transactions on top and All Accounts below */}
       <div className="space-y-4 lg:order-1">
 

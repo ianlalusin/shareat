@@ -76,7 +76,7 @@ export function BestWorstCard({ bestWorst }: { bestWorst: DataAnalysisResult["be
         <CardTitle>Best & Worst</CardTitle>
         <CardDescription>Top and bottom days and months by net sales.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-6 md:grid-cols-2">
+      <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2 [&>*]:min-w-0">
         <DayTable rows={bestWorst.days.best} title="Best 5 Days" />
         <DayTable rows={bestWorst.days.worst} title="Worst 5 Days" />
         <MonthTable rows={bestWorst.months.best} title="Best 5 Months" />
