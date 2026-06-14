@@ -368,7 +368,10 @@ export default function UserManagementPage() {
               </TabsList>
 
               <TabsContent value="app">
-             <div className="grid gap-6">
+             {/* grid-cols-1 -> minmax(0,1fr) columns + min-w-0 children so the cards
+                 stay within the viewport on mobile and the wide tables scroll inside
+                 their own overflow-auto wrapper instead of widening the whole page. */}
+             <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0">
                 <Card>
                     <CardHeader>
                         <CardTitle>Pending User Approvals</CardTitle>
