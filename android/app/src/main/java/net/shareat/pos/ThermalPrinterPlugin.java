@@ -7,9 +7,11 @@ import android.bluetooth.BluetoothSocket;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
@@ -432,17 +434,39 @@ public class ThermalPrinterPlugin extends Plugin {
 
                 // Max print width in dots (203 dpi): 58mm ≈ 384 dots, 80mm ≈ 576 dots
                 int maxWidthPx = widthMm == 58 ? 384 : 576;
+                // Cap the logo so a square source (e.g. a 3000x3000 brand mark)
+                // doesn't print full paper-width and eat a huge band of paper.
+                final int LOGO_MAX_PX = 384;
 
-                // Scale image to fit printer width while keeping aspect ratio
-                int scaledWidth = Math.min(original.getWidth(), maxWidthPx);
-                float ratio = (float) scaledWidth / original.getWidth();
-                int scaledHeight = Math.round(original.getHeight() * ratio);
-                Bitmap scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true);
-                original.recycle();
+                // Many uploaded logos are a small mark centered on a large, mostly
+                // TRANSPARENT canvas. Printed as-is, two things go wrong:
+                //   1) transparent pixels (alpha 0, rgb 0) threshold to BLACK, so
+                //      the background prints as a solid black square; and
+                //   2) scaling the whole canvas shrinks the actual mark to a tiny
+                //      blob lost in white space.
+                // So crop to the visible (non-transparent) content first, scale
+                // that to a sane width, then flatten onto WHITE before threshold.
+                Rect bounds = contentBounds(original);
+                Bitmap content = original;
+                if (bounds != null
+                        && (bounds.width() < original.getWidth() || bounds.height() < original.getHeight())) {
+                    content = Bitmap.createBitmap(original, bounds.left, bounds.top,
+                            bounds.width(), bounds.height());
+                    original.recycle();
+                }
 
-                // Convert to monochrome (1-bit) using Floyd-Steinberg dithering
-                Bitmap mono = toMonochrome(scaled, scaledWidth, scaledHeight);
-                scaled.recycle();
+                int targetWidth = Math.min(content.getWidth(), Math.min(maxWidthPx, LOGO_MAX_PX));
+                float ratio = (float) targetWidth / content.getWidth();
+                int targetHeight = Math.max(1, Math.round(content.getHeight() * ratio));
+                Bitmap scaled = Bitmap.createScaledBitmap(content, targetWidth, targetHeight, true);
+
+                // Flatten any transparency onto white so the background prints
+                // blank, not black, then convert to 1-bit.
+                Bitmap opaque = flattenOnWhite(scaled);
+                if (scaled != content) scaled.recycle();
+                content.recycle();
+                Bitmap mono = toMonochrome(opaque, targetWidth, targetHeight);
+                opaque.recycle();
 
                 // Build ESC/POS raster data
                 byte[] rasterData = bitmapToEscPosRaster(mono, maxWidthPx);
@@ -526,7 +550,66 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
     /**
-     * Convert a bitmap to monochrome using simple threshold with ordered dithering.
+     * Bounding box of the visible (sufficiently opaque) content in an image,
+     * computed on a downscaled probe for speed, then mapped back to source
+     * coordinates. Returns null if the image is effectively fully transparent.
+     * Lets us crop away the large transparent margins many logos ship with.
+     */
+    private Rect contentBounds(Bitmap src) {
+        int sw = src.getWidth();
+        int sh = src.getHeight();
+        if (sw <= 0 || sh <= 0) return null;
+
+        // Probe at most ~256px on the long edge — enough to locate the margins
+        // without scanning millions of pixels on big uploads.
+        int probeMax = 256;
+        float s = Math.min(1f, (float) probeMax / Math.max(sw, sh));
+        int pw = Math.max(1, Math.round(sw * s));
+        int ph = Math.max(1, Math.round(sh * s));
+        Bitmap probe = Bitmap.createScaledBitmap(src, pw, ph, true);
+        int[] px = new int[pw * ph];
+        probe.getPixels(px, 0, pw, 0, 0, pw, ph);
+        if (probe != src) probe.recycle();
+
+        int minX = pw, minY = ph, maxX = -1, maxY = -1;
+        for (int y = 0; y < ph; y++) {
+            int row = y * pw;
+            for (int x = 0; x < pw; x++) {
+                int alpha = (px[row + x] >>> 24) & 0xFF;
+                if (alpha > 24) { // visible enough to count as content
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        if (maxX < 0) return null; // nothing visible
+
+        // Map back to source coords with a small padding margin.
+        float inv = 1f / s;
+        int pad = 2;
+        int left = Math.max(0, Math.round((minX - pad) * inv));
+        int top = Math.max(0, Math.round((minY - pad) * inv));
+        int right = Math.min(sw, Math.round((maxX + 1 + pad) * inv));
+        int bottom = Math.min(sh, Math.round((maxY + 1 + pad) * inv));
+        if (right <= left || bottom <= top) return null;
+        return new Rect(left, top, right, bottom);
+    }
+
+    /** Composite an image onto an opaque white background (drops alpha). */
+    private Bitmap flattenOnWhite(Bitmap src) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        canvas.drawColor(Color.WHITE);
+        canvas.drawBitmap(src, 0, 0, null);
+        return out;
+    }
+
+    /**
+     * Convert a bitmap to monochrome using a simple luminance threshold.
      */
     private Bitmap toMonochrome(Bitmap src, int w, int h) {
         // Convert to grayscale
