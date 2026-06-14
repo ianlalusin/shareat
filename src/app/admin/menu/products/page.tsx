@@ -1101,6 +1101,7 @@ export default function ProductManagementPage() {
           onSave={handleSaveProduct}
           product={editingProduct}
           isSubmitting={isSubmitting}
+          onStorefrontMayChange={scheduleAutoPublish}
         />
       )}
       

@@ -116,9 +116,15 @@ interface ProductEditDialogProps {
   onSave: (data: ProductFormValues) => void;
   product: Product | null;
   isSubmitting: boolean;
+  /**
+   * Called after an in-dialog variant add/edit/delete that could change the
+   * public storefront — i.e. when the parent family is shown on the storefront.
+   * The page uses it to schedule a debounced storefront republish.
+   */
+  onStorefrontMayChange?: () => void;
 }
 
-export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitting }: ProductEditDialogProps) {
+export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitting, onStorefrontMayChange }: ProductEditDialogProps) {
   const [addonCategories, setAddonCategories] = useState<AddonCategory[]>([]);
   const [subCategoryInput, setSubCategoryInput] = useState("");
   const { toast } = useToast();
@@ -261,6 +267,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     
     await batch.commit();
     toast({ title: editingVariant ? "Variant Updated" : "Variant Added" });
+    // A variant change affects the storefront only if the family is shown there.
+    if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
     setShowVariantForm(false);
     setEditingVariant(null);
   }
@@ -269,6 +277,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     if (await confirm({title: "Delete Variant?", description: "This cannot be undone.", destructive: true})) {
         await deleteDoc(doc(db, 'products', variant.id));
         toast({title: 'Variant Deleted'});
+        if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
     }
   }
 
