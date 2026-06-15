@@ -15,6 +15,8 @@ export type PrintJob = {
   beep?: boolean;
   encoding?: string;
   showLogo?: boolean;
+  /** Logo width as a % of paper width (20-100), from receipt settings. */
+  logoWidthPct?: number;
   storeId?: string | null;
 };
 
@@ -177,6 +179,7 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
             base64,
             widthMm,
             align: 'center',
+            widthPct: job.logoWidthPct,
           });
           logoPrinted = true;
         }

@@ -102,6 +102,7 @@ export function usePrint({
           beep: true,
           encoding: 'CP437',
           showLogo: liveSettings.showLogo ?? false,
+          logoWidthPct: liveSettings.logoWidthPct,
           storeId,
         });
         await writeAudit();

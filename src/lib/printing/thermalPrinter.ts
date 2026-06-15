@@ -41,6 +41,8 @@ export interface ThermalPrinterPlugin {
     base64: string;
     widthMm?: 58 | 80;
     align?: 'left' | 'center' | 'right';
+    /** Logo width as a % of paper width (20-100). Omit to use the default. */
+    widthPct?: number;
   }): Promise<void>;
 }
 

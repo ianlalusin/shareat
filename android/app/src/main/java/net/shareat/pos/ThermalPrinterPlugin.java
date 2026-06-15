@@ -411,6 +411,7 @@ public class ThermalPrinterPlugin extends Plugin {
         String base64 = call.getString("base64");
         int widthMm = call.getInt("widthMm", 80);
         String align = call.getString("align", "center");
+        int widthPct = call.getInt("widthPct", 0); // receipt "logo width %" (20-100); 0 = unset
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -434,9 +435,19 @@ public class ThermalPrinterPlugin extends Plugin {
 
                 // Max print width in dots (203 dpi): 58mm ≈ 384 dots, 80mm ≈ 576 dots
                 int maxWidthPx = widthMm == 58 ? 384 : 576;
-                // Cap the logo so a square source (e.g. a 3000x3000 brand mark)
-                // doesn't print full paper-width and eat a huge band of paper.
-                final int LOGO_MAX_PX = 384;
+                // Logo print width. The receipt settings expose a "logo width %"
+                // (logoWidthPct, 20-100); honor it as a fraction of the paper
+                // width so the size control actually takes effect. Fall back to
+                // ~67% of the head when unset, so a square brand mark doesn't eat
+                // a huge band of paper.
+                int targetCap;
+                if (widthPct >= 20 && widthPct <= 100) {
+                    targetCap = Math.round(maxWidthPx * widthPct / 100f);
+                } else {
+                    targetCap = Math.round(maxWidthPx * 0.67f);
+                }
+                if (targetCap < 48) targetCap = 48;
+                if (targetCap > maxWidthPx) targetCap = maxWidthPx;
 
                 // Many uploaded logos are a small mark centered on a large, mostly
                 // TRANSPARENT canvas. Printed as-is, two things go wrong:
@@ -455,7 +466,7 @@ public class ThermalPrinterPlugin extends Plugin {
                     original.recycle();
                 }
 
-                int targetWidth = Math.min(content.getWidth(), Math.min(maxWidthPx, LOGO_MAX_PX));
+                int targetWidth = Math.min(content.getWidth(), targetCap);
                 float ratio = (float) targetWidth / content.getWidth();
                 int targetHeight = Math.max(1, Math.round(content.getHeight() * ratio));
                 Bitmap scaled = Bitmap.createScaledBitmap(content, targetWidth, targetHeight, true);
@@ -478,8 +489,13 @@ public class ThermalPrinterPlugin extends Plugin {
                 else if ("right".equals(align)) alignByte = 0x02;
                 outputStream.write(new byte[]{0x1B, 0x61, alignByte});
 
-                // Write raster data
-                outputStream.write(rasterData);
+                // Write raster data in small chunks with brief pauses. A single
+                // ~30KB write overruns the Bluetooth input buffer on cheap
+                // printers, dropping bytes mid-raster; that desyncs the GS v 0
+                // command so the logo prints incomplete and the following text
+                // bytes get rendered as garbage "letter codes" (or not at all).
+                // Chunking — same as the QR raster path — keeps the stream intact.
+                writeChunked(rasterData, 512, 30);
 
                 // Reset alignment to left
                 outputStream.write(new byte[]{0x1B, 0x61, 0x00});
