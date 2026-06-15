@@ -40,6 +40,7 @@ export type StorefrontItem = {
   productId: string;
   name: string;
   displayName: string;
+  description?: string;
   subCategory: string;
   imageUrl: string | null;
   kind: "single" | "group";
@@ -146,6 +147,7 @@ export async function rebuildStorefrontCatalog(
 
     const subCategory = String(p.subCategory || "Uncategorized");
     const optionGroups = resolveOptionGroups(p.optionGroupIds);
+    const description = String(p.description || "").trim().slice(0, 280);
 
     if (p.kind === "group") {
       const children = (variantsByGroup.get(String(p.id)) || []).filter(
@@ -177,6 +179,7 @@ export async function rebuildStorefrontCatalog(
       };
       // Only attach optional fields when present — Firestore rejects `undefined`.
       if (optionGroups) item.optionGroups = optionGroups;
+      if (description) item.description = description;
       items.push(item);
     } else {
       // single SKU
@@ -192,6 +195,7 @@ export async function rebuildStorefrontCatalog(
         price,
       };
       if (optionGroups) item.optionGroups = optionGroups;
+      if (description) item.description = description;
       items.push(item);
     }
   }

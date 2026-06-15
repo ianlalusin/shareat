@@ -40,6 +40,7 @@ type OnlineOrder = {
   deliveryFee?: number;
   grandTotal?: number;
   currency?: string;
+  notes?: string | null;
   payment?: { method?: string; paid?: boolean; ref?: string };
   receiptNumber?: string;
   statusHistory?: any[];
@@ -285,6 +286,12 @@ export default function OnlineOrdersClient() {
                     </a>
                   )}
                 </div>
+
+                {selected.notes && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm">
+                    <span className="font-semibold">Customer note:</span> {selected.notes}
+                  </div>
+                )}
 
                 <div className="rounded-md border divide-y">
                   {(selected.lines || []).map((ln, i) => (

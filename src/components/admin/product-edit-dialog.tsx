@@ -322,7 +322,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                   <FormField control={form.control} name="description" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Description</FormLabel>
-                      <FormControl><Textarea placeholder="Internal notes about this product (optional)..." rows={3} {...field} /></FormControl>
+                      <FormControl><Textarea placeholder="Short description shown to customers on the website (e.g. “Crispy seaweed rice rolls with veggies”)" rows={3} {...field} /></FormControl>
+                      <FormDescription className="text-xs">Shown to customers on the online store. Keep it appetizing — not internal notes.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}/>
