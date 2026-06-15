@@ -165,7 +165,7 @@ export async function rebuildStorefrontCatalog(
       }
       if (variants.length === 0) continue; // nothing sellable here
       variants.sort((a, b) => a.price - b.price);
-      items.push({
+      const item: StorefrontItem = {
         productId: p.id,
         name: String(p.name || ""),
         displayName: String(p.name || ""),
@@ -174,13 +174,15 @@ export async function rebuildStorefrontCatalog(
         kind: "group",
         price: variants[0].price,
         variants,
-        optionGroups,
-      });
+      };
+      // Only attach optional fields when present — Firestore rejects `undefined`.
+      if (optionGroups) item.optionGroups = optionGroups;
+      items.push(item);
     } else {
       // single SKU
       const price = resolvePrice(p.id);
       if (price == null) continue;
-      items.push({
+      const item: StorefrontItem = {
         productId: p.id,
         name: String(p.name || ""),
         displayName: displayNameFor(p.name, p.variant),
@@ -188,8 +190,9 @@ export async function rebuildStorefrontCatalog(
         imageUrl: p.imageUrl ?? invImage(p.id) ?? null,
         kind: "single",
         price,
-        optionGroups,
-      });
+      };
+      if (optionGroups) item.optionGroups = optionGroups;
+      items.push(item);
     }
   }
 
