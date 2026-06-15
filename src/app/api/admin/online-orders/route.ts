@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
 import { applyAnalyticsDeltaServer } from "@/lib/server/analytics/applyAnalyticsDeltaServer";
@@ -101,7 +101,9 @@ export async function POST(req: Request) {
 
       // --- writes ---
       const historyEntry: any = {
-        at: FieldValue.serverTimestamp(),
+        // serverTimestamp() is illegal inside array elements (statusHistory),
+        // so use a concrete Timestamp.
+        at: Timestamp.now(),
         atClientMs: Date.now(),
         from: current,
         to: toStatus,
@@ -138,8 +140,8 @@ export async function POST(req: Request) {
             voidedQty: 0,
             modifiers: Array.isArray(ln.modifiers) ? ln.modifiers : [],
             modifiersTotal: 0,
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
           })
         );
 
@@ -160,8 +162,8 @@ export async function POST(req: Request) {
             voidedQty: 0,
             modifiers: [],
             modifiersTotal: 0,
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
           } as SessionBillLine);
         }
 
