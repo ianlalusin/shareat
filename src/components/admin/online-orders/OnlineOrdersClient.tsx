@@ -34,7 +34,7 @@ type OnlineOrder = {
   status: string;
   createdAtClientMs?: number;
   contact?: { name?: string; phone?: string | null; email?: string | null };
-  fulfillment?: { type?: "pickup" | "delivery"; address?: string; addressNotes?: string };
+  fulfillment?: { type?: "pickup" | "delivery"; address?: string; addressNotes?: string; geo?: { lat: number; lng: number; accuracy?: number } | null };
   lines?: OrderLine[];
   subtotal?: number;
   deliveryFee?: number;
@@ -273,6 +273,16 @@ export default function OnlineOrdersClient() {
                   </div>
                   {selected.fulfillment?.type === "delivery" && selected.fulfillment?.address && (
                     <div className="flex items-start gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5" /><span>{selected.fulfillment.address}{selected.fulfillment.addressNotes ? ` — ${selected.fulfillment.addressNotes}` : ""}</span></div>
+                  )}
+                  {selected.fulfillment?.type === "delivery" && selected.fulfillment?.geo && (
+                    <a
+                      href={`https://www.google.com/maps?q=${selected.fulfillment.geo.lat},${selected.fulfillment.geo.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-medium text-primary underline"
+                    >
+                      <MapPin className="h-3.5 w-3.5" /> View pinned location{selected.fulfillment.geo.accuracy ? ` (±${selected.fulfillment.geo.accuracy}m)` : ""}
+                    </a>
                   )}
                 </div>
 
