@@ -93,7 +93,14 @@ export function usePrint({
           ? await getReceiptSettings(db, storeId)
           : receiptData.settings;
         const paperWidth: 58 | 80 = liveSettings.paperWidth === '58mm' ? 58 : 80;
-        const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth);
+        // A thermal printer only has built-in ROM fonts, so the CSS fontFamily
+        // can't apply on paper (it stays a screen/PDF concern). Map the numeric
+        // fontSize to the three sizes the printer can actually do: small = Font
+        // B, normal = Font A, large = Font A double-height.
+        const fontSizeVal = liveSettings.fontSize ?? 12;
+        const fontMode: 'small' | 'normal' | 'large' =
+          fontSizeVal <= 10 ? 'small' : fontSizeVal >= 14 ? 'large' : 'normal';
+        const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth, fontMode);
         await printViaNativeBluetooth({
           target: 'receipt',
           text,
@@ -103,6 +110,7 @@ export function usePrint({
           encoding: 'CP437',
           showLogo: liveSettings.showLogo ?? false,
           logoWidthPct: liveSettings.logoWidthPct,
+          font: fontMode,
           storeId,
         });
         await writeAudit();

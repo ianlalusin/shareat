@@ -36,6 +36,8 @@ export interface ThermalPrinterPlugin {
     beep?: boolean;
     encoding?: string;
     skipInit?: boolean;
+    /** Thermal font: small=Font B, normal=Font A, large=Font A double-height. */
+    font?: 'small' | 'normal' | 'large';
   }): Promise<void>;
   printImage(options: {
     base64: string;

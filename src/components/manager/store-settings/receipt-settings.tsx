@@ -164,12 +164,20 @@ export function ReceiptSettings({ store, onTestPrint, onClose }: ReceiptSettings
                                         step={1}
                                     />
                                 </FormControl>
+                                <p className="text-xs text-muted-foreground">
+                                    Thermal printer maps this to: ≤10 small (compact font), 11–13 normal,
+                                    ≥14 large (double height). The on-screen/PDF receipt uses the exact px.
+                                </p>
                                 <FormMessage />
                             </FormItem>
                         )} />
                         <FormField control={form.control} name="fontFamily" render={({ field }) => (
                             <FormItem>
                                 <FormLabel>Font Family</FormLabel>
+                                <p className="text-xs text-muted-foreground">
+                                    Applies to the on-screen &amp; PDF receipt only — thermal printers
+                                    use their own built-in font.
+                                </p>
                                 <FormControl>
                                     <div className="flex flex-wrap gap-2 pt-2">
                                         {fontOptions.map((opt) => (

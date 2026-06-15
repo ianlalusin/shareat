@@ -17,6 +17,8 @@ export type PrintJob = {
   showLogo?: boolean;
   /** Logo width as a % of paper width (20-100), from receipt settings. */
   logoWidthPct?: number;
+  /** Thermal font size bucket: small=Font B, normal=Font A, large=double-height. */
+  font?: 'small' | 'normal' | 'large';
   storeId?: string | null;
 };
 
@@ -196,6 +198,7 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
       beep: job.beep ?? true,
       encoding: job.encoding ?? 'CP437',
       skipInit: logoPrinted,
+      font: job.font,
     });
   } finally {
     // Always release the BT socket so other apps (e.g. GrabFood) can print freely.

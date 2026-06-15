@@ -7,8 +7,16 @@ import { format } from "date-fns";
 /**
  * Formats receipt data into plain text for thermal printing (ESC/POS).
  */
-export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): string {
-  const charsPerLine = width === 58 ? 32 : 48;
+export function formatReceiptText(
+  data: ReceiptData,
+  width: 58 | 80 = 80,
+  fontMode: 'small' | 'normal' | 'large' = 'normal',
+): string {
+  // Thermal fonts: Font A (normal) and the denser Font B (small) fit a
+  // different number of columns per line. "large" is Font A at double height —
+  // the character WIDTH is unchanged, so it uses the same columns as normal.
+  const charsPerLine =
+    fontMode === 'small' ? (width === 58 ? 42 : 64) : (width === 58 ? 32 : 48);
   const qtyWidth = 4;
   const priceWidth = 10;
   const nameWidth = charsPerLine - qtyWidth - priceWidth;

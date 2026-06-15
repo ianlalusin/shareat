@@ -167,6 +167,7 @@ public class ThermalPrinterPlugin extends Plugin {
         Boolean skipInit = call.getBoolean("skipInit", false);
         Boolean cut = call.getBoolean("cut", false);
         Boolean beep = call.getBoolean("beep", false);
+        String font = call.getString("font", "normal"); // small=Font B, normal=Font A, large=double-height
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -179,7 +180,15 @@ public class ThermalPrinterPlugin extends Plugin {
                 if (!skipInit) {
                     outputStream.write(new byte[]{0x1B, 0x40});
                 }
-                outputStream.write(new byte[]{0x1D, 0x21, 0x00});
+                // Built-in font + size for the whole body. Thermal printers only
+                // have ROM fonts: Font A (normal) and the denser Font B (small).
+                // "large" doubles the height only — character WIDTH is unchanged,
+                // so column alignment is preserved (the formatter lays out the
+                // matching characters-per-line for each mode).
+                byte fontSel = (byte) ("small".equals(font) ? 0x01 : 0x00); // ESC M: 0=Font A, 1=Font B
+                outputStream.write(new byte[]{0x1B, 0x4D, fontSel});
+                byte sizeSel = (byte) ("large".equals(font) ? 0x01 : 0x00); // GS !: 0x01 = double height
+                outputStream.write(new byte[]{0x1D, 0x21, sizeSel});
                 outputStream.write(new byte[]{0x1B, 0x61, 0x00});
                 try {
                     outputStream.write(text.getBytes(encoding));
