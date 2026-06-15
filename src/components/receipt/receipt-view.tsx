@@ -184,6 +184,11 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                                       — {(line as any).modifiersText}
                                     </div>
                                   )}
+                                  {(line as any).note && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
+                                      Note: {(line as any).note}
+                                    </div>
+                                  )}
                                 </div>
                                 <span className="text-right whitespace-nowrap">
                                   {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

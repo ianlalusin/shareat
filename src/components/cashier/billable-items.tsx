@@ -52,6 +52,9 @@ function BillableLineRow({
                     {modifiersText && (
                       <p className="text-xs text-muted-foreground italic pl-2">— {modifiersText}</p>
                     )}
+                    {(line as any).note && (
+                      <p className="text-xs text-amber-700 italic pl-2">📝 {(line as any).note}</p>
+                    )}
                      <div className="text-xs text-muted-foreground">
                         <p>{netQty} x ₱{effectiveUnit.toFixed(2)} each = ₱{(netQty * effectiveUnit).toFixed(2)}</p>
                     </div>

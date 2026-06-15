@@ -488,6 +488,8 @@ export type SessionBillLine = {
    *   (unitPrice + modifiersTotal) * qty - line-level discounts/charges.
    */
   modifiersTotal?: number;
+  /** Per-line special instructions (kitchen note). */
+  note?: string | null;
   qtyOverrideActive?: boolean;
   qtyOverrideAt?: any;
   qtyLastSyncedApprovedAt?: string | null;

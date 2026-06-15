@@ -178,6 +178,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                         — {(ticket as any).modifiersText}
                       </p>
                     )}
+                    {(ticket as any).notes && (
+                      <p className="text-base font-semibold text-amber-700 leading-tight">
+                        📝 {(ticket as any).notes}
+                      </p>
+                    )}
 
                     {/* Qty progress for batch tickets */}
                     {isBatchTicket && (

@@ -8,6 +8,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle, Check, Layers, Minus, Plus } from "lucide-react";
@@ -37,6 +38,7 @@ export type FamilyOrderAddArgs = {
   modifiersText: string;
   modifiersTotal: number;
   quantity: number;
+  note: string;
 };
 
 function activeValues(g: OptionGroup): OptionGroupValue[] {
@@ -66,6 +68,7 @@ function FamilyOrderContent({
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [selections, setSelections] = useState<Record<string, Set<string>>>({});
   const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Reset when the family changes.
@@ -74,6 +77,7 @@ function FamilyOrderContent({
     setOptionGroups([]);
     setSelections({});
     setQuantity(1);
+    setNote("");
   }, [group.key]);
 
   // Fetch the option groups (inherited from the family parent) once the user
@@ -208,6 +212,7 @@ function FamilyOrderContent({
         modifiersText,
         modifiersTotal,
         quantity,
+        note: note.trim(),
       });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Failed", description: e?.message });
@@ -379,6 +384,12 @@ function FamilyOrderContent({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Step 4: special instructions */}
+      <div className={cn("transition-opacity", !selectedVariant && "opacity-50 pointer-events-none")}>
+        <div className="text-sm font-semibold mb-2">Special instructions <span className="font-normal text-muted-foreground">(optional)</span></div>
+        <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={140} placeholder="e.g. no onions, extra spicy, separate packing…" disabled={!selectedVariant} />
       </div>
 
       <DialogFooter className="pt-2">

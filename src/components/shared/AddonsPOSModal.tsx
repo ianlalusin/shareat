@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
@@ -127,6 +128,7 @@ function POSContent({
 
   const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Combined family flow (replaces the old VariantPicker → AddonsPOSModal flow).
@@ -268,10 +270,11 @@ function POSContent({
     modifiers: SelectedModifier[],
     modifiersText: string,
     modifiersTotal: number,
-    override?: { addon: EnrichedStoreAddon; qty: number }
+    override?: { addon: EnrichedStoreAddon; qty: number; note?: string }
   ) => {
     const addon = override?.addon ?? selectedAddon;
     const qty = override?.qty ?? quantity;
+    const lineNote = (override ? (override.note ?? "") : note).trim();
     if (!appUser || !storeId || !session?.id || !addon) return;
 
     const unitPriceNum = Number((addon as any).sellingPrice);
@@ -326,6 +329,7 @@ function POSContent({
             modifiers: modifiers.length ? modifiers : null,
             modifiersText: modifiersText || null,
             modifiersTotal: modifiers.length ? modifiersTotal : null,
+            note: lineNote || null,
           });
           tx.set(lineRef, newLinePayload);
         }
@@ -346,7 +350,7 @@ function POSContent({
           qty,
           actor,
           { tx },
-          modifiersText || undefined,
+          lineNote || undefined,
           // `extra` is spread into the ticket payload. Pass modifier structure
           // so KDS can render it richly if it wants, plus a flat text field.
           modifiers.length ? { modifiers, modifiersText } : undefined
@@ -377,6 +381,7 @@ function POSContent({
           modifiers: modifiers.length ? modifiers : undefined,
           modifiersText: modifiersText || undefined,
           modifiersTotal: modifiers.length ? modifiersTotal : undefined,
+          note: lineNote || undefined,
         };
         onAddLine(newLine);
       }
@@ -397,6 +402,7 @@ function POSContent({
       if (!override) {
         setSelectedAddon(null);
         setQuantity(1);
+        setNote("");
         setPendingOptionGroups([]);
       }
     } catch (e: any) {
@@ -421,6 +427,7 @@ function POSContent({
           await performAdd(args.modifiers, args.modifiersText, args.modifiersTotal, {
             addon: args.variant,
             qty: args.quantity,
+            note: args.note,
           });
         }}
       />
@@ -491,6 +498,17 @@ function POSContent({
               <span className="font-medium">{selectedAddon ? selectedAddon.displayName : "-"}</span>
             </div>
           </div>
+
+          {selectedAddon && (
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              maxLength={140}
+              placeholder="Special instructions (optional) — e.g. no onions, extra spicy"
+              disabled={isSubmitting || sessionIsLocked}
+            />
+          )}
 
           <div className="flex items-center gap-2">
             <Button

@@ -56,6 +56,7 @@ const formSchema = z.object({
   voidQty: z.coerce.number().min(0),
   voidReason: z.string().optional(),
   voidNote: z.string().optional(),
+  note: z.string().optional(),
 }).refine(data => data.applyDiscount ? (data.discountId && data.discountType && data.discountValue > 0 && data.discountQty > 0) || (data.discountId === 'custom' && data.discountValue > 0 && data.discountQty > 0) : true, {
     message: "If discount is applied, you must select a valid preset or custom value and quantity.",
     path: ["applyDiscount"],
@@ -174,6 +175,7 @@ export function EditBillableItemDialog({
 
                 voidReason: undefined,
                 voidNote: '',
+                note: line.note || '',
             });
             
             // Fetch current inventory item details
@@ -335,14 +337,16 @@ export function EditBillableItemDialog({
                 qtyOrdered: line.qtyOrdered,
                 unitPrice: line.unitPrice,
                 freeQty: line.freeQty,
-                voidedQty: line.voidedQty
+                voidedQty: line.voidedQty,
+                note: line.note ?? null,
             };
-    
+
             const after: Partial<SessionBillLine> = {
                 qtyOrdered: data.qtyOrdered,
                 unitPrice: data.unitPrice,
                 freeQty: data.applyFree ? data.freeQty : 0,
                 voidedQty: data.applyVoid ? data.voidQty : 0,
+                note: (data.note ?? "").trim() || null,
             };
             
             if (isPackage && isIncreasingQty) {
@@ -454,6 +458,13 @@ export function EditBillableItemDialog({
                                         </AlertDescription>
                                     )}
                                 </Alert>
+
+                                <FormField name="note" control={control} render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Special instructions</FormLabel>
+                                        <FormControl><Textarea rows={2} maxLength={140} placeholder="e.g. no onions, extra spicy" {...field} disabled={isLocked} /></FormControl>
+                                    </FormItem>
+                                )} />
 
                                 <Separator />
                                 {/* Discount Section */}
