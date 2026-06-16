@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
+import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { format, addDays, subDays } from "date-fns";
@@ -11,6 +12,7 @@ type StoreData = {
   id: string;
   address?: string;
   isActive?: boolean;
+  aiEnabled?: boolean;
   forecastConfig?: ForecastConfig;
 };
 
@@ -105,6 +107,12 @@ async function backfillRecentAccuracy(storeId: string, now: Date, days = 7): Pro
 export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; forecastsWritten?: number }> {
   const db = getAdminDb();
   const now = new Date();
+
+  // Master AI switch: skip Gemini entirely for stores with AI off (gates the
+  // manual refresh route too; cron already filters disabled stores out).
+  if (!(await isStoreAiEnabled(db, store.id))) {
+    return { storeId: store.id, ok: true, forecastsWritten: 0 };
+  }
 
   try {
     // 1. Backfill accuracy for the last 7 days (idempotent, self-healing).
@@ -303,9 +311,11 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
       id: d.id,
       address: data.address,
       isActive: data.isActive,
+      aiEnabled: data.aiEnabled,
       forecastConfig: data.forecastConfig,
     };
-  });
+  // Only AI-enabled stores are forecast (no Gemini for disabled stores).
+  }).filter((s) => s.aiEnabled === true);
 
   // Skip stores already forecast today (tracked in the cron log), then cap the
   // batch so each fire stays a small burst.

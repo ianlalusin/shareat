@@ -38,6 +38,8 @@ export function InsightFloatingBadge() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
+  // Master AI switch: hide the brief entirely for stores with AI off.
+  if (activeStore?.aiEnabled !== true) return null;
   if (!insight || insight.status !== "ok") return null;
 
   const role = appUser?.role;

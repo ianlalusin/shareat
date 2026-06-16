@@ -244,9 +244,11 @@ export default function DashboardPageClient() {
                     </CardContent>
                 </Card>
 
-                {/* Group 2 — the two graphs, equal size */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                {/* Group 2 — sales chart + (AI) forecast card. The forecast card
+                    is hidden when this store's AI master switch is off. */}
+                <div className={`grid grid-cols-1 ${activeStore.aiEnabled === true ? "lg:grid-cols-2" : ""} gap-6 items-stretch`}>
                     <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
+                    {activeStore.aiEnabled === true && (
                     <ForecastAccuracyTrendCard
                         storeId={activeStore.id}
                         projectedSales={todaysProjectedSales}
@@ -257,6 +259,7 @@ export default function DashboardPageClient() {
                         onRefresh={handleRefreshForecast}
                         isRefreshing={isRefreshingForecast}
                     />
+                    )}
                 </div>
 
                 {/* Group 3 — operational checks */}

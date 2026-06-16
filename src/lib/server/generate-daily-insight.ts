@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
+import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { generateDailyInsight as runDailyInsightFlow } from "@/ai/flows/daily-insight";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type {
@@ -457,7 +458,7 @@ async function buildAssistanceMetrics(
 
 /* ----------------------------- main entry ------------------------------- */
 
-type StoreData = { id: string; name?: string; isActive?: boolean };
+type StoreData = { id: string; name?: string; isActive?: boolean; aiEnabled?: boolean };
 
 const emptySection = (headline: string, metrics: InsightMetric[]): InsightSectionData => ({
   headline, metrics, narrative: "", flags: [],
@@ -469,6 +470,13 @@ export async function generateDailyInsightForStore(
   opts: { force?: boolean } = {},
 ): Promise<{ storeId: string; ok: boolean; status?: string; error?: string; skipped?: boolean }> {
   const db = getAdminDb();
+
+  // Master AI switch: a store with AI off never calls Gemini (gates the manual
+  // route too — the cron path already filters disabled stores out).
+  if (!(await isStoreAiEnabled(db, store.id))) {
+    return { storeId: store.id, ok: true, status: "ai_disabled", skipped: true };
+  }
+
   const now = new Date();
   const yesterday = addDays(now, -1);
   const dayId = dayIdOf(yesterday);
@@ -609,7 +617,11 @@ export async function generateInsightsForAllActiveStores(opts: { batchSize?: num
   const db = getAdminDb();
   const dayId = getInsightDayId();
   const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
-  const stores: StoreData[] = storesSnap.docs.map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive }));
+  // Only AI-enabled stores are eligible — disabled stores are never generated
+  // (no Gemini, and they don't linger as "pending").
+  const stores: StoreData[] = storesSnap.docs
+    .map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive, aiEnabled: d.data().aiEnabled }))
+    .filter((s) => s.aiEnabled === true);
   if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof generateDailyInsightForStore>>[] };
 
   // Skip stores already done today (output doc ok/no_data) — no Gemini call.

@@ -758,6 +758,13 @@ export type Store = {
    */
   offersAlaCarte?: boolean;
   offersUnlimited?: boolean;
+  /**
+   * Master switch for this store's Google GenAI features (daily insights,
+   * sales forecasts, AI briefings). Default OFF: a store must explicitly set
+   * `aiEnabled: true` to use any GenAI. Gates server generation (cron + manual)
+   * and the client AI surfaces. See lib/server/ai-enabled.ts.
+   */
+  aiEnabled?: boolean;
   forecastConfig?: ForecastConfig;
   loyaltyConfig?: LoyaltyConfig;
   /** Geotag (from Google Maps) used to fetch this branch's weather forecast. */
