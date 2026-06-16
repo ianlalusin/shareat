@@ -213,14 +213,8 @@ function POSContent({
       toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
       return;
     }
-    if (!selectedAddon.kitchenLocationId) {
-      toast({
-        variant: "destructive",
-        title: "Kitchen Not Assigned",
-        description: `"${selectedAddon.displayName}" has no kitchen location assigned.`,
-      });
-      return;
-    }
+    // Items with no kitchen location are still orderable (they just won't make a
+    // kitchen ticket — see performAdd). No block here.
 
     const unitPriceNum = Number((selectedAddon as any).sellingPrice);
     const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
@@ -324,8 +318,8 @@ function POSContent({
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
-            kitchenLocationId: addon.kitchenLocationId,
-            kitchenLocationName: addon.kitchenLocationName,
+            kitchenLocationId: addon.kitchenLocationId ?? null,
+            kitchenLocationName: addon.kitchenLocationName ?? null,
             modifiers: modifiers.length ? modifiers : null,
             modifiersText: modifiersText || null,
             modifiersTotal: modifiers.length ? modifiersTotal : null,
@@ -334,27 +328,32 @@ function POSContent({
           tx.set(lineRef, newLinePayload);
         }
 
-        await createKitchenTickets(
-          db,
-          storeId,
-          session.id,
-          session,
-          "addon",
-          {
-            itemId: addon.id,
-            itemName: addon.displayName,
-            kitchenLocationId: addon.kitchenLocationId!,
-            kitchenLocationName: addon.kitchenLocationName,
-            billLineId: lineId,
-          },
-          qty,
-          actor,
-          { tx },
-          lineNote || undefined,
-          // `extra` is spread into the ticket payload. Pass modifier structure
-          // so KDS can render it richly if it wants, plus a flat text field.
-          modifiers.length ? { modifiers, modifiersText } : undefined
-        );
+        // Only items with a kitchen location produce a kitchen ticket. Items with
+        // none are still billed (line above) but exempt from KDS so the order
+        // doesn't break.
+        if (addon.kitchenLocationId) {
+          await createKitchenTickets(
+            db,
+            storeId,
+            session.id,
+            session,
+            "addon",
+            {
+              itemId: addon.id,
+              itemName: addon.displayName,
+              kitchenLocationId: addon.kitchenLocationId,
+              kitchenLocationName: addon.kitchenLocationName,
+              billLineId: lineId,
+            },
+            qty,
+            actor,
+            { tx },
+            lineNote || undefined,
+            // `extra` is spread into the ticket payload. Pass modifier structure
+            // so KDS can render it richly if it wants, plus a flat text field.
+            modifiers.length ? { modifiers, modifiersText } : undefined
+          );
+        }
         tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
       });
 

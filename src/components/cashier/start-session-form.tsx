@@ -77,16 +77,23 @@ interface StartSessionFormProps {
     flavors: StoreFlavor[];
     user: AppUser | null;
     storeId: string;
+    /** Store session-mode flags. Absent ⇒ offered (existing stores keep both). */
+    offersUnlimited?: boolean;
+    offersAlaCarte?: boolean;
     pendingSeat?: PendingSeat | null;
     onSeatCompleted?: (sessionId: string) => void;
     onSeatCleared?: () => void;
 }
 
-export function StartSessionForm({ tables, packages, flavors, user, storeId, pendingSeat, onSeatCompleted, onSeatCleared }: StartSessionFormProps) {
+export function StartSessionForm({ tables, packages, flavors, user, storeId, offersUnlimited, offersAlaCarte, pendingSeat, onSeatCompleted, onSeatCleared }: StartSessionFormProps) {
     const { toast } = useToast();
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [mode, setMode] = useState<"unlimited" | "alacarte">("unlimited");
+    // Which order modes this store offers (absent ⇒ offered). Drives the tabs.
+    const showUnlimited = offersUnlimited !== false;
+    const showAlaCarte = offersAlaCarte !== false;
+    const bothModes = showUnlimited && showAlaCarte;
+    const [mode, setMode] = useState<"unlimited" | "alacarte">(showUnlimited ? "unlimited" : "alacarte");
 
     // State for rice/cheese qty touched status
     const [riceTouched, setRiceTouched] = useState(false);
@@ -153,7 +160,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
         }
         if (lastSeatIdRef.current === pendingSeat.id) return;
         lastSeatIdRef.current = pendingSeat.id;
-        setMode("unlimited");
+        if (showUnlimited) setMode("unlimited");
         unlimitedForm.setValue("customerName", pendingSeat.name);
         if (pendingSeat.partySize > 0) {
             unlimitedForm.setValue("guestCount", pendingSeat.partySize);
@@ -323,11 +330,19 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                     </Button>
                 </div>
             )}
+            {!showUnlimited && !showAlaCarte ? (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No order modes are enabled for this store. Turn on dine-in (Unlimited) and/or à la carte in Store settings.
+                </div>
+            ) : (
             <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
-                    <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
-                </TabsList>
+                {bothModes && (
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
+                        <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
+                    </TabsList>
+                )}
+                {showUnlimited && (
                 <TabsContent value="unlimited">
                     <Form {...unlimitedForm}>
                         <form onSubmit={unlimitedForm.handleSubmit(onSubmitUnlimited)} className="space-y-6 pt-4">
@@ -508,6 +523,8 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                         </form>
                     </Form>
                 </TabsContent>
+                )}
+                {showAlaCarte && (
                     <TabsContent value="alacarte">
                         <Form {...alaCarteForm}>
                         <form onSubmit={alaCarteForm.handleSubmit(onSubmitAlaCarte)} className="space-y-6 pt-4">
@@ -561,7 +578,9 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, pen
                         </form>
                         </Form>
                 </TabsContent>
+                )}
             </Tabs>
+            )}
         </CardContent>
     );
 }

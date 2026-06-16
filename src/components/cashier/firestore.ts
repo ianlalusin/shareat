@@ -1315,7 +1315,7 @@ export async function createKitchenTickets(
   sessionId: string,
   session: PendingSession,
   type: OrderItemType,
-  line: { itemId: string; itemName: string; kitchenLocationId: string; kitchenLocationName?: string | null; billLineId: string | null },
+  line: { itemId: string; itemName: string; kitchenLocationId: string | null; kitchenLocationName?: string | null; billLineId: string | null },
   qty: number,
   actor: ActorStamp,
   opts: { tx: Transaction },
@@ -1327,6 +1327,11 @@ export async function createKitchenTickets(
   const serverTs = serverTimestamp();
   
   const stationId = line.kitchenLocationId;
+
+  // No kitchen station ⇒ this item is exempt from KDS tickets (the caller still
+  // bills it). Skip creating any ticket so a location-less item can't break the
+  // order / KDS projection.
+  if (!stationId) return;
 
   // ONE ticket per line item using qtyOrdered for batch-serve flow
   const ticketRef = doc(ticketsColRef);

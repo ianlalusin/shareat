@@ -284,6 +284,8 @@ export function SessionListView() {
                                                 flavors={enabledFlavors}
                                                 user={appUser}
                                                 storeId={activeStore.id}
+                                                offersUnlimited={activeStore.offersUnlimited}
+                                                offersAlaCarte={activeStore.offersAlaCarte}
                                                 pendingSeat={pendingSeat}
                                                 onSeatCompleted={handleSeatCompleted}
                                                 onSeatCleared={handleClearSeat}
