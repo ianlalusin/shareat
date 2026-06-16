@@ -55,10 +55,12 @@ function fmtDelta(v: number): string {
 
 function FamilyOrderContent({
   group,
+  storeId,
   onCancel,
   onAdd,
 }: {
   group: AddonGroup;
+  storeId: string;
   onCancel: () => void;
   onAdd: (args: FamilyOrderAddArgs) => Promise<void>;
 }) {
@@ -99,7 +101,7 @@ function FamilyOrderContent({
           return;
         }
         const idToken = await user.getIdToken();
-        const res = await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups`, {
+        const res = await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups?storeId=${encodeURIComponent(storeId)}`, {
           headers: { Authorization: `Bearer ${idToken}` },
         });
         const json = await res.json().catch(() => ({}));
@@ -126,7 +128,7 @@ function FamilyOrderContent({
     return () => {
       cancelled = true;
     };
-  }, [selectedVariant?.id]);
+  }, [selectedVariant?.id, storeId]);
 
   function toggleSingle(g: OptionGroup, valueId: string) {
     setSelections((prev) => ({ ...prev, [g.id]: new Set([valueId]) }));
@@ -405,11 +407,13 @@ function FamilyOrderContent({
 export function FamilyOrderModal({
   open,
   onOpenChange,
+  storeId,
   group,
   onAdd,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  storeId: string;
   group: AddonGroup | null;
   onAdd: (args: FamilyOrderAddArgs) => Promise<void>;
 }) {
@@ -419,6 +423,7 @@ export function FamilyOrderModal({
   const content = (
     <FamilyOrderContent
       group={group}
+      storeId={storeId}
       onCancel={() => onOpenChange(false)}
       onAdd={async (args) => {
         await onAdd(args);

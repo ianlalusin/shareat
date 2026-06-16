@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
+import { loadOptionOverrides, filterGroupsForStore } from "@/lib/server/option-overrides";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,7 @@ function bad(msg: string, status = 400) {
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
+    const url = new URL(req.url);
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
@@ -47,12 +49,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // Batched getAll keeps this to one round-trip.
     const refs = ids.map((gid) => db.doc(`optionGroups/${gid}`));
     const snaps = await db.getAll(...refs);
-    const groups = snaps
+    let groups = snaps
       .filter((s) => s.exists)
       .map((s) => ({ id: s.id, ...(s.data() as any) }))
       .filter((g) => g.isActive !== false && g.isArchived !== true)
       // Preserve attachment order.
       .sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+
+    // Per-store availability: a store can turn off whole groups or individual
+    // values it doesn't carry (e.g. Malvar has no Cheese dip). No storeId means
+    // "show everything", so non-cashier callers are unaffected.
+    const storeId = String(url.searchParams.get("storeId") || "").trim();
+    if (storeId) {
+      const overrides = await loadOptionOverrides(db, storeId);
+      groups = filterGroupsForStore(groups, overrides);
+    }
 
     return NextResponse.json({ ok: true, optionGroups: groups });
   } catch (e: any) {

@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { loadOptionOverrides, valueKey } from "./option-overrides";
 
 /**
  * Builds the public SharEat website storefront catalog snapshot for one store.
@@ -106,13 +107,18 @@ export async function rebuildStorefrontCatalog(
   }
 
   // --- Option groups (active, non-archived) for embedding modifiers. ---
+  // Overlaid with this store's availability overrides so a store only publishes
+  // the groups/values it actually carries (e.g. Malvar drops the Cheese dip).
+  const overrides = await loadOptionOverrides(db, storeId);
   const ogSnap = await db.collection("optionGroups").get();
   const optionGroupById = new Map<string, StorefrontOptionGroup>();
   for (const d of ogSnap.docs) {
     const g = d.data() as any;
     if (g?.isActive === false || g?.isArchived === true) continue;
+    if (overrides.disabledGroupIds.has(d.id)) continue;
     const values: StorefrontModifierValue[] = (Array.isArray(g.values) ? g.values : [])
       .filter((v: any) => v?.isActive !== false)
+      .filter((v: any) => !overrides.disabledValueKeys.has(valueKey(d.id, String(v.id))))
       .sort((a: any, b: any) => Number(a?.sortOrder ?? 0) - Number(b?.sortOrder ?? 0))
       .map((v: any) => ({ id: String(v.id), name: String(v.name), priceDelta: Number(v.priceDelta ?? 0) }));
     if (values.length === 0) continue;

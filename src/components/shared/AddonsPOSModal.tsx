@@ -236,7 +236,7 @@ function POSContent({
       const user = getAuth().currentUser;
       const idToken = user ? await user.getIdToken() : null;
       const res = idToken
-        ? await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups`, {
+        ? await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups?storeId=${encodeURIComponent(storeId)}`, {
             headers: { Authorization: `Bearer ${idToken}` },
           })
         : null;
@@ -422,6 +422,7 @@ function POSContent({
       <FamilyOrderModal
         open={familyOrderOpen}
         onOpenChange={setFamilyOrderOpen}
+        storeId={storeId}
         group={familyOrderGroup}
         onAdd={async (args: FamilyOrderAddArgs) => {
           await performAdd(args.modifiers, args.modifiersText, args.modifiersTotal, {
