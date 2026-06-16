@@ -29,6 +29,7 @@ const managerTools = [
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
     { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
     { title: "Online Orders", description: "Accept and fulfill orders placed on the public website storefront.", href: "/admin/online-orders", icon: ShoppingBag },
+    { title: "Menu Option Availability", description: "Turn add-on options (dips, extras, upgrades) on or off for your store.", href: "/admin/menu/option-groups", icon: Settings2 },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Daily & monthly sales summary for printing and cash-up.", href: "/sales-report", icon: LineChart },

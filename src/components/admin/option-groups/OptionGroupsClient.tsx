@@ -13,6 +13,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { Loader2, Plus, Pencil, Archive, RefreshCw, ArrowLeft, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useStoreContext } from "@/context/store-context";
+import { useAuthContext } from "@/context/auth-context";
 import { OptionGroupEditDialog } from "@/components/admin/option-groups/OptionGroupEditDialog";
 import { getStorefrontStoreId, publishStorefrontNow } from "@/lib/storefront/auto-publish";
 import type { OptionGroup } from "@/lib/types";
@@ -24,6 +25,11 @@ export default function OptionGroupsClient() {
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const { activeStore, activeStoreId } = useStoreContext();
+  const { appUser } = useAuthContext();
+  // Only platform admins author the shared groups (create / edit / archive).
+  // Managers get the per-store availability toggles but not group authoring —
+  // the group-CRUD APIs are admin-only, so the controls would 403 for them.
+  const isAdmin = appUser?.isPlatformAdmin === true;
   const activeStoreName = activeStore?.name || activeStoreId || "";
 
   const [groups, setGroups] = useState<OptionGroup[]>([]);
@@ -182,7 +188,14 @@ export default function OptionGroupsClient() {
 
   return (
     <RoleGuard allow={["admin", "manager"]}>
-      <PageHeader title="Option Groups" description="Reusable modifier groups (e.g. Cheese, Size) that can be attached to products.">
+      <PageHeader
+        title={isAdmin ? "Option Groups" : "Menu Option Availability"}
+        description={
+          isAdmin
+            ? "Reusable modifier groups (e.g. Cheese, Size) that can be attached to products."
+            : "Turn each option group or value on or off for your store. The groups themselves are managed centrally."
+        }
+      >
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
@@ -190,12 +203,16 @@ export default function OptionGroupsClient() {
           <Button variant="outline" size="sm" onClick={load} disabled={isLoading}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
-          <Button size="sm" onClick={() => setShowArchived((v) => !v)} variant={showArchived ? "default" : "outline"}>
-            {showArchived ? "Hide archived" : "Show archived"}
-          </Button>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1" /> New Option Group
-          </Button>
+          {isAdmin && (
+            <>
+              <Button size="sm" onClick={() => setShowArchived((v) => !v)} variant={showArchived ? "default" : "outline"}>
+                {showArchived ? "Hide archived" : "Show archived"}
+              </Button>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1" /> New Option Group
+              </Button>
+            </>
+          )}
         </div>
       </PageHeader>
 
@@ -299,16 +316,18 @@ export default function OptionGroupsClient() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(g)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        {!archived && (
-                          <Button variant="ghost" size="sm" onClick={() => handleArchive(g)} title="Archive">
-                            <Archive className="h-4 w-4" />
+                      {isAdmin && (
+                        <div className="flex items-center gap-1.5">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(g)}>
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        )}
-                      </div>
+                          {!archived && (
+                            <Button variant="ghost" size="sm" onClick={() => handleArchive(g)} title="Archive">
+                              <Archive className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      )}
                       {canEditStore && (
                         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
                           <span>Offered here</span>
