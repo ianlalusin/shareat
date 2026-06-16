@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -29,6 +29,7 @@ import { getDisplayName } from "@/lib/products/variants";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { serverTimestamp } from "firebase/firestore";
 import { ImageBoundary } from "@/components/shared/ImageBoundary";
+import { OptionGroupEditDialog } from "@/components/admin/option-groups/OptionGroupEditDialog";
 
 type AddonCategory = {
     id: string;
@@ -193,32 +194,35 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     return () => unsubAddonCategories();
   }, []);
 
-  // Load reusable option groups whenever the dialog opens. Read-only fetch via
-  // the admin endpoint so this works regardless of Firestore-client rules.
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { getAuth } = await import("firebase/auth");
-        const user = getAuth().currentUser;
-        if (!user) return;
-        const idToken = await user.getIdToken();
-        const res = await fetch("/api/admin/option-groups", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok && json?.ok) {
-          setAvailableOptionGroups(
-            (json.groups || []).filter((g: any) => g.isActive !== false && g.isArchived !== true)
-          );
-        }
-      } catch {
-        // silent — section just shows empty state
+  // Load reusable option groups. Read-only fetch via the admin endpoint so this
+  // works regardless of Firestore-client rules. Reusable so we can refresh after
+  // creating a new group inline.
+  const loadOptionGroups = useCallback(async () => {
+    try {
+      const { getAuth } = await import("firebase/auth");
+      const user = getAuth().currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/option-groups", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.ok) {
+        setAvailableOptionGroups(
+          (json.groups || []).filter((g: any) => g.isActive !== false && g.isArchived !== true)
+        );
       }
-    })();
-    return () => { cancelled = true; };
-  }, [isOpen]);
+    } catch {
+      // silent — section just shows empty state
+    }
+  }, []);
+
+  // Inline "create option group" dialog state.
+  const [newOptionGroupOpen, setNewOptionGroupOpen] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) void loadOptionGroups();
+  }, [isOpen, loadOptionGroups]);
 
   const handleImageSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -393,7 +397,10 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                       const unattached = availableOptionGroups.filter((g) => !attachedSet.has(g.id));
                       return (
                         <FormItem>
-                          <FormLabel>Option Groups (Modifiers)</FormLabel>
+                          <div className="flex items-center justify-between gap-2">
+                            <FormLabel>Option Groups (Modifiers)</FormLabel>
+                            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => setNewOptionGroupOpen(true)}>+ New group</Button>
+                          </div>
                           <FormDescription className="text-xs">
                             Reusable modifier groups applied at order time. When this product is added to a bill the cashier (and customer) will be prompted to pick from each attached group. For families, attach at the family parent — variants inherit automatically.
                           </FormDescription>
@@ -402,8 +409,15 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                               <p className="text-xs text-muted-foreground">No option groups attached.</p>
                             ) : (
                               <div className="space-y-1.5">
-                                {attached.map((id) => {
+                                {attached.map((id, i) => {
                                   const g = availableOptionGroups.find((x) => x.id === id);
+                                  const move = (dir: -1 | 1) => {
+                                    const next = [...attached];
+                                    const t = i + dir;
+                                    if (t < 0 || t >= next.length) return;
+                                    [next[i], next[t]] = [next[t], next[i]];
+                                    field.onChange(next);
+                                  };
                                   return (
                                     <div key={id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
                                       <div className="min-w-0">
@@ -414,9 +428,11 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                                           </div>
                                         )}
                                       </div>
-                                      <Button type="button" variant="ghost" size="sm" onClick={() => field.onChange(attached.filter((x) => x !== id))}>
-                                        Remove
-                                      </Button>
+                                      <div className="flex items-center gap-0.5 shrink-0">
+                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(-1)} disabled={i === 0} aria-label="Move up">↑</Button>
+                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(1)} disabled={i === attached.length - 1} aria-label="Move down">↓</Button>
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => field.onChange(attached.filter((x) => x !== id))}>Remove</Button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -441,7 +457,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                             )}
                             {availableOptionGroups.length === 0 && (
                               <p className="text-xs text-muted-foreground">
-                                No option groups defined yet. Create them at <code className="text-[11px]">/admin/menu/option-groups</code>.
+                                No option groups yet. Click <span className="font-medium">+ New group</span> to create one.
                               </p>
                             )}
                           </div>
@@ -460,6 +476,21 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Inline "create option group" — reuses the admin dialog; auto-attaches on save. */}
+      <OptionGroupEditDialog
+        open={newOptionGroupOpen}
+        onOpenChange={setNewOptionGroupOpen}
+        group={null}
+        onSaved={async (savedId) => {
+          await loadOptionGroups();
+          if (savedId) {
+            const cur = (form.getValues("optionGroupIds") as string[]) || [];
+            if (!cur.includes(savedId)) form.setValue("optionGroupIds", [...cur, savedId], { shouldDirty: true });
+          }
+          setNewOptionGroupOpen(false);
+        }}
+      />
     </>
   );
 }

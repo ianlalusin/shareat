@@ -33,7 +33,7 @@ export function OptionGroupEditDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   group: OptionGroup | null;
-  onSaved: () => void;
+  onSaved: (savedId?: string) => void;
 }) {
   const { toast } = useToast();
   const [name, setName] = useState("");
@@ -138,7 +138,7 @@ export function OptionGroupEditDialog({
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Save failed (${res.status})`);
       toast({ title: group ? "Updated" : "Created" });
-      onSaved();
+      onSaved(group ? group.id : json.id);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Save failed", description: e?.message });
     } finally {
