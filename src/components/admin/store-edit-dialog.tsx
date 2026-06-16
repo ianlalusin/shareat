@@ -30,6 +30,7 @@ const formSchema = z.object({
   address: z.string().min(5, "Address is required."),
   geoLat: z.string().optional(),
   geoLng: z.string().optional(),
+  deliveryRadiusKmInput: z.string().optional(),
   tin: z.string().optional(),
   taxType: z.enum(["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"]).optional(),
   taxRatePct: z.coerce.number().min(0).max(30).optional(),
@@ -96,7 +97,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", isActive: true,
+      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
       reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -136,6 +137,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: store.name, code: store.code, address: store.address,
         geoLat: store.geo?.lat != null ? String(store.geo.lat) : "",
         geoLng: store.geo?.lng != null ? String(store.geo.lng) : "",
+        deliveryRadiusKmInput: store.deliveryRadiusKm != null ? String(store.deliveryRadiusKm) : "",
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
@@ -152,7 +154,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       });
     } else {
       form.reset({
-        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", isActive: true,
+        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
         reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -184,11 +186,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
 
   const onSubmit = (data: StoreFormValues) => {
-    const { geoLat, geoLng, ...rest } = data;
+    const { geoLat, geoLng, deliveryRadiusKmInput, ...rest } = data;
     const lat = geoLat && geoLat.trim() !== "" ? Number(geoLat) : NaN;
     const lng = geoLng && geoLng.trim() !== "" ? Number(geoLng) : NaN;
     const geo = !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : undefined;
-    onSave({ ...rest, ...(geo ? { geo } : {}) } as any);
+    const radiusNum = deliveryRadiusKmInput && deliveryRadiusKmInput.trim() !== "" ? Number(deliveryRadiusKmInput) : NaN;
+    const radius = Number.isFinite(radiusNum) && radiusNum >= 0 ? radiusNum : undefined;
+    onSave({ ...rest, ...(geo ? { geo } : {}), ...(radius != null ? { deliveryRadiusKm: radius } : {}) } as any);
   };
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: any) => {
@@ -244,6 +248,23 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                   />
                   <FormDescription>Pin the branch on the map (or paste coordinates) so weather is fetched for the right location.</FormDescription>
                 </FormItem>
+
+                <FormField
+                  control={form.control}
+                  name="deliveryRadiusKmInput"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Online delivery radius (km)</FormLabel>
+                      <FormControl>
+                        <Input inputMode="decimal" placeholder="e.g. 5" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Buyers within this distance of the branch can order delivery online. Leave blank for pickup-only. Pickup ignores this.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="contactNumber" render={({ field }) => ( <FormItem><FormLabel>Contact Number</FormLabel><FormControl><Input placeholder="e.g., +1 234 567 890" {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="e.g., contact@store.com" {...field} /></FormControl><FormMessage /></FormItem> )} />

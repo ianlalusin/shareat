@@ -711,6 +711,13 @@ export type Store = {
   name: string;
   code: string;
   address: string;
+  /**
+   * Online-delivery service radius in km. A storefront buyer is offered DELIVERY
+   * from this store only when within this distance (server-enforced in placeOrder).
+   * 0/absent ⇒ pickup only. Pickup ignores this radius entirely. Distance is
+   * measured from the store's `geo` geotag (declared below).
+   */
+  deliveryRadiusKm?: number;
   tin?: string;
   logoUrl?: string | null;
   vatType?: "VAT" | "NON_VAT"; // Deprecated
