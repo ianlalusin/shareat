@@ -442,7 +442,7 @@ function POSContent({
         />
       )}
 
-      <div className={cn("space-y-3", isMobile && "flex flex-col flex-1 min-h-0")}>
+      <div className={cn("space-y-3 flex flex-col flex-1 min-h-0")}>
         <div className={cn("flex gap-2", isMobile && "shrink-0")}>
           <div className="relative w-full">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -458,7 +458,7 @@ function POSContent({
           </Button>
         </div>
 
-        <ScrollArea className={cn("pr-2", isMobile ? "flex-1 min-h-0" : "h-[55vh]")}>
+        <ScrollArea className={cn("pr-2 flex-1 min-h-0")}>
           <div className="flex flex-wrap gap-2 pb-3">
             {categories.map((cat) => (
               <Badge
@@ -491,7 +491,7 @@ function POSContent({
           )}
         </ScrollArea>
 
-        <div className={cn("border-t pt-3 space-y-2", isMobile && "shrink-0")}>
+        <div className={cn("border-t pt-3 space-y-2 shrink-0")}>
           <div className="text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Selected</span>
@@ -578,13 +578,13 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[88vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Add-ons</DialogTitle>
           <DialogDescription>Select add-on items to add to the order.</DialogDescription>
         </DialogHeader>
         {content}
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
