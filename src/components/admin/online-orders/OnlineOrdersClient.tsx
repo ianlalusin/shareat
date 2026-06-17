@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon } from "lucide-react";
+import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/storefront/online-hours";
+import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -119,10 +121,11 @@ function statusBadgeVariant(status: string): "default" | "secondary" | "destruct
 }
 
 export default function OnlineOrdersClient() {
-  const { user } = useAuthContext();
+  const { user, appUser } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const storeId = activeStore?.id || "";
+  const canToggleAccepts = appUser?.role === "admin" || appUser?.role === "manager";
 
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -131,6 +134,93 @@ export default function OnlineOrdersClient() {
   const [busy, setBusy] = useState(false);
   const [reasonFor, setReasonFor] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState("");
+
+  // Online-ordering availability (the open/closed switch). Read live from the
+  // store doc (every role may read it; stays correct across store-switches and
+  // external edits). Admin/manager set it via the server set-availability op.
+  const [avail, setAvail] = useState<OnlineAvailabilityInput>({});
+  const [savingAvail, setSavingAvail] = useState(false);
+  // Re-evaluate the schedule window so the live status flips at open/close time
+  // even with no user action (only matters in "auto" mode).
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!storeId) return;
+    const unsub = onSnapshot(
+      doc(db, "stores", storeId),
+      (snap) => {
+        const d = (snap.data() as any) || {};
+        setAvail({
+          acceptsOnlineOrders: d.acceptsOnlineOrders,
+          onlineOrderMode: d.onlineOrderMode,
+          onlineOrderManualOpen: d.onlineOrderManualOpen,
+          openingTime: d.openingTime,
+          closingTime: d.closingTime,
+        });
+      },
+      () => {} // non-fatal: keep the last known value
+    );
+    return () => unsub();
+  }, [storeId]);
+
+  const availability = useMemo(
+    () => computeOnlineAvailability(avail, new Date(nowTick)),
+    [avail, nowTick]
+  );
+
+  // selectedMode is the picked control state (Auto / Open / Closed), distinct
+  // from openNow which is what customers actually see right now.
+  const selectedMode: "auto" | "open" | "closed" =
+    availability.mode === "auto" ? "auto" : avail.onlineOrderManualOpen === false ? "closed" : "open";
+
+  const setAvailability = async (mode: "auto" | "open" | "closed") => {
+    if (savingAvail || !storeId || mode === selectedMode) return;
+    setSavingAvail(true);
+    const body =
+      mode === "auto"
+        ? { op: "set-availability", storeId, mode: "auto" }
+        : { op: "set-availability", storeId, mode: "manual", manualOpen: mode === "open" };
+    // optimistic
+    setAvail((p) => ({
+      ...p,
+      acceptsOnlineOrders: true,
+      onlineOrderMode: mode === "auto" ? "auto" : "manual",
+      onlineOrderManualOpen: mode === "auto" ? p.onlineOrderManualOpen : mode === "open",
+    }));
+    try {
+      const u = user || getAuth().currentUser;
+      if (!u) throw new Error("Not signed in.");
+      const idToken = await u.getIdToken();
+      const res = await fetch("/api/admin/storefront-catalog", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      toast({
+        title:
+          mode === "auto"
+            ? "Online ordering set to Auto"
+            : mode === "open"
+            ? "Store forced OPEN for online orders"
+            : "Store forced CLOSED for online orders",
+        description:
+          mode === "auto"
+            ? "It now opens and closes with the store's hours."
+            : "Change reflects on the SharEat website within a minute.",
+      });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not change availability", description: e?.message });
+      // the live snapshot will re-sync the true state
+    } finally {
+      setSavingAvail(false);
+    }
+  };
 
   useEffect(() => {
     if (!storeId) return;
@@ -198,6 +288,17 @@ export default function OnlineOrdersClient() {
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       <div className="container mx-auto py-6 space-y-6">
         <PageHeader title="Online Orders" description={`Website storefront orders${activeStore?.name ? ` · ${activeStore.name}` : ""}.`}>
+          {storeId && (
+            <OnlineAvailabilityControl
+              availability={availability}
+              selectedMode={selectedMode}
+              canEdit={canToggleAccepts}
+              saving={savingAvail}
+              openingTime={avail.openingTime}
+              closingTime={avail.closingTime}
+              onSelect={setAvailability}
+            />
+          )}
           <ShoppingBag className="h-6 w-6 text-muted-foreground" />
         </PageHeader>
 

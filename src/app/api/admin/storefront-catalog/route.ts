@@ -10,7 +10,7 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-type Op = "get" | "rebuild" | "set-config" | "set-accepts";
+type Op = "get" | "rebuild" | "set-config" | "set-accepts" | "set-availability";
 
 export async function POST(req: Request) {
   try {
@@ -39,11 +39,14 @@ export async function POST(req: Request) {
           db.doc(`stores/${storeId}`).get(),
         ]);
         const cat = catSnap.exists ? (catSnap.data() as any) : null;
+        const sd = storeSnap.exists ? (storeSnap.data() as any) : {};
         return NextResponse.json({
           ok: true,
           catalog: cat ? { updatedAtMs: cat.updatedAtMs ?? null, itemCount: cat.itemCount ?? 0 } : null,
           config: cfgSnap.exists ? cfgSnap.data() : null,
-          acceptsOnlineOrders: !!(storeSnap.exists && (storeSnap.data() as any)?.acceptsOnlineOrders),
+          acceptsOnlineOrders: !!sd?.acceptsOnlineOrders,
+          onlineOrderMode: sd?.onlineOrderMode === "auto" ? "auto" : "manual",
+          onlineOrderManualOpen: sd?.onlineOrderManualOpen !== false,
         });
       }
 
@@ -73,6 +76,22 @@ export async function POST(req: Request) {
           { acceptsOnlineOrders: !!body?.acceptsOnlineOrders },
           { merge: true }
         );
+        return NextResponse.json({ ok: true });
+      }
+
+      // One-click availability for the Online Orders page. Picking any state
+      // enrolls the store (acceptsOnlineOrders:true); the open/closed effect
+      // then follows the mode:
+      //   - "auto"   ⇒ store hours decide (openingTime/closingTime)
+      //   - "manual" ⇒ manualOpen decides (force open / force closed)
+      case "set-availability": {
+        const mode = body?.mode === "auto" ? "auto" : "manual";
+        const patch: Record<string, any> = {
+          acceptsOnlineOrders: true,
+          onlineOrderMode: mode,
+        };
+        if (mode === "manual") patch.onlineOrderManualOpen = !!body?.manualOpen;
+        await db.doc(`stores/${storeId}`).set(patch, { merge: true });
         return NextResponse.json({ ok: true });
       }
 

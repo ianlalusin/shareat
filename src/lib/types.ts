@@ -741,6 +741,27 @@ export type Store = {
    */
   acceptsWebsiteChat?: boolean;
   /**
+   * Master switch — this store is enrolled in online ordering. The SharEat
+   * website only ever lists/serves/accepts orders for a store when this is true
+   * AND it is open right now (see onlineOrderMode below). Requires a `geo`
+   * geotag to actually appear in the website store picker.
+   */
+  acceptsOnlineOrders?: boolean;
+  /**
+   * How the store's online open/closed state is decided:
+   *  - "auto"   ⇒ follows the store's opening hours (openingTime/closingTime,
+   *               Asia/Manila, overnight-aware) — opens & closes automatically.
+   *  - "manual" ⇒ uses onlineOrderManualOpen as a manual override.
+   * Absent ⇒ treated as "manual" (back-compat). Computed by
+   * lib/storefront/online-hours.ts and mirrored server-side on the website.
+   */
+  onlineOrderMode?: "auto" | "manual";
+  /**
+   * Manual open(true)/closed(false) override, used only when onlineOrderMode is
+   * "manual". Absent ⇒ treated as open (matches the old boolean behaviour).
+   */
+  onlineOrderManualOpen?: boolean;
+  /**
    * When set (and acceptsReservations is on), constrains the days/time window a
    * customer may book from the public website. Enforced server-side by the
    * website's createReservation function. Absent ⇒ no constraint (any time).
