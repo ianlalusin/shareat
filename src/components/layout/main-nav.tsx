@@ -15,11 +15,16 @@ const navLinks = [
   { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier'] },
   { href: '/cashier', label: 'Cashier', roles: ['admin', 'manager', 'cashier'] },
   { href: '/reservations', label: 'Reservations', roles: ['admin', 'manager', 'cashier'] },
+  { href: '/admin/online-orders', label: 'Online Orders', roles: ['admin', 'manager'] },
   { href: '/pins', label: 'PINs', roles: ['admin', 'manager', 'cashier'] },
   { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
   { href: '/server', label: 'Server', roles: ['admin', 'manager', 'server'] },
   { href: '/admin', label: 'Admin', roles: ['admin', 'manager'] },
 ]
+
+// Online-order statuses that still need staff attention (everything except the
+// terminal completed/cancelled/rejected/expired and the unpaid pending_payment).
+const OPEN_ONLINE_STATUSES = ['pending', 'accepted', 'preparing', 'ready', 'ready_for_pickup', 'out_for_delivery']
 
 interface MainNavProps {
   role?: UserRole | null;
@@ -32,6 +37,7 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
 
   const accessibleLinks = role ? navLinks.filter(link => link.roles.includes(role)) : []
   const showReservations = accessibleLinks.some(link => link.href === '/reservations')
+  const showOnlineOrders = accessibleLinks.some(link => link.href === '/admin/online-orders')
 
   // Live count of PENDING bookings (status "booked" — not yet confirmed,
   // cancelled/rejected, handled, etc.) across all upcoming dates, so future
@@ -61,6 +67,37 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
     return () => unsub()
   }, [showReservations, activeStoreId])
 
+  // Live online-order queue for the active store. `openOnlineCount` is the
+  // working pipeline (badge number); `newOnlineCount` (status "pending", not yet
+  // accepted) drives the blink so brand-new orders aren't missed. Bounded `in`
+  // query on a single field — only the small active set is read, never the full
+  // (growing) onlineOrders history.
+  const [openOnlineCount, setOpenOnlineCount] = useState(0)
+  const [newOnlineCount, setNewOnlineCount] = useState(0)
+  useEffect(() => {
+    if (!showOnlineOrders || !activeStoreId) {
+      setOpenOnlineCount(0)
+      setNewOnlineCount(0)
+      return
+    }
+    const q = query(
+      collection(db, 'stores', activeStoreId, 'onlineOrders'),
+      where('status', 'in', OPEN_ONLINE_STATUSES),
+    )
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setOpenOnlineCount(snap.size)
+        setNewOnlineCount(snap.docs.filter(d => (d.data() as any).status === 'pending').length)
+      },
+      () => {
+        setOpenOnlineCount(0)
+        setNewOnlineCount(0)
+      },
+    )
+    return () => unsub()
+  }, [showOnlineOrders, activeStoreId])
+
   if (!role) return null;
 
   return (
@@ -69,7 +106,23 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
       isMobile ? "flex flex-col space-x-0 space-y-4 items-start" : "hidden md:flex"
     )}>
       {accessibleLinks.map(({ href, label }) => {
-        const hasPending = href === '/reservations' && pendingReservationCount > 0
+        // Per-link "needs attention" badge + blink.
+        let badgeCount = 0
+        let blink = false
+        let title: string | undefined
+        if (href === '/reservations') {
+          badgeCount = pendingReservationCount
+          blink = pendingReservationCount > 0
+          title = blink ? `${pendingReservationCount} pending reservation${pendingReservationCount > 1 ? 's' : ''} awaiting confirmation` : undefined
+        } else if (href === '/admin/online-orders') {
+          badgeCount = openOnlineCount
+          blink = newOnlineCount > 0
+          title = badgeCount > 0
+            ? `${openOnlineCount} open online order${openOnlineCount > 1 ? 's' : ''}${newOnlineCount > 0 ? ` — ${newOnlineCount} new` : ''}`
+            : undefined
+        }
+        const hasBadge = badgeCount > 0
+
         const link = (
            <Link
               key={href}
@@ -78,16 +131,16 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
                 'text-sm font-medium transition-colors hover:text-white/80 inline-flex items-center gap-1.5',
                 pathname?.startsWith(href) ? 'text-white' : 'text-white/70',
                 isMobile && 'text-lg',
-                hasPending && 'reservation-alert-blink'
+                blink && 'nav-alert-blink'
               )}
-              title={hasPending ? `${pendingReservationCount} pending reservation${pendingReservationCount > 1 ? 's' : ''} awaiting confirmation` : undefined}
+              title={title}
             >
               {label}
-              {hasPending && (
+              {hasBadge && (
                 <Badge
                   className="h-5 min-w-5 justify-center px-1.5 text-xs bg-white text-primary hover:bg-white"
                 >
-                  {pendingReservationCount}
+                  {badgeCount}
                 </Badge>
               )}
             </Link>
