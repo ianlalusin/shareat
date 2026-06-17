@@ -15,13 +15,26 @@ export async function GET(request: Request) {
 
   try {
     const db = getAdminDb();
-    // Get the last 14 days of analytics to collect all payment method names
+    const methods = new Set<string>();
+
+    // 1) The store's CONFIGURED modes of payment (source of truth — set up in
+    // manager → collections). This is what makes a freshly-configured store
+    // return its methods even before it has any sales.
+    const modesSnap = await db
+      .collection(`stores/${storeId}/storeModesOfPayment`)
+      .where("isArchived", "==", false)
+      .get();
+    modesSnap.docs.forEach((d) => {
+      const name = d.data()?.name;
+      if (typeof name === "string" && name.trim()) methods.add(name.trim());
+    });
+
+    // 2) Plus any method names that actually appear in the last 14 days of
+    // sales analytics — covers legacy/renamed modes no longer in the config.
     const snap = await db.collection(`stores/${storeId}/analytics`)
       .orderBy("meta.dayStartMs", "desc")
       .limit(14)
       .get();
-
-    const methods = new Set<string>();
     snap.docs.forEach((d) => {
       const byMethod = d.data()?.payments?.byMethod ?? {};
       Object.keys(byMethod).forEach((m) => methods.add(m));
