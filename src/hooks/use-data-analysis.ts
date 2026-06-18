@@ -378,35 +378,71 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
         const dayCount = diffDays(rangeStart, rangeEnd) + 1;
         const canShowByDay = dayCount > 0 && dayCount <= 90;
 
-        // 3) Daily docs only when range fits or for best/worst day drill-down
-        if (canShowByDay) {
+        // A custom range can start/end mid-month, so the whole-month rollups
+        // would over-count it (e.g. "Jun 5–10" must NOT pull in all of June).
+        // Such ranges are aggregated from the exact, date-filtered per-day docs
+        // instead. Presets (this/last month, year) align to rollup boundaries,
+        // so their month docs are already exact — keep using those (cheaper).
+        const isCustom = range.kind === "custom";
+
+        // 3) Daily docs: for the by-day chart (small ranges) AND as the
+        // aggregation source for custom ranges (any size, so dates are honored).
+        if (canShowByDay || isCustom) {
           dailyDocs = await fetchDailyDocsForRange(storeId, rangeStart, rangeEnd);
         }
 
-        // 4) Build aggregate from month docs (or year docs for allTime — month docs are richer)
+        // 4) Build aggregate. Custom ⇒ from the date-filtered daily docs; every
+        // other range ⇒ from the (boundary-aligned) month docs.
         const agg = emptyAggregate();
-        for (const { metric } of monthDocs) foldMetric(agg, metric);
+        const aggMetrics = isCustom ? dailyDocs.map((d) => d.metric) : monthDocs.map((m) => m.metric);
+        for (const metric of aggMetrics) foldMetric(agg, metric);
 
         const avgBasket = agg.txCount > 0 ? agg.netSales / agg.txCount : 0;
         const avgDineInSessionMs = agg.dineInDurationCount > 0 ? agg.dineInDurationMsSum / agg.dineInDurationCount : 0;
 
-        // 5) Sales-over-time series
+        // 5) Sales-over-time + by-month series. For custom ranges these are built
+        // from the date-filtered daily docs bucketed by month (partial months
+        // included) so the month charts honor the dates too; otherwise straight
+        // from the month rollups. (byMonthSorted stays month-doc-based — it feeds
+        // the year-over-year comparison, which is month-granular by nature.)
         const byMonthSorted = [...monthDocs].sort((a, b) => a.monthId.localeCompare(b.monthId));
-        const salesByMonth = byMonthSorted.map(({ monthId, metric }) => {
-          const net = (metric.payments?.totalGross || 0) - (metric.payments?.discountsTotal || 0) - (metric.payments?.chargesTotal || 0);
-          return {
+        const netOfMetric = (m: DailyMetric) =>
+          (m.payments?.totalGross || 0) - (m.payments?.discountsTotal || 0) - (m.payments?.chargesTotal || 0);
+        const monthSeries: Array<{ monthId: string; net: number; tx: number; dineIn: number; walkIn: number }> = (() => {
+          if (isCustom) {
+            const map = new Map<string, { monthId: string; net: number; tx: number; dineIn: number; walkIn: number }>();
+            for (const { dayId, metric } of dailyDocs) {
+              const mid = dayId.slice(0, 6);
+              const row = map.get(mid) || { monthId: mid, net: 0, tx: 0, dineIn: 0, walkIn: 0 };
+              row.net += netOfMetric(metric);
+              row.tx += metric.payments?.txCount || 0;
+              row.dineIn += metric.sales?.salesAmountByMode?.dineIn || 0;
+              row.walkIn += metric.sales?.salesAmountByMode?.walkIn || 0;
+              map.set(mid, row);
+            }
+            return [...map.values()].sort((a, b) => a.monthId.localeCompare(b.monthId));
+          }
+          return byMonthSorted.map(({ monthId, metric }) => ({
             monthId,
-            monthLabel: monthIdLabel(monthId),
-            net,
+            net: netOfMetric(metric),
             tx: metric.payments?.txCount || 0,
-          };
-        });
+            dineIn: metric.sales?.salesAmountByMode?.dineIn || 0,
+            walkIn: metric.sales?.salesAmountByMode?.walkIn || 0,
+          }));
+        })();
 
-        const modeSplitByMonth = byMonthSorted.map(({ monthId, metric }) => ({
-          monthId,
-          monthLabel: monthIdLabel(monthId),
-          dineIn: metric.sales?.salesAmountByMode?.dineIn || 0,
-          walkIn: metric.sales?.salesAmountByMode?.walkIn || 0,
+        const salesByMonth = monthSeries.map((r) => ({
+          monthId: r.monthId,
+          monthLabel: monthIdLabel(r.monthId),
+          net: r.net,
+          tx: r.tx,
+        }));
+
+        const modeSplitByMonth = monthSeries.map((r) => ({
+          monthId: r.monthId,
+          monthLabel: monthIdLabel(r.monthId),
+          dineIn: r.dineIn,
+          walkIn: r.walkIn,
         }));
 
         let byDay: DayRow[] | null = null;
@@ -469,13 +505,14 @@ export function useDataAnalysis(storeId: string | null | undefined, range: DataA
         };
         let previous = { netSales: 0, tx: 0, dineInShare: 0, guests: 0 };
         if (range.kind === "custom") {
+          // Day-accurate previous period (same number of days immediately before
+          // the range) to match the now day-accurate current aggregate.
           const span = diffDays(rangeStart, rangeEnd) + 1;
           const prevEnd = addDays(rangeStart, -1);
           const prevStart = addDays(prevEnd, -(span - 1));
-          const prevMonthIds = enumMonthIds(prevStart, prevEnd);
-          const prevMonthDocs = await fetchMonthDocs(storeId, prevMonthIds);
+          const prevDailyDocs = await fetchDailyDocsForRange(storeId, prevStart, prevEnd);
           const prevAgg = emptyAggregate();
-          for (const { metric } of prevMonthDocs) foldMetric(prevAgg, metric);
+          for (const { metric } of prevDailyDocs) foldMetric(prevAgg, metric);
           const prevShare = prevAgg.salesByMode.dineIn + prevAgg.salesByMode.walkIn > 0
             ? prevAgg.salesByMode.dineIn / (prevAgg.salesByMode.dineIn + prevAgg.salesByMode.walkIn)
             : 0;
