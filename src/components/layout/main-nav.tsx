@@ -15,7 +15,7 @@ const navLinks = [
   { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier'] },
   { href: '/cashier', label: 'Cashier', roles: ['admin', 'manager', 'cashier'] },
   { href: '/reservations', label: 'Reservations', roles: ['admin', 'manager', 'cashier'] },
-  { href: '/admin/online-orders', label: 'Online Orders', roles: ['admin', 'manager'] },
+  { href: '/admin/online-orders', label: 'Online Orders', roles: ['admin', 'manager', 'cashier'] },
   { href: '/pins', label: 'PINs', roles: ['admin', 'manager', 'cashier'] },
   { href: '/kitchen', label: 'Kitchen', roles: ['admin', 'manager', 'kitchen'] },
   { href: '/server', label: 'Server', roles: ['admin', 'manager', 'server'] },
