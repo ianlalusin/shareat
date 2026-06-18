@@ -146,7 +146,19 @@ function aggregateServiceTimes(metrics: DailyMetric[]) {
   const toRows = (rec: Record<string, { ms: number; count: number }>) =>
     Object.entries(rec)
       .filter(([, v]) => v.count > 0)
-      .map(([id, v]) => ({ name: staffNames[id] ?? id, avgMs: v.ms / v.count, count: v.count }))
+      .map(([id, v]) => {
+        // Resolve a usable label. `staffNames[id] ?? id` is unsafe — `??` keeps
+        // an empty-string name (so it renders blank), and the id itself can be
+        // blank/whitespace for a session confirmed without a server profile or a
+        // legacy profile doc with no name. Trim both and fall back id→nothing.
+        const named = typeof staffNames[id] === "string" ? staffNames[id].trim() : "";
+        const name = named || (typeof id === "string" ? id.trim() : "");
+        return { name, avgMs: v.ms / v.count, count: v.count };
+      })
+      // Drop identity-less buckets (no name AND no id). Their time still counts
+      // in the overall average (computed from the totals above, not this
+      // per-user map) — we just don't render an unlabeled row.
+      .filter((r) => r.name !== "")
       .sort((a, b) => b.count - a.count);
 
   return {

@@ -237,11 +237,13 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
         dayData.kitchen!.durationMsSumByLocation![locationId] = (dayData.kitchen!.durationMsSumByLocation![locationId] || 0) + (dur > 0 ? dur : 0);
         dayData.kitchen!.durationCountByLocation![locationId] = (dayData.kitchen!.durationCountByLocation![locationId] || 0) + qty;
       }
-      const pid = (ticket as any).servedByProfileId;
+      // Trim/guard so a blank or whitespace profile id never creates an
+      // unlabeled per-user bucket (renders as an empty row in reports).
+      const pid = String((ticket as any).servedByProfileId || "").trim();
       if (pid && dur > 0) {
         dayData.kitchen!.servingMsSumByUser![pid] = (dayData.kitchen!.servingMsSumByUser![pid] || 0) + dur;
         dayData.kitchen!.servingCountByUser![pid] = (dayData.kitchen!.servingCountByUser![pid] || 0) + 1;
-        const pname = (ticket as any).servedByProfileName;
+        const pname = String((ticket as any).servedByProfileName || "").trim();
         if (pname) (dayData as any).staffNames[pid] = pname;
       }
     }
@@ -259,11 +261,12 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
     const srv = dayData.server!;
     srv.confirmMsSum = (srv.confirmMsSum || 0) + verifyMs;
     srv.confirmCount = (srv.confirmCount || 0) + 1;
-    const pid = s.verifiedByServerProfileId;
+    const pid = String(s.verifiedByServerProfileId || "").trim();
     if (pid) {
       srv.confirmMsSumByUser![pid] = (srv.confirmMsSumByUser![pid] || 0) + verifyMs;
       srv.confirmCountByUser![pid] = (srv.confirmCountByUser![pid] || 0) + 1;
-      if (s.verifiedByServerProfileName) (dayData as any).staffNames[pid] = s.verifiedByServerProfileName;
+      const pname = String(s.verifiedByServerProfileName || "").trim();
+      if (pname) (dayData as any).staffNames[pid] = pname;
     }
   }
 

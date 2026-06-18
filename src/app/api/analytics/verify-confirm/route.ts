@@ -47,8 +47,11 @@ export async function POST(req: Request) {
 
   const storeId = String(body.storeId || "");
   const verifyDurationMs = Number(body.verifyDurationMs);
-  const profileId: string | null = body.profileId ? String(body.profileId) : null;
-  const profileName: string | null = body.profileName ? String(body.profileName) : null;
+  // Trim and null-out blanks so an empty/whitespace profile id or name never
+  // creates an unlabeled per-user bucket (which renders as an empty row in the
+  // sales report's "Avg confirm (server)" section).
+  const profileId: string | null = (body.profileId ? String(body.profileId).trim() : "") || null;
+  const profileName: string | null = (body.profileName ? String(body.profileName).trim() : "") || null;
 
   if (!storeId || !Number.isFinite(verifyDurationMs) || verifyDurationMs < 0) {
     return bad("Missing or invalid storeId / verifyDurationMs.");
@@ -73,14 +76,19 @@ export async function POST(req: Request) {
       confirmCount: FieldValue.increment(1),
     };
     if (profileId) {
-      serverAgg[`confirmMsSumByUser.${profileId}`] = FieldValue.increment(verifyDurationMs);
-      serverAgg[`confirmCountByUser.${profileId}`] = FieldValue.increment(1);
+      // Use NESTED maps, not dotted keys. With set({ merge: true }) the Admin SDK
+      // treats a key containing "." as a LITERAL field name, so
+      // "confirmCountByUser.<id>" would create a malformed field the report never
+      // reads (it reads nested server.confirmCountByUser). Nesting lets the
+      // increment merge into server.confirmCountByUser.<id> as intended.
+      serverAgg.confirmMsSumByUser = { [profileId]: FieldValue.increment(verifyDurationMs) };
+      serverAgg.confirmCountByUser = { [profileId]: FieldValue.increment(1) };
     }
 
     const buildPayload = (idKey: string, idVal: string) => ({
       meta: { [idKey]: idVal, storeId, updatedAt: FieldValue.serverTimestamp() },
       server: serverAgg,
-      ...(profileId && profileName ? { [`staffNames.${profileId}`]: profileName } : {}),
+      ...(profileId && profileName ? { staffNames: { [profileId]: profileName } } : {}),
     });
 
     const batch = db.batch();
