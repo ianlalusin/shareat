@@ -16,12 +16,22 @@ externally by **Google Cloud Scheduler**.
 | `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
 | `reconcile-analytics`      | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` (every 15 min)   | 120s             |
 | `rebuild-presets`          | `GET /api/cron/rebuild-presets`     | `30 0 * * *` (12:30 AM)         | 300s             |
+| `holiday-calendar`         | `GET /api/cron/holiday-calendar`    | `*/15 * * * *` (every 15 min)   | 120s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
 editor) and upserts each day's forecast into the monthly doc
 `stores/<storeId>/weatherForecasts/<YYYY-MM>`. The sales forecast reads those docs
 — it never calls the weather API itself, keeping usage well under the free tier.
 Stores without a geotag are skipped.
+
+`holiday-calendar` processes ONE "due" store per fire. A per-store AI holiday/
+occasion calendar is generated (`stores/<storeId>/holidayCalendar/<YYYY>`,
+Gemini, prior+current year so last year seeds learning) and the store's learned
+holiday lifts are recomputed deterministically into
+`stores/<storeId>/holidayEffects/summary`. "Due" = an active AI store not yet in
+`system/holidayCronLog.weeks[<ISO-week>].doneStoreIds`; once all are done the
+fires are cheap no-ops until the next ISO week, giving a ≈weekly refresh that
+also catches newly-proclaimed special days. Reuses `CRON_SECRET` + `GEMINI_API_KEY`.
 
 `generate-forecast` fires up to five times because the route self-deduplicates
 via `system/forecastCronLog.runs[<date>]` — the first successful run marks the
@@ -137,6 +147,15 @@ gcloud scheduler jobs create http rebuild-presets \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=300s
+
+gcloud scheduler jobs create http holiday-calendar \
+  --location="$REGION" \
+  --schedule="*/15 * * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/holiday-calendar" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=120s
 ```
 
 **Secrets**: `generate-daily-insight` needs no new secret — it reuses
