@@ -1,5 +1,5 @@
-// Autocomplete suggestions used by StartShiftModal and the calendar's
-// day-detail drawer. Users can still type custom names.
+// Autocomplete suggestions used by DayDetailDrawer. Users can still
+// type custom names.
 export const KNOWN_HOLIDAYS: readonly string[] = [
   "New Year's Day",
   "Valentine's Day",

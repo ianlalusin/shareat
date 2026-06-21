@@ -28,7 +28,7 @@ const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
 
 function dayOfWeek(dateStr: string): number {
   const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).getDay();
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 function weekdayName(dateStr: string): string {
   return DOW[dayOfWeek(dateStr)];
