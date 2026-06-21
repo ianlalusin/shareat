@@ -73,7 +73,7 @@ Your analysis must consider multiple factors:
 2.  **Trend**: The recent trend is '{{{trendDirection}}}' with a ratio of {{{recentVsHistoricalRatio}}} (>1 means recent sales are above the prior period average). Factor this momentum into your forecast.
 3.  **Weather**: Use the upcoming forecast per day — afternoon/evening (PM) rain and heavy rain hurt dine-in the most, while clear, mild days lift it. Apply THIS branch's measured rain sensitivity (listed below) instead of a generic rule, and treat heavy-rain or high rain-chance days as higher uncertainty.
 4.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
-5.  **Holidays**: Consider any upcoming local holidays. Some holidays boost sales (e.g., Christmas), while others might decrease them if people leave town.
+5.  **Holidays & special occasions**: Each upcoming holiday line may include THIS branch's measured historical lift versus a normal same-weekday (learned from past occurrences here). When a lift figure is given (e.g. "+34% vs a normal Sunday"), apply it to that day instead of guessing; when it says "no measured history yet", treat the day cautiously and lower its confidence. Occasions like Mother's Day, Father's Day, and Valentine's often drive large swings even when they are not non-working holidays.
 
 **Input Data:**
 

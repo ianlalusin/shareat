@@ -6,6 +6,8 @@ import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-wee
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { format, addDays, subDays } from "date-fns";
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
+import { buildUpcomingHolidays, type HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
+import { enrichUpcomingHolidays } from "@/lib/holidays/holiday-effects";
 import type { DailyContext, ForecastConfig, WeatherRecord } from "@/lib/types";
 
 type StoreData = {
@@ -137,7 +139,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
         .get(),
       db.collection(`stores/${store.id}/dailyContext`)
         .where("dayId", ">=", startDayId)
-        .where("dayId", "<=", todayDayId)
+        .where("dayId", "<=", format(addDays(now, 6), "yyyyMMdd"))
         .get(),
     ]);
 
@@ -223,18 +225,35 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     }
 
     const dailyContextDocs = dailyContextSnap.docs.map(d => d.data() as DailyContext);
-    const loggedHolidays = dailyContextDocs
-      .filter(dc => dc.holiday && dc.holiday.name !== "None")
-      .map(dc => {
-        const dateStr = dc.dayId.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
-        return `${dc.holiday!.name} on ${dateStr}`;
-      });
     const todayContext = dailyContextDocs.find(dc => dc.dayId === todayDayId);
 
     const config = store.forecastConfig;
     const upcomingPayrollDates = getUpcomingPayrollDates(config);
-    const configHolidays = getUpcomingHolidays(config).map(h => `${h.name} on ${h.date}`);
-    const upcomingHolidays = [...new Set([...configHolidays, ...loggedHolidays])];
+
+    // Holidays: AI per-store calendar (+ dailyContext overrides), enriched with
+    // this branch's learned lift. Falls back to config/default holidays when the
+    // calendar hasn't been generated yet.
+    const calYears = [...new Set([format(now, "yyyy"), format(addDays(now, 6), "yyyy")])];
+    const calSnaps = await Promise.all(
+      calYears.map((y) => db.doc(`stores/${store.id}/holidayCalendar/${y}`).get()),
+    );
+    const calendarDays: Record<string, HolidayCalendarEntry> = {};
+    for (const s of calSnaps) {
+      if (s.exists) Object.assign(calendarDays, (s.data()?.days ?? {}) as Record<string, HolidayCalendarEntry>);
+    }
+    const effectsSnap = await db.doc(`stores/${store.id}/holidayEffects/summary`).get();
+    const effects = (effectsSnap.exists ? effectsSnap.data()?.effects : {}) ?? {};
+
+    const windowDayIds = Array.from({ length: 7 }, (_, i) => format(addDays(now, i), "yyyyMMdd"));
+    const overrides: Record<string, string | null> = {};
+    for (const dc of dailyContextDocs) {
+      if (dc.holiday?.name) overrides[dc.dayId] = dc.holiday.name;
+    }
+    const upcoming = buildUpcomingHolidays({ calendarDays, overrides, windowDayIds });
+    const enriched = enrichUpcomingHolidays(upcoming, effects);
+    const upcomingHolidays = enriched.length
+      ? enriched
+      : getUpcomingHolidays(config).map((h) => `${h.name} on ${h.date}`);
     const dayOfWeekAverages = computeDayOfWeekAverages(historicalSales);
     const { direction: trendDirection, ratio: recentVsHistoricalRatio } = computeTrendDirection(historicalSales);
 
