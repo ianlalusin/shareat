@@ -357,7 +357,7 @@ export default function SalesReportPageClient() {
           cut: true,
           beep: true,
           encoding: "CP437",
-          showLogo: liveSettings?.showLogo ?? false,
+          showLogo: false, // sales report never prints the store logo (receipts still do)
           storeId,
         });
         toast({ title: "Printed", description: "Sales report sent to thermal printer." });
