@@ -21,6 +21,7 @@ import { EditInventoryDialog } from "@/components/manager/inventory/edit-invento
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
+import { roundMoney } from "@/lib/money";
 import { getDisplayName } from "@/lib/products/variants";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -249,6 +250,8 @@ export default function InventoryManagementPage() {
     try {
         await updateDoc(itemDocRef, {
             ...data,
+            cost: roundMoney(data.cost),
+            sellingPrice: roundMoney(data.sellingPrice),
             updatedAt: serverTimestamp(),
         });
         toast({ title: "Item Updated", description: `${getDisplayName(item)} details have been saved.`});

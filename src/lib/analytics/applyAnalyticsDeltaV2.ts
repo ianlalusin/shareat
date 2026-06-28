@@ -152,7 +152,7 @@ export async function applyAnalyticsDeltaV2(
   storeId: string,
   oldReceipt: Receipt | null,
   newReceipt: Receipt | null,
-  opts?: { tx?: Transaction; batch?: WriteBatch }
+  opts?: { tx?: Transaction; batch?: WriteBatch; dayExtraIncrements?: Record<string, number> }
 ) {
   const w: Writer | null =
     opts?.tx ? { kind: "tx", tx: opts.tx } :
@@ -439,7 +439,15 @@ export async function applyAnalyticsDeltaV2(
     });
     
     // --- Apply final updates to rollup docs ---
-    writerUpdate(w, dayRef, payload);
+    // Day-only extras (e.g. payments.voidCashRetainedTotal) apply to the day doc
+    // only — retained void cash is a daily-remittance concept, not a month/year
+    // rollup metric. Mirrors applyAnalyticsDeltaServer.
+    const dayPayload = opts?.dayExtraIncrements
+      ? { ...payload, ...Object.fromEntries(
+            Object.entries(opts.dayExtraIncrements).map(([k, v]) => [k, increment(v)]),
+          ) }
+      : payload;
+    writerUpdate(w, dayRef, dayPayload);
     writerUpdate(w, monthRef, payload);
     writerUpdate(w, yearRef, payload);
 

@@ -100,7 +100,15 @@ export async function POST(req: Request) {
           isVoided: false,
           status: (receipt as any).status === "voided" ? "final" : (receipt as any).status,
         } as Receipt;
-        applyAnalyticsDeltaServer(db, storeId, asOriginal, null, tx, new Date());
+        // Retained void cash = cash collected on this receipt that was NOT refunded
+        // when it was voided. It stays in the drawer with no backing sale, so it is
+        // accumulated on the day doc (daily-remittance only) for the ERP to carry
+        // into expected cash. Merged into the sale-reversal write (one write/doc/tx).
+        const retained = Number((receipt as any).voidCashRetained || 0);
+        applyAnalyticsDeltaServer(
+          db, storeId, asOriginal, null, tx, new Date(),
+          retained > 0 ? { "payments.voidCashRetainedTotal": retained } : undefined,
+        );
         tx.update(receiptRef, {
           analyticsReversed: true,
           analyticsReversedAt: FieldValue.serverTimestamp(),

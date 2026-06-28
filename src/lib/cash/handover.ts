@@ -66,7 +66,15 @@ export async function computeCashSales(
   let totalCents = 0;
   snap.forEach((d) => {
     const r = d.data() as any;
-    if (r?.status === "voided" || r?.isRefund === true) return;
+    if (r?.isRefund === true) return;
+    // A voided receipt's SALE is excluded — but if cash was collected and NOT
+    // refunded on the void, that retained cash is physically in the drawer and
+    // must stay in expected cash sales (else it shows as a phantom overage).
+    if (r?.status === "voided") {
+      const retained = Number(r?.voidCashRetained || 0);
+      if (retained > 0) totalCents += Math.round(retained * 100);
+      return;
+    }
     const mop = (r?.analytics?.mop ?? {}) as Record<string, number>;
     for (const [k, v] of Object.entries(mop)) {
       if (isCashKey(k)) totalCents += Math.round(Number(v || 0) * 100);

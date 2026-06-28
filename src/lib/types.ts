@@ -1070,6 +1070,16 @@ export type Receipt = {
     voidedByUid?: string;
     voidedByEmail?: string | null;
     voidReason?: string;
+    // Cash disposition of a void (set when a PAID receipt is voided). A void
+    // cancels the SALE; these record what happened to the CASH so remittance can
+    // reconcile the drawer. retained = paid − refunded; retained cash is collected
+    // with no backing sale and is carried into expected remittance.
+    voidCashPaid?: number;
+    voidCashRefunded?: number;
+    voidCashRetained?: number;
+    voidCashDisposition?: "refunded" | "retained" | "partial";
+    /** If the void was corrected by a new receipt, its id (retained cash consumed). */
+    reRingReceiptId?: string | null;
   billDiscount?: Discount | null;
   customAdjustments?: Adjustment[];
   loyaltyRedemptions?: SessionLoyaltyRedemption[];

@@ -46,6 +46,7 @@ import type {
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
+import { roundMoney } from '@/lib/money';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
 import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile';
@@ -633,7 +634,7 @@ export async function completePaymentFromUnits(
                 else discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
               }
             }
-            const netAmount = grossAmount - discountAmount;
+            const netAmount = roundMoney(grossAmount - discountAmount);
             const categoryName = (line as any).category || 'Uncategorized';
             acc.salesByItem ??= {}; acc.salesByCategory ??= {};
             if (!acc.salesByItem[line.itemName]) acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };

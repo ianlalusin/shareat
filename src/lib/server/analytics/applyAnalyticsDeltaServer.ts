@@ -51,7 +51,11 @@ export function applyAnalyticsDeltaServer(
   oldReceipt: Receipt | null,
   newReceipt: Receipt | null,
   writer: AnalyticsWriter,
-  now: Date = new Date()
+  now: Date = new Date(),
+  // Extra increments applied to the DAY doc only (not month/year/presets).
+  // Used for daily-remittance-only accumulators like payments.voidCashRetainedTotal.
+  // Merged into the day write so we never touch the same doc twice in one tx.
+  dayExtraIncrements?: Record<string, number>
 ): { affectedDayIds: string[] } {
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
@@ -72,7 +76,15 @@ export function applyAnalyticsDeltaServer(
     const presets = dayStartMs > 0 ? getApplicablePresets(new Date(dayStartMs), now) : [];
     const increments = buildDeltaIncrements(dayOld, dayNew);
 
-    writer.set(dayRef, nestedPayload({ storeId, dayId, dayStartMs }, increments), { merge: true });
+    // Day doc carries the daily-only extras (e.g. retained void cash) merged in.
+    const dayIncrements = dayExtraIncrements ? { ...increments } : increments;
+    if (dayExtraIncrements) {
+      for (const [k, v] of Object.entries(dayExtraIncrements)) {
+        dayIncrements[k] = (dayIncrements[k] ?? 0) + v;
+      }
+    }
+
+    writer.set(dayRef, nestedPayload({ storeId, dayId, dayStartMs }, dayIncrements), { merge: true });
     writer.set(monthRef, nestedPayload({ storeId, monthId }, increments), { merge: true });
     writer.set(yearRef, nestedPayload({ storeId, yearId }, increments), { merge: true });
     for (const presetId of presets) {

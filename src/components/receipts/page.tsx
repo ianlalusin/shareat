@@ -36,7 +36,7 @@ import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
-import ReasonModal from "@/components/shared/ReasonModal";
+import VoidReceiptModal, { type VoidConfirmResult } from "@/components/receipts/VoidReceiptModal";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { usePrint } from "@/hooks/use-print";
 
@@ -484,28 +484,35 @@ export default function ReceiptsPageContents() {
     }, [selectedReceiptId, activeStore, toast]);
     
 
-    const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
+    const handleVoidReceipt = async (receipt: ReceiptType, void_: VoidConfirmResult) => {
       if (!appUser || !activeStore) {
         throw new Error("User or store not available.");
       }
-    
+      const reason = void_.reason;
+
       if (receipt.status === "voided") {
         toast({ title: "Already voided", description: "This receipt was already voided." });
         return;
       }
-      
+
       try {
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
 
-        // 1. Commit the void (status + audit metadata) first. The analytics
-        //    reversal is applied separately, server-first, so the analytics
-        //    collections can be locked down to server writes only.
+        // 1. Commit the void (status + audit metadata + cash disposition) first.
+        //    The analytics reversal is applied separately, server-first, so the
+        //    analytics collections can be locked down to server writes only.
+        //    Cash disposition is written BEFORE the delta call so the server route
+        //    reads voidCashRetained off the fresh doc when accumulating it.
         await updateDoc(receiptRef, {
           status: "voided",
           voidedAt: serverTimestamp(),
           voidedByUid: appUser.uid,
           voidedByEmail: appUser.email,
           voidReason: reason,
+          voidCashPaid: void_.voidCashPaid,
+          voidCashRefunded: void_.voidCashRefunded,
+          voidCashRetained: void_.voidCashRetained,
+          voidCashDisposition: void_.voidCashDisposition,
           analyticsReversed: false, // set true by the server/reconcile cron once reversed
         });
 
@@ -517,7 +524,12 @@ export default function ReceiptsPageContents() {
           const rSnap = await getDoc(receiptRef);
           if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
           const ab = writeBatch(db);
-          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch: ab });
+          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, {
+            batch: ab,
+            ...(void_.voidCashRetained > 0
+              ? { dayExtraIncrements: { "payments.voidCashRetainedTotal": void_.voidCashRetained } }
+              : {}),
+          });
           await ab.commit();
           await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
         });
@@ -831,23 +843,23 @@ export default function ReceiptsPageContents() {
                 />
             )}
 
-            <ReasonModal
+            <VoidReceiptModal
               open={voidOpen}
+              receipt={voidTarget}
               onOpenChange={(o) => {
                 setVoidOpen(o);
                 if (!o) setVoidTarget(null);
               }}
-              title="Void Receipt"
-              description="Provide a reason. This will reverse analytics and keep the receipt for audit."
-              confirmLabel="Void Receipt"
-              placeholder="Reason..."
-              onConfirm={async (reason) => {
+              onConfirm={async (result) => {
                 if (!voidTarget) return;
                 setIsProcessing(voidTarget.id);
                 try {
-                  await handleVoidReceipt(voidTarget, reason);
-                  toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
-                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: reason } : r));
+                  await handleVoidReceipt(voidTarget, result);
+                  const retainedNote = result.voidCashRetained > 0
+                    ? ` ₱${result.voidCashRetained.toFixed(2)} cash retained — carried to remittance.`
+                    : "";
+                  toast({ title: "Receipt Voided", description: `Receipt kept for audit; analytics reversed.${retainedNote}` });
+                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: result.reason } : r));
                 } catch (error: any) {
                     toast({ variant: 'destructive', title: 'Void Failed', description: error.message });
                 } finally {

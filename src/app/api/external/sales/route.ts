@@ -90,6 +90,9 @@ export async function GET(request: Request) {
       paymentsByMethod: byMethod,
       discountsTotal: payments.discountsTotal ?? 0,
       chargesTotal: payments.chargesTotal ?? 0,
+      // Cash collected on voided receipts that was NOT refunded — it sits in the
+      // drawer with no backing sale, so the ERP carries it into expected cash.
+      voidCashRetained: payments.voidCashRetainedTotal ?? 0,
       guestCount: guests.guestCountFinalTotal ?? 0,
       packageSessions: guests.packageSessionsCount ?? 0,
     });
