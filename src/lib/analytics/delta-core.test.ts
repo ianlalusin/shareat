@@ -49,27 +49,42 @@ describe("buildDeltaIncrements", () => {
 });
 
 describe("getApplicablePresets", () => {
-  // Local-time constructors so day boundaries align with getApplicablePresets's
-  // local-time atStartOfDay, making the test deterministic on any machine TZ.
-  const now = new Date(2026, 5, 12, 10, 0, 0); // 2026-06-12 10:00 local
+  // Absolute instants anchored to Asia/Manila (UTC+8, no DST). getApplicablePresets
+  // must bucket by the MANILA calendar day regardless of the host/server timezone.
+  // Prod runs in UTC, where a Manila-midnight timestamp (16:00Z the prior day) was
+  // wrongly bucketed into "yesterday" instead of "today" — sending the day's sales
+  // into the wrong dashboard preset tile. These inputs use explicit +08:00 offsets
+  // so they assert the same Manila bucketing on any machine TZ.
+  const now = new Date("2026-06-12T10:00:00+08:00"); // 2026-06-12 10:00 PHT
 
-  it("same-day event is in today/last7/last30/thisMonth/ytd", () => {
-    const p = getApplicablePresets(new Date(2026, 5, 12, 1, 0, 0), now);
+  it("Manila-midnight event is today (not yesterday) on any server TZ", () => {
+    // 2026-06-12 00:00 PHT === 2026-06-11T16:00Z — the exact prod regression case.
+    const p = getApplicablePresets(new Date("2026-06-12T00:00:00+08:00"), now);
     expect(p).toContain("today");
+    expect(p).not.toContain("yesterday");
     expect(p).toContain("last7");
     expect(p).toContain("thisMonth");
     expect(p).toContain("ytd");
-    expect(p).not.toContain("yesterday");
   });
 
-  it("prior-day event is yesterday but not today", () => {
-    const p = getApplicablePresets(new Date(2026, 5, 11, 20, 0, 0), now);
+  it("prior Manila-day event is yesterday but not today", () => {
+    const p = getApplicablePresets(new Date("2026-06-11T20:00:00+08:00"), now);
     expect(p).toContain("yesterday");
     expect(p).not.toContain("today");
   });
 
+  it("month boundary is bucketed by the Manila calendar month", () => {
+    const nowJul = new Date("2026-07-15T10:00:00+08:00");
+    const jul1 = getApplicablePresets(new Date("2026-07-01T00:00:00+08:00"), nowJul);
+    expect(jul1).toContain("thisMonth");
+    expect(jul1).not.toContain("lastMonth");
+    const jun30 = getApplicablePresets(new Date("2026-06-30T12:00:00+08:00"), nowJul);
+    expect(jun30).toContain("lastMonth");
+    expect(jun30).not.toContain("thisMonth");
+  });
+
   it("far-past event matches no rolling preset", () => {
-    const p = getApplicablePresets(new Date(2025, 0, 1, 0, 0, 0), now);
+    const p = getApplicablePresets(new Date("2025-01-01T00:00:00+08:00"), now);
     expect(p).toEqual([]);
   });
 });

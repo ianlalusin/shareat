@@ -50,43 +50,65 @@ export function safeKey(s: string): string {
 }
 
 // --- Preset windows -------------------------------------------------------
-function atStartOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+// All day boundaries are anchored to Asia/Manila (UTC+8, no DST), NOT the host
+// machine's local timezone. The old setHours()-based approach produced *host-
+// local* midnight, so on the UTC production server a Manila-midnight timestamp
+// (16:00Z the prior day) was bucketed into the previous day — sending "today"'s
+// sales into the "yesterday" dashboard preset. Mirrors getDayStartMs in daily.ts.
+const MS_PER_DAY = 86_400_000;
+
+/** Asia/Manila calendar parts (year, month 1-12, day) for an instant. */
+function manilaParts(d: Date): { y: number; m: number; day: number } {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  const [y, m, day] = ymd.split("-").map(Number);
+  return { y, m, day };
 }
-function addDays(d: Date, days: number): Date {
-  const date = new Date(d.valueOf());
-  date.setDate(date.getDate() + days);
-  return date;
+
+/** Epoch ms of Manila midnight (start of the Manila calendar day) for an instant. */
+function manilaDayStartMs(d: Date): number {
+  const { y, m, day } = manilaParts(d);
+  return Date.parse(`${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00+08:00`);
+}
+
+/** Epoch ms of Manila midnight for the 1st of a given Manila year/month. */
+function manilaMonthStartMs(y: number, m: number): number {
+  return Date.parse(`${y}-${String(m).padStart(2, "0")}-01T00:00:00+08:00`);
 }
 
 /**
  * Which dashboard presets an event date falls into. `now` is explicit so the
  * server can pass authoritative server time instead of the client wall-clock
  * (M-5: client-clock skew around midnight bucketed receipts into the wrong
- * preset). Mirrors the client implementation's windows.
+ * preset). All windows are computed in Asia/Manila, so the result is identical
+ * whether this runs in the UTC server or a PHT browser.
  */
 export function getApplicablePresets(eventDate: Date, now: Date = new Date()): string[] {
   const applicable: string[] = [];
-  const today = atStartOfDay(now);
-  const yesterday = addDays(today, -1);
-  const sevenDaysAgo = addDays(today, -6);
-  const thirtyDaysAgo = addDays(today, -29);
-  const startOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-  const startOfYear = new Date(today.getFullYear(), 0, 1);
 
-  const eventTime = atStartOfDay(eventDate).getTime();
+  const todayMs = manilaDayStartMs(now);
+  const eventMs = manilaDayStartMs(eventDate);
+  const yesterdayMs = todayMs - MS_PER_DAY; // Manila has no DST → exact day math
+  const sevenDaysAgoMs = todayMs - 6 * MS_PER_DAY;
+  const thirtyDaysAgoMs = todayMs - 29 * MS_PER_DAY;
 
-  if (eventTime === today.getTime()) applicable.push("today");
-  if (eventTime === yesterday.getTime()) applicable.push("yesterday");
-  if (eventTime >= sevenDaysAgo.getTime() && eventTime <= today.getTime()) applicable.push("last7");
-  if (eventTime >= thirtyDaysAgo.getTime() && eventTime <= today.getTime()) applicable.push("last30");
-  if (eventTime >= startOfThisMonth.getTime() && eventTime <= today.getTime()) applicable.push("thisMonth");
-  if (eventTime >= startOfLastMonth.getTime() && eventTime <= endOfLastMonth.getTime()) applicable.push("lastMonth");
-  if (eventTime >= startOfYear.getTime() && eventTime <= today.getTime()) applicable.push("ytd");
+  const { y, m } = manilaParts(now);
+  const startOfThisMonthMs = manilaMonthStartMs(y, m);
+  const startOfLastMonthMs = manilaMonthStartMs(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1);
+  const endOfLastMonthMs = startOfThisMonthMs - MS_PER_DAY; // Manila midnight of last month's final day
+  const startOfYearMs = manilaMonthStartMs(y, 1);
+
+  if (eventMs === todayMs) applicable.push("today");
+  if (eventMs === yesterdayMs) applicable.push("yesterday");
+  if (eventMs >= sevenDaysAgoMs && eventMs <= todayMs) applicable.push("last7");
+  if (eventMs >= thirtyDaysAgoMs && eventMs <= todayMs) applicable.push("last30");
+  if (eventMs >= startOfThisMonthMs && eventMs <= todayMs) applicable.push("thisMonth");
+  if (eventMs >= startOfLastMonthMs && eventMs <= endOfLastMonthMs) applicable.push("lastMonth");
+  if (eventMs >= startOfYearMs && eventMs <= todayMs) applicable.push("ytd");
 
   return applicable;
 }
