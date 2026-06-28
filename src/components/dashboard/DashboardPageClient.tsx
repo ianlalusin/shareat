@@ -100,6 +100,7 @@ export default function DashboardPageClient() {
     const {
         isLoading,
         dateRangeLabel,
+        dateRange,
         stats,
         activeSessions,
         paymentMix,
@@ -307,6 +308,10 @@ export default function DashboardPageClient() {
                     open={convertModalOpen}
                     onOpenChange={setConvertModalOpen}
                     storeId={activeStore.id}
+                    rangeStart={dateRange.start}
+                    rangeEnd={dateRange.end}
+                    rangeLabel={dateRangeLabel}
+                    isToday={datePreset === "today"}
                 />
             )}
         </RoleGuard>
