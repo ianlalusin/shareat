@@ -71,6 +71,9 @@ export async function computeCashSales(
     // refunded on the void, that retained cash is physically in the drawer and
     // must stay in expected cash sales (else it shows as a phantom overage).
     if (r?.status === "voided") {
+      // Once a re-ring is linked, the retained cash is covered by the new sale —
+      // don't add it again (the re-ring receipt already counts as normal cash).
+      if (r?.voidCashRetainedReversed === true) return;
       const retained = Number(r?.voidCashRetained || 0);
       if (retained > 0) totalCents += Math.round(retained * 100);
       return;

@@ -1080,6 +1080,10 @@ export type Receipt = {
     voidCashDisposition?: "refunded" | "retained" | "partial";
     /** If the void was corrected by a new receipt, its id (retained cash consumed). */
     reRingReceiptId?: string | null;
+    /** True once retained void cash has been reversed out of analytics because a
+     *  re-ring receipt now covers it (prevents double-counting expected cash). */
+    voidCashRetainedReversed?: boolean;
+    reRingLinkedAt?: any;
   billDiscount?: Discount | null;
   customAdjustments?: Adjustment[];
   loyaltyRedemptions?: SessionLoyaltyRedemption[];

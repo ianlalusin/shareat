@@ -4,6 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import { applyAnalyticsDeltaServer } from "@/lib/server/analytics/applyAnalyticsDeltaServer";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import type { Receipt } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -25,7 +26,7 @@ export const runtime = "nodejs";
  * "edit" still needs old+new reconstruction (the edit overwrites the doc) and is
  * not yet supported here — it is moved server-side in a later increment.
  */
-const SUPPORTED_OPS = new Set(["payment", "refund", "void", "edit"]);
+const SUPPORTED_OPS = new Set(["payment", "refund", "void", "edit", "voidcash-reverse"]);
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -112,6 +113,41 @@ export async function POST(req: Request) {
         tx.update(receiptRef, {
           analyticsReversed: true,
           analyticsReversedAt: FieldValue.serverTimestamp(),
+        });
+        return { skipped: false as const };
+      }
+
+      if (op === "voidcash-reverse") {
+        // A voided receipt's retained cash is being re-rung — a new (correct)
+        // receipt now covers that cash, so its sale will count in the day totals.
+        // Reverse the earlier retained-cash accrual so expected cash isn't
+        // double-counted (retained + the re-ring sale). Idempotent on
+        // analytics-flag voidCashRetainedReversed.
+        const reRingReceiptId = body.reRingReceiptId ? String(body.reRingReceiptId) : null;
+        if ((receipt as any).voidCashRetainedReversed === true) return { skipped: true as const };
+        const retained = Number((receipt as any).voidCashRetained || 0);
+        if (!(retained > 0)) {
+          tx.update(receiptRef, {
+            voidCashRetainedReversed: true,
+            reRingReceiptId,
+            reRingLinkedAt: FieldValue.serverTimestamp(),
+          });
+          return { skipped: true as const };
+        }
+        const dayId = getDayIdFromTimestamp((receipt as any).createdAtClientMs ?? null);
+        const dayRef = db.doc(`stores/${storeId}/analytics/${dayId}`);
+        tx.set(
+          dayRef,
+          {
+            payments: { voidCashRetainedTotal: FieldValue.increment(-retained) },
+            meta: { updatedAt: FieldValue.serverTimestamp() },
+          },
+          { merge: true },
+        );
+        tx.update(receiptRef, {
+          voidCashRetainedReversed: true,
+          reRingReceiptId,
+          reRingLinkedAt: FieldValue.serverTimestamp(),
         });
         return { skipped: false as const };
       }

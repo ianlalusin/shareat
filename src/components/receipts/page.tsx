@@ -17,7 +17,7 @@ import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon,
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, runTransaction, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,8 @@ import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaS
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import VoidReceiptModal, { type VoidConfirmResult } from "@/components/receipts/VoidReceiptModal";
+import ReRingLinkModal from "@/components/receipts/ReRingLinkModal";
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef } from "@/lib/analytics/daily";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { usePrint } from "@/hooks/use-print";
 
@@ -97,6 +99,9 @@ export default function ReceiptsPageContents() {
 
     const [voidOpen, setVoidOpen] = useState(false);
     const [voidTarget, setVoidTarget] = useState<ReceiptType | null>(null);
+
+    const [reRingOpen, setReRingOpen] = useState(false);
+    const [reRingTarget, setReRingTarget] = useState<ReceiptType | null>(null);
 
     // --- Pagination State ---
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -499,22 +504,39 @@ export default function ReceiptsPageContents() {
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
 
         // 1. Commit the void (status + audit metadata + cash disposition) first.
-        //    The analytics reversal is applied separately, server-first, so the
-        //    analytics collections can be locked down to server writes only.
+        //    Done in a transaction that re-reads the LIVE doc and aborts if the
+        //    receipt is already voided. This is the idempotency gate: the
+        //    in-memory `receipt.status` check above can be stale (second tab,
+        //    retry, concurrent trigger), and unconditionally writing
+        //    `analyticsReversed:false` here would otherwise re-arm the server
+        //    route's guard and reverse the sale a SECOND time — double-counting
+        //    the void in analytics. Only the transaction that actually flips
+        //    final -> voided proceeds to reverse analytics / log the void.
         //    Cash disposition is written BEFORE the delta call so the server route
         //    reads voidCashRetained off the fresh doc when accumulating it.
-        await updateDoc(receiptRef, {
-          status: "voided",
-          voidedAt: serverTimestamp(),
-          voidedByUid: appUser.uid,
-          voidedByEmail: appUser.email,
-          voidReason: reason,
-          voidCashPaid: void_.voidCashPaid,
-          voidCashRefunded: void_.voidCashRefunded,
-          voidCashRetained: void_.voidCashRetained,
-          voidCashDisposition: void_.voidCashDisposition,
-          analyticsReversed: false, // set true by the server/reconcile cron once reversed
+        const alreadyVoided = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(receiptRef);
+          if (!snap.exists()) throw new Error("Receipt not found.");
+          if ((snap.data() as any)?.status === "voided") return true;
+          tx.update(receiptRef, {
+            status: "voided",
+            voidedAt: serverTimestamp(),
+            voidedByUid: appUser.uid,
+            voidedByEmail: appUser.email,
+            voidReason: reason,
+            voidCashPaid: void_.voidCashPaid,
+            voidCashRefunded: void_.voidCashRefunded,
+            voidCashRetained: void_.voidCashRetained,
+            voidCashDisposition: void_.voidCashDisposition,
+            analyticsReversed: false, // set true by the server/reconcile cron once reversed
+          });
+          return false;
         });
+
+        if (alreadyVoided) {
+          toast({ title: "Already voided", description: "This receipt was already voided." });
+          return;
+        }
 
         // 2. Reverse the receipt's analytics contribution server-first; fall back
         //    to the client delta on failure. `receipt` here is the in-memory,
@@ -551,6 +573,52 @@ export default function ReceiptsPageContents() {
           // Re-throw the error so the caller can handle it (e.g., show a toast)
           throw error;
       }
+    };
+
+    // Link a voided receipt's retained cash to the receipt that re-rang it. The
+    // re-ring's normal sale now accounts for that cash, so we reverse the retained
+    // accrual out of analytics (server-first; idempotent on voidCashRetainedReversed)
+    // to stop expected cash being counted twice.
+    const handleLinkReRing = async (voided: ReceiptType, reRingReceiptId: string) => {
+      if (!appUser || !activeStore) throw new Error("User or store not available.");
+      const receiptRef = doc(db, "stores", activeStore.id, "receipts", voided.id);
+
+      await applyReceiptDeltaServerFirst(
+        activeStore.id,
+        voided.id,
+        "voidcash-reverse",
+        async () => {
+          // Client fallback: reverse the retained accrual + stamp flags.
+          const rSnap = await getDoc(receiptRef);
+          if (!rSnap.exists() || (rSnap.data() as any)?.voidCashRetainedReversed === true) return;
+          const retained = Number((rSnap.data() as any)?.voidCashRetained || 0);
+          if (retained > 0) {
+            const dayId = getDayIdFromTimestamp(voided.createdAtClientMs ?? null);
+            const ab = writeBatch(db);
+            ab.set(
+              dailyAnalyticsDocRef(db, activeStore.id, dayId),
+              { payments: { voidCashRetainedTotal: increment(-retained) }, meta: { updatedAt: serverTimestamp() } },
+              { merge: true },
+            );
+            await ab.commit();
+          }
+          await updateDoc(receiptRef, {
+            voidCashRetainedReversed: true,
+            reRingReceiptId,
+            reRingLinkedAt: serverTimestamp(),
+          });
+        },
+        { reRingReceiptId },
+      );
+
+      await writeActivityLog({
+        action: "RECEIPT_VOIDED",
+        storeId: activeStore.id,
+        sessionId: voided.sessionId,
+        user: appUser,
+        reason: `Re-ring linked → ${reRingReceiptId}; retained cash reversed`,
+        meta: { receiptId: voided.id, receiptNumber: voided.receiptNumber },
+      });
     };
 
     const handleExport = async () => {
@@ -776,6 +844,19 @@ export default function ReceiptsPageContents() {
                                                                 {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
                                                             </Button>
                                                         )}
+
+                                                        {r.status === "voided" && Number(r.voidCashRetained || 0) > 0 && !r.voidCashRetainedReversed && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="ml-2"
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReRingTarget(r); setReRingOpen(true); }}
+                                                                type="button"
+                                                                title={`Link re-ring (₱${Number(r.voidCashRetained || 0).toFixed(2)} retained cash)`}
+                                                            >
+                                                                Re-ring
+                                                            </Button>
+                                                        )}
                                                     </TableCell>
                                                 )}
                                             </TableRow>
@@ -865,6 +946,30 @@ export default function ReceiptsPageContents() {
                 } finally {
                   setIsProcessing(null);
                   setVoidTarget(null);
+                }
+              }}
+            />
+
+            <ReRingLinkModal
+              open={reRingOpen}
+              voided={reRingTarget}
+              candidates={receipts}
+              onOpenChange={(o) => {
+                setReRingOpen(o);
+                if (!o) setReRingTarget(null);
+              }}
+              onConfirm={async (reRingReceiptId) => {
+                if (!reRingTarget) return;
+                setIsProcessing(reRingTarget.id);
+                try {
+                  await handleLinkReRing(reRingTarget, reRingReceiptId);
+                  toast({ title: "Re-ring linked", description: "Retained cash reversed — no longer counted in expected remittance." });
+                  setReceipts(prev => prev.map(r => r.id === reRingTarget!.id ? { ...r, voidCashRetainedReversed: true, reRingReceiptId } : r));
+                } catch (error: any) {
+                  toast({ variant: 'destructive', title: 'Link Failed', description: error.message });
+                } finally {
+                  setIsProcessing(null);
+                  setReRingTarget(null);
                 }
               }}
             />

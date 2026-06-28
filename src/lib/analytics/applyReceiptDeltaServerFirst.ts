@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/firebase/client';
 
-export type ReceiptDeltaOp = 'payment' | 'refund' | 'void' | 'edit';
+export type ReceiptDeltaOp = 'payment' | 'refund' | 'void' | 'edit' | 'voidcash-reverse';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
