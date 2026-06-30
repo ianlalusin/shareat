@@ -42,3 +42,8 @@ next-env.d.ts
 
 # secrets
 .secrets/
+
+# design-sync tooling (local working state, not project source)
+.design-sync/
+.ds-sync/
+ds-bundle/
