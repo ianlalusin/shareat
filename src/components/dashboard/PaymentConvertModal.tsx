@@ -467,93 +467,92 @@ export function PaymentConvertModal({
             </div>
           </div>
 
-          {/* Record form — enabled only on the Today preset. */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>From (deducted)</Label>
-                {renderMethodSelect(fromMethod, setFromMethod, "Select method")}
-                {isToday && amountValid && resolvedFrom && (
-                  <div className="text-sm font-semibold tabular-nums text-destructive">
-                    −{formatPeso(parsedAmount)}
-                  </div>
-                )}
+          {/* Record form — only on Today. Off-Today the modal becomes a
+              read-only history viewer, so we hide the disabled inputs entirely
+              (instead of greying them out) and give the conversion list more
+              room below. A compact lock line explains why there's no form. */}
+          {isToday ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>From (deducted)</Label>
+                  {renderMethodSelect(fromMethod, setFromMethod, "Select method")}
+                  {amountValid && resolvedFrom && (
+                    <div className="text-sm font-semibold tabular-nums text-destructive">
+                      −{formatPeso(parsedAmount)}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>To (added)</Label>
+                  {renderMethodSelect(toMethod, setToMethod, "Select method")}
+                  {amountValid && resolvedTo && (
+                    <div className="text-sm font-semibold tabular-nums text-emerald-600">
+                      +{formatPeso(parsedAmount)}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>To (added)</Label>
-                {renderMethodSelect(toMethod, setToMethod, "Select method")}
-                {isToday && amountValid && resolvedTo && (
-                  <div className="text-sm font-semibold tabular-nums text-emerald-600">
-                    +{formatPeso(parsedAmount)}
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* Live cash <-> digital morph reflecting the current selection.
-                Today-only: it previews a recordable conversion, which off-Today
-                is disabled, so don't animate a read-only range. */}
-            {isToday && previewDirection && resolvedFrom && resolvedTo && (
-              <div className="rounded-md border bg-muted/30 px-3 py-3">
-                <MoneyConvertAnimation
-                  mode="preview"
-                  direction={previewDirection}
-                  fromLabel={resolvedFrom}
-                  toLabel={resolvedTo}
+              {/* Live cash <-> digital morph reflecting the current selection. */}
+              {previewDirection && resolvedFrom && resolvedTo && (
+                <div className="rounded-md border bg-muted/30 px-3 py-3">
+                  <MoneyConvertAnimation
+                    mode="preview"
+                    direction={previewDirection}
+                    fromLabel={resolvedFrom}
+                    toLabel={resolvedTo}
+                  />
+                  <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+                    {previewDirection === "toCash"
+                      ? "Digital balance → physical cash"
+                      : "Physical cash → digital balance"}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="convert-amount">Amount (₱)</Label>
+                <Input
+                  id="convert-amount"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={amountStr}
+                  onChange={(e) => setAmountStr(e.target.value)}
+                  className="h-9"
                 />
-                <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
-                  {previewDirection === "toCash"
-                    ? "Digital balance → physical cash"
-                    : "Physical cash → digital balance"}
-                </p>
               </div>
-            )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="convert-amount">Amount (₱)</Label>
-              <Input
-                id="convert-amount"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
-                className="h-9"
-                disabled={!isToday}
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="convert-note">Note (optional)</Label>
+                <Input
+                  id="convert-note"
+                  placeholder="e.g., GCash cashout for customer"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+
+              {resolvedFrom && resolvedTo && amountValid && (
+                <div className="text-xs rounded-md bg-muted/60 px-3 py-2 flex items-center gap-2 flex-wrap">
+                  <span className="capitalize font-medium">{resolvedFrom}</span>
+                  <span className="tabular-nums text-destructive">−{formatPeso(parsedAmount)}</span>
+                  <ArrowRight className="h-3 w-3 shrink-0" />
+                  <span className="capitalize font-medium">{resolvedTo}</span>
+                  <span className="tabular-nums text-emerald-600">+{formatPeso(parsedAmount)}</span>
+                </div>
+              )}
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="convert-note">Note (optional)</Label>
-              <Input
-                id="convert-note"
-                placeholder="e.g., GCash cashout for customer"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="h-9"
-                disabled={!isToday}
-              />
+          ) : (
+            <div className="flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+              <Lock className="h-3.5 w-3.5 shrink-0" />
+              <span>Read-only — switch to <span className="font-medium">Today</span> to record a conversion.</span>
             </div>
-
-            {!isToday && (
-              <div className="flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-                <Lock className="h-3.5 w-3.5 shrink-0" />
-                <span>Switch to <span className="font-medium">Today</span> to record a conversion. This range is read-only.</span>
-              </div>
-            )}
-
-            {isToday && resolvedFrom && resolvedTo && amountValid && (
-              <div className="text-xs rounded-md bg-muted/60 px-3 py-2 flex items-center gap-2 flex-wrap">
-                <span className="capitalize font-medium">{resolvedFrom}</span>
-                <span className="tabular-nums text-destructive">−{formatPeso(parsedAmount)}</span>
-                <ArrowRight className="h-3 w-3 shrink-0" />
-                <span className="capitalize font-medium">{resolvedTo}</span>
-                <span className="tabular-nums text-emerald-600">+{formatPeso(parsedAmount)}</span>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* History — respects the active date range. */}
           <div className="space-y-2">
@@ -561,7 +560,7 @@ export function PaymentConvertModal({
               <Label>{isMultiDay ? "Conversions in range" : "Conversions"}</Label>
               <span className="text-xs text-muted-foreground">{conversions.length} total</span>
             </div>
-            <ScrollArea className="h-44 rounded-md border">
+            <ScrollArea className={`${isToday ? "h-44" : "h-80"} rounded-md border`}>
               {loadingList ? (
                 <div className="flex h-full items-center justify-center py-6">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -593,10 +592,12 @@ export function PaymentConvertModal({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
             Close
           </Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Record conversion
-          </Button>
+          {isToday && (
+            <Button onClick={handleSubmit} disabled={!canSubmit}>
+              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Record conversion
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
