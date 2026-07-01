@@ -2,9 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { commitLocalFirst, type Committable } from "@/lib/offline/commit";
 
 describe("commitLocalFirst", () => {
-  it("returns synchronously even when the commit never resolves (offline)", () => {
+  it("returns undefined synchronously even when the commit never resolves (offline)", () => {
     const batch: Committable = { commit: () => new Promise<void>(() => {}) };
-    expect(() => commitLocalFirst(batch)).not.toThrow();
+    let result: unknown = "sentinel";
+    expect(() => {
+      result = commitLocalFirst(batch);
+    }).not.toThrow();
+    expect(result).toBeUndefined();
   });
 
   it("invokes the batch commit exactly once", () => {
@@ -27,5 +31,15 @@ describe("commitLocalFirst", () => {
     const commit = vi.fn(() => Promise.reject(new Error("x")));
     expect(() => commitLocalFirst({ commit })).not.toThrow();
     expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("still invokes a throwing onError once and does not escape as an unhandled rejection", async () => {
+    const onError = vi.fn(() => {
+      throw new Error("boom");
+    });
+    commitLocalFirst({ commit: () => Promise.reject(new Error("x")) }, onError);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

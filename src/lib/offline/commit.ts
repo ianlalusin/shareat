@@ -20,8 +20,13 @@ export function commitLocalFirst(
   onError?: (err: unknown) => void,
 ): void {
   // Calling commit() triggers the synchronous local-cache write. The promise is
-  // intentionally not awaited; we only observe eventual failure.
+  // intentionally not awaited; we only observe eventual failure. A throwing
+  // onError must not itself become an unhandled rejection, so it is guarded.
   void batch.commit().catch((err) => {
-    if (onError) onError(err);
+    try {
+      if (onError) onError(err);
+    } catch {
+      // Swallow: an onError that throws must not escape as an unhandled rejection.
+    }
   });
 }
