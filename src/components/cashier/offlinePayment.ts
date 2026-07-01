@@ -25,6 +25,7 @@ import {
   nextDailySeq,
   formatOfflineReceiptNumber,
 } from "@/lib/offline/offlineReceiptNumber";
+import { deviceReceiptTag, getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { buildOfflinePaymentSummary } from "@/lib/offline/offlinePaymentSummary";
 import { addToQueue } from "@/lib/offline/payment-queue";
 
@@ -93,7 +94,8 @@ export async function completePaymentOffline(
   } catch (e) {
     throw new Error("Offline receipt numbering is unavailable on this device. Reconnect to take payment, or contact support.");
   }
-  const receiptNumber = formatOfflineReceiptNumber({ storeCode: store.code, date: new Date(), seq });
+  const deviceTag = deviceReceiptTag(getBrowserDeviceId());
+  const receiptNumber = formatOfflineReceiptNumber({ storeCode: store.code, deviceTag, date: new Date(), seq });
 
   // 4. Build the local-first batch.
   const actor = getActorStamp(user);

@@ -15,18 +15,18 @@ function memStore(): KVStore {
 }
 
 describe("formatOfflineReceiptNumber", () => {
-  it("formats <storeCode>-OL-<HHMM>-<NNN> with zero-padding", () => {
+  it("formats <storeCode>-OL-<deviceTag>-<HHMM>-<NNN> with zero-padding", () => {
     const date = new Date(2026, 6, 1, 3, 20, 0); // 03:20 local
-    expect(formatOfflineReceiptNumber({ storeCode: "SHT", date, seq: 1 })).toBe(
-      "SHT-OL-0320-001",
-    );
+    expect(
+      formatOfflineReceiptNumber({ storeCode: "SHT", deviceTag: "AB12", date, seq: 1 }),
+    ).toBe("SHT-OL-AB12-0320-001");
   });
 
   it("pads hours, minutes and sequence correctly", () => {
     const date = new Date(2026, 6, 1, 9, 5, 0); // 09:05 local
-    expect(formatOfflineReceiptNumber({ storeCode: "MNL", date, seq: 42 })).toBe(
-      "MNL-OL-0905-042",
-    );
+    expect(
+      formatOfflineReceiptNumber({ storeCode: "MNL", deviceTag: "CD34", date, seq: 42 }),
+    ).toBe("MNL-OL-CD34-0905-042");
   });
 });
 
@@ -63,7 +63,7 @@ describe("allocateOfflineReceiptNumber", () => {
   it("allocates a sequence and formats it in one call", () => {
     const store = memStore();
     const d = new Date(2026, 6, 1, 3, 20, 0);
-    expect(allocateOfflineReceiptNumber(store, "SHT", d)).toBe("SHT-OL-0320-001");
-    expect(allocateOfflineReceiptNumber(store, "SHT", d)).toBe("SHT-OL-0320-002");
+    expect(allocateOfflineReceiptNumber(store, "SHT", "AB12", d)).toBe("SHT-OL-AB12-0320-001");
+    expect(allocateOfflineReceiptNumber(store, "SHT", "AB12", d)).toBe("SHT-OL-AB12-0320-002");
   });
 });

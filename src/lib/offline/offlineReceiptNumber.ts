@@ -8,18 +8,19 @@ function pad(n: number, width: number): string {
 }
 
 /**
- * Formats an offline receipt number `<storeCode>-OL-<HHMM>-<NNN>`.
+ * Formats an offline receipt number `<storeCode>-OL-<deviceTag>-<HHMM>-<NNN>`.
  * `date` supplies the device wall-clock finalize time; `seq` is the per-device
- * daily sequence. Example: `SHT-OL-0320-001`.
+ * daily sequence. Example: `SHT-OL-AB12-0320-001`.
  */
 export function formatOfflineReceiptNumber(args: {
   storeCode: string;
+  deviceTag: string;
   date: Date;
   seq: number;
 }): string {
-  const { storeCode, date, seq } = args;
+  const { storeCode, deviceTag, date, seq } = args;
   const hhmm = pad(date.getHours(), 2) + pad(date.getMinutes(), 2);
-  return `${storeCode}-OL-${hhmm}-${pad(seq, 3)}`;
+  return `${storeCode}-OL-${deviceTag}-${hhmm}-${pad(seq, 3)}`;
 }
 
 const SEQ_KEY = "pos_offline_seq";
@@ -46,9 +47,13 @@ function isDailySeqState(x: unknown): x is DailySeqState {
 /**
  * Allocates the next gapless per-device sequence for the local day of `date`,
  * resetting to 1 when the calendar day changes. Persisted via `KVStore` so it
- * survives reloads. NOTE: production callers must serialize access to avoid two
- * tabs reusing a sequence; the durable IndexedDB single-writer wrapper is added
- * in Plan 3 where this is wired into payment.
+ * survives reloads.
+ * NOTE: within a single webview (the Capacitor APK target) this synchronous
+ * read-modify-write is race-free because JS is single-threaded. A multi-tab web
+ * context could interleave two tabs; that would need an IndexedDB single-writer,
+ * intentionally deferred since the shipping target is the single-webview APK.
+ * Cross-DEVICE uniqueness is handled by the device tag in the receipt number,
+ * not by this per-device counter.
  *
  * Persisted state is validated before use: unparseable or malformed state
  * throws rather than silently reissuing a receipt number, since a silent
@@ -89,8 +94,9 @@ export function nextDailySeq(store: KVStore, date: Date): number {
 export function allocateOfflineReceiptNumber(
   store: KVStore,
   storeCode: string,
+  deviceTag: string,
   date: Date,
 ): string {
   const seq = nextDailySeq(store, date);
-  return formatOfflineReceiptNumber({ storeCode, date, seq });
+  return formatOfflineReceiptNumber({ storeCode, deviceTag, date, seq });
 }
