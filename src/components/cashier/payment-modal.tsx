@@ -295,6 +295,25 @@ export function PaymentModal({
         );
         console.info(`[PaymentModal] Offline sale recorded — receipt ${receiptNumber}`);
 
+        // If this session pulled in reservation prepayments, mark the
+        // reservation so reopening this modal can't double-apply them.
+        if (reservationId && normalizedPayments.some(p => !!p.fromReservationPaymentId)) {
+          try {
+            const actorName = appUser?.displayName || appUser?.name || null;
+            await updateDoc(doc(db, "stores", storeId, "reservations", reservationId), {
+              paymentsAppliedToSessionId: sessionId,
+              history: appendReservationEvent(reservationEvent(
+                "payments_applied",
+                { uid: appUser?.uid ?? null, name: actorName },
+                `Applied to session ${sessionId}`,
+              )),
+              updatedAt: serverTimestamp(),
+            });
+          } catch (e) {
+            console.warn("[PaymentModal] Failed to mark reservation payments applied:", e);
+          }
+        }
+
         // Same print trigger as the online path: hand off to the existing
         // receipt page, which builds/prints the receipt (works offline too)
         // and already reads this store's autoprint setting.
@@ -412,8 +431,8 @@ export function PaymentModal({
   const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const confirmLabel = isProcessing ? (
-    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {isOnline ? "Processing..." : "Queuing..."}</>
-  ) : isOnline ? "Confirm Payment" : "⚡ Queue (Offline)";
+    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
+  ) : "Confirm Payment";
 
   // --- Payment form (shared between layouts) ---
   const paymentForm = (
