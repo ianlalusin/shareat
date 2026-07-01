@@ -45,6 +45,18 @@ describe("nextDailySeq", () => {
     expect(nextDailySeq(store, new Date(2026, 6, 1, 23, 59, 30))).toBe(2);
     expect(nextDailySeq(store, new Date(2026, 6, 2, 0, 1, 0))).toBe(1);
   });
+
+  it("throws on unparseable persisted state rather than silently reissuing", () => {
+    const store = memStore();
+    store.setItem("pos_offline_seq", "{not json"); // pos_offline_seq is the module's storage key
+    expect(() => nextDailySeq(store, new Date(2026, 6, 1, 10, 0, 0))).toThrow();
+  });
+
+  it("throws on parseable-but-malformed persisted state (missing seq)", () => {
+    const store = memStore();
+    store.setItem("pos_offline_seq", JSON.stringify({ ymd: "2026-07-01" }));
+    expect(() => nextDailySeq(store, new Date(2026, 6, 1, 10, 0, 0))).toThrow();
+  });
 });
 
 describe("allocateOfflineReceiptNumber", () => {

@@ -33,25 +33,54 @@ function localYmd(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}`;
 }
 
+function isDailySeqState(x: unknown): x is DailySeqState {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    typeof (x as Record<string, unknown>).ymd === "string" &&
+    typeof (x as Record<string, unknown>).seq === "number" &&
+    Number.isFinite((x as Record<string, unknown>).seq as number)
+  );
+}
+
 /**
  * Allocates the next gapless per-device sequence for the local day of `date`,
  * resetting to 1 when the calendar day changes. Persisted via `KVStore` so it
  * survives reloads. NOTE: production callers must serialize access to avoid two
  * tabs reusing a sequence; the durable IndexedDB single-writer wrapper is added
  * in Plan 3 where this is wired into payment.
+ *
+ * Persisted state is validated before use: unparseable or malformed state
+ * throws rather than silently reissuing a receipt number, since a silent
+ * reset or garbage sequence could produce a duplicate receipt number for the
+ * same day.
  */
 export function nextDailySeq(store: KVStore, date: Date): number {
   const ymd = localYmd(date);
-  let state: DailySeqState | null = null;
   const raw = store.getItem(SEQ_KEY);
-  if (raw) {
-    try {
-      state = JSON.parse(raw) as DailySeqState;
-    } catch {
-      state = null;
-    }
+
+  if (raw === null) {
+    const seq = 1;
+    store.setItem(SEQ_KEY, JSON.stringify({ ymd, seq }));
+    return seq;
   }
-  const seq = state && state.ymd === ymd ? state.seq + 1 : 1;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      "offline receipt sequence state is corrupt (unparseable); refusing to reissue numbers",
+    );
+  }
+
+  if (!isDailySeqState(parsed)) {
+    throw new Error(
+      "offline receipt sequence state is corrupt (unexpected shape); refusing to reissue numbers",
+    );
+  }
+
+  const seq = parsed.ymd === ymd ? parsed.seq + 1 : 1;
   store.setItem(SEQ_KEY, JSON.stringify({ ymd, seq }));
   return seq;
 }
