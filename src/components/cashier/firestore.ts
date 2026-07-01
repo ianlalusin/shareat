@@ -49,6 +49,9 @@ import { stripUndefined } from '@/lib/firebase/utils';
 import { roundMoney } from '@/lib/money';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
+import { commitLocalFirst } from '@/lib/offline/commit';
+import { sessionOwnershipFields } from '@/lib/offline/sessionOwnership';
+import { getBrowserDeviceId } from '@/lib/offline/browserDevice';
 import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile';
 import { calculateBillTotals } from '@/lib/tax';
 import { v4 as uuidv4 } from 'uuid';
@@ -157,8 +160,11 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       }
     : null;
 
+  const ownership = sessionOwnershipFields(getBrowserDeviceId());
+
   const sessionPayload = stripUndefined({
     id: newSessionRef.id,
+    ...ownership,
     storeId,
     tableId: payload.tableId,
     tableNumber,
@@ -186,21 +192,21 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     updatedAt: serverTimestamp(),
   });
 
-  await runTransaction(db, async (transaction) => {
+  const batch = writeBatch(db);
     // 1. Create the new session document
-    transaction.set(newSessionRef, sessionPayload);
+    batch.set(newSessionRef, sessionPayload);
 
     // 2. Update the table document and its projection if not ala carte
     if (!isAlaCarte) {
       const tableRef = doc(db, `stores/${storeId}/tables`, payload.tableId);
-      transaction.update(tableRef, {
+      batch.update(tableRef, {
         status: 'occupied',
         currentSessionId: newSessionRef.id,
         updatedAt: serverTimestamp(),
       });
       
       const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, payload.tableId);
-      transaction.update(tableProjectionRef, {
+      batch.update(tableProjectionRef, {
         status: 'occupied',
         currentSessionId: newSessionRef.id,
         customerName: customerName,
@@ -216,6 +222,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     const sessionProjectionRef = doc(db, `stores/${storeId}/activeSessions`, newSessionRef.id);
     const projectionPayload = {
       id: newSessionRef.id,
+      ...ownership,
       status: isAlaCarte ? 'active' : 'pending_verification',
       sessionMode: payload.sessionMode,
       tableId: payload.tableId,
@@ -232,14 +239,14 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       updatedAt: serverTimestamp(),
       initialFlavorIds: payload.initialFlavorIds || [],
     };
-    transaction.set(sessionProjectionRef, projectionPayload);
+    batch.set(sessionProjectionRef, projectionPayload);
 
 
     // 4. Create package bill line and kitchen ticket if applicable
     if (payload.sessionMode === 'package_dinein' && payload.package) {
       const lineId = `package_${payload.package.packageId}`;
       const lineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, lineId);
-      transaction.set(lineRef, {
+      batch.set(lineRef, {
         id: lineId,
         type: 'package',
         itemId: payload.package.packageId,
@@ -265,7 +272,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       if (isBundle && bundleExtraHeadPrice > 0 && extraQty > 0) {
         const extraLineId = `bundleextra_${payload.package.packageId}`;
         const extraLineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, extraLineId);
-        transaction.set(extraLineRef, {
+        batch.set(extraLineRef, {
           id: extraLineId,
           type: 'addon',
           itemId: extraLineId,
@@ -316,20 +323,23 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         sessionLabel,
         initialFlavorIds: payload.initialFlavorIds,
       });
-      transaction.set(ticketRef, ticketPayload);
+      batch.set(ticketRef, ticketPayload);
       
       // KDS PROJECTION WRITE
       const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationKey);
-      transaction.set(rtKdsDocRef, {
+      batch.set(rtKdsDocRef, {
         meta: { source: 'startSession', updatedAt: serverTimestamp() },
         kitchenLocationId: stationKey,
       }, { merge: true });
-      transaction.update(rtKdsDocRef, {
+      batch.update(rtKdsDocRef, {
           [`tickets.${ticketRef.id}`]: ticketPayload,
           activeIds: arrayUnion(ticketRef.id),
           [`sessionIndex.${newSessionRef.id}`]: arrayUnion(ticketRef.id)
       });
     }
+
+  commitLocalFirst(batch, (err) => {
+    console.error('[startSession] batch sync failed', err);
   });
 
 
@@ -339,7 +349,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     ? `Session started (Ala Carte)`
     : `Started: ${packageName || 'Package'} · ${guestCount} pax (cashier)`;
 
-  await writeActivityLog({
+  void writeActivityLog({
     storeId,
     sessionId: newSessionRef.id,
     user,
@@ -359,7 +369,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
       tableNumber: sessionPayload.tableNumber,
       tableDisplayName: tableDisplayName ?? null,
     }
-  });
+  }).catch((err) => console.warn('[startSession] activity log sync failed', err));
 
   return newSessionRef.id;
 }
