@@ -298,20 +298,18 @@ export function PaymentModal({
         // If this session pulled in reservation prepayments, mark the
         // reservation so reopening this modal can't double-apply them.
         if (reservationId && normalizedPayments.some(p => !!p.fromReservationPaymentId)) {
-          try {
-            const actorName = appUser?.displayName || appUser?.name || null;
-            await updateDoc(doc(db, "stores", storeId, "reservations", reservationId), {
-              paymentsAppliedToSessionId: sessionId,
-              history: appendReservationEvent(reservationEvent(
-                "payments_applied",
-                { uid: appUser?.uid ?? null, name: actorName },
-                `Applied to session ${sessionId}`,
-              )),
-              updatedAt: serverTimestamp(),
-            });
-          } catch (e) {
-            console.warn("[PaymentModal] Failed to mark reservation payments applied:", e);
-          }
+          const actorName = appUser?.displayName || appUser?.name || null;
+          // Local-first: this write never gets a server ack while offline, so
+          // awaiting it would hang the modal on "Processing..." forever.
+          void updateDoc(doc(db, "stores", storeId, "reservations", reservationId), {
+            paymentsAppliedToSessionId: sessionId,
+            history: appendReservationEvent(reservationEvent(
+              "payments_applied",
+              { uid: appUser?.uid ?? null, name: actorName },
+              `Applied to session ${sessionId}`,
+            )),
+            updatedAt: serverTimestamp(),
+          }).catch((err) => console.warn("[offline] reservation payments-applied marking failed", err));
         }
 
         // Same print trigger as the online path: hand off to the existing

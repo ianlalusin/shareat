@@ -164,7 +164,6 @@ export async function completePaymentOffline(
     total: amountDue,
     totalPaid: summary.totalPaid,
     change: summary.change,
-    mop: summary.mopMap,
     status: "final",
     receiptSeq: seq,
     receiptNumber,
@@ -175,6 +174,24 @@ export async function completePaymentOffline(
     billDiscount: billDiscount ?? null,
     customAdjustments: customAdjustments ?? [],
     loyaltyRedemptions: loyaltyRedemptions ?? [],
+    // Print-critical analytics baked in immediately so the receipt renders
+    // correct money totals + MOP offline. Server-only aggregates (salesByItem,
+    // salesByCategory, servedRefillsByName, serveCountByType,
+    // serveTimeMsTotalByType, guestCountSnapshot) are DEFERRED — Plan 4's
+    // sync-time analytics delta computes and applies those.
+    analytics: {
+      v: 2,
+      subtotal: finalTotals.subtotal,
+      discountsTotal: finalTotals.totalDiscounts,
+      chargesTotal: finalTotals.chargesTotal,
+      taxAmount: finalTotals.taxTotal,
+      vatableSales: finalTotals.vatableSales,
+      vatExemptSales: finalTotals.vatExemptSales,
+      grandTotal: finalTotals.grandTotal,
+      totalPaid: summary.totalPaid,
+      change: summary.change,
+      mop: summary.mopMap,
+    },
     analyticsApplied: false,
     analyticsApplyId: uuidv4(),
     createdAt: serverTs,
