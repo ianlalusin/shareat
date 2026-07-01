@@ -110,7 +110,7 @@ function formatReceiptNumber(fmt: string, seq: number): string {
   return fmt.replace(run, padded);
 }
 
-async function getCurrentSessionBillingState(storeId: string, sessionId: string) {
+export async function getCurrentSessionBillingState(storeId: string, sessionId: string) {
   const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
   const linesRef = query(
     collection(db, `stores/${storeId}/sessions/${sessionId}/sessionBillLines`),
