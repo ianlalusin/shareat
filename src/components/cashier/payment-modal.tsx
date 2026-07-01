@@ -14,7 +14,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
-import { addToQueue } from "@/lib/offline/payment-queue";
+import { completePaymentOffline } from "@/components/cashier/offlinePayment";
 import type { Payment, ModeOfPayment, Store, Reservation } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
@@ -289,15 +289,21 @@ export function PaymentModal({
     // --- OFFLINE ---
     if (!isOnline) {
       try {
-        addToQueue({
-          storeId,
-          sessionId,
-          payload: { payments: normalizedPayments, totalAmount: grandTotal },
-        });
+        const { receiptId, receiptNumber } = await completePaymentOffline(
+          storeId, sessionId, appUser, normalizedPayments,
+          activeStore, paymentMethods, grandTotal,
+        );
+        console.info(`[PaymentModal] Offline sale recorded — receipt ${receiptNumber}`);
+
+        // Same print trigger as the online path: hand off to the existing
+        // receipt page, which builds/prints the receipt (works offline too)
+        // and already reads this store's autoprint setting.
+        const settingsSnap = await getDoc(doc(db, "stores", storeId, "receiptSettings", "main"));
+        const autoPrint = settingsSnap.exists() && !!settingsSnap.data()?.autoPrintAfterPayment;
         setShowSuccess(true);
-        setPendingRedirect("/cashier");
+        setPendingRedirect(`/receipt?id=${receiptId}${autoPrint ? "&autoprint=1" : ""}`);
       } catch (e: any) {
-        toast({ variant: "destructive", title: "Queue failed", description: e?.message ?? "Could not queue payment." });
+        toast({ variant: "destructive", title: "Payment failed", description: e?.message ?? "Something went wrong." });
         setIsProcessing(false);
       }
       return;
