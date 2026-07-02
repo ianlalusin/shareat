@@ -17,8 +17,8 @@ describe("replayDeferredEffects", () => {
     const fetchImpl = vi.fn(ok) as unknown as typeof fetch;
     const { item: out, complete } = await replayDeferredEffects(item(), { getToken: async () => "tok", fetchImpl });
     expect(complete).toBe(true);
-    expect(out.effects).toEqual({ analytics: "done", loyaltyFinalize: "done", loyaltyEarn: "done", pinFinalize: "done" });
-    // one call per pending effect
+    expect(out.effects).toEqual({ analytics: "done", loyaltyFinalize: "done", loyaltyEarn: "done", pinFinalize: "done", loyaltyReverse: "skip" });
+    // one call per pending effect (loyaltyReverse is skip for payment items)
     expect((fetchImpl as any).mock.calls.length).toBe(4);
   });
 
