@@ -19,7 +19,10 @@ export function usePaymentQueueSync(
   const processQueue = useCallback(async () => {
     if (!ready) return;               // don't drain until auth is ready
     if (isSyncingRef.current) return;
-    const queue = getQueue().filter((q) => q.status === "pending");
+    // Reclaim stale "syncing" items too: isSyncingRef prevents concurrent drains
+    // within a session, so any "syncing" left in storage is from a prior session
+    // hard-killed mid-await — reprocess it (per-effect state stops done effects re-firing).
+    const queue = getQueue().filter((q) => q.status === "pending" || q.status === "syncing");
     if (queue.length === 0) { attemptsRef.current = 0; return; }
 
     isSyncingRef.current = true;
