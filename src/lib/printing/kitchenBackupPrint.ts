@@ -74,12 +74,16 @@ export async function printKitchenTicketBackup(
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let printed = false;
     try {
       await deps.printText(text, widthMm);
-      deps.onStamp(ticket.id);
-      return "printed";
+      printed = true;
     } catch {
       if (attempt < maxAttempts) await sleep(delayMs);
+    }
+    if (printed) {
+      deps.onStamp(ticket.id); // outside the print try: a stamp error must not cause a reprint
+      return "printed";
     }
   }
   deps.onAlert(`Kitchen printer unreachable — deliver "${data.itemName}" to ${data.stationName} manually.`);

@@ -129,9 +129,17 @@ export default function KitchenPage() {
   const autoAckedTicketIdsRef = useRef(new Set<string>());
   // Per-ticket failure counter for the silent auto-ack path. Bounds retries so
   // a permanently-failing ticket (e.g. bad data, permission issue) doesn't spam
-  // transactions forever — it stops retrying after 3 failed attempts and just
-  // sits in the queue for a human to serve manually.
+  // transactions forever — it stops retrying after 3 failed attempts and gives
+  // up. The ticket stays `printedOffline` and therefore remains excluded from
+  // the rendered queue/tab badges (see the `printedOffline` filters below); it
+  // is NOT surfaced for manual serve in the KDS. That's acceptable because the
+  // kitchen already has the printed paper ticket from the outage, so no order
+  // is missed — see the one-time give-up toast fired below for visibility.
   const autoAckFailureCountRef = useRef(new Map<string, number>());
+  // Ticket ids we've already fired the give-up toast for, so a permanently
+  // stuck ticket alerts the kitchen once (not on every stationsAllDocs
+  // snapshot re-scan).
+  const autoAckGaveUpAlertedRef = useRef(new Set<string>());
 
   const [flash, setFlash] = useState<{ type: "served" | "cancelled"; message: string; subtitle?: string } | null>(null);
   const showFlash = useCallback((type: "served" | "cancelled", message: string, subtitle?: string) => {
@@ -657,8 +665,13 @@ export default function KitchenPage() {
         if (!t.sessionId) continue;
         if (autoAckedTicketIdsRef.current.has(ticketId)) continue;
         // Bounded retry: once a ticket has failed 3 silent attempts, stop
-        // retrying and leave it un-acked in the queue for manual handling
-        // instead of retrying forever on every stationsAllDocs snapshot.
+        // retrying. The ticket stays `printedOffline`, so it remains excluded
+        // from the rendered queue/tab badges (see the `printedOffline`
+        // filters below) rather than falling back into view for manual
+        // handling — it is NOT "left in the queue". This is safe KDS
+        // data-hygiene, not a lost order: the kitchen already has the printed
+        // paper ticket from the outage. A one-time destructive toast fires
+        // below on give-up so it isn't silently dropped either.
         const failCount = autoAckFailureCountRef.current.get(ticketId) ?? 0;
         if (failCount >= 3) continue;
         autoAckedTicketIdsRef.current.add(ticketId);
@@ -667,7 +680,22 @@ export default function KitchenPage() {
           .then((ok) => {
             if (!ok) {
               autoAckedTicketIdsRef.current.delete(ticketId);
-              autoAckFailureCountRef.current.set(ticketId, failCount + 1);
+              const nextFailCount = failCount + 1;
+              autoAckFailureCountRef.current.set(ticketId, nextFailCount);
+              // Give-up: the 3rd failed silent attempt. Surface a one-time,
+              // non-silent toast so this doesn't fail invisibly — the ticket
+              // itself stays excluded from the KDS queue (covered by the
+              // printed paper ticket), but staff should still know it needs
+              // to be marked served manually in the backend/records if ever
+              // needed.
+              if (nextFailCount >= 3 && !autoAckGaveUpAlertedRef.current.has(ticketId)) {
+                autoAckGaveUpAlertedRef.current.add(ticketId);
+                toast({
+                  variant: "destructive",
+                  title: "Kitchen ticket needs manual serve",
+                  description: "An offline-printed ticket couldn't auto-acknowledge — mark it served manually.",
+                });
+              }
             } else {
               autoAckFailureCountRef.current.delete(ticketId);
             }
