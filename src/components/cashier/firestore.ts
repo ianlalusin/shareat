@@ -1346,7 +1346,7 @@ export async function createKitchenTickets(
   // order / KDS projection.
   if (!stationId) return;
 
-  const writer = selectTicketWriter(opts as any);
+  const writer = selectTicketWriter(opts);
 
   // ONE ticket per line item using qtyOrdered for batch-serve flow
   const ticketRef = doc(ticketsColRef);

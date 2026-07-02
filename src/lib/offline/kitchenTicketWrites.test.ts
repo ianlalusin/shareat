@@ -10,9 +10,9 @@ describe("selectTicketWriter", () => {
     const batch = { set() {}, update() {} };
     expect(selectTicketWriter({ batch })).toBe(batch);
   });
-  it("prefers batch shape only when tx is absent (explicit branch)", () => {
+  it("prefers tx over batch when both keys are present ('tx' in opts wins)", () => {
+    const tx = { set() {}, update() {} };
     const batch = { set() {}, update() {} };
-    const w = selectTicketWriter({ batch });
-    expect(w).toBe(batch);
+    expect(selectTicketWriter({ tx, batch } as any)).toBe(tx);
   });
 });
