@@ -1317,10 +1317,15 @@ export async function updateSessionBillLine(
   const batch = writeBatch(db);
   batch.update(lineRef, updatePayload);
   batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
-  await batch.commit();
-
-  if (patchAffectsAdjustmentFlags(patch as Record<string, any>)) {
-    await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  const affectsFlags = patchAffectsAdjustmentFlags(patch as Record<string, any>);
+  if (navigator.onLine) {
+    await batch.commit();
+    if (affectsFlags) await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  } else {
+    // Offline: apply locally & sync later; never await the server ack (it never
+    // resolves offline) and fire the flag refresh local-first so we don't hang.
+    commitLocalFirst(batch, (err) => console.error("[updateSessionBillLine] offline sync failed", err));
+    if (affectsFlags) void recomputeSessionAdjustmentFlags(storeId, sessionId).catch(() => {});
   }
 }
 
@@ -1349,9 +1354,13 @@ export async function removeLineAdjustment(
   const batch = writeBatch(db);
   batch.update(lineRef, updatePayload);
   batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
-  await batch.commit();
-
-  await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  if (navigator.onLine) {
+    await batch.commit();
+    await recomputeSessionAdjustmentFlags(storeId, sessionId);
+  } else {
+    commitLocalFirst(batch, (err) => console.error("[removeLineAdjustment] offline sync failed", err));
+    void recomputeSessionAdjustmentFlags(storeId, sessionId).catch(() => {});
+  }
 }
 
 
