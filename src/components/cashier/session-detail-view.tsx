@@ -488,6 +488,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleAddLineAdjustment = async (lineId: string, adj: LineAdjustment) => {
     if (!appUser || !storeId || !sessionId || !activeStore || !session) return;
     try {
+        // Best-effort server side-effects: awaited online, fired local-first offline
+        // (their internal batch.commit()/updateDoc never resolves with no internet).
+        const sideEffect = (run: () => Promise<unknown>): Promise<void> => {
+          if (isOnline) return run().then(() => undefined);
+          run().catch((err) => console.warn("[handleAddLineAdjustment] offline side-effect deferred", err));
+          return Promise.resolve();
+        };
         const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
         const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
         const batch = writeBatch(db);
@@ -498,11 +505,15 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             billingRevision: increment(1),
             updatedAt: serverTimestamp(),
         });
-        await batch.commit();
+        if (isOnline) {
+          await batch.commit();
+        } else {
+          commitLocalFirst(batch, (err) => console.error("[handleAddLineAdjustment] offline sync failed", err));
+        }
         toast({ title: 'Adjustment Added'});
 
         if (adj.kind === "discount") {
-          await recomputeSessionAdjustmentFlags(storeId, sessionId);
+          await sideEffect(() => recomputeSessionAdjustmentFlags(storeId, sessionId));
         }
 
         if (adj.kind === 'discount') {
@@ -522,7 +533,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     calculatedAmount = Math.min(baseUnitPrice, adj.value) * qtyToApply;
                 }
 
-                await writeActivityLog({
+                await sideEffect(() => writeActivityLog({
                     action: "DISCOUNT_APPLIED",
                     storeId,
                     sessionId,
@@ -545,7 +556,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         discountType: adj.type,
                         amount: calculatedAmount,
                     }
-                });
+                }));
             }
         }
     } catch(e: any) {
