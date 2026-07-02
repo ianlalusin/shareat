@@ -16,6 +16,8 @@ import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import { getActorStamp } from "@/components/cashier/firestore";
 import { commitLocalFirst } from "@/lib/offline/commit";
+import { writeActivityLog } from "@/components/cashier/activity-log";
+import { computeSessionLabel } from "@/lib/utils/session";
 
 /**
  * Records a session void entirely from the local Firestore cache — no
@@ -24,9 +26,9 @@ import { commitLocalFirst } from "@/lib/offline/commit";
  * session + active projection from the cache via `getDoc` (instead of a
  * transaction), cancels any still-active kitchen tickets, voids the session,
  * moves the projection active -> closed, and frees the table. Unlike the
- * online path, this function does NOT write the SESSION_VOIDED activity log
- * (out of scope here) and DOES return the customer PIN + reversed loyalty
- * redemption ids so the caller can enqueue their deferred (server-side)
+ * online path, this function fires the SESSION_VOIDED activity log local-first
+ * (fire-and-forget, syncs on reconnect) and returns the customer PIN + reversed
+ * loyalty redemption ids so the caller can enqueue their deferred (server-side)
  * finalization once connectivity returns.
  */
 export async function voidSessionOffline(args: {
@@ -116,6 +118,9 @@ export async function voidSessionOffline(args: {
     voidReason: safeReason,
     updatedAt: serverTimestamp(),
     revision: Number(sessionData.revision ?? 1) + 1,
+    // Stamp the offline origin so a future guardrail rule (Plan 4B) can reject a
+    // void of a session already finalized on the server (stale-cache void).
+    offlineOrigin: true,
   });
 
   // Move projection from active to closed (verbatim from online voidSession).
@@ -130,27 +135,56 @@ export async function voidSessionOffline(args: {
     batch.delete(activeProjectionRef);
   }
 
-  // Free the table + its projection (verbatim from online voidSession).
+  // Free the table + its projection. Unlike the online transaction (which reads
+  // the table inside the tx), offline we must GUARD the update: a batch.update on
+  // a table doc absent from this device's cache — or re-seated by another device
+  // during the outage — would fail the ENTIRE void batch on sync (silent loss) or
+  // LWW-clobber a live session's table. Mirror the offlinePayment.ts guard.
   if (sessionData.tableId && sessionData.tableId !== "alacarte") {
     const tableRef = doc(db, "stores", storeId, "tables", sessionData.tableId);
-    batch.update(tableRef, { status: "available", currentSessionId: null, updatedAt: serverTimestamp() });
+    const tableSnap = await getDoc(tableRef);
+    if (tableSnap.exists() && (tableSnap.data() as any).currentSessionId === sessionId) {
+      batch.update(tableRef, { status: "available", currentSessionId: null, updatedAt: serverTimestamp() });
 
-    const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-    batch.update(tableProjectionRef, {
-      status: "available",
-      currentSessionId: null,
-      customerName: null,
-      packageLabel: null,
-      sessionType: null,
-      guestCount: null,
-      itemCount: null,
-      startedAtMs: null,
-      updatedAt: serverTimestamp(),
-    });
+      const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
+      batch.update(tableProjectionRef, {
+        status: "available",
+        currentSessionId: null,
+        customerName: null,
+        packageLabel: null,
+        sessionType: null,
+        guestCount: null,
+        itemCount: null,
+        startedAtMs: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
   }
 
   // Commit local-first: do not await a server ack that never comes offline.
   commitLocalFirst(batch, (err) => console.error("[voidSessionOffline] offline sync failed", err));
+
+  // Record the void in the audit log, local-first (fire-and-forget). Voids are
+  // the highest-value loss-prevention event, so an outage must not blind the log.
+  // writeActivityLog's internal batch.commit() never resolves offline, so we must
+  // NOT await it — the local writes apply immediately and sync on reconnect. This
+  // mirrors the online voidSession's SESSION_VOIDED log (firestore.ts ~983-995).
+  void writeActivityLog({
+    storeId,
+    sessionId,
+    user: actor,
+    action: "SESSION_VOIDED",
+    reason: safeReason,
+    sessionContext: {
+      sessionStatus: "voided",
+      sessionStartedAt: sessionData.startedAt,
+      sessionMode: sessionData.sessionMode ?? undefined,
+      customerName: sessionData.customer?.name ?? sessionData.customerName,
+      tableNumber: sessionData.tableNumber,
+      tableDisplayName: sessionData.tableDisplayName ?? null,
+    },
+    meta: { sessionLabel: computeSessionLabel(sessionData) },
+  }).catch(() => {});
 
   return { reversedRedemptionIds, pin };
 }
