@@ -1,70 +1,27 @@
 "use client";
-import { useMemo } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { usePaymentQueueSync } from "@/hooks/use-payment-queue-sync";
-import { completePaymentFromUnits } from "@/components/cashier/firestore";
+import { replayDeferredEffects } from "@/lib/offline/replayDeferredEffects";
 import { useAuthContext } from "@/context/auth-context";
-import { useStoreContext } from "@/context/store-context";
-import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { db } from "@/lib/firebase/client";
-import type { ModeOfPayment, Store } from "@/lib/types";
-
-async function loadQueuedStoreContext(
-  storeId: string,
-  activeStore: Store | null,
-  activePaymentMethods: ModeOfPayment[]
-): Promise<{ store: Store; paymentMethods: ModeOfPayment[] }> {
-  if (activeStore?.id === storeId) {
-    return { store: activeStore, paymentMethods: activePaymentMethods };
-  }
-
-  const [storeSnap, configSnap] = await Promise.all([
-    getDoc(doc(db, "stores", storeId)),
-    getDoc(doc(db, "stores", storeId, "storeConfig", "current")),
-  ]);
-
-  if (!storeSnap.exists()) {
-    throw new Error(`Queued payment store ${storeId} was not found.`);
-  }
-
-  const config = configSnap.exists() ? configSnap.data() : null;
-  const paymentMethods = Array.isArray(config?.modesOfPayment)
-    ? config.modesOfPayment.filter((m: ModeOfPayment) => m.isActive && !(m as any).isArchived)
-    : [];
-
-  return {
-    store: { id: storeSnap.id, ...storeSnap.data() } as Store,
-    paymentMethods,
-  };
-}
 
 export function PaymentQueueSyncProvider() {
-  const { appUser } = useAuthContext();
-  const { activeStore } = useStoreContext();
-  const { config: storeConfig } = useStoreConfigDoc(activeStore?.id);
+  const { user: firebaseUser } = useAuthContext();
 
-  const activePaymentMethods = useMemo(() => {
-    if (!storeConfig?.modesOfPayment) return [];
-    return storeConfig.modesOfPayment.filter(m => m.isActive && !(m as any).isArchived);
-  }, [storeConfig]);
+  usePaymentQueueSync(async (item) => {
+    if (!firebaseUser) throw new Error("Not authenticated");
 
-  usePaymentQueueSync(async (_queuedId, storeId, sessionId, payload) => {
-    if (!appUser) throw new Error("Not authenticated");
-    const { store, paymentMethods } = await loadQueuedStoreContext(
-      storeId,
-      activeStore,
-      activePaymentMethods,
-    );
+    // Guardrail 5a: if the server already holds a NON-offline final receipt for
+    // this session, an online sale beat us — do not apply offline effects on top.
+    const receiptSnap = await getDoc(doc(db, "stores", item.storeId, "receipts", item.sessionId));
+    if (receiptSnap.exists()) {
+      const r: any = receiptSnap.data();
+      if (r.status === "final" && r.offlineOrigin !== true) {
+        throw new Error(`Server already has an online receipt for session ${item.sessionId}; offline effects skipped (conflict).`);
+      }
+    }
 
-    return await completePaymentFromUnits(
-      storeId,
-      sessionId,
-      appUser,
-      payload.payments,
-      store,
-      paymentMethods,
-      payload.totalAmount,
-    );
+    return await replayDeferredEffects(item, { getToken: () => firebaseUser.getIdToken() });
   });
 
   return null;

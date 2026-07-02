@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useRef, useCallback } from "react";
 import { useOnlineStatus } from "./use-online-status";
-import { getQueue, updateQueueItem, removeFromQueue } from "@/lib/offline/payment-queue";
+import { getQueue, updateQueueItem, removeFromQueue, type QueuedPayment } from "@/lib/offline/payment-queue";
 import { useToast } from "./use-toast";
 
 export function usePaymentQueueSync(
-  onSync: (queuedId: string, storeId: string, sessionId: string, payload: any) => Promise<string>
+  onSync: (item: QueuedPayment) => Promise<{ item: QueuedPayment; complete: boolean }>
 ) {
   const isOnline = useOnlineStatus();
   const { toast } = useToast();
@@ -23,19 +23,16 @@ export function usePaymentQueueSync(
       for (const item of queue) {
         updateQueueItem(item.id, { status: "syncing" });
         try {
-          await onSyncRef.current(item.id, item.storeId, item.sessionId, item.payload);
-          removeFromQueue(item.id);
-          toast({
-            title: "Payment synced",
-            description: `Offline payment for session ${item.sessionId.slice(0, 6)}... has been processed.`,
-          });
+          const { item: updated, complete } = await onSyncRef.current(item);
+          if (complete) {
+            removeFromQueue(item.id);
+            toast({ title: "Offline sale synced", description: `Session ${item.sessionId.slice(0, 6)}… finalized.` });
+          } else {
+            updateQueueItem(item.id, { status: "pending", effects: updated.effects, errorMessage: "Some effects pending; will retry." });
+          }
         } catch (err: any) {
-          updateQueueItem(item.id, { status: "failed", errorMessage: err.message });
-          toast({
-            variant: "destructive",
-            title: "Sync failed",
-            description: `Could not sync offline payment: ${err.message}`,
-          });
+          updateQueueItem(item.id, { status: "failed", errorMessage: err?.message ?? String(err) });
+          toast({ variant: "destructive", title: "Sync failed", description: `Session ${item.sessionId.slice(0, 6)}…: ${err?.message ?? err}` });
         }
       }
     } finally {
