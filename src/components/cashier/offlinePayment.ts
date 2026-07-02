@@ -236,6 +236,7 @@ export async function completePaymentOffline(
       loyaltyFinalize: "pending",
       loyaltyEarn: phone ? "pending" : "skip",
       pinFinalize: pin ? "pending" : "skip",
+      loyaltyReverse: "skip", // payment sales never reverse loyalty (void-only effect)
     },
   });
 

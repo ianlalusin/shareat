@@ -6,7 +6,7 @@ function item(effects: Partial<QueuedPayment["effects"]> = {}): QueuedPayment {
   return {
     id: "q1", storeId: "s1", sessionId: "sess1", receiptId: "sess1", queuedAtMs: 0, status: "pending",
     ctx: { pin: "1234", phone: "0917", amount: 100 },
-    effects: { analytics: "pending", loyaltyFinalize: "pending", loyaltyEarn: "pending", pinFinalize: "pending", ...effects },
+    effects: { analytics: "pending", loyaltyFinalize: "pending", loyaltyEarn: "pending", pinFinalize: "pending", loyaltyReverse: "skip", ...effects },
   };
 }
 const ok = () => Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response);
