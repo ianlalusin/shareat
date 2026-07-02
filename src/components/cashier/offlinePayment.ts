@@ -223,7 +223,21 @@ export async function completePaymentOffline(
   commitLocalFirst(batch, (err) => console.error("[completePaymentOffline] batch sync failed", err));
 
   // 6. Record a deferred-finalization marker (Plan 4's outbox drains loyalty/PINs/analytics).
-  addToQueue({ storeId, sessionId, payload: { payments, totalAmount: amountDue } });
+  const projData: any = activeProjectionSnap.exists() ? activeProjectionSnap.data() : {};
+  const pin = projData.customerPin ? String(projData.customerPin) : null;
+  const phone = projData.linkedCustomerPhone ? String(projData.linkedCustomerPhone) : null;
+  addToQueue({
+    storeId,
+    sessionId,
+    receiptId: sessionId,
+    ctx: { pin, phone, amount: amountDue },
+    effects: {
+      analytics: "pending",
+      loyaltyFinalize: "pending",
+      loyaltyEarn: phone ? "pending" : "skip",
+      pinFinalize: pin ? "pending" : "skip",
+    },
+  });
 
   return { receiptId: sessionId, receiptNumber };
 }
