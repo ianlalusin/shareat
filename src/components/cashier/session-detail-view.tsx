@@ -28,6 +28,8 @@ import { writeActivityLog } from "./activity-log";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDataAnalysis } from "@/hooks/use-data-analysis";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { commitLocalFirst } from "@/lib/offline/commit";
 import { formatDurationVerbose } from "@/lib/utils/date";
 import {
   Accordion,
@@ -44,6 +46,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const { activeStore } = useStoreContext();
   const { Dialog, confirm: askConfirm } = useConfirmDialog();
   const isMobile = useIsMobile();
+  const isOnline = useOnlineStatus();
 
   const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
   const sessionAnalysis = useDataAnalysis(activeStore?.id, { kind: "thisMonth" });
@@ -260,7 +263,42 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
     try {
-        await runTransaction(db, async (tx) => {
+        if (isOnline) {
+            await runTransaction(db, async (tx) => {
+                const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
+                const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
+                const actor = getActorStamp(appUser);
+
+                const updatePayload = {
+                    ...after,
+                    updatedAt: serverTimestamp(),
+                    updatedByUid: actor.uid,
+                    updatedByName: actor.username,
+                };
+                tx.update(lineRef, updatePayload);
+                tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+
+                const line = billLines.find(l => l.id === lineId);
+                if (!line) throw new Error("Line item not found in local state.");
+
+                const diffQty = (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0);
+
+                if (line.type === 'addon' && diffQty > 0) {
+                    const klId = line.kitchenLocationId;
+                    if (klId) {
+                        await createKitchenTickets(db, storeId, sessionId, session, 'addon', {
+                            billLineId: line.id,
+                            itemId: line.itemId,
+                            itemName: line.itemName,
+                            kitchenLocationId: klId,
+                            kitchenLocationName: line.kitchenLocationName,
+                        }, diffQty, actor, { tx });
+                    } else {
+                        console.warn(`[Kitchen] No location set for addon "${line.itemName}" — kitchen ticket was NOT created.`);
+                    }
+                }
+            });
+        } else {
             const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
             const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
             const actor = getActorStamp(appUser);
@@ -271,12 +309,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 updatedByUid: actor.uid,
                 updatedByName: actor.username,
             };
-            tx.update(lineRef, updatePayload);
-            tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+
+            const batch = writeBatch(db);
+            batch.update(lineRef, updatePayload);
+            batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
 
             const line = billLines.find(l => l.id === lineId);
             if (!line) throw new Error("Line item not found in local state.");
-            
+
             const diffQty = (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0);
 
             if (line.type === 'addon' && diffQty > 0) {
@@ -288,12 +328,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         itemName: line.itemName,
                         kitchenLocationId: klId,
                         kitchenLocationName: line.kitchenLocationName,
-                    }, diffQty, actor, { tx });
+                    }, diffQty, actor, { batch });
                 } else {
                     console.warn(`[Kitchen] No location set for addon "${line.itemName}" — kitchen ticket was NOT created.`);
                 }
             }
-        });
+
+            commitLocalFirst(batch, (err) => console.error("[session-detail] offline sync failed", err));
+        }
 
         // Refresh adjustment-flag projection if the edit could have changed
         // void/free/discount state. Read by the cashier session-list badges.
