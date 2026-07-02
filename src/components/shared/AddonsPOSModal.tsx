@@ -12,11 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { commitLocalFirst } from "@/lib/offline/commit";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
@@ -112,6 +114,7 @@ function POSContent({
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const isOnline = useOnlineStatus();
 
   const { storeAddons, storeAddonsLoading, refreshStoreAddons, enableStoreAddons } = useStoreContext();
   const addons = storeAddons as unknown as EnrichedStoreAddon[];
@@ -287,13 +290,89 @@ function POSContent({
         : `addon_${addon.id}_${safeUnitPrice}`;
       const actor = getActorStamp(appUser);
 
-      await runTransaction(db, async (tx) => {
+      if (isOnline) {
+        await runTransaction(db, async (tx) => {
+          const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
+          const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
+          const lineSnap = await tx.get(lineRef);
+
+          if (lineSnap.exists()) {
+            tx.update(lineRef, {
+              qtyOrdered: increment(qty),
+              updatedAt: serverTimestamp(),
+              updatedByUid: actor.uid,
+              updatedByName: actor.username,
+            });
+          } else {
+            const newLinePayload = stripUndefined({
+              id: lineId,
+              type: "addon",
+              itemId: addon.id,
+              itemName: addon.displayName,
+              category: addon.subCategory ?? null,
+              barcode: addon.barcode ?? null,
+              unitPrice: safeUnitPrice,
+              qtyOrdered: qty,
+              discountType: null,
+              discountValue: 0,
+              discountQty: 0,
+              freeQty: 0,
+              voidedQty: 0,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              updatedByUid: actor.uid,
+              updatedByName: actor.username,
+              kitchenLocationId: addon.kitchenLocationId ?? null,
+              kitchenLocationName: addon.kitchenLocationName ?? null,
+              modifiers: modifiers.length ? modifiers : null,
+              modifiersText: modifiersText || null,
+              modifiersTotal: modifiers.length ? modifiersTotal : null,
+              note: lineNote || null,
+            });
+            tx.set(lineRef, newLinePayload);
+          }
+
+          // Only items with a kitchen location produce a kitchen ticket. Items with
+          // none are still billed (line above) but exempt from KDS so the order
+          // doesn't break.
+          if (addon.kitchenLocationId) {
+            await createKitchenTickets(
+              db,
+              storeId,
+              session.id,
+              session,
+              "addon",
+              {
+                itemId: addon.id,
+                itemName: addon.displayName,
+                kitchenLocationId: addon.kitchenLocationId,
+                kitchenLocationName: addon.kitchenLocationName,
+                billLineId: lineId,
+              },
+              qty,
+              actor,
+              { tx },
+              lineNote || undefined,
+              // `extra` is spread into the ticket payload. Pass modifier structure
+              // so KDS can render it richly if it wants, plus a flat text field.
+              modifiers.length ? { modifiers, modifiersText } : undefined
+            );
+          }
+          tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+        });
+      } else {
+        // Offline: this is the one read-modify-write flow in the modal. `getDoc`
+        // resolves from Firestore's local cache (no network needed) so we can
+        // still decide increment-vs-create, then batch the same writes the online
+        // transaction would have made and commit local-first.
         const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
         const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
-        const lineSnap = await tx.get(lineRef);
+        const lineSnap = await getDoc(lineRef); // cache-served offline
+
+        const batch = writeBatch(db);
 
         if (lineSnap.exists()) {
-          tx.update(lineRef, {
+          batch.update(lineRef, {
             qtyOrdered: increment(qty),
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
@@ -325,7 +404,7 @@ function POSContent({
             modifiersTotal: modifiers.length ? modifiersTotal : null,
             note: lineNote || null,
           });
-          tx.set(lineRef, newLinePayload);
+          batch.set(lineRef, newLinePayload);
         }
 
         // Only items with a kitchen location produce a kitchen ticket. Items with
@@ -347,15 +426,17 @@ function POSContent({
             },
             qty,
             actor,
-            { tx },
+            { batch },
             lineNote || undefined,
             // `extra` is spread into the ticket payload. Pass modifier structure
             // so KDS can render it richly if it wants, plus a flat text field.
             modifiers.length ? { modifiers, modifiersText } : undefined
           );
         }
-        tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
-      });
+        batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+
+        commitLocalFirst(batch, (err) => console.error("[AddonsPOSModal] offline sync failed", err));
+      }
 
       // Optimistic UI hook
       if (onAddLine) {
