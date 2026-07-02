@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs, writeBatch } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs, writeBatch, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -23,6 +23,9 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import { createKitchenTickets, getActorStamp } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
 import { commitLocalFirst } from "@/lib/offline/commit";
+import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
+import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
+import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -196,7 +199,29 @@ function POSContent({
   const handleSelectOtherRefills = () => {
     setActiveRefillId(OTHER_REFILLS_ID);
   };
-  
+
+  // Fire-and-forget backup print of offline-created kitchen tickets to the
+  // shared Bluetooth kitchen printer. Never awaited into the order flow;
+  // any dep (or the kitchenLocations fetch) throwing is swallowed.
+  const printOfflineKitchenTickets = (tickets: Array<Record<string, any>>) => {
+    if (!tickets.length) return;
+    void (async () => {
+      const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
+      const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+      const deps = makeKitchenBackupDeps({
+        kitchenLocations,
+        stampTicket: (ticketId) => {
+          const ref = doc(db, "stores", storeId, "sessions", session.id, "kitchentickets", ticketId);
+          void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+        },
+        alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
+      });
+      for (const ticket of tickets) {
+        await printKitchenTicketBackup(ticket as any, deps).catch(() => {});
+      }
+    })().catch(() => {});
+  };
+
   const handleAddToOrder = async () => {
     if (sessionIsLocked) {
       toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
@@ -313,6 +338,7 @@ function POSContent({
             });
         } else {
             const batch = writeBatch(db);
+            const offlineTicketPayloads: Array<Record<string, any>> = [];
             for (const item of cart.values()) {
                 const stationId = item.refill.kitchenLocationId;
                 if (!stationId) {
@@ -326,7 +352,7 @@ function POSContent({
                     finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
                 }
 
-                await createKitchenTickets(
+                const ticketPayload = await createKitchenTickets(
                     db,
                     storeId,
                     session.id,
@@ -344,6 +370,7 @@ function POSContent({
                     { batch },
                     finalNotes
                 );
+                if (ticketPayload) offlineTicketPayloads.push(ticketPayload);
             }
             // Other Refills tickets (grouped by kitchenLocationId)
             if (hasOtherNow) {
@@ -365,7 +392,7 @@ function POSContent({
                 }
 
                 for (const [stationId, bucket] of byStation.entries()) {
-                    await createKitchenTickets(
+                    const ticketPayload = await createKitchenTickets(
                         db,
                         storeId,
                         session.id,
@@ -384,10 +411,15 @@ function POSContent({
                         "",
                         { refillRequest: Object.fromEntries(bucket.entries) }
                     );
+                    if (ticketPayload) offlineTicketPayloads.push(ticketPayload);
                 }
             }
 
             commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
+
+            // Fire-and-forget backup print — one per ticket created in this
+            // offline batch. Never awaited into the order flow.
+            printOfflineKitchenTickets(offlineTicketPayloads);
         }
 
         const refillNames = [...cart.entries()].map(([id, qty]) => `${id} x${qty}`).join(", ");
@@ -468,7 +500,7 @@ function POSContent({
             });
         } else {
             const batch = writeBatch(db);
-            await createKitchenTickets(
+            const ticketPayload = await createKitchenTickets(
                 db,
                 storeId,
                 session.id,
@@ -487,6 +519,9 @@ function POSContent({
                 notes
             );
             commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
+
+            // Fire-and-forget backup print. Never awaited into the order flow.
+            if (ticketPayload) printOfflineKitchenTickets([ticketPayload]);
         }
 
         toast({

@@ -7,9 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { isDiscountDateActive } from "@/lib/collections/globalCollections";
-import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch, setDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, doc, orderBy, updateDoc, serverTimestamp, runTransaction, increment, writeBatch, setDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitchenTickets, recomputeSessionAdjustmentFlags } from "@/components/cashier/firestore";
+import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
+import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
+import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
@@ -327,10 +330,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
             const diffQty = (after.qtyOrdered ?? 0) - (before.qtyOrdered ?? 0);
 
+            let ticketPayload: Record<string, any> | null = null;
             if (line.type === 'addon' && diffQty > 0) {
                 const klId = line.kitchenLocationId;
                 if (klId) {
-                    await createKitchenTickets(db, storeId, sessionId, session, 'addon', {
+                    ticketPayload = await createKitchenTickets(db, storeId, sessionId, session, 'addon', {
                         billLineId: line.id,
                         itemId: line.itemId,
                         itemName: line.itemName,
@@ -343,6 +347,25 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             }
 
             commitLocalFirst(batch, (err) => console.error("[session-detail] offline sync failed", err));
+
+            // Fire-and-forget backup print to the shared kitchen Bluetooth printer.
+            // Never awaited into the order flow; any dep (or the kitchenLocations
+            // fetch) throwing is swallowed by the trailing .catch.
+            if (ticketPayload) {
+              void (async () => {
+                const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
+                const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+                const deps = makeKitchenBackupDeps({
+                  kitchenLocations,
+                  stampTicket: (ticketId) => {
+                    const ref = doc(db, "stores", storeId, "sessions", sessionId, "kitchentickets", ticketId);
+                    void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+                  },
+                  alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
+                });
+                await printKitchenTicketBackup(ticketPayload as any, deps);
+              })().catch(() => {});
+            }
         }
 
         // Refresh adjustment-flag projection if the edit could have changed

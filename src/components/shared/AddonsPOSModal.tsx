@@ -12,13 +12,16 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment, getDoc } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment, getDoc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { commitLocalFirst } from "@/lib/offline/commit";
+import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
+import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
+import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
@@ -410,8 +413,9 @@ function POSContent({
         // Only items with a kitchen location produce a kitchen ticket. Items with
         // none are still billed (line above) but exempt from KDS so the order
         // doesn't break.
+        let ticketPayload: Record<string, any> | null = null;
         if (addon.kitchenLocationId) {
-          await createKitchenTickets(
+          ticketPayload = await createKitchenTickets(
             db,
             storeId,
             session.id,
@@ -436,6 +440,25 @@ function POSContent({
         batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
 
         commitLocalFirst(batch, (err) => console.error("[AddonsPOSModal] offline sync failed", err));
+
+        // Fire-and-forget backup print to the shared kitchen Bluetooth printer.
+        // Never awaited into the order flow; any dep (or the kitchenLocations
+        // fetch) throwing is swallowed by the trailing .catch.
+        if (ticketPayload) {
+          void (async () => {
+            const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
+            const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+            const deps = makeKitchenBackupDeps({
+              kitchenLocations,
+              stampTicket: (ticketId) => {
+                const ref = doc(db, "stores", storeId, "sessions", session.id, "kitchentickets", ticketId);
+                void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+              },
+              alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
+            });
+            await printKitchenTicketBackup(ticketPayload as any, deps);
+          })().catch(() => {});
+        }
       }
 
       // Optimistic UI hook

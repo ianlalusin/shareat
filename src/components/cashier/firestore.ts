@@ -48,6 +48,8 @@ import type {
 } from '@/lib/types';
 
 import { stripUndefined } from '@/lib/firebase/utils';
+import { printKitchenTicketBackup } from '@/lib/printing/kitchenBackupPrint';
+import { makeKitchenBackupDeps } from '@/lib/printing/kitchenBackupDeps';
 import { roundMoney } from '@/lib/money';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
@@ -194,6 +196,11 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     updatedAt: serverTimestamp(),
   });
 
+  // Captured when the package-ticket path below builds a ticket, so the
+  // offline backup print (fired after commitLocalFirst) has a payload to
+  // print without re-deriving it.
+  let packageTicketPayload: Record<string, any> | null = null;
+
   const batch = writeBatch(db);
     // 1. Create the new session document
     batch.set(newSessionRef, sessionPayload);
@@ -326,7 +333,8 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         initialFlavorIds: payload.initialFlavorIds,
       });
       batch.set(ticketRef, ticketPayload);
-      
+      packageTicketPayload = ticketPayload;
+
       // KDS PROJECTION WRITE
       const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationKey);
       batch.set(rtKdsDocRef, {
@@ -344,6 +352,26 @@ export async function startSession(storeId: string, payload: StartSessionPayload
     console.error('[startSession] batch sync failed', err);
   });
 
+  // Fire-and-forget backup print to the shared kitchen Bluetooth printer.
+  // startSession has no React `isOnline` (it's a plain data-layer function),
+  // so it gates directly on navigator.onLine. Never awaited into the order
+  // flow; any dep (or the kitchenLocations fetch) throwing is swallowed.
+  if (typeof navigator !== 'undefined' && !navigator.onLine && packageTicketPayload) {
+    const ticketToPrint = packageTicketPayload;
+    void (async () => {
+      const klSnap = await getDocs(collection(db, 'stores', storeId, 'kitchenLocations'));
+      const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+      const deps = makeKitchenBackupDeps({
+        kitchenLocations,
+        stampTicket: (ticketId) => {
+          const ref = doc(db, 'stores', storeId, 'sessions', newSessionRef.id, 'kitchentickets', ticketId);
+          void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+        },
+        alert: (message) => console.warn(`[startSession] ${message}`),
+      });
+      await printKitchenTicketBackup(ticketToPrint as any, deps);
+    })().catch(() => {});
+  }
 
   const packageName = payload.package?.packageName || null;
   const guestCount = payload.guestCount ?? 0;
