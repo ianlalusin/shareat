@@ -122,6 +122,11 @@ export default function KitchenPage() {
   const [isLoading, setIsLoading] = useState(true);
   const prevTicketIdsRef = useRef(new Set());
   const didInitTicketsRef = useRef(false);
+  // Ticket ids we've already attempted to auto-acknowledge (see the
+  // printedOffline effect below). Guards against re-firing the serve call on
+  // every rtKdsTickets snapshot — each ticket is only ever auto-served once
+  // per page session.
+  const autoAckedTicketIdsRef = useRef(new Set<string>());
 
   const [flash, setFlash] = useState<{ type: "served" | "cancelled"; message: string; subtitle?: string } | null>(null);
   const showFlash = useCallback((type: "served" | "cancelled", message: string, subtitle?: string) => {
@@ -149,7 +154,12 @@ export default function KitchenPage() {
   const stationCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const [id, d] of stationsAllDocs) {
-      m.set(id, (d.activeIds || []).length);
+      const map = d.tickets || {};
+      // Offline-printed tickets are auto-acknowledged (see the printedOffline
+      // effect below) and must not count toward the tab's active badge, even
+      // in the brief window before their serve transaction lands.
+      const count = (d.activeIds || []).filter((tid) => !map[tid]?.printedOffline).length;
+      m.set(id, count);
     }
     return m;
   }, [stationsAllDocs]);
@@ -184,6 +194,10 @@ export default function KitchenPage() {
       for (const id of ids) {
         const t = map[id];
         if (!t) continue;
+        // Offline-printed tickets are auto-acknowledged and excluded from the
+        // "late" alerting count — the kitchen already worked from the printed
+        // paper ticket during the outage.
+        if (t.printedOffline) continue;
         const start = getStartMs((t as any).createdAtClientMs ?? (t as any).createdAt);
         if (start != null && slaTick - start >= slaMs) late += 1;
       }
@@ -290,8 +304,11 @@ export default function KitchenPage() {
 
     const currentTickets = stationDoc?.tickets || {};
 
-    // Device notification when new ticket appears (ignore first load)
-    const ids = Object.keys(currentTickets);
+    // Device notification when new ticket appears (ignore first load).
+    // Offline-printed tickets are excluded — the kitchen already handled them
+    // on paper during the outage, so they must not trigger the "new ticket"
+    // alert sound when they sync back in.
+    const ids = Object.keys(currentTickets).filter((id) => !currentTickets[id]?.printedOffline);
     if (didInitTicketsRef.current) {
         const prev = prevTicketIdsRef.current;
         const hasNew = ids.some((id) => !prev.has(id));
@@ -398,7 +415,12 @@ export default function KitchenPage() {
     
     const ticketList = ids
       .map(id => ({ ...(map[id] || {}), id }))
-      .filter(t => t && t.sessionId); // ensure ticket data exists
+      // ensure ticket data exists; offline-printed tickets are auto-acknowledged
+      // (see the printedOffline effect below) and are excluded from the active
+      // queue immediately — the served-transaction removal from `activeIds`
+      // lags a snapshot round-trip, so this filter keeps them from ever
+      // rendering in the meantime.
+      .filter(t => t && t.sessionId && !t.printedOffline);
 
     const sortedTickets = ticketList.sort((a,b) => {
         const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
@@ -432,13 +454,25 @@ export default function KitchenPage() {
     });
   }, [stationDoc, sessionsMap, flavorsMap]);
   
-  const updateTicketStatus = async (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => {
+  // `opts.overrideAtMs` lets a caller stamp the served/cancelled moment with a
+  // client timestamp other than "now" (used by the printedOffline auto-ack
+  // effect below, which serves using `printedOfflineAt` so served
+  // counts/durations reflect when the paper actually printed, not the moment
+  // the ticket happened to sync back online). `opts.silent` suppresses the
+  // flash overlay + activity log entry for system-driven (non-human) serves.
+  const updateTicketStatus = async (
+    ticketId: string,
+    sessionId: string,
+    newStatus: "served" | "cancelled",
+    reason?: string,
+    opts?: { overrideAtMs?: number; silent?: boolean },
+  ) => {
     if (!appUser || !activeStore) {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
-        return;
+        return false;
     }
 
-    const nowMs = Date.now();
+    const nowMs = opts?.overrideAtMs ?? Date.now();
     let kdsDelta: { old: any; new: any } | null = null as { old: any; new: any } | null;
 
     try {
@@ -556,19 +590,74 @@ export default function KitchenPage() {
             await batch.commit();
           });
         }
-        const ticket = ticketsWithData.find(t => t.id === ticketId);
-        const flashType = newStatus === "cancelled" ? "cancelled" : "served";
-        showFlash(flashType, `${ticket?.itemName || 'Item'} ${newStatus}`, `${ticket?.sessionLabel || ''}`);
-        if (ticket) {
-          writeActivityLog({ action: newStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason: reason || undefined }, note: `${ticket.itemName} ${newStatus}${reason ? `: ${reason}` : ""}` });
+        // Silent (system-driven) serves — e.g. the printedOffline auto-ack —
+        // skip the flash overlay and activity log: no human acted here, and
+        // `ticketsWithData` won't even contain an auto-acked ticket (it's
+        // filtered out of the active queue), so `ticket` would be undefined.
+        if (!opts?.silent) {
+          const ticket = ticketsWithData.find(t => t.id === ticketId);
+          const flashType = newStatus === "cancelled" ? "cancelled" : "served";
+          showFlash(flashType, `${ticket?.itemName || 'Item'} ${newStatus}`, `${ticket?.sessionLabel || ''}`);
+          if (ticket) {
+            writeActivityLog({ action: newStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason: reason || undefined }, note: `${ticket.itemName} ${newStatus}${reason ? `: ${reason}` : ""}` });
+          }
         }
+        return true;
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
         toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+        return false;
     }
   };
 
+  // Auto-acknowledge tickets printed to the offline backup kitchen printer
+  // (kitchen-bt-printer-backup feature). While a cashier/server device is
+  // disconnected, it prints the ticket to a shared Bluetooth printer and
+  // stamps it `printedOffline`/`printedOfflineAt`. The kitchen already worked
+  // from that paper ticket, so on reconnect it must be marked served — not
+  // re-queued for prep — via the SAME serve path used for a manual "mark
+  // served" tap (`updateTicketStatus`), reusing `printedOfflineAt` as the
+  // serve timestamp so served counts/durations reflect when the paper
+  // actually printed rather than the (possibly much later) sync moment.
+  //
+  // Scans every station in `stationsAllDocs` (not just the active tab) so a
+  // backlog acknowledges even on tabs the kitchen isn't currently viewing.
+  // `ticketsWithData` (and therefore the rendered queue / tab badges) already
+  // excludes `printedOffline` tickets synchronously, so this effect only
+  // needs to fire the actual serve transaction; it never gates rendering.
+  //
+  // Idempotency: `autoAckedTicketIdsRef` is a ref-backed Set marked BEFORE the
+  // async call, so a ticket is only ever auto-served once per page session
+  // even though this effect re-runs on every projection snapshot (e.g. an
+  // unrelated ticket changing at the same station). `updateTicketStatus`'s own
+  // transaction is additionally guarded against double-serving server-side
+  // (it no-ops if the ticket is already `served`/`cancelled`). `updateTicketStatus`
+  // catches its own errors and resolves `false` (never rejects — see its
+  // try/catch), so a transient failure un-marks the ref via `.then` and the
+  // next snapshot naturally retries.
+  useEffect(() => {
+    if (!activeStore) return;
+    for (const stationDocEntry of stationsAllDocs.values()) {
+      const map = stationDocEntry.tickets || {};
+      for (const [ticketId, t] of Object.entries(map)) {
+        if (!t || t.printedOffline !== true) continue;
+        if (t.status !== "preparing" && t.status !== "ready") continue;
+        if (!t.sessionId) continue;
+        if (autoAckedTicketIdsRef.current.has(ticketId)) continue;
+        autoAckedTicketIdsRef.current.add(ticketId);
+        const overrideAtMs = typeof t.printedOfflineAt === "number" ? t.printedOfflineAt : undefined;
+        void updateTicketStatus(ticketId, t.sessionId, "served", undefined, { overrideAtMs, silent: true })
+          .then((ok) => { if (!ok) autoAckedTicketIdsRef.current.delete(ticketId); });
+      }
+    }
+    // updateTicketStatus is intentionally not in deps (same pattern as the
+    // activeStationName omission above) — it closes over appUser/activeStore/
+    // currentProfile, which change far less often than stationsAllDocs, and
+    // re-running this scan on every render just to pick up a fresh function
+    // identity isn't worth it given the ref guard already makes re-scans cheap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationsAllDocs, activeStore]);
 
   const handleServeBatch = async ({ ticketId, sessionId, qtyToServe }: { ticketId: string; sessionId: string; qtyToServe: number }) => {
     if (!appUser || !activeStore) return;

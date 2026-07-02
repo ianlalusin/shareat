@@ -428,6 +428,15 @@ export type KitchenTicket = {
     // whose product had option groups and where the cashier picked values.
     modifiersText?: string;        // "Large, Extra Cheese" — for KDS display
     modifiers?: SelectedModifier[];
+
+    // --- Offline backup-print stamp (kitchen-bt-printer-backup feature) ---
+    // Set when this ticket was printed to the shared Bluetooth kitchen printer
+    // because the ordering device was offline. Read by the KDS page to
+    // auto-acknowledge tickets the kitchen already handled on paper during an
+    // outage, so they don't flood the active prep/alerting queue on reconnect.
+    printedOffline?: boolean;
+    printedOfflineAt?: number;
+    printedOfflineDevice?: string;
 };
 
 export type SelectedModifier = {
