@@ -14,10 +14,16 @@ export interface ReplayDeps {
   onEffectDone?: (item: QueuedPayment) => void;
 }
 
-async function post(fetchImpl: typeof fetch, url: string, token: string, body: unknown): Promise<boolean> {
+async function post(
+  fetchImpl: typeof fetch,
+  url: string,
+  token: string,
+  body: unknown,
+  method: "POST" | "DELETE" = "POST",
+): Promise<boolean> {
   try {
     const res = await fetchImpl(url, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
@@ -57,9 +63,20 @@ export async function replayDeferredEffects(
     } else if (effect === "loyaltyEarn") {
       okResult = await post(fetchImpl, "/api/loyalty/earn", token, { storeId, sessionId, phone: ctx.phone, amount: ctx.amount, receiptId });
     } else if (effect === "pinFinalize") {
-      okResult = await post(fetchImpl, "/api/pins/finalize", token, { storeId, sessionId, pin: ctx.pin, reason: "payment_closed" });
+      const reason = item.kind === "void" ? "session_voided" : "payment_closed";
+      okResult = await post(fetchImpl, "/api/pins/finalize", token, { storeId, sessionId, pin: ctx.pin, reason });
       if (!okResult) {
         okResult = await post(fetchImpl, "/api/pins/disable", token, { storeId, sessionId });
+      }
+    } else if (effect === "loyaltyReverse") {
+      const redemptionIds = ctx.redemptionIds ?? [];
+      okResult = true;
+      for (const redemptionId of redemptionIds) {
+        const deleted = await post(fetchImpl, "/api/loyalty/redeem", token, { redemptionId, storeId, reason: "void" }, "DELETE");
+        if (!deleted) {
+          okResult = false;
+          break;
+        }
       }
     }
     if (okResult) {

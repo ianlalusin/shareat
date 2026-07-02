@@ -74,3 +74,36 @@ describe("replayDeferredEffects", () => {
     expect((fetchImpl as any).mock.calls.length).toBe(0);
   });
 });
+
+describe("replay void effects", () => {
+  function voidItem() {
+    return {
+      id: "v1", storeId: "s1", sessionId: "sess1", receiptId: "sess1", queuedAtMs: 0, status: "pending" as const, kind: "void" as const,
+      ctx: { amount: 0, pin: "1234", redemptionIds: ["r1", "r2"] },
+      effects: { analytics: "skip" as const, loyaltyFinalize: "skip" as const, loyaltyEarn: "skip" as const, pinFinalize: "pending" as const, loyaltyReverse: "pending" as const },
+    };
+  }
+  const ok = () => Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+  it("reverses each redemption (DELETE /api/loyalty/redeem) and finalizes the pin with session_voided", async () => {
+    const fetchImpl = vi.fn(ok) as unknown as typeof fetch;
+    const { item, complete } = await replayDeferredEffects(voidItem(), { getToken: async () => "tok", fetchImpl });
+    expect(complete).toBe(true);
+    const calls = (fetchImpl as any).mock.calls;
+    const redeemCalls = calls.filter((c: any[]) => String(c[0]).includes("/loyalty/redeem"));
+    expect(redeemCalls.length).toBe(2); // one DELETE per redemptionId
+    expect(redeemCalls[0][1].method).toBe("DELETE");
+    const pinCall = calls.find((c: any[]) => String(c[0]).includes("/pins/finalize"));
+    expect(JSON.parse(pinCall[1].body)).toMatchObject({ storeId: "s1", sessionId: "sess1", pin: "1234", reason: "session_voided" });
+    expect(item.effects.loyaltyReverse).toBe("done");
+    expect(item.effects.pinFinalize).toBe("done");
+  });
+
+  it("leaves loyaltyReverse pending if any redemption DELETE fails", async () => {
+    const fetchImpl = vi.fn((url: string) => String(url).includes("/loyalty/redeem")
+      ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response) : ok()) as unknown as typeof fetch;
+    const { item, complete } = await replayDeferredEffects(voidItem(), { getToken: async () => "tok", fetchImpl });
+    expect(complete).toBe(false);
+    expect(item.effects.loyaltyReverse).toBe("pending");
+  });
+});
