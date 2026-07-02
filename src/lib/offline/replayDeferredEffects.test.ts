@@ -106,4 +106,31 @@ describe("replay void effects", () => {
     expect(complete).toBe(false);
     expect(item.effects.loyaltyReverse).toBe("pending");
   });
+
+  it("leaves loyaltyReverse pending when the FIRST delete fails even though a later one would succeed (guards against last-write-wins)", async () => {
+    let redeemN = 0;
+    const fetchImpl = vi.fn((url: string) => {
+      if (String(url).includes("/loyalty/redeem")) {
+        redeemN += 1;
+        // first redemption fails; a later one would succeed — a last-iteration-wins
+        // bug would mark the effect done, but all-must-succeed must keep it pending.
+        return Promise.resolve({ ok: redeemN > 1, status: redeemN > 1 ? 200 : 500, json: async () => ({}) } as Response);
+      }
+      return ok();
+    }) as unknown as typeof fetch;
+    const { item, complete } = await replayDeferredEffects(voidItem(), { getToken: async () => "tok", fetchImpl });
+    expect(item.effects.loyaltyReverse).toBe("pending");
+    expect(complete).toBe(false);
+  });
+
+  it("marks loyaltyReverse done with zero redeem calls when there are no redemptionIds", async () => {
+    const item0 = voidItem();
+    item0.ctx.redemptionIds = [];
+    const fetchImpl = vi.fn(ok) as unknown as typeof fetch;
+    const { item, complete } = await replayDeferredEffects(item0, { getToken: async () => "tok", fetchImpl });
+    const redeemCalls = (fetchImpl as any).mock.calls.filter((c: any[]) => String(c[0]).includes("/loyalty/redeem"));
+    expect(redeemCalls.length).toBe(0);
+    expect(item.effects.loyaltyReverse).toBe("done");
+    expect(complete).toBe(true);
+  });
 });
