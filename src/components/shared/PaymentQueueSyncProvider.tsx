@@ -2,6 +2,7 @@
 import { doc, getDoc } from "firebase/firestore";
 import { usePaymentQueueSync } from "@/hooks/use-payment-queue-sync";
 import { replayDeferredEffects } from "@/lib/offline/replayDeferredEffects";
+import { updateQueueItem } from "@/lib/offline/payment-queue";
 import { useAuthContext } from "@/context/auth-context";
 import { db } from "@/lib/firebase/client";
 
@@ -9,11 +10,16 @@ export function PaymentQueueSyncProvider() {
   const { user: firebaseUser } = useAuthContext();
 
   usePaymentQueueSync(async (item) => {
-    if (!firebaseUser) throw new Error("Not authenticated");
+    if (!firebaseUser) return { item, complete: false }; // transient: auth not ready
 
-    // Guardrail 5a: if the server already holds a NON-offline final receipt for
-    // this session, an online sale beat us — do not apply offline effects on top.
-    const receiptSnap = await getDoc(doc(db, "stores", item.storeId, "receipts", item.sessionId));
+    // Guardrail 5a: only a NETWORK/read failure is transient; a genuine online
+    // final receipt is a terminal conflict.
+    let receiptSnap;
+    try {
+      receiptSnap = await getDoc(doc(db, "stores", item.storeId, "receipts", item.sessionId));
+    } catch {
+      return { item, complete: false }; // transient read failure — retry later
+    }
     if (receiptSnap.exists()) {
       const r: any = receiptSnap.data();
       if (r.status === "final" && r.offlineOrigin !== true) {
@@ -21,8 +27,11 @@ export function PaymentQueueSyncProvider() {
       }
     }
 
-    return await replayDeferredEffects(item, { getToken: () => firebaseUser.getIdToken() });
-  });
+    return await replayDeferredEffects(item, {
+      getToken: () => firebaseUser.getIdToken(),
+      onEffectDone: (updated) => updateQueueItem(updated.id, { effects: updated.effects }),
+    });
+  }, !!firebaseUser);
 
   return null;
 }

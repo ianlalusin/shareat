@@ -11,6 +11,7 @@ import {
 export interface ReplayDeps {
   getToken: () => Promise<string>;
   fetchImpl?: typeof fetch;
+  onEffectDone?: (item: QueuedPayment) => void;
 }
 
 async function post(fetchImpl: typeof fetch, url: string, token: string, body: unknown): Promise<boolean> {
@@ -37,18 +38,19 @@ export async function replayDeferredEffects(
   deps: ReplayDeps,
 ): Promise<{ item: QueuedPayment; complete: boolean }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const token = await deps.getToken();
+  let token: string;
+  try {
+    token = await deps.getToken();
+  } catch {
+    // Transient: can't authenticate right now — leave effects pending for retry.
+    return { item, complete: isItemComplete(item) };
+  }
   const { storeId, sessionId, receiptId, ctx } = item;
   let out = item;
 
   for (const effect of pendingEffects(item)) {
     let okResult = false;
     if (effect === "analytics") {
-      // Matches the online post-payment call in src/components/cashier/firestore.ts
-      // (fetch("/api/analytics/apply-delta", ...)): the server reads storeId +
-      // receiptId, recomputes the delta from the receipt doc itself, and is
-      // idempotent on analyticsApplied. Body is { storeId, receiptId, op }
-      // (no sessionId; field name is "op", not "kind").
       okResult = await post(fetchImpl, "/api/analytics/apply-delta", token, { storeId, receiptId, op: "payment" });
     } else if (effect === "loyaltyFinalize") {
       okResult = await post(fetchImpl, "/api/loyalty/finalize", token, { storeId, sessionId, receiptId });
@@ -60,7 +62,11 @@ export async function replayDeferredEffects(
         okResult = await post(fetchImpl, "/api/pins/disable", token, { storeId, sessionId });
       }
     }
-    out = markEffect(out, effect as DeferredEffect, okResult ? "done" : "pending");
+    if (okResult) {
+      out = markEffect(out, effect, "done");
+      deps.onEffectDone?.(out);
+    }
+    // on failure: leave the effect "pending" (unchanged) for a later retry
   }
 
   return { item: out, complete: isItemComplete(out) };

@@ -52,4 +52,25 @@ describe("replayDeferredEffects", () => {
     const body = JSON.parse(call[1].body);
     expect(body).toMatchObject({ storeId: "s1", sessionId: "sess1", phone: "0917", amount: 100, receiptId: "sess1" });
   });
+
+  it("calls onEffectDone after each successful effect (incremental persistence)", async () => {
+    const doneCounts: number[] = [];
+    const fetchImpl = vi.fn(ok) as unknown as typeof fetch;
+    await replayDeferredEffects(item(), {
+      getToken: async () => "tok",
+      fetchImpl,
+      onEffectDone: (it) => doneCounts.push(Object.values(it.effects).filter((v) => v === "done").length),
+    });
+    expect(doneCounts).toEqual([1, 2, 3, 4]); // one more effect done each call
+  });
+
+  it("returns not-complete and does not fetch when getToken throws (transient)", async () => {
+    const fetchImpl = vi.fn(ok) as unknown as typeof fetch;
+    const { complete } = await replayDeferredEffects(item(), {
+      getToken: async () => { throw new Error("no token"); },
+      fetchImpl,
+    });
+    expect(complete).toBe(false);
+    expect((fetchImpl as any).mock.calls.length).toBe(0);
+  });
 });
