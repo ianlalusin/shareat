@@ -17,6 +17,7 @@ const formSchema = z.object({
   sortOrder: z.coerce.number().min(0),
   isActive: z.boolean().default(true),
   slaMinutes: z.coerce.number().min(1, "At least 1 minute.").max(240),
+  printOnOutage: z.boolean().default(false),
 });
 type FormValues = z.infer<typeof formSchema>;
 
@@ -30,15 +31,15 @@ interface KitchenLocationEditDialogProps {
 export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: KitchenLocationEditDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", sortOrder: 0, isActive: true, slaMinutes: 10 },
+    defaultValues: { name: "", sortOrder: 0, isActive: true, slaMinutes: 10, printOnOutage: false },
   });
 
   useEffect(() => {
     if (isOpen) {
       if (item) {
-        form.reset({ ...item, slaMinutes: item.slaMinutes ?? 10 });
+        form.reset({ ...item, slaMinutes: item.slaMinutes ?? 10, printOnOutage: item.printOnOutage ?? false });
       } else {
-        form.reset({ name: "", sortOrder: 0, isActive: true, slaMinutes: 10 });
+        form.reset({ name: "", sortOrder: 0, isActive: true, slaMinutes: 10, printOnOutage: false });
       }
     }
   }, [item, form, isOpen]);
@@ -76,6 +77,12 @@ export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: Kit
             <FormField control={form.control} name="isActive" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <FormLabel>Active</FormLabel>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="printOnOutage" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <FormLabel>Print on Outage</FormLabel>
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />

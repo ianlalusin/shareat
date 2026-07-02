@@ -64,6 +64,7 @@ export function KitchenLocationsSettings({ store }: { store: Store }) {
                     sortOrder: data.sortOrder ?? (maxSortOrder + 1),
                     isActive: data.isActive ?? true,
                     slaMinutes: data.slaMinutes ?? 10,
+                    printOnOutage: data.printOnOutage ?? false,
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                 }).commit();
