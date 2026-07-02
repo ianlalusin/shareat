@@ -157,12 +157,15 @@ async function resolveLogoBase64(storeId: string): Promise<string | null> {
  * Central print function for native bluetooth (Capacitor).
  * Keep UI pages thin and route all thermal jobs here.
  */
-export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text'>> & PrintJob) {
+export async function printViaNativeBluetooth(
+  job: Required<Pick<PrintJob, 'text'>> & PrintJob,
+  address: string | null = getLastPrinterAddress(),
+) {
   if (!Capacitor.isNativePlatform()) {
     throw new Error('Native Bluetooth printing is only available in the Android app build.');
   }
 
-  const lastAddress = getLastPrinterAddress();
+  const lastAddress = address;
   if (!lastAddress) {
     throw new Error('No printer connected. Please configure printer in Settings.');
   }
