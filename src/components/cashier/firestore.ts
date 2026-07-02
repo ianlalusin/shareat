@@ -1334,7 +1334,7 @@ export async function createKitchenTickets(
   opts: { tx: Transaction } | { batch: WriteBatch },
   notes?: string,
   extra?: Record<string, any>
-) {
+): Promise<Record<string, any> | null> {
   const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
   const now = Date.now();
   const serverTs = serverTimestamp();
@@ -1344,7 +1344,7 @@ export async function createKitchenTickets(
   // No kitchen station ⇒ this item is exempt from KDS tickets (the caller still
   // bills it). Skip creating any ticket so a location-less item can't break the
   // order / KDS projection.
-  if (!stationId) return;
+  if (!stationId) return null;
 
   const writer = selectTicketWriter(opts);
 
@@ -1392,6 +1392,8 @@ export async function createKitchenTickets(
       [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id),
     });
   }
+
+  return ticketPayload;
 }
 
 // ---------------------------------------------------------------------------

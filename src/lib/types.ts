@@ -232,6 +232,9 @@ export type KitchenLocation = {
    * default. See the kitchen page's slow-ticket alerting.
    */
   slaMinutes?: number;
+  /** When true, this location's tickets print to the shared Bluetooth kitchen
+   *  printer during an internet outage (offline backup). Absent → false. */
+  printOnOutage?: boolean;
 };
 
 /**
