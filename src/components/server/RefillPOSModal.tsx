@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -19,8 +19,10 @@ import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
 import { Separator } from "../ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { createKitchenTickets, getActorStamp } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
+import { commitLocalFirst } from "@/lib/offline/commit";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -54,6 +56,7 @@ function POSContent({
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const isOnline = useOnlineStatus();
   const [storeRefills, setStoreRefills] = useState<StoreRefill[]>([]);
   const [globalRefills, setGlobalRefills] = useState<Refill[]>([]);
   const [storeFlavors, setStoreFlavors] = useState<StoreFlavor[]>([]);
@@ -230,20 +233,99 @@ function POSContent({
     
     try {
         const actor = getActorStamp(appUser);
-        await runTransaction(db, async (tx) => {
+        if (isOnline) {
+            await runTransaction(db, async (tx) => {
+                for (const item of cart.values()) {
+                    const stationId = item.refill.kitchenLocationId;
+                    if (!stationId) {
+                        throw new Error(`Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`);
+                    }
+
+                    const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
+                    let finalNotes = item.notes.trim();
+                    if (selectedFlavorNames.length > 0) {
+                        const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
+                        finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
+                    }
+
+                    await createKitchenTickets(
+                        db,
+                        storeId,
+                        session.id,
+                        session,
+                        'refill',
+                        {
+                            itemId: item.refill.refillId,
+                            itemName: item.refill.refillName,
+                            kitchenLocationId: stationId,
+                            kitchenLocationName: item.refill.kitchenLocationName,
+                            billLineId: null,
+                        },
+                        1, // Qty for refill ticket is always 1
+                        actor,
+                        { tx },
+                        finalNotes
+                    );
+                }
+                // Other Refills tickets (grouped by kitchenLocationId)
+                if (hasOtherNow) {
+                    const byStation = new Map<string, { name?: string | null; entries: Array<[string, number]> }>();
+
+                    for (const r of otherRefills) {
+                        const qty = Number(otherQty[r.refillId] || 0);
+                        if (qty <= 0) continue;
+
+                        const stationId = r.kitchenLocationId;
+                        if (!stationId) {
+                            throw new Error(`Other refill "${r.refillName}" is missing an assigned kitchen location.`);
+                        }
+
+                        const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [] };
+                        bucket.name = bucket.name || r.kitchenLocationName;
+                        bucket.entries.push([r.refillName, qty]);
+                        byStation.set(stationId, bucket);
+                    }
+
+                    for (const [stationId, bucket] of byStation.entries()) {
+                        await createKitchenTickets(
+                            db,
+                            storeId,
+                            session.id,
+                            session,
+                            'refill',
+                            {
+                                itemId: "OTHER_REFILLS",
+                                itemName: "OTHER REFILLS",
+                                kitchenLocationId: stationId,
+                                kitchenLocationName: bucket.name,
+                                billLineId: null,
+                            },
+                            1,
+                            actor,
+                            { tx },
+                            "",
+                            { refillRequest: Object.fromEntries(bucket.entries) }
+                        );
+                    }
+                }
+
+
+            });
+        } else {
+            const batch = writeBatch(db);
             for (const item of cart.values()) {
                 const stationId = item.refill.kitchenLocationId;
                 if (!stationId) {
                     throw new Error(`Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`);
                 }
-    
+
                 const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
                 let finalNotes = item.notes.trim();
                 if (selectedFlavorNames.length > 0) {
                     const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
                     finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
                 }
-    
+
                 await createKitchenTickets(
                     db,
                     storeId,
@@ -259,7 +341,7 @@ function POSContent({
                     },
                     1, // Qty for refill ticket is always 1
                     actor,
-                    { tx },
+                    { batch },
                     finalNotes
                 );
             }
@@ -298,16 +380,16 @@ function POSContent({
                         },
                         1,
                         actor,
-                        { tx },
+                        { batch },
                         "",
                         { refillRequest: Object.fromEntries(bucket.entries) }
                     );
                 }
             }
 
+            commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
+        }
 
-        });
-        
         const refillNames = [...cart.entries()].map(([id, qty]) => `${id} x${qty}`).join(", ");
         writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) }, serverProfile });
         toast({ title: `Sent ${cart.size + (hasOther ? 1 : 0)} refill(s) to the kitchen.` });
@@ -363,7 +445,29 @@ function POSContent({
         const itemName = `REFILL - ${packageName}`;
         
         const actor = getActorStamp(appUser);
-        await runTransaction(db, async (tx) => {
+        if (isOnline) {
+            await runTransaction(db, async (tx) => {
+                await createKitchenTickets(
+                    db,
+                    storeId,
+                    session.id,
+                    session,
+                    'refill',
+                    {
+                        itemId: "REFILL_PACKAGE_FIRST_ORDER",
+                        itemName: itemName,
+                        kitchenLocationId: first.kitchenLocationId!,
+                        kitchenLocationName: first.kitchenLocationName,
+                        billLineId: null,
+                    },
+                    1,
+                    actor,
+                    { tx },
+                    notes
+                );
+            });
+        } else {
+            const batch = writeBatch(db);
             await createKitchenTickets(
                 db,
                 storeId,
@@ -379,11 +483,12 @@ function POSContent({
                 },
                 1,
                 actor,
-                { tx },
+                { batch },
                 notes
             );
-        });
-        
+            commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
+        }
+
         toast({
             title: "Sent refill ticket to kitchen.",
             description: itemName
