@@ -20,6 +20,7 @@ import {
   type DocumentData,
   type Firestore,
   type Transaction,
+  type WriteBatch,
   arrayUnion,
   arrayRemove,
   setDoc,
@@ -27,6 +28,7 @@ import {
 } from 'firebase/firestore';
 
 import { db, auth } from '@/lib/firebase/client';
+import { selectTicketWriter } from '@/lib/offline/kitchenTicketWrites';
 import { AppUser } from '@/context/auth-context';
 import type {
   Store,
@@ -1329,20 +1331,22 @@ export async function createKitchenTickets(
   line: { itemId: string; itemName: string; kitchenLocationId: string | null; kitchenLocationName?: string | null; billLineId: string | null },
   qty: number,
   actor: ActorStamp,
-  opts: { tx: Transaction },
+  opts: { tx: Transaction } | { batch: WriteBatch },
   notes?: string,
   extra?: Record<string, any>
 ) {
   const ticketsColRef = collection(db, `stores/${storeId}/sessions/${sessionId}/kitchentickets`);
   const now = Date.now();
   const serverTs = serverTimestamp();
-  
+
   const stationId = line.kitchenLocationId;
 
   // No kitchen station ⇒ this item is exempt from KDS tickets (the caller still
   // bills it). Skip creating any ticket so a location-less item can't break the
   // order / KDS projection.
   if (!stationId) return;
+
+  const writer = selectTicketWriter(opts as any);
 
   // ONE ticket per line item using qtyOrdered for batch-serve flow
   const ticketRef = doc(ticketsColRef);
@@ -1377,12 +1381,12 @@ export async function createKitchenTickets(
     guestCount: session.guestCountFinal || session.guestCountCashierInitial,
   });
 
-  opts.tx.set(ticketRef, ticketPayload);
+  writer.set(ticketRef, ticketPayload);
 
   if (stationId) {
     const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-    opts.tx.set(rtKdsDocRef, { meta: { source: 'createKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
-    opts.tx.update(rtKdsDocRef, {
+    writer.set(rtKdsDocRef, { meta: { source: 'createKitchenTickets', updatedAt: serverTimestamp() }, kitchenLocationId: stationId }, { merge: true });
+    writer.update(rtKdsDocRef, {
       [`tickets.${ticketRef.id}`]: ticketPayload,
       activeIds: arrayUnion(ticketRef.id),
       [`sessionIndex.${sessionId}`]: arrayUnion(ticketRef.id),
