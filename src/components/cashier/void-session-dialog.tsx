@@ -11,6 +11,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { voidSession } from "./firestore";
+import { voidSessionOffline } from "./offlineVoid";
+import { addToQueue } from "@/lib/offline/payment-queue";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import type { ActiveSession } from "./active-sessions-grid";
 import type { AppUser } from "@/context/auth-context";
 
@@ -27,6 +30,7 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
   const { user: firebaseUser } = useAuthContext();
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isOnline = useOnlineStatus();
 
   const isLocked = session.isPaid;
 
@@ -38,56 +42,81 @@ export function VoidSessionDialog({ isOpen, onClose, session, user, storeId }: V
     }
     setIsSubmitting(true);
     try {
-      const { doc, getDoc } = await import("firebase/firestore");
-      const { db } = await import("@/lib/firebase/client");
-      const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", session.id));
-      const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
+      if (isOnline) {
+        const { doc, getDoc } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase/client");
+        const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", session.id));
+        const currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
 
-      const voidResult = await voidSession({
-        storeId: storeId,
-        sessionId: session.id,
-        reason: safeReason,
-        actor: user,
-      });
-
-      // Refund any Sharelebrator rewards redeemed against this session.
-      const redemptionIds = voidResult?.reversedRedemptionIds ?? [];
-      if (firebaseUser && redemptionIds.length > 0) {
-        const token = await firebaseUser.getIdToken();
-        await Promise.all(
-          redemptionIds.map((redemptionId) =>
-            fetch("/api/loyalty/redeem", {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ redemptionId, storeId, reason: "void" }),
-            }).catch((e) => console.warn("[Loyalty] reverse on void failed (non-fatal):", e)),
-          ),
-        );
-      }
-
-      if (firebaseUser && currentPin) {
-        const token = await firebaseUser.getIdToken();
-        const finalizeRes = await fetch("/api/pins/finalize", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            storeId,
-            sessionId: session.id,
-            pin: currentPin,
-            reason: "session_voided",
-          }),
+        const voidResult = await voidSession({
+          storeId: storeId,
+          sessionId: session.id,
+          reason: safeReason,
+          actor: user,
         });
-        if (!finalizeRes.ok) {
-          const finalizeData = await finalizeRes.json().catch(() => ({}));
-          console.warn("[PIN] Finalization failed after void (non-fatal):", finalizeData?.error);
-        }
-      }
 
-      toast({ title: "Session Voided", description: "The session has been cancelled and the table is now free." });
-      onClose();
+        // Refund any Sharelebrator rewards redeemed against this session.
+        const redemptionIds = voidResult?.reversedRedemptionIds ?? [];
+        if (firebaseUser && redemptionIds.length > 0) {
+          const token = await firebaseUser.getIdToken();
+          await Promise.all(
+            redemptionIds.map((redemptionId) =>
+              fetch("/api/loyalty/redeem", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ redemptionId, storeId, reason: "void" }),
+              }).catch((e) => console.warn("[Loyalty] reverse on void failed (non-fatal):", e)),
+            ),
+          );
+        }
+
+        if (firebaseUser && currentPin) {
+          const token = await firebaseUser.getIdToken();
+          const finalizeRes = await fetch("/api/pins/finalize", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              storeId,
+              sessionId: session.id,
+              pin: currentPin,
+              reason: "session_voided",
+            }),
+          });
+          if (!finalizeRes.ok) {
+            const finalizeData = await finalizeRes.json().catch(() => ({}));
+            console.warn("[PIN] Finalization failed after void (non-fatal):", finalizeData?.error);
+          }
+        }
+
+        toast({ title: "Session Voided", description: "The session has been cancelled and the table is now free." });
+        onClose();
+      } else {
+        const { reversedRedemptionIds, pin } = await voidSessionOffline({
+          storeId,
+          sessionId: session.id,
+          reason: safeReason,
+          actor: user,
+        });
+        addToQueue({
+          storeId,
+          sessionId: session.id,
+          receiptId: session.id,
+          kind: "void",
+          ctx: { amount: 0, pin, redemptionIds: reversedRedemptionIds },
+          effects: {
+            analytics: "skip",
+            loyaltyFinalize: "skip",
+            loyaltyEarn: "skip",
+            loyaltyReverse: reversedRedemptionIds.length > 0 ? "pending" : "skip",
+            pinFinalize: pin ? "pending" : "skip",
+          },
+        });
+        toast({ title: "Session Voided", description: "The session has been cancelled and the table is now free. Loyalty/PIN will sync when back online." });
+        onClose();
+      }
     } catch (error: any) {
       console.error("Failed to void session:", error);
       toast({ variant: 'destructive', title: 'Action Failed', description: error.message || String(error) });
