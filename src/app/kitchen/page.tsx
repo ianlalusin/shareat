@@ -127,6 +127,11 @@ export default function KitchenPage() {
   // every rtKdsTickets snapshot — each ticket is only ever auto-served once
   // per page session.
   const autoAckedTicketIdsRef = useRef(new Set<string>());
+  // Per-ticket failure counter for the silent auto-ack path. Bounds retries so
+  // a permanently-failing ticket (e.g. bad data, permission issue) doesn't spam
+  // transactions forever — it stops retrying after 3 failed attempts and just
+  // sits in the queue for a human to serve manually.
+  const autoAckFailureCountRef = useRef(new Map<string, number>());
 
   const [flash, setFlash] = useState<{ type: "served" | "cancelled"; message: string; subtitle?: string } | null>(null);
   const showFlash = useCallback((type: "served" | "cancelled", message: string, subtitle?: string) => {
@@ -606,7 +611,13 @@ export default function KitchenPage() {
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
-        toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+        // Silent (system-driven) calls — e.g. the printedOffline auto-ack — must
+        // not surface a destructive toast for a background failure; the caller
+        // (the auto-ack effect) handles bounded retry/give-up instead. Manual
+        // taps (Mark Served / Cancel) keep the toast.
+        if (!opts?.silent) {
+          toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+        }
         return false;
     }
   };
@@ -645,10 +656,22 @@ export default function KitchenPage() {
         if (t.status !== "preparing" && t.status !== "ready") continue;
         if (!t.sessionId) continue;
         if (autoAckedTicketIdsRef.current.has(ticketId)) continue;
+        // Bounded retry: once a ticket has failed 3 silent attempts, stop
+        // retrying and leave it un-acked in the queue for manual handling
+        // instead of retrying forever on every stationsAllDocs snapshot.
+        const failCount = autoAckFailureCountRef.current.get(ticketId) ?? 0;
+        if (failCount >= 3) continue;
         autoAckedTicketIdsRef.current.add(ticketId);
         const overrideAtMs = typeof t.printedOfflineAt === "number" ? t.printedOfflineAt : undefined;
         void updateTicketStatus(ticketId, t.sessionId, "served", undefined, { overrideAtMs, silent: true })
-          .then((ok) => { if (!ok) autoAckedTicketIdsRef.current.delete(ticketId); });
+          .then((ok) => {
+            if (!ok) {
+              autoAckedTicketIdsRef.current.delete(ticketId);
+              autoAckFailureCountRef.current.set(ticketId, failCount + 1);
+            } else {
+              autoAckFailureCountRef.current.delete(ticketId);
+            }
+          });
       }
     }
     // updateTicketStatus is intentionally not in deps (same pattern as the

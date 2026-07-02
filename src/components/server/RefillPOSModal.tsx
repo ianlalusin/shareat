@@ -208,11 +208,28 @@ function POSContent({
     void (async () => {
       const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
       const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+      // `deps` (and its stampTicket closure) is built once for the whole batch,
+      // but each ticket in the loop can belong to a different station. Map
+      // ticketId -> kitchenLocationId up front so the shared closure can still
+      // patch the correct rtKdsTickets projection per ticket.
+      const stationByTicketId = new Map<string, string>();
+      for (const t of tickets) {
+        if (t?.id && t?.kitchenLocationId) stationByTicketId.set(t.id, t.kitchenLocationId);
+      }
       const deps = makeKitchenBackupDeps({
         kitchenLocations,
         stampTicket: (ticketId) => {
           const ref = doc(db, "stores", storeId, "sessions", session.id, "kitchentickets", ticketId);
           void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+          // Also patch the rtKdsTickets projection the KDS page actually reads
+          // from, so the auto-ack effect there can see the stamp.
+          const _stationId = stationByTicketId.get(ticketId);
+          if (_stationId) {
+            void updateDoc(doc(db, "stores", storeId, "rtKdsTickets", _stationId), {
+              [`tickets.${ticketId}.printedOffline`]: true,
+              [`tickets.${ticketId}.printedOfflineAt`]: Date.now(),
+            }).catch(() => {});
+          }
         },
         alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
       });

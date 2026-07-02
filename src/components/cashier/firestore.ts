@@ -366,6 +366,15 @@ export async function startSession(storeId: string, payload: StartSessionPayload
         stampTicket: (ticketId) => {
           const ref = doc(db, 'stores', storeId, 'sessions', newSessionRef.id, 'kitchentickets', ticketId);
           void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+          // Also patch the rtKdsTickets projection the KDS page actually reads
+          // from, so the auto-ack effect there can see the stamp.
+          const _stationId = ticketToPrint.kitchenLocationId;
+          if (_stationId) {
+            void updateDoc(doc(db, 'stores', storeId, 'rtKdsTickets', _stationId), {
+              [`tickets.${ticketId}.printedOffline`]: true,
+              [`tickets.${ticketId}.printedOfflineAt`]: Date.now(),
+            }).catch(() => {});
+          }
         },
         alert: (message) => console.warn(`[startSession] ${message}`),
       });
