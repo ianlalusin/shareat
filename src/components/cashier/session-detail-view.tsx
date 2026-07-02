@@ -262,6 +262,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
     if (!appUser || !storeId || !sessionId || !session) return;
+    // Best-effort server side-effects: awaited online, fired local-first when
+    // offline (their internal batch.commit() never resolves with no internet;
+    // the local write still applies and syncs on reconnect).
+    const sideEffect = (run: () => Promise<unknown>): Promise<void> => {
+      if (isOnline) return run().then(() => undefined);
+      run().catch((err) => console.warn("[session-detail] offline side-effect deferred", err));
+      return Promise.resolve();
+    };
     try {
         if (isOnline) {
             await runTransaction(db, async (tx) => {
@@ -345,7 +353,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           "discountQty" in after ||
           "discountValue" in after;
         if (flagFieldsTouched) {
-          await recomputeSessionAdjustmentFlags(storeId, sessionId);
+          await sideEffect(() => recomputeSessionAdjustmentFlags(storeId, sessionId));
         }
 
         // Logging and UI feedback outside the transaction
@@ -369,17 +377,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         };
 
         if (line.type === 'package' && diff.qtyOrdered > 0) {
-            await writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser, sessionContext });
+            await sideEffect(() => writeActivityLog({ action: "PACKAGE_QTY_OVERRIDE_SET", meta: { itemName: line.itemName, beforeQty: before.qtyOrdered, afterQty: after.qtyOrdered }, storeId, sessionId, user: appUser, sessionContext }));
         }
-        
+
         if (diff.discount > 0) {
-            await writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
+            await sideEffect(() => writeActivityLog({ action: "DISCOUNT_APPLIED", qty: diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext }));
         } else if (diff.discount < 0) {
-            await writeActivityLog({ action: "DISCOUNT_REMOVED", qty: -diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext });
+            await sideEffect(() => writeActivityLog({ action: "DISCOUNT_REMOVED", qty: -diff.discount, meta: { itemName: line.itemName }, storeId, sessionId, user: appUser, sessionContext }));
         }
 
         if (diff.free > 0) {
-          await writeActivityLog({
+          await sideEffect(() => writeActivityLog({
             action: "MARK_FREE",
             qty: diff.free,
             note: "Marked item free",
@@ -391,9 +399,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               amount: Math.abs(diff.free) * unitPrice,
             },
             storeId, sessionId, user: appUser, sessionContext
-          });
+          }));
         } else if (diff.free < 0) {
-          await writeActivityLog({
+          await sideEffect(() => writeActivityLog({
             action: "UNMARK_FREE",
             qty: -diff.free,
             note: "Removed free tag",
@@ -405,11 +413,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               amount: Math.abs(diff.free) * unitPrice,
             },
             storeId, sessionId, user: appUser, sessionContext
-          });
+          }));
         }
-        
+
         if (diff.void > 0) {
-          await writeActivityLog({
+          await sideEffect(() => writeActivityLog({
             action: "VOID_TICKETS",
             qty: diff.void,
             note: "Voided item",
@@ -421,9 +429,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               amount: Math.abs(diff.void) * unitPrice,
             },
             storeId, sessionId, user: appUser, sessionContext
-          });
+          }));
         } else if (diff.void < 0) {
-          await writeActivityLog({
+          await sideEffect(() => writeActivityLog({
             action: "UNVOID",
             qty: -diff.void,
             note: "Unvoided item",
@@ -435,7 +443,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               amount: Math.abs(diff.void) * unitPrice,
             },
             storeId, sessionId, user: appUser, sessionContext
-          });
+          }));
         }
 
         toast({ title: "Line Item Updated"});
