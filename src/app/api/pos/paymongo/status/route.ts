@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
   // 2. Validate input.
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  const { storeId, sessionId, intentDocId } = parsed.data;
+  // sessionId is still validated by the zod schema (request contract) but no longer
+  // needed here — the bridge doc is addressed by storeId + intentDocId after Task 10's relocation.
+  const { storeId, intentDocId } = parsed.data;
 
   // 3. Load the bridge doc.
   const ref = adminDb.doc(`stores/${storeId}/paymentIntents/${intentDocId}`);
