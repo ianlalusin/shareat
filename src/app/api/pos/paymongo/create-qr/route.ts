@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
       { amountCentavos, description: `${storeId} session ${sessionId}`, metadata, billing: { name: `Shareat ${storeId}` } },
     );
   } catch (e) {
-    return NextResponse.json({ error: "Could not start payment", detail: (e as Error).message }, { status: 502 });
+    console.error("[paymongo/create-qr] PayMongo QR creation failed:", e);
+    return NextResponse.json({ error: "Could not start payment" }, { status: 502 });
   }
 
   // 7. Persist the bridge doc.
