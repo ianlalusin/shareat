@@ -17,6 +17,7 @@ const formSchema = z.object({
   sortOrder: z.coerce.number().int().default(1000),
   isActive: z.boolean().default(true),
   hasRef: z.boolean().default(false),
+  gateway: z.union([z.literal("paymongo_qrph"), z.null()]).default(null),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -38,6 +39,7 @@ export function ModeOfPaymentEditDialog({ isOpen, onClose, onSave, item }: ModeO
       sortOrder: 1000,
       isActive: true,
       hasRef: false,
+      gateway: null,
     },
   });
 
@@ -49,6 +51,7 @@ export function ModeOfPaymentEditDialog({ isOpen, onClose, onSave, item }: ModeO
           sortOrder: item.sortOrder,
           isActive: item.isActive,
           hasRef: item.hasRef || false,
+          gateway: item.gateway || null,
         });
       } else {
         form.reset({
@@ -56,6 +59,7 @@ export function ModeOfPaymentEditDialog({ isOpen, onClose, onSave, item }: ModeO
           sortOrder: 1000,
           isActive: true,
           hasRef: false,
+          gateway: null,
         });
       }
     }
@@ -110,6 +114,22 @@ export function ModeOfPaymentEditDialog({ isOpen, onClose, onSave, item }: ModeO
                   </FormDescription>
                 </div>
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="gateway" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <FormLabel>Auto-confirm via PayMongo QR</FormLabel>
+                  <FormDescription className="text-xs">
+                    Customer scans a QR; the sale auto-confirms when PayMongo receives payment.
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value === "paymongo_qrph"}
+                    onCheckedChange={(checked) => field.onChange(checked ? "paymongo_qrph" : null)}
+                  />
+                </FormControl>
               </FormItem>
             )} />
           </form>
