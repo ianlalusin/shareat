@@ -276,8 +276,10 @@ service cloud.firestore {
 
     // Root fallback: read-only for authenticated staff. Do not grant writes here,
     // otherwise this fallback can override server-only collection rules above.
+    // paymongoIntentIndex is server-only (Admin SDK): exclude it from this read grant,
+    // otherwise the OR-semantics of this fallback would expose its correlation docs.
     match /{collection}/{docId} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && collection != 'paymongoIntentIndex';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
