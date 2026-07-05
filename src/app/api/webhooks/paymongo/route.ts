@@ -12,6 +12,9 @@ export async function POST(req: NextRequest) {
   const sig = req.headers.get("paymongo-signature") ?? "";
   const secret = process.env.PAYMONGO_WEBHOOK_SECRET_POS ?? "";
   if (!secret || !verifyWebhookSignature(raw, sig, secret)) {
+    // Log (without the secret value) so a future signature mismatch is diagnosable
+    // instead of a silent 401 that makes PayMongo retry forever.
+    console.warn(`[paymongo/webhook] signature verification failed (secret configured: ${!!secret}, sig header present: ${!!sig})`);
     return NextResponse.json({ error: "Bad signature" }, { status: 401 });
   }
 
