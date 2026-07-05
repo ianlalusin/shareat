@@ -51,6 +51,9 @@ export function PaymongoQrView({
   const [checkingStatus, setCheckingStatus] = useState(false);
   const intentDocIdRef = useRef<string | null>(null);
   const paidRef = useRef(false);
+  const paidTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear the "payment received" hold timer if we somehow unmount first.
+  useEffect(() => () => { if (paidTimerRef.current) clearTimeout(paidTimerRef.current); }, []);
 
   // Keep the latest onPaid without re-subscribing the snapshot listener on
   // every parent re-render (the parent's callback identity can change).
@@ -109,7 +112,11 @@ export function PaymongoQrView({
       if (d.status === "paid") {
         paidRef.current = true;
         setPhase("paid");
-        onPaidRef.current({ amount, reference: d.paymongoPaymentId ?? d.paymongoIntentId });
+        // Hold on the "Payment received" state briefly so the cashier sees the
+        // confirmation, THEN hand the tender back (onPaid unmounts this overlay).
+        // handleQrPaid is guarded on qrTender, so a late fire is safe.
+        const info = { amount, reference: d.paymongoPaymentId ?? d.paymongoIntentId };
+        paidTimerRef.current = setTimeout(() => onPaidRef.current(info), 1800);
       } else if (d.status === "failed" || d.status === "canceled") {
         setPhase("failed");
       } else if (d.status === "expired") {

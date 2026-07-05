@@ -11,11 +11,11 @@ import { Numpad } from "@/components/shared/Numpad";
 import { useToast } from "@/hooks/use-toast";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
 import { completePaymentOffline } from "@/components/cashier/offlinePayment";
-import type { Payment, ModeOfPayment, Store, Reservation } from "@/lib/types";
+import type { Payment, ModeOfPayment, Store, Reservation, PosPaymentIntentDoc } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
 import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
@@ -168,6 +168,32 @@ export function PaymentModal({
           console.warn("[PaymentModal] Failed to load reservation payments:", e);
         }
       }
+
+      // Recover PayMongo QR payments already confirmed paid (by the webhook) for this
+      // session but not yet finalized — so closing the payment modal doesn't lose a
+      // payment the customer already made. They come back as locked tenders on (re)open.
+      try {
+        const qrSnap = await getDocs(
+          query(collection(db, "stores", storeId, "paymentIntents"), where("sessionId", "==", sessionId)),
+        );
+        const seenRefs = new Set(prepaidLines.map(p => p.reference).filter(Boolean));
+        for (const dSnap of qrSnap.docs) {
+          const data = dSnap.data() as PosPaymentIntentDoc;
+          if (data.status !== "paid") continue;
+          const reference = data.paymongoPaymentId ?? data.paymongoIntentId;
+          if (seenRefs.has(reference)) continue;
+          seenRefs.add(reference);
+          prepaidLines.push({
+            id: `qr-${dSnap.id}`,
+            methodId: data.methodId,
+            amount: Math.round((Number(data.amount) || 0) * 100) / 100,
+            reference,
+          });
+        }
+      } catch (e) {
+        console.warn("[PaymentModal] Failed to recover paid QR payments:", e);
+      }
+
       if (cancelled) return;
 
       const seededTotal = prepaidLines.reduce((s, p) => s + (Number(p.amount) || 0), 0);
