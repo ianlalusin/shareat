@@ -500,17 +500,21 @@ export function PaymentModal({
           const isActive = activePaymentId === payment.id;
           const fromReservation = !!payment.fromReservationPaymentId;
           const isGatewayRow = method ? isPaymongoQrMethod(method) : false;
+          // A gateway row that carries a reference is PAID — real captured money.
+          // Lock it: no amount edit, no delete, no method change. Other tenders can
+          // still be added/edited freely.
+          const isPaidGatewayRow = isGatewayRow && !!payment.reference;
           return (
             <div
               key={payment.id}
-              className={`rounded-lg border p-2.5 cursor-pointer transition-colors ${isActive ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border"} ${(method?.hasRef || isGatewayRow) ? "space-y-2" : ""}`}
-              onClick={() => focusPayment(payment.id)}
+              className={`rounded-lg border p-2.5 ${isPaidGatewayRow ? "cursor-default" : "cursor-pointer"} transition-colors ${isActive ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border"} ${(method?.hasRef || isGatewayRow) ? "space-y-2" : ""}`}
+              onClick={() => { if (!isPaidGatewayRow) focusPayment(payment.id); }}
             >
               {fromReservation && (
                 <div className="text-[10px] uppercase tracking-wide text-primary font-medium mb-1">From reservation</div>
               )}
               <div className="flex items-center gap-1.5">
-                <Select value={payment.methodId} onValueChange={(val) => updatePayment(payment.id, { methodId: val })} disabled={isProcessing}>
+                <Select value={payment.methodId} onValueChange={(val) => updatePayment(payment.id, { methodId: val })} disabled={isProcessing || isPaidGatewayRow}>
                   <SelectTrigger className="h-9 min-w-0 flex-1 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {paymentMethods.filter(m => shouldOfferPaymongoQr(m, isOnline)).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
@@ -526,18 +530,18 @@ export function PaymentModal({
                     readOnly
                     inputMode="none"
                     tabIndex={-1}
-                    value={isActive ? (numpadBuffer || "0") : payment.amount.toFixed(2)}
+                    value={isActive && !isPaidGatewayRow ? (numpadBuffer || "0") : payment.amount.toFixed(2)}
                     className="flex-1 bg-transparent outline-none caret-transparent pointer-events-none text-sm tabular-nums w-full"
                     onFocus={(e) => e.target.blur()}
                   />
                 </div>
-                {payments.length > 1 && (
+                {payments.length > 1 && !isPaidGatewayRow && (
                   <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground" onClick={(e) => { e.stopPropagation(); removePayment(payment.id); }} disabled={isProcessing}>
                     <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
-              {isGatewayRow && (
+              {isGatewayRow && !isPaidGatewayRow && (
                 <Button
                   type="button"
                   variant="outline"
@@ -548,6 +552,11 @@ export function PaymentModal({
                 >
                   Generate PayMongo QR — ₱{payment.amount.toFixed(2)}
                 </Button>
+              )}
+              {isPaidGatewayRow && (
+                <div className="flex items-center justify-center gap-1.5 h-9 text-sm font-medium text-green-600">
+                  <CheckCircle2 className="h-4 w-4" /> Paid via PayMongo QR — locked
+                </div>
               )}
               {!isGatewayRow && method?.hasRef && (
                 <Input
