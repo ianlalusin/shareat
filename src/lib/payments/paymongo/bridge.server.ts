@@ -1,5 +1,5 @@
 import "server-only";
-import type { ParsedQr } from "@/lib/payments/paymongo/qrph";
+import type { ParsedQr, WebhookEvent } from "@/lib/payments/paymongo/qrph";
 import type { PosPaymentIntentDoc } from "@/lib/types";
 
 export const TEN_MINUTES_MS = 10 * 60 * 1000;
@@ -35,4 +35,22 @@ export function buildInitialIntentDoc(input: {
     createdByLocalUserId: input.createdByLocalUserId,
     createdByUid: input.createdByUid,
   };
+}
+
+// ===== Task 8: Idempotent webhook → intent-doc reducer =====
+
+export function applyWebhookToIntentDoc(
+  doc: PosPaymentIntentDoc,
+  ev: WebhookEvent,
+): { changed: boolean; next: PosPaymentIntentDoc } {
+  if (ev.eventId && doc.processedEventIds.includes(ev.eventId)) return { changed: false, next: doc };
+  if (doc.status === "paid") return { changed: false, next: doc }; // terminal-positive: never downgrade
+  const processedEventIds = ev.eventId ? [...doc.processedEventIds, ev.eventId] : doc.processedEventIds;
+  if (ev.type === "payment.paid") {
+    return { changed: true, next: { ...doc, status: "paid", paymongoPaymentId: ev.paymentId, processedEventIds } };
+  }
+  if (ev.type === "payment.failed") {
+    return { changed: true, next: { ...doc, status: "failed", processedEventIds } };
+  }
+  return { changed: false, next: doc };
 }
