@@ -25,3 +25,20 @@ env:
     secret: OPENWEATHER_API_KEY
     availability:
       - RUNTIME
+  # PayMongo (QR Ph in-store payments). Server-only: the create-qr/status routes
+  # read env PAYMONGO_SECRET_KEY (Basic auth to api.paymongo.com). The Secret Manager
+  # secret is named PAYMONGO_SECRET (created 2026-07-05 in shareat-hub-v2); `variable`
+  # is the env var the code reads, `secret` is the Secret Manager name — they may differ.
+  # The backend must be GRANTED access to it (console-created secrets are NOT auto-granted):
+  #   firebase apphosting:secrets:grantaccess PAYMONGO_SECRET --project shareat-hub-v2 --backend <pos-backend>
+  - variable: PAYMONGO_SECRET_KEY
+    secret: PAYMONGO_SECRET
+    availability:
+      - RUNTIME
+  # Webhook signing secret — RE-ENABLE this block only AFTER the webhook is registered
+  # and a PAYMONGO_WEBHOOK_SECRET_POS secret exists + is granted (else the deploy fails).
+  # The webhook route stays inert (401s) until it is set; use "Check status" meanwhile.
+  # - variable: PAYMONGO_WEBHOOK_SECRET_POS
+  #   secret: PAYMONGO_WEBHOOK_SECRET_POS
+  #   availability:
+  #     - RUNTIME
