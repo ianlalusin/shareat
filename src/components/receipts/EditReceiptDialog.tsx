@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { BillableItems } from "../cashier/billable-items";
 import { BillTotals } from "../cashier/bill-totals";
-import { BillAdjustments } from "../cashier/bill-adjustments";
+import { BillAdjustments, BillAppliedAdjustments } from "../cashier/bill-adjustments";
 import { PaymentSection } from "../cashier/payment-section";
 import { EditBillableItemDialog } from "../cashier/edit-billable-item-dialog";
 import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession, ReceiptAnalyticsV2, LineAdjustment } from "@/lib/types";
@@ -424,14 +424,16 @@ function EditReceiptContent({
           />
           <BillAdjustments
             appUser={appUser}
-            adjustments={customAdjustments}
             billDiscount={billDiscount}
             charges={billCharges}
             discounts={discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"))}
             onAddAdjustment={handleAddAdjustment}
             onAddCustomAdjustment={handleAddCustomAdjustment}
-            onRemoveAdjustment={handleRemoveAdjustment}
             onSetBillDiscount={setBillDiscount}
+          />
+          <BillAppliedAdjustments
+            adjustments={customAdjustments}
+            onRemoveAdjustment={handleRemoveAdjustment}
           />
           <div className="p-4 border rounded-md">
             <h3 className="font-semibold mb-2">Customer Details (for BIR)</h3>

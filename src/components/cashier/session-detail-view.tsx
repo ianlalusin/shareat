@@ -19,7 +19,7 @@ import { SessionHeader } from "@/components/cashier/session-header";
 import { LoyaltyRedeemCard } from "@/components/cashier/LoyaltyRedeemCard";
 import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
-import { BillAdjustments } from "@/components/cashier/bill-adjustments";
+import { BillAdjustments, BillAppliedAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentModal } from "@/components/cashier/payment-modal";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
@@ -584,6 +584,42 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const isLoading = isLoadingSession || isConfigLoading;
 
+  // Bill-adjustment handlers — unchanged bodies, hoisted to named consts so the
+  // same closures can be shared between the applied-adjustments list (left
+  // bill-summary column) and the Bill Discount / Add Charge buttons (sticky
+  // footer) without duplicating billing logic.
+  const handleAddAdjustment = async (charge: Charge) => {
+    const next = [...customAdjustments, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge' as const, sourceId: charge.id, appliesTo: charge.appliesTo}];
+    await updateSessionBillingState({ customAdjustments: next });
+    setCustomAdjustments(next);
+    if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Charge added: ${charge.name} ${charge.type === 'percent' ? charge.value + '%' : '₱' + charge.value}`, meta: { itemName: charge.name, amount: charge.value, discountType: charge.type } });
+  };
+
+  const handleAddCustomAdjustment = async (note: string, amount: number) => {
+    const next = [...customAdjustments, {id: `custom_${Date.now()}`, note, amount, type: 'fixed' as const, source: 'custom' as const}];
+    await updateSessionBillingState({ customAdjustments: next });
+    setCustomAdjustments(next);
+    if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Custom charge: ${note} ₱${amount}`, meta: { itemName: note, amount } });
+  };
+
+  const handleRemoveAdjustment = async (id: string) => {
+    const adj = customAdjustments.find(a => a.id === id);
+    const next = customAdjustments.filter(a => a.id !== id);
+    await updateSessionBillingState({ customAdjustments: next });
+    setCustomAdjustments(next);
+    if (storeId && sessionId && appUser && adj) writeActivityLog({ action: "CUSTOM_CHARGE_REMOVED", storeId, sessionId, user: appUser, note: `Charge removed: ${adj.note} ₱${adj.amount}`, meta: { itemName: adj.note, amount: adj.amount } });
+  };
+
+  const handleSetBillDiscount = async (d: Discount | null) => {
+    const wasDiscount = !!billDiscount;
+    await updateSessionBillingState({ billDiscount: d });
+    setBillDiscount(d);
+    if (storeId && sessionId && appUser) {
+      if (d) writeActivityLog({ action: "BILL_DISCOUNT_APPLIED", storeId, sessionId, user: appUser, note: `Bill discount: ${d.name} (${d.type === 'percent' ? d.value + '%' : '₱' + d.value})`, meta: { discountName: d.name, discountType: d.type, discountValue: d.value } });
+      else if (wasDiscount) writeActivityLog({ action: "BILL_DISCOUNT_REMOVED", storeId, sessionId, user: appUser, note: "Bill discount removed" });
+    }
+  };
+
   const BillSummaryContent = (
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-y-auto">
@@ -598,6 +634,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           isLocked={isBillingLocked}
           onRemoveLineAdjustment={handleRemoveLineAdjustment}
         />
+        <BillAppliedAdjustments
+          adjustments={customAdjustments || []}
+          onRemoveAdjustment={handleRemoveAdjustment}
+          isLocked={isBillingLocked}
+        />
         {session && (session as any).linkedCustomerPhone && (
           <div className="px-4 pb-2">
             <LoyaltyRedeemCard
@@ -611,42 +652,6 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           </div>
         )}
       </div>
-      <BillAdjustments
-        appUser={appUser}
-        charges={billCharges}
-        discounts={billableDiscounts}
-        onAddAdjustment={async (charge: Charge) => {
-          const next = [...customAdjustments, {id: charge.id, note: charge.name, amount: charge.value, type: charge.type, source: 'charge' as const, sourceId: charge.id, appliesTo: charge.appliesTo}];
-          await updateSessionBillingState({ customAdjustments: next });
-          setCustomAdjustments(next);
-          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Charge added: ${charge.name} ${charge.type === 'percent' ? charge.value + '%' : '₱' + charge.value}`, meta: { itemName: charge.name, amount: charge.value, discountType: charge.type } });
-        }}
-        onAddCustomAdjustment={async (note, amount) => {
-          const next = [...customAdjustments, {id: `custom_${Date.now()}`, note, amount, type: 'fixed' as const, source: 'custom' as const}];
-          await updateSessionBillingState({ customAdjustments: next });
-          setCustomAdjustments(next);
-          if (storeId && sessionId && appUser) writeActivityLog({ action: "CUSTOM_CHARGE_ADDED", storeId, sessionId, user: appUser, note: `Custom charge: ${note} ₱${amount}`, meta: { itemName: note, amount } });
-        }}
-        onRemoveAdjustment={async (id) => {
-          const adj = customAdjustments.find(a => a.id === id);
-          const next = customAdjustments.filter(a => a.id !== id);
-          await updateSessionBillingState({ customAdjustments: next });
-          setCustomAdjustments(next);
-          if (storeId && sessionId && appUser && adj) writeActivityLog({ action: "CUSTOM_CHARGE_REMOVED", storeId, sessionId, user: appUser, note: `Charge removed: ${adj.note} ₱${adj.amount}`, meta: { itemName: adj.note, amount: adj.amount } });
-        }}
-        onSetBillDiscount={async (d) => {
-          const wasDiscount = !!billDiscount;
-          await updateSessionBillingState({ billDiscount: d });
-          setBillDiscount(d);
-          if (storeId && sessionId && appUser) {
-            if (d) writeActivityLog({ action: "BILL_DISCOUNT_APPLIED", storeId, sessionId, user: appUser, note: `Bill discount: ${d.name} (${d.type === 'percent' ? d.value + '%' : '₱' + d.value})`, meta: { discountName: d.name, discountType: d.type, discountValue: d.value } });
-            else if (wasDiscount) writeActivityLog({ action: "BILL_DISCOUNT_REMOVED", storeId, sessionId, user: appUser, note: "Bill discount removed" });
-          }
-        }}
-        billDiscount={billDiscount}
-        adjustments={customAdjustments || []}
-        isLocked={isBillingLocked}
-      />
     </div>
   );
 
@@ -709,61 +714,78 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         </div>
       </header>
       
-      <main className="flex-1 overflow-hidden">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 h-full">
-            <div className="md:col-span-1 xl:col-span-2 bg-muted/20 md:h-full flex flex-col overflow-hidden">
-                {isMobile ? (
-                  <Accordion type="single" collapsible className="w-full" defaultValue="bill-summary">
-                    <AccordionItem value="bill-summary" className="border-b-0">
-                      <AccordionTrigger className="p-4 text-lg font-semibold">
-                        Bill Summary
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        {BillSummaryContent}
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                ) : (
-                  BillSummaryContent
-                )}
-            </div>
-            <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
-                <BillableItems 
-                    lines={billLines}
-                    storeId={storeId} 
-                    session={session} 
-                    discounts={itemDiscounts}
-                    isLocked={isBillingLocked}
-                    onUpdateLine={(line) => setEditingLineId(line.id)}
-                    onAddLine={(newLine) => {
-                        setBillLines((currentLines) => {
-                            // Check if an identical addon line already exists
-                            const existingLineIndex = currentLines.findIndex(
-                                (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
-                            );
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 h-full">
+              <div className="md:col-span-1 xl:col-span-2 bg-muted/20 md:h-full flex flex-col overflow-hidden">
+                  {isMobile ? (
+                    <Accordion type="single" collapsible className="w-full" defaultValue="bill-summary">
+                      <AccordionItem value="bill-summary" className="border-b-0">
+                        <AccordionTrigger className="p-4 text-lg font-semibold">
+                          Bill Summary
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          {BillSummaryContent}
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  ) : (
+                    BillSummaryContent
+                  )}
+              </div>
+              <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
+                  <BillableItems
+                      lines={billLines}
+                      storeId={storeId}
+                      session={session}
+                      discounts={itemDiscounts}
+                      isLocked={isBillingLocked}
+                      onUpdateLine={(line) => setEditingLineId(line.id)}
+                      onAddLine={(newLine) => {
+                          setBillLines((currentLines) => {
+                              // Check if an identical addon line already exists
+                              const existingLineIndex = currentLines.findIndex(
+                                  (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
+                              );
 
-                            if (existingLineIndex >= 0) {
-                                // If it exists, update the quantity
-                                const nextLines = [...currentLines];
-                                const existingLine = nextLines[existingLineIndex];
-                                nextLines[existingLineIndex] = {
-                                    ...existingLine,
-                                    qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
-                                };
-                                return nextLines;
-                            } else {
-                                // If it doesn't exist, add the new line
-                                return [...currentLines, newLine];
-                            }
-                        });
-                    }}
-                />
-                <div className="sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 rounded-lg mt-auto">
-                    <Button type="button" className="w-full" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
-                        {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    </Button>
-                </div>
-            </div>
+                              if (existingLineIndex >= 0) {
+                                  // If it exists, update the quantity
+                                  const nextLines = [...currentLines];
+                                  const existingLine = nextLines[existingLineIndex];
+                                  nextLines[existingLineIndex] = {
+                                      ...existingLine,
+                                      qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
+                                  };
+                                  return nextLines;
+                              } else {
+                                  // If it doesn't exist, add the new line
+                                  return [...currentLines, newLine];
+                              }
+                          });
+                      }}
+                  />
+              </div>
+          </div>
+        </div>
+
+        {/* Sticky footer action bar: Bill Discount, Add Charge, Pay — always
+            visible while the bill/items scroll above it. */}
+        <div className="sticky bottom-0 z-10 w-full border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2">
+            <BillAdjustments
+              appUser={appUser}
+              charges={billCharges}
+              discounts={billableDiscounts}
+              onAddAdjustment={handleAddAdjustment}
+              onAddCustomAdjustment={handleAddCustomAdjustment}
+              onSetBillDiscount={handleSetBillDiscount}
+              billDiscount={billDiscount}
+              isLocked={isBillingLocked}
+            />
+            <Button type="button" className="flex-1" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
+                {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </Button>
+          </div>
         </div>
       </main>
 
