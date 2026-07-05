@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ref = adminDb.doc(
-    `stores/${md.storeId}/sessions/${md.sessionId}/paymentIntents/${md.intentDocId}`,
+    `stores/${md.storeId}/paymentIntents/${md.intentDocId}`,
   );
   await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(ref);

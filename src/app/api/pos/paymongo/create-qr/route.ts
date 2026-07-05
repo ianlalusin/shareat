@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Pre-allocate the bridge doc id (so metadata can reference it).
-  const intentsCol = adminDb.collection(`stores/${storeId}/sessions/${sessionId}/paymentIntents`);
+  const intentsCol = adminDb.collection(`stores/${storeId}/paymentIntents`);
   const intentRef = intentsCol.doc();
   const metadata: QrhpMetadata = { storeId, sessionId, intentDocId: intentRef.id, kind: "pos_session" };
 

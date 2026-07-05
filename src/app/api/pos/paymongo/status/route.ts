@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const { storeId, sessionId, intentDocId } = parsed.data;
 
   // 3. Load the bridge doc.
-  const ref = adminDb.doc(`stores/${storeId}/sessions/${sessionId}/paymentIntents/${intentDocId}`);
+  const ref = adminDb.doc(`stores/${storeId}/paymentIntents/${intentDocId}`);
   const snap = await ref.get();
   if (!snap.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const doc = snap.data() as PosPaymentIntentDoc;
