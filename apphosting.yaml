@@ -35,10 +35,10 @@ env:
     secret: PAYMONGO_SECRET
     availability:
       - RUNTIME
-  # Webhook signing secret — RE-ENABLE this block only AFTER the webhook is registered
-  # and a PAYMONGO_WEBHOOK_SECRET_POS secret exists + is granted (else the deploy fails).
-  # The webhook route stays inert (401s) until it is set; use "Check status" meanwhile.
-  # - variable: PAYMONGO_WEBHOOK_SECRET_POS
-  #   secret: PAYMONGO_WEBHOOK_SECRET_POS
-  #   availability:
-  #     - RUNTIME
+  # Webhook signing secret (secret created + granted to `shareat` 2026-07-05).
+  # The webhook route verifies the Paymongo-Signature on inbound payment.paid/failed
+  # events with this. Must match the signing secret of the registered PayMongo webhook.
+  - variable: PAYMONGO_WEBHOOK_SECRET_POS
+    secret: PAYMONGO_WEBHOOK_SECRET_POS
+    availability:
+      - RUNTIME
