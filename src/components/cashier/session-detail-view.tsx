@@ -705,8 +705,13 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading session...</div>;
   }
 
+  // Root fills the space BELOW the global 56px fixed nav (h-[calc(100dvh-3.5rem)]),
+  // and the negative margins cancel the app-shell <main>'s p-4/md:p-8 padding — so this
+  // screen is a self-contained bounded-height panel (bill/items scroll internally, footer
+  // pinned) instead of forcing 100vh inside the padded shell, which made the whole page
+  // scroll and pushed the footer off-screen.
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-[calc(100dvh-3.5rem)] -m-4 md:-m-8 flex flex-col">
       <header className="flex items-center gap-4 border-b bg-muted/40 px-6 h-[72px]">
         <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-9 w-9">
             <ArrowLeft className="h-5 w-5" />
