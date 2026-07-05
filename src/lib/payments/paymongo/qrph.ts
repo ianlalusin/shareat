@@ -62,3 +62,28 @@ export function buildPaymentMethodBody(input: {
 export function buildAttachBody(paymentMethodId: string): object {
   return { data: { attributes: { payment_method: paymentMethodId } } };
 }
+
+// ===== Task 3: Attach response parser =====
+
+export type ParsedQr = {
+  paymongoIntentId: string;
+  qrData: string | null;
+  imageUrl: string | null;
+  expiresAtFromApiMs: number | null;
+};
+
+export function parseAttachResponse(json: unknown): ParsedQr {
+  const data = (json as any)?.data;
+  const attrs = data?.attributes;
+  const code = attrs?.next_action?.code;
+  if (!data?.id || !code || (!code.data && !code.image_url)) {
+    throw new Error("PayMongo attach response has no QR code next_action");
+  }
+  const expSec = typeof code.expires_at === "number" ? code.expires_at : null;
+  return {
+    paymongoIntentId: String(data.id),
+    qrData: code.data ?? null,
+    imageUrl: code.image_url ?? null,
+    expiresAtFromApiMs: expSec == null ? null : expSec * 1000,
+  };
+}

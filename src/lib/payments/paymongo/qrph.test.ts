@@ -6,6 +6,7 @@ import {
   buildPaymentIntentBody,
   buildPaymentMethodBody,
   buildAttachBody,
+  parseAttachResponse,
 } from "@/lib/payments/paymongo/qrph";
 
 // ===== Task 1: Money conversion + amount validation =====
@@ -78,5 +79,46 @@ describe("buildAttachBody", () => {
     expect(buildAttachBody("pm_123")).toEqual({
       data: { attributes: { payment_method: "pm_123" } },
     });
+  });
+});
+
+// ===== Task 3: Attach response parser =====
+
+const attachOk = {
+  data: {
+    id: "pi_abc",
+    attributes: {
+      status: "awaiting_next_action",
+      next_action: {
+        type: "present_qr_code",
+        code: {
+          type: "qrph",
+          data: "00020101021226...6304ABCD",
+          image_url: "https://paymongo.example/qr/pi_abc.png",
+          expires_at: 1751690400, // unix seconds
+        },
+      },
+    },
+  },
+};
+
+describe("parseAttachResponse", () => {
+  it("extracts intent id, qr data, image url, and expiry (ms)", () => {
+    expect(parseAttachResponse(attachOk)).toEqual({
+      paymongoIntentId: "pi_abc",
+      qrData: "00020101021226...6304ABCD",
+      imageUrl: "https://paymongo.example/qr/pi_abc.png",
+      expiresAtFromApiMs: 1751690400000,
+    });
+  });
+
+  it("returns null expiry when PayMongo omits expires_at", () => {
+    const noExp = structuredClone(attachOk);
+    delete (noExp.data.attributes.next_action.code as any).expires_at;
+    expect(parseAttachResponse(noExp).expiresAtFromApiMs).toBeNull();
+  });
+
+  it("throws when there is no QR next_action", () => {
+    expect(() => parseAttachResponse({ data: { id: "pi_x", attributes: { status: "awaiting_payment_method" } } })).toThrow();
   });
 });
