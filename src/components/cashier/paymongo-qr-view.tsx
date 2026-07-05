@@ -171,10 +171,10 @@ export function PaymongoQrView({
       )}
 
       {phase === "awaiting" && (qrData || imageUrl) && (
-        <>
-          <p className="text-sm text-muted-foreground">Scan with any QR Ph app to pay</p>
-          <p className="text-2xl font-bold tabular-nums">₱{amount.toFixed(2)}</p>
-          <div className="rounded-lg border bg-white p-3">
+        // Wide screens: QR on the left, amount/timer/actions stacked on the right
+        // (no scrolling). Narrow: stacks vertically.
+        <div className="flex w-full flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
+          <div className="shrink-0 rounded-lg border bg-white p-3">
             {qrData ? (
               <QRCodeSVG value={qrData} size={220} />
             ) : (
@@ -183,17 +183,21 @@ export function PaymongoQrView({
               <img src={imageUrl!} alt="PayMongo QR Ph code" width={220} height={220} />
             )}
           </div>
-          <p className="text-sm tabular-nums text-muted-foreground">Expires in {mmss}</p>
-          <div className="flex gap-2 mt-1">
-            <Button type="button" variant="outline" size="sm" onClick={checkStatus} disabled={checkingStatus}>
-              {checkingStatus && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Check status
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-              Cancel
-            </Button>
+          <div className="flex flex-col items-center gap-2 text-center sm:items-start sm:text-left">
+            <p className="text-sm text-muted-foreground">Scan with any QR Ph app to pay</p>
+            <p className="text-3xl font-bold tabular-nums">₱{amount.toFixed(2)}</p>
+            <p className="text-sm tabular-nums text-muted-foreground">Expires in {mmss}</p>
+            <div className="mt-1 flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={checkStatus} disabled={checkingStatus}>
+                {checkingStatus && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Check status
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+                Cancel
+              </Button>
+            </div>
           </div>
-        </>
+        </div>
       )}
 
       {phase === "paid" && (
