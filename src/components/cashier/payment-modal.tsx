@@ -35,6 +35,9 @@ function validatePayments(payments: Payment[], grandTotalCents: number, paymentM
     if (methodDetails.hasRef && (!p.reference || String(p.reference).trim().length === 0)) {
       return `Reference is required for ${methodDetails.name}.`;
     }
+    if (isPaymongoQrMethod(methodDetails) && (!p.reference || String(p.reference).trim().length === 0)) {
+      return "Scan-to-pay tender isn't paid yet — generate the QR and wait for payment.";
+    }
   }
   const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
   if (totalPaidCents < grandTotalCents - 1) {
@@ -203,7 +206,11 @@ export function PaymentModal({
   const remainingCents = grandTotalCents - totalPaidCents;
   const remainingBalance = Math.max(0, remainingCents) / 100;
   const change = Math.max(0, -remainingCents) / 100;
-  const canComplete = grandTotalCents > 0 && remainingCents <= 1;
+  const hasUnpaidGatewayRow = payments.some(p => {
+    const methodDetails = paymentMethods.find(pm => pm.id === p.methodId);
+    return !!methodDetails && isPaymongoQrMethod(methodDetails) && (!p.reference || String(p.reference).trim().length === 0);
+  });
+  const canComplete = grandTotalCents > 0 && remainingCents <= 1 && !hasUnpaidGatewayRow;
 
   const addPayment = () => {
     const cashMethod = paymentMethods.find(pm => pm.type === "cash");
@@ -295,8 +302,6 @@ export function PaymentModal({
     if (!qrTender) return;
     const newId = `pay-qr-${Date.now()}`;
     setPayments(prev => [...prev, { id: newId, methodId: qrTender.methodId, amount, reference }]);
-    setActivePaymentId(newId);
-    setNumpadBuffer(amount > 0 ? amount.toString() : "");
     setQrTender(null);
   }, [qrTender]);
 
@@ -539,7 +544,7 @@ export function PaymentModal({
                   size="sm"
                   className="w-full h-9 text-sm"
                   onClick={(e) => { e.stopPropagation(); startQrTender(payment); }}
-                  disabled={isProcessing || payment.amount <= 0}
+                  disabled={isProcessing || payment.amount <= 0 || !isOnline}
                 >
                   Generate PayMongo QR — ₱{payment.amount.toFixed(2)}
                 </Button>
