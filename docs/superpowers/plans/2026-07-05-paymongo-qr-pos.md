@@ -1386,7 +1386,8 @@ export function PaymongoQrView({ storeId, sessionId, methodId, amount, localUser
   // 2. Listen to the bridge doc for status changes.
   useEffect(() => {
     if (phase !== "awaiting" || !intentDocIdRef.current) return;
-    const ref = doc(db, `stores/${storeId}/sessions/${sessionId}/paymentIntents/${intentDocIdRef.current}`);
+    // Bridge doc is TOP-LEVEL per store (server-only-write; relocated in Task 10): stores/{storeId}/paymentIntents/{id}
+    const ref = doc(db, `stores/${storeId}/paymentIntents/${intentDocIdRef.current}`);
     const unsub = onSnapshot(ref, (snap) => {
       const d = snap.data() as PosPaymentIntentDoc | undefined;
       if (!d || paidRef.current) return;

@@ -149,7 +149,16 @@ existing checkout already knows how to finalize.
 
 ### 5.3 Firestore bridge doc — the confirmation channel
 
-Path: `stores/{storeId}/sessions/{sessionId}/paymentIntents/{intentDocId}`
+Path: `stores/{storeId}/paymentIntents/{intentDocId}`
+
+> **Design change (during implementation, user-approved):** the bridge doc is a
+> **top-level per-store** collection, not nested under the session. The repo's
+> Firestore rules use a catch-all that grants staff write to everything under a
+> store, and Firestore's OR-semantics mean a narrower "deny" rule can't override
+> it. Making the doc top-level lets `'paymentIntents'` be added to the catch-all's
+> write-exclusion list (mirroring `onlineOrders`) → **client-read / Admin-SDK-write
+> only**, so a cashier device can't forge `status:"paid"`. `sessionId` remains a
+> field on the doc for reconciliation.
 
 ```ts
 type PosPaymentIntentDoc = {
@@ -175,7 +184,7 @@ type PosPaymentIntentDoc = {
 
 The webhook writes here **without a lookup query**: `{ storeId, sessionId, intentDocId }`
 are stamped into the PaymentIntent `metadata`, and PayMongo echoes metadata back on the
-payment event, giving the exact document path.
+payment event, giving the exact document path (`stores/{storeId}/paymentIntents/{intentDocId}`).
 
 ---
 
@@ -258,9 +267,11 @@ All are resolved by "session closes only on confirmation":
 - Webhook trust = signature verification with constant-time compare; unverified requests
   get 401 with no side effects.
 - `create-qr` / `status` require a verified Firebase ID token scoped to the `storeId`.
-- Firestore rules for `sessions/{id}/paymentIntents/*`: cashier may **read** intents for
-  sessions they can access; **writes** come only from the Admin SDK (server), so client
-  writes are denied. (Add/confirm the rule.)
+- Firestore rules for `stores/{storeId}/paymentIntents/*` (top-level; see §5.3): staff may
+  **read** their store's intents; **writes/deletes** are denied to clients by adding
+  `'paymentIntents'` to the rules catch-all's write-exclusion list (same pattern as
+  `onlineOrders`), so only the Admin SDK (create-qr route + webhook) can write. This is what
+  prevents a cashier device from forging `status:"paid"`.
 - Idempotency on both the webhook (event id) and session completion prevents replay/double
   charges from producing double sales.
 
