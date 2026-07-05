@@ -29,7 +29,10 @@ export const defaultPostJson: PostJson = async (path, body) => {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(`PayMongo ${path} failed (${res.status}): ${JSON.stringify(json)}`);
+    // Surface PayMongo's human-readable error detail (e.g. "qrph is not enabled",
+    // "amount below the minimum") — NOT the raw body (which may carry internal fields).
+    const detail = (json as any)?.errors?.[0]?.detail;
+    throw new Error(detail ? `PayMongo: ${detail}` : `PayMongo request failed (${res.status})`);
   }
   return json;
 };

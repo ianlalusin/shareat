@@ -73,7 +73,7 @@ export function PaymongoQrView({
         });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
-          throw new Error(body?.error || "Could not start the PayMongo payment.");
+          throw new Error(body?.reason || body?.error || "Could not start the PayMongo payment.");
         }
         const data = await res.json();
         if (aborted) return;

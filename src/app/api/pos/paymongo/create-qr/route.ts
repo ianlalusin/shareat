@@ -65,7 +65,9 @@ export async function POST(req: NextRequest) {
     );
   } catch (e) {
     console.error("[paymongo/create-qr] PayMongo QR creation failed:", e);
-    return NextResponse.json({ error: "Could not start payment" }, { status: 502 });
+    // `reason` carries PayMongo's cleaned, human-readable detail (or a config/guard
+    // message) so the cashier sees WHY (e.g. method not enabled, amount too low).
+    return NextResponse.json({ error: "Could not start payment", reason: (e as Error).message }, { status: 502 });
   }
 
   // 7. Persist the bridge doc AND a server-only reverse-index doc (PayMongo
