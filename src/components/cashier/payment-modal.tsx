@@ -19,6 +19,9 @@ import type { Payment, ModeOfPayment, Store, Reservation } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
 import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
+import { isPaymongoQrMethod, shouldOfferPaymongoQr } from "@/lib/payments/paymongo/gateway";
+import { useLocalProfile } from "@/context/local-profile-context";
+import { PaymongoQrView } from "@/components/cashier/paymongo-qr-view";
 
 // --- Validation ---
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -108,8 +111,15 @@ export function PaymentModal({
   const { toast } = useToast();
   const isOnline = useOnlineStatus();
   const isMobile = useIsMobile();
+  const { currentProfile } = useLocalProfile();
 
   const [payments, setPayments] = useState<Payment[]>([]);
+  // Row currently being resolved via the PayMongo QR overlay. While this is
+  // set, that tender is NOT part of `payments` (it's pulled out on
+  // generation and only re-added — with a fresh id — once actually paid),
+  // so the existing multi-tender total/validation/complete logic never has
+  // to know about it.
+  const [qrTender, setQrTender] = useState<{ id: string; methodId: string; amount: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
@@ -263,6 +273,42 @@ export function PaymentModal({
     setNumpadBuffer("");
     updatePayment(activePaymentId, { amount: 0 });
   };
+
+  // --- PayMongo QR tender ---
+  // Pulls the row out of `payments` (it isn't a real tender until it's
+  // actually paid) and opens the QR overlay for that exact amount/method.
+  const startQrTender = (payment: Payment) => {
+    if (isProcessing || payment.amount <= 0) return;
+    setQrTender({ id: payment.id, methodId: payment.methodId, amount: payment.amount });
+    setPayments(prev => prev.filter(p => p.id !== payment.id));
+    if (activePaymentId === payment.id) {
+      setActivePaymentId(null);
+      setNumpadBuffer("");
+    }
+  };
+
+  // Bridge doc confirmed payment: add a fresh tender row carrying the
+  // PayMongo payment id as its reference, then close the overlay so it sits
+  // in the list like any other tender. Feeds the SAME completePaymentFromUnits
+  // path via the normal Confirm Payment button — no second completion path.
+  const handleQrPaid = useCallback(({ amount, reference }: { amount: number; reference: string }) => {
+    if (!qrTender) return;
+    const newId = `pay-qr-${Date.now()}`;
+    setPayments(prev => [...prev, { id: newId, methodId: qrTender.methodId, amount, reference }]);
+    setActivePaymentId(newId);
+    setNumpadBuffer(amount > 0 ? amount.toString() : "");
+    setQrTender(null);
+  }, [qrTender]);
+
+  // Cancel / expiry / error: restore the exact row that was pulled out (same
+  // id, no reference) so nothing is added and the session stays open.
+  const handleQrCancel = useCallback(() => {
+    if (!qrTender) return;
+    setPayments(prev => [...prev, { id: qrTender.id, methodId: qrTender.methodId, amount: qrTender.amount, reference: "" }]);
+    setActivePaymentId(qrTender.id);
+    setNumpadBuffer(qrTender.amount > 0 ? qrTender.amount.toString() : "");
+    setQrTender(null);
+  }, [qrTender]);
 
   const handleSuccessDone = useCallback(() => {
     if (pendingRedirect) {
@@ -448,10 +494,11 @@ export function PaymentModal({
           const method = paymentMethods.find(pm => pm.id === payment.methodId);
           const isActive = activePaymentId === payment.id;
           const fromReservation = !!payment.fromReservationPaymentId;
+          const isGatewayRow = method ? isPaymongoQrMethod(method) : false;
           return (
             <div
               key={payment.id}
-              className={`rounded-lg border p-2.5 cursor-pointer transition-colors ${isActive ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border"} ${method?.hasRef ? "space-y-2" : ""}`}
+              className={`rounded-lg border p-2.5 cursor-pointer transition-colors ${isActive ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border"} ${(method?.hasRef || isGatewayRow) ? "space-y-2" : ""}`}
               onClick={() => focusPayment(payment.id)}
             >
               {fromReservation && (
@@ -461,7 +508,7 @@ export function PaymentModal({
                 <Select value={payment.methodId} onValueChange={(val) => updatePayment(payment.id, { methodId: val })} disabled={isProcessing}>
                   <SelectTrigger className="h-9 min-w-0 flex-1 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {paymentMethods.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                    {paymentMethods.filter(m => shouldOfferPaymongoQr(m, isOnline)).map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {/* Amount display — driven by numpad, no virtual keyboard */}
@@ -485,7 +532,19 @@ export function PaymentModal({
                   </Button>
                 )}
               </div>
-              {method?.hasRef && (
+              {isGatewayRow && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 text-sm"
+                  onClick={(e) => { e.stopPropagation(); startQrTender(payment); }}
+                  disabled={isProcessing || payment.amount <= 0}
+                >
+                  Generate PayMongo QR — ₱{payment.amount.toFixed(2)}
+                </Button>
+              )}
+              {!isGatewayRow && method?.hasRef && (
                 <Input
                   placeholder="Reference #"
                   value={payment.reference || ""}
@@ -533,7 +592,7 @@ export function PaymentModal({
   );
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!isProcessing && !showSuccess) onOpenChange(v); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!isProcessing && !showSuccess && !qrTender) onOpenChange(v); }}>
       <DialogContent
         className={
           isMobile
@@ -563,6 +622,19 @@ export function PaymentModal({
               {numpad}
             </div>
           </>
+        )}
+
+        {/* PayMongo QR overlay — covers the form while a gateway tender is in flight */}
+        {qrTender && (
+          <PaymongoQrView
+            storeId={storeId}
+            sessionId={sessionId}
+            methodId={qrTender.methodId}
+            amount={qrTender.amount}
+            localUserId={currentProfile?.profileId ?? null}
+            onPaid={handleQrPaid}
+            onCancel={handleQrCancel}
+          />
         )}
 
         {/* Success overlay */}
