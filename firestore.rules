@@ -168,6 +168,12 @@ service cloud.firestore {
                       'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents']);
     }
 
+    // PayMongo intent -> bridge-doc reverse index (server-only; written by create-qr,
+    // read by the webhook via Admin SDK, which bypasses rules).
+    match /paymongoIntentIndex/{intentId} {
+      allow read, write, delete: if false;
+    }
+
     // -----------------------------
     // SHARELEBRATOR AUDIT LOG (server-only writes)
     // -----------------------------

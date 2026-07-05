@@ -8,14 +8,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const adminDb = getAdminDb();
-
   const raw = await req.text(); // raw body required for HMAC
   const sig = req.headers.get("paymongo-signature") ?? "";
   const secret = process.env.PAYMONGO_WEBHOOK_SECRET_POS ?? "";
   if (!secret || !verifyWebhookSignature(raw, sig, secret)) {
     return NextResponse.json({ error: "Bad signature" }, { status: 401 });
   }
+
+  const adminDb = getAdminDb();
 
   let ev;
   try {
@@ -24,15 +24,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true }, { status: 200 }); // unparseable → ack, ignore
   }
 
-  // Only handle POS session events; storefront events go to the website webhook.
-  const md = ev.metadata;
-  if (md?.kind !== "pos_session" || !md.storeId || !md.sessionId || !md.intentDocId) {
+  // Correlate by payment_intent_id via the reverse index written at create-qr time.
+  // PayMongo does NOT echo the PaymentIntent's metadata onto the payment.paid
+  // payment resource, so gating on ev.metadata silently ignores every real POS
+  // payment. Index-doc existence IS the POS-vs-storefront filter now.
+  if (!ev.paymentIntentId) {
     return NextResponse.json({ ok: true, ignored: true }, { status: 200 });
   }
-
-  const ref = adminDb.doc(
-    `stores/${md.storeId}/paymentIntents/${md.intentDocId}`,
-  );
+  const idxSnap = await adminDb.doc(`paymongoIntentIndex/${ev.paymentIntentId}`).get();
+  if (!idxSnap.exists) {
+    // Not a POS-originated payment (e.g. a storefront event) — ignore.
+    return NextResponse.json({ ok: true, ignored: true }, { status: 200 });
+  }
+  const { storeId, intentDocId } = idxSnap.data() as { storeId: string; intentDocId: string };
+  const ref = adminDb.doc(`stores/${storeId}/paymentIntents/${intentDocId}`);
   await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) return;

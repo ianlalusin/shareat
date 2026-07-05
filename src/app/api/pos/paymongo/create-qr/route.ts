@@ -68,12 +68,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not start payment" }, { status: 502 });
   }
 
-  // 7. Persist the bridge doc.
+  // 7. Persist the bridge doc AND a server-only reverse-index doc (PayMongo
+  // intent id -> bridge-doc address) atomically, so the webhook can correlate
+  // payment.paid events by payment_intent_id without relying on metadata
+  // being echoed onto the payment resource (it isn't).
   const doc = buildInitialIntentDoc({
     intentDocId: intentRef.id, storeId, sessionId, amount, amountCentavos, methodId,
     createdByUid: uid, createdByLocalUserId: localUserId ?? null, parsed, nowMs: Date.now(),
   });
-  await intentRef.set(doc);
+  const indexRef = adminDb.doc(`paymongoIntentIndex/${parsed.paymongoIntentId}`);
+  const batch = adminDb.batch();
+  batch.set(intentRef, doc);
+  batch.set(indexRef, { storeId, sessionId, intentDocId: intentRef.id, createdAtMs: Date.now() });
+  await batch.commit();
 
   return NextResponse.json({
     intentDocId: intentRef.id,

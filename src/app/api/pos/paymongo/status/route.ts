@@ -50,7 +50,13 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Poll PayMongo for the current intent status.
-  const remote = await getPaymentIntentViaApi({ getJson: defaultGetJson }, doc.paymongoIntentId);
+  let remote;
+  try {
+    remote = await getPaymentIntentViaApi({ getJson: defaultGetJson }, doc.paymongoIntentId);
+  } catch (e) {
+    console.error("[paymongo/status] PayMongo poll failed:", e);
+    return NextResponse.json({ status: doc.status }, { status: 502 });
+  }
   const mapped = mapIntentStatusToDocStatus(remote.status);
   // Note: doc.status is already narrowed to non-terminal statuses here (paid/failed
   // returned above), so it can never already be "paid" — this only ever flips forward.

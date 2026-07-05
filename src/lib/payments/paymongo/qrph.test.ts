@@ -180,4 +180,19 @@ describe("parseWebhookEvent", () => {
       metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
     });
   });
+
+  it("extracts payment_intent_id even when the payment carries no metadata", () => {
+    const evt = {
+      data: {
+        id: "evt_9",
+        attributes: {
+          type: "payment.paid",
+          data: { id: "pay_9", attributes: { status: "paid", payment_intent_id: "pi_xyz" } },
+        },
+      },
+    };
+    const parsed = parseWebhookEvent(evt);
+    expect(parsed.paymentIntentId).toBe("pi_xyz");
+    expect(parsed.metadata).toEqual({});
+  });
 });
