@@ -537,6 +537,26 @@ export type Payment = {
     fromReservationPaymentId?: string;
 };
 
+export type PosPaymentIntentDoc = {
+  id: string;
+  storeId: string;
+  sessionId: string;
+  provider: 'paymongo_qrph';
+  amount: number;
+  amountCentavos: number;
+  paymongoIntentId: string;
+  paymongoPaymentId: string | null;
+  qrData: string | null;
+  imageUrl: string | null;
+  status: 'awaiting_payment' | 'paid' | 'failed' | 'expired' | 'canceled';
+  createdAtMs: number;
+  expiresAtMs: number;
+  processedEventIds: string[];
+  methodId: string;
+  createdByLocalUserId: string | null;
+  createdByUid: string;
+};
+
 export type Adjustment = {
   id: string;
   note: string;
@@ -619,6 +639,8 @@ export type ModeOfPayment = {
   isActive: boolean;
   hasRef: boolean;
   isArchived: boolean;
+  /** Marks this mode of payment as an auto-confirming gateway tender. */
+  gateway?: 'paymongo_qrph' | null;
   createdAt: any;
   updatedAt: any;
   createdBy: string;
