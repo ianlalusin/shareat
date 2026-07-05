@@ -43,6 +43,8 @@ export function PaymongoQrView({
 }: PaymongoQrViewProps) {
   const [phase, setPhase] = useState<Phase>("creating");
   const [qrData, setQrData] = useState<string | null>(null);
+  // PayMongo may return a hosted/base64 QR image instead of a raw EMV string.
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [expiresAtMs, setExpiresAtMs] = useState<number>(0);
   const [remainingMs, setRemainingMs] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -78,7 +80,8 @@ export function PaymongoQrView({
         const data = await res.json();
         if (aborted) return;
         intentDocIdRef.current = data.intentDocId;
-        setQrData(data.qrData);
+        setQrData(data.qrData ?? null);
+        setImageUrl(data.imageUrl ?? null);
         setExpiresAtMs(data.expiresAtMs);
         setPhase("awaiting");
       } catch (e: any) {
@@ -164,12 +167,18 @@ export function PaymongoQrView({
         </>
       )}
 
-      {phase === "awaiting" && qrData && (
+      {phase === "awaiting" && (qrData || imageUrl) && (
         <>
           <p className="text-sm text-muted-foreground">Scan with any QR Ph app to pay</p>
           <p className="text-2xl font-bold tabular-nums">₱{amount.toFixed(2)}</p>
           <div className="rounded-lg border bg-white p-3">
-            <QRCodeSVG value={qrData} size={220} />
+            {qrData ? (
+              <QRCodeSVG value={qrData} size={220} />
+            ) : (
+              // PayMongo-hosted (or base64) QR image when no raw EMV string is returned.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl!} alt="PayMongo QR Ph code" width={220} height={220} />
+            )}
           </div>
           <p className="text-sm tabular-nums text-muted-foreground">Expires in {mmss}</p>
           <div className="flex gap-2 mt-1">
