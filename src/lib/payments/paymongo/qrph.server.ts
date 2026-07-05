@@ -7,6 +7,7 @@ import {
   type ParsedQr,
   type QrhpMetadata,
 } from "@/lib/payments/paymongo/qrph";
+import type { PosPaymentIntentDoc } from "@/lib/types";
 
 export type PostJson = (path: string, body: object) => Promise<unknown>;
 
@@ -65,4 +66,45 @@ export async function createQrPaymentViaApi(
     buildAttachBody(methodId),
   );
   return parseAttachResponse(attached);
+}
+
+export type GetJson = (path: string) => Promise<unknown>;
+
+export const defaultGetJson: GetJson = async (path) => {
+  const key = process.env.PAYMONGO_SECRET_KEY;
+  if (!key) throw new Error("PAYMONGO_SECRET_KEY is not configured");
+  const auth = Buffer.from(`${key}:`).toString("base64");
+  const res = await fetch(`${PAYMONGO_BASE}${path}`, {
+    headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`PayMongo GET ${path} failed (${res.status})`);
+  return json;
+};
+
+export function mapIntentStatusToDocStatus(
+  paymongoStatus: string,
+): PosPaymentIntentDoc["status"] | null {
+  switch (paymongoStatus) {
+    case "succeeded":
+      return "paid";
+    case "awaiting_next_action":
+    case "processing":
+    case "awaiting_payment_method":
+      return "awaiting_payment";
+    default:
+      return null;
+  }
+}
+
+export async function getPaymentIntentViaApi(
+  deps: { getJson: GetJson },
+  intentId: string,
+): Promise<{ status: string; latestPaymentId: string | null }> {
+  const json = (await deps.getJson(`/v1/payment_intents/${intentId}`)) as any;
+  const attrs = json?.data?.attributes ?? {};
+  const payments = attrs?.payments ?? [];
+  const latest = Array.isArray(payments) && payments.length ? payments[payments.length - 1] : null;
+  return { status: String(attrs?.status ?? ""), latestPaymentId: latest?.id ?? null };
 }

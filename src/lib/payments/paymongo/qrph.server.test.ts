@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createQrPaymentViaApi } from "@/lib/payments/paymongo/qrph.server";
+import { createQrPaymentViaApi, mapIntentStatusToDocStatus } from "@/lib/payments/paymongo/qrph.server";
 
 describe("createQrPaymentViaApi", () => {
   it("creates intent, then method, then attaches, and returns parsed QR", async () => {
@@ -39,5 +39,18 @@ describe("createQrPaymentViaApi", () => {
     expect(parsed.paymongoIntentId).toBe("pi_1");
     expect(parsed.qrData).toBe("00020101...");
     expect(parsed.expiresAtFromApiMs).toBe(1751690400000);
+  });
+});
+
+describe("mapIntentStatusToDocStatus", () => {
+  it("maps succeeded to paid", () => {
+    expect(mapIntentStatusToDocStatus("succeeded")).toBe("paid");
+  });
+  it("maps in-flight statuses to awaiting_payment", () => {
+    expect(mapIntentStatusToDocStatus("awaiting_next_action")).toBe("awaiting_payment");
+    expect(mapIntentStatusToDocStatus("processing")).toBe("awaiting_payment");
+  });
+  it("returns null for unknown statuses", () => {
+    expect(mapIntentStatusToDocStatus("weird")).toBeNull();
   });
 });
