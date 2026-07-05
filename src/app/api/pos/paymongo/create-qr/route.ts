@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
   try {
     parsed = await createQrPaymentViaApi(
       { postJson: defaultPostJson },
-      { amountCentavos, description: `${storeId} session ${sessionId}`, metadata, billing: { name: `Shareat ${storeId}` } },
+      // PayMongo requires billing.email on the qrph payment method. We don't collect a
+      // customer email at the till, so use a merchant address (receipts, if any, go here).
+      { amountCentavos, description: `${storeId} session ${sessionId}`, metadata, billing: { name: `Shareat ${storeId}`, email: "pos@shareat.net" } },
     );
   } catch (e) {
     console.error("[paymongo/create-qr] PayMongo QR creation failed:", e);
