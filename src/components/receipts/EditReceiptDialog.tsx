@@ -422,19 +422,24 @@ function EditReceiptContent({
             totalPaid={totalPaid}
             onRemoveLineAdjustment={handleRemoveLineAdjustment}
           />
-          <BillAdjustments
-            appUser={appUser}
-            billDiscount={billDiscount}
-            charges={billCharges}
-            discounts={discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"))}
-            onAddAdjustment={handleAddAdjustment}
-            onAddCustomAdjustment={handleAddCustomAdjustment}
-            onSetBillDiscount={setBillDiscount}
-          />
-          <BillAppliedAdjustments
-            adjustments={customAdjustments}
-            onRemoveAdjustment={handleRemoveAdjustment}
-          />
+          <div className="p-3 border-t bg-background space-y-2">
+            <BillAdjustments
+              appUser={appUser}
+              billDiscount={billDiscount}
+              charges={billCharges}
+              discounts={discounts.filter(d => (Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"))}
+              onAddAdjustment={handleAddAdjustment}
+              onAddCustomAdjustment={handleAddCustomAdjustment}
+              onSetBillDiscount={setBillDiscount}
+              busy={isSubmitting}
+              side="bottom"
+            />
+            <BillAppliedAdjustments
+              adjustments={customAdjustments}
+              onRemoveAdjustment={handleRemoveAdjustment}
+              busy={isSubmitting}
+            />
+          </div>
           <div className="p-4 border rounded-md">
             <h3 className="font-semibold mb-2">Customer Details (for BIR)</h3>
             <div className="space-y-2">

@@ -21,6 +21,16 @@ interface BillAdjustmentsProps {
   onAddCustomAdjustment: (note: string, amount: number) => void | Promise<void>;
   onSetBillDiscount: (discount: Discount | null) => void | Promise<void>;
   isLocked?: boolean;
+  /**
+   * Shared "a customAdjustments/billDiscount write is in flight" lock owned by
+   * the parent (e.g. session-detail-view's updateSessionBillingState). Disables
+   * every control here in addition to this component's own local isSaving, so
+   * an add-charge/discount write can't race a remove in BillAppliedAdjustments
+   * (or vice versa) against the same stale customAdjustments closure.
+   */
+  busy?: boolean;
+  /** Popover side; defaults to "top" for the sticky-footer placement. */
+  side?: "top" | "bottom" | "left" | "right";
 }
 
 function CurrencyInput({ value, onChange, disabled }: { value: number, onChange: (val: number) => void, disabled?: boolean }) {
@@ -96,6 +106,8 @@ export function BillAdjustments({
   onAddCustomAdjustment,
   onSetBillDiscount,
   isLocked = false,
+  busy = false,
+  side = "top",
 }: BillAdjustmentsProps) {
   const [discountOpen, setDiscountOpen] = useState(false);
   const [chargeOpen, setChargeOpen] = useState(false);
@@ -223,18 +235,25 @@ export function BillAdjustments({
   return (
     <div className="flex items-center gap-2">
         {canSeeDiscountButton && (
-            <Popover open={discountOpen} onOpenChange={setDiscountOpen}>
+            <Popover
+                open={discountOpen}
+                onOpenChange={(open) => {
+                    setDiscountOpen(open);
+                    // Popovers are mutually exclusive: opening one closes the other.
+                    if (open) setChargeOpen(false);
+                }}
+            >
                 <PopoverTrigger asChild>
-                    <Button type="button" variant={discountOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked}>
+                    <Button type="button" variant={discountOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked || busy}>
                         Bill Discount
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent align="start" side="top" className="w-80 space-y-3">
+                <PopoverContent align="start" side={side} className="w-80 space-y-3">
                     <div className="flex items-center justify-between">
                         <p className="text-sm font-medium">Bill Discount</p>
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDiscountOpen(false)}><X size={16} /></Button>
                     </div>
-                    <Select onValueChange={handleDiscountSelect} disabled={isLocked || isSaving} value={selectedDiscountId}>
+                    <Select onValueChange={handleDiscountSelect} disabled={isLocked || isSaving || busy} value={selectedDiscountId}>
                         <SelectTrigger className="h-9"><SelectValue placeholder="Select discount..." /></SelectTrigger>
                         <SelectContent>
                             {discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -245,7 +264,7 @@ export function BillAdjustments({
                         <Select
                             value={tempDiscountType}
                             onValueChange={(type: 'percent' | 'fixed') => setTempDiscountType(type)}
-                            disabled={isLocked || isSaving || !isCustomDiscount}
+                            disabled={isLocked || isSaving || busy || !isCustomDiscount}
                         >
                             <SelectTrigger className="h-9 w-16"><SelectValue /></SelectTrigger>
                             <SelectContent>
@@ -256,12 +275,12 @@ export function BillAdjustments({
                         <CurrencyInput
                             value={tempDiscountValue}
                             onChange={setTempDiscountValue}
-                            disabled={isLocked || isSaving || !isCustomDiscount}
+                            disabled={isLocked || isSaving || busy || !isCustomDiscount}
                         />
                     </div>
                     <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked || isSaving}><Trash2 size={16} /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving}><Check size={16} /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked || isSaving || busy}><Trash2 size={16} /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving || busy}><Check size={16} /></Button>
                     </div>
                 </PopoverContent>
             </Popover>
@@ -272,19 +291,21 @@ export function BillAdjustments({
             onOpenChange={(open) => {
                 setChargeOpen(open);
                 if (!open) setShowCustomCharge(false);
+                // Popovers are mutually exclusive: opening one closes the other.
+                if (open) setDiscountOpen(false);
             }}
         >
             <PopoverTrigger asChild>
-                <Button type="button" variant={chargeOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked}>
+                <Button type="button" variant={chargeOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked || busy}>
                     Add Charge
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" side="top" className="w-80 space-y-3">
+            <PopoverContent align="start" side={side} className="w-80 space-y-3">
                 <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Add Charge</p>
                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setChargeOpen(false)}><X size={16} /></Button>
                 </div>
-                <Select onValueChange={(value) => void handleChargeSelect(value)} disabled={isLocked || isSaving}>
+                <Select onValueChange={(value) => void handleChargeSelect(value)} disabled={isLocked || isSaving || busy}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="Select a charge to add..." /></SelectTrigger>
                     <SelectContent>
                         {charges.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.type === 'fixed' ? `₱${c.value}` : `${c.value}%`})</SelectItem>)}
@@ -298,14 +319,14 @@ export function BillAdjustments({
                             value={customChargeNote}
                             onChange={(e) => setCustomChargeNote(e.target.value)}
                             className="h-9"
-                            disabled={isSaving}
+                            disabled={isSaving || busy}
                         />
                         <CurrencyInput
                             value={customChargeAmount}
                             onChange={setCustomChargeAmount}
-                            disabled={isSaving}
+                            disabled={isSaving || busy}
                         />
-                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || !customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
+                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || busy || !customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
                     </div>
                 )}
             </PopoverContent>
@@ -325,10 +346,19 @@ export function BillAppliedAdjustments({
   adjustments,
   onRemoveAdjustment,
   isLocked = false,
+  busy = false,
 }: {
   adjustments: Adjustment[];
   onRemoveAdjustment: (id: string) => void | Promise<void>;
   isLocked?: boolean;
+  /**
+   * Shared "a customAdjustments/billDiscount write is in flight" lock owned by
+   * the parent (mirrors the same prop on BillAdjustments). Disables the
+   * remove buttons here in addition to this component's own local isSaving,
+   * so a remove can't race an add-charge/discount write in BillAdjustments
+   * against the same stale customAdjustments closure.
+   */
+  busy?: boolean;
 }) {
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
@@ -353,7 +383,7 @@ export function BillAppliedAdjustments({
                 <span className="text-muted-foreground">{adj.note}</span>
                  <div className="flex items-center gap-2">
                     <span>+ {adj.type === 'percent' ? `${adj.amount}%` : `₱${adj.amount.toFixed(2)}`}</span>
-                    {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleRemove(adj.id)} disabled={isSaving}><Trash2 size={12} /></Button>}
+                    {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleRemove(adj.id)} disabled={isSaving || busy}><Trash2 size={12} /></Button>}
                 </div>
             </div>
         ))}

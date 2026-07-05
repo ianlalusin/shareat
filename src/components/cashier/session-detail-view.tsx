@@ -60,6 +60,14 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const [billDiscount, setBillDiscount] = useState<Discount | null>(null);
   const [customAdjustments, setCustomAdjustments] = useState<Adjustment[]>([]);
   const [loyaltyRedemptions, setLoyaltyRedemptions] = useState<SessionLoyaltyRedemption[]>([]);
+  // Shared lock: true whenever a customAdjustments/billDiscount write is in
+  // flight via updateSessionBillingState. Gates BOTH BillAdjustments and
+  // BillAppliedAdjustments so a charge/discount add can't race a remove (and
+  // vice versa) against the same stale closured `customAdjustments`, which
+  // would otherwise let one plain updateDoc silently clobber the other
+  // (lost-update on a money field). Each component also keeps its own local
+  // isSaving as a second layer.
+  const [isMutatingBill, setIsMutatingBill] = useState(false);
 
   const [isLoadingSession, setIsLoadingSession] = useState(true);
 
@@ -255,12 +263,17 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const updateSessionBillingState = async (patch: { billDiscount?: Discount | null; customAdjustments?: Adjustment[] }) => {
     if (!storeId || !sessionId) return;
-    const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
-    await updateDoc(sessionRef, {
-      ...patch,
-      billingRevision: increment(1),
-      updatedAt: serverTimestamp(),
-    });
+    setIsMutatingBill(true);
+    try {
+      const sessionRef = doc(db, "stores", storeId, "sessions", sessionId);
+      await updateDoc(sessionRef, {
+        ...patch,
+        billingRevision: increment(1),
+        updatedAt: serverTimestamp(),
+      });
+    } finally {
+      setIsMutatingBill(false);
+    }
   };
 
   const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
@@ -638,6 +651,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           adjustments={customAdjustments || []}
           onRemoveAdjustment={handleRemoveAdjustment}
           isLocked={isBillingLocked}
+          busy={isMutatingBill}
         />
         {session && (session as any).linkedCustomerPhone && (
           <div className="px-4 pb-2">
@@ -781,6 +795,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
               onSetBillDiscount={handleSetBillDiscount}
               billDiscount={billDiscount}
               isLocked={isBillingLocked}
+              busy={isMutatingBill}
             />
             <Button type="button" className="flex-1" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
                 {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
