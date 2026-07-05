@@ -19,3 +19,46 @@ export function assertPayableAmount(centavos: number): void {
     );
   }
 }
+
+// ===== Task 2: Request builders =====
+
+export type QrhpMetadata = {
+  storeId: string;
+  sessionId: string;
+  intentDocId: string;
+  kind: "pos_session";
+};
+
+export function buildPaymentIntentBody(input: {
+  amountCentavos: number;
+  description: string;
+  metadata: QrhpMetadata;
+}): object {
+  return {
+    data: {
+      attributes: {
+        amount: input.amountCentavos,
+        currency: "PHP",
+        capture_type: "automatic",
+        payment_method_allowed: ["qrph"],
+        description: input.description,
+        metadata: input.metadata,
+      },
+    },
+  };
+}
+
+export function buildPaymentMethodBody(input: {
+  name: string;
+  email?: string;
+  phone?: string;
+}): object {
+  const billing: Record<string, string> = { name: input.name };
+  if (input.email) billing.email = input.email;
+  if (input.phone) billing.phone = input.phone;
+  return { data: { attributes: { type: "qrph", billing } } };
+}
+
+export function buildAttachBody(paymentMethodId: string): object {
+  return { data: { attributes: { payment_method: paymentMethodId } } };
+}

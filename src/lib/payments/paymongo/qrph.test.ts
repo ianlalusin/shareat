@@ -3,6 +3,9 @@ import {
   pesosToCentavos,
   assertPayableAmount,
   MIN_QRPH_AMOUNT_CENTAVOS,
+  buildPaymentIntentBody,
+  buildPaymentMethodBody,
+  buildAttachBody,
 } from "@/lib/payments/paymongo/qrph";
 
 // ===== Task 1: Money conversion + amount validation =====
@@ -30,5 +33,50 @@ describe("assertPayableAmount", () => {
     expect(() => assertPayableAmount(0)).toThrow();
     expect(() => assertPayableAmount(-100)).toThrow();
     expect(() => assertPayableAmount(1000.5)).toThrow();
+  });
+});
+
+// ===== Task 2: Request builders =====
+
+describe("buildPaymentIntentBody", () => {
+  it("wraps attributes with qrph allowed, PHP, automatic capture, and metadata", () => {
+    const body = buildPaymentIntentBody({
+      amountCentavos: 85000,
+      description: "SHT session sess_1",
+      metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "pi_doc_1", kind: "pos_session" },
+    });
+    expect(body).toEqual({
+      data: {
+        attributes: {
+          amount: 85000,
+          currency: "PHP",
+          capture_type: "automatic",
+          payment_method_allowed: ["qrph"],
+          description: "SHT session sess_1",
+          metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "pi_doc_1", kind: "pos_session" },
+        },
+      },
+    });
+  });
+});
+
+describe("buildPaymentMethodBody", () => {
+  it("builds a qrph payment method with billing", () => {
+    expect(buildPaymentMethodBody({ name: "Shareat SHT", email: "pos@shareat.net" })).toEqual({
+      data: { attributes: { type: "qrph", billing: { name: "Shareat SHT", email: "pos@shareat.net" } } },
+    });
+  });
+
+  it("omits undefined billing fields", () => {
+    const body = buildPaymentMethodBody({ name: "Shareat SHT" }) as any;
+    expect(body.data.attributes.billing).toEqual({ name: "Shareat SHT" });
+  });
+});
+
+describe("buildAttachBody", () => {
+  it("wraps the payment method id", () => {
+    expect(buildAttachBody("pm_123")).toEqual({
+      data: { attributes: { payment_method: "pm_123" } },
+    });
   });
 });
