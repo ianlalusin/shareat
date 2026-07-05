@@ -179,14 +179,20 @@ export function usePinPrint({
           });
           return;
         }
-        // TEMP timing instrumentation — grep logcat for "pin-print-timing".
-        const _t0 = performance.now(); let _tPrev = _t0;
-        const _step = (label: string) => { const n = performance.now(); console.log(`[pin-print-timing] ${label}: ${Math.round(n - _tPrev)}ms / total ${Math.round(n - _t0)}ms`); _tPrev = n; };
-        const liveSettings = storeId
-          ? await getReceiptSettings(db, storeId)
-          : null;
-        _step("getReceiptSettings");
-        const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        // Paper width for the slip. Read the locally-cached value first (instant): a
+        // plain getReceiptSettings() does a Firestore getDoc that waits on a SERVER
+        // round-trip (native-only — the web path skips it via window.print()), which is
+        // the APK print lag. The print page already mirrors the width into localStorage.
+        // Settings rarely change and a stale-by-one paper width is harmless; fall back to
+        // the Firestore read only when nothing is cached.
+        let paperWidth: 58 | 80 = 80;
+        const cachedWidth = typeof localStorage !== 'undefined' ? localStorage.getItem('receiptPaperWidth:global') : null;
+        if (cachedWidth === '58mm' || cachedWidth === '80mm') {
+          paperWidth = cachedWidth === '58mm' ? 58 : 80;
+        } else if (storeId) {
+          const liveSettings = await getReceiptSettings(db, storeId);
+          paperWidth = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        }
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
 
         // Render the QR as a PNG bitmap client-side and let the native plugin
@@ -208,10 +214,8 @@ export function usePinPrint({
           scale: 4,
         });
         const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
-        _step("qr-encode");
 
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-        _step("bt-connect");
         try {
           await ThermalPrinter.printPinSlip({
             top,
@@ -220,7 +224,6 @@ export function usePinPrint({
             paperWidthMm: paperWidth,
             encoding: 'CP437',
           });
-          _step("print-slip");
         } finally {
           try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
         }

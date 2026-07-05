@@ -576,12 +576,12 @@ export function PaymentModal({
                   onClick={(e) => { e.stopPropagation(); startQrTender(payment); }}
                   disabled={isProcessing || payment.amount <= 0 || !isOnline}
                 >
-                  Generate PayMongo QR — ₱{payment.amount.toFixed(2)}
+                  Generate QR Ph — ₱{payment.amount.toFixed(2)}
                 </Button>
               )}
               {isPaidGatewayRow && (
                 <div className="flex items-center justify-center gap-1.5 h-9 text-sm font-medium text-green-600">
-                  <CheckCircle2 className="h-4 w-4" /> Paid via PayMongo QR — locked
+                  <CheckCircle2 className="h-4 w-4" /> Paid via QR Ph — locked
                 </div>
               )}
               {!isGatewayRow && method?.hasRef && (

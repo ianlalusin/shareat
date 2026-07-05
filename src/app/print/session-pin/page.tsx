@@ -88,8 +88,6 @@ export default function PrintPinPage() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
     async function fetchJoinUrl() {
-      // TEMP timing instrumentation — grep logcat for "pin-print-timing".
-      const _jt0 = performance.now();
       setJoinUrlStatus("loading");
       try {
         const { getAuth } = await import("firebase/auth");
@@ -98,24 +96,18 @@ export default function PrintPinPage() {
           setJoinUrlStatus("error");
           return;
         }
-        const _tTok = performance.now();
         const idToken = await user.getIdToken();
-        console.log(`[pin-print-timing] getIdToken: ${Math.round(performance.now() - _tTok)}ms`);
-        const _tFetch = performance.now();
         const res = await fetch(
           `/api/pins/join-url?storeId=${activeStore!.id}&sessionId=${sessionId}`,
           { headers: { Authorization: `Bearer ${idToken}` }, signal: controller.signal }
         );
         const json = await res.json();
-        console.log(`[pin-print-timing] join-url fetch: ${Math.round(performance.now() - _tFetch)}ms (total join-url ${Math.round(performance.now() - _jt0)}ms)`);
         if (json.ok && json.joinUrl) {
           setJoinUrl(json.joinUrl);
           setJoinUrlStatus("ready");
           return;
         }
-      } catch (e) {
-        console.log(`[pin-print-timing] join-url ABORTED/ERROR after ${Math.round(performance.now() - _jt0)}ms`, e);
-      }
+      } catch {}
       setJoinUrlStatus("error");
     }
     fetchJoinUrl();

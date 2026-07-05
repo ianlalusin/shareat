@@ -173,7 +173,7 @@ export function PaymongoQrView({
       {phase === "creating" && (
         <>
           <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Starting PayMongo QR Ph…</p>
+          <p className="text-sm text-muted-foreground">Starting QR Ph…</p>
         </>
       )}
 
@@ -214,7 +214,7 @@ export function PaymongoQrView({
             <CheckCircle2 className="h-16 w-16 text-green-500 relative" />
           </div>
           <p className="text-lg font-semibold text-green-600">Payment received</p>
-          <p className="text-sm text-muted-foreground">₱{amount.toFixed(2)} via PayMongo QR Ph</p>
+          <p className="text-sm text-muted-foreground">₱{amount.toFixed(2)} via QR Ph</p>
         </>
       )}
 
