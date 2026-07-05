@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 // ===== Task 1: Money conversion + amount validation =====
 
 /** PayMongo QR Ph minimum chargeable amount, in centavos. Verify before go-live. */
@@ -85,5 +87,59 @@ export function parseAttachResponse(json: unknown): ParsedQr {
     qrData: code.data ?? null,
     imageUrl: code.image_url ?? null,
     expiresAtFromApiMs: expSec == null ? null : expSec * 1000,
+  };
+}
+
+// ===== Task 4: Webhook signature verification + event parsing =====
+
+function parseSignatureHeader(header: string): { t: string; te?: string; li?: string } | null {
+  const parts = header.split(",").map((p) => p.trim());
+  const out: Record<string, string> = {};
+  for (const p of parts) {
+    const eq = p.indexOf("=");
+    if (eq > 0) out[p.slice(0, eq)] = p.slice(eq + 1);
+  }
+  if (!out.t || (!out.te && !out.li)) return null;
+  return { t: out.t, te: out.te, li: out.li };
+}
+
+function safeEqualHex(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "hex");
+  const bb = Buffer.from(b, "hex");
+  if (ab.length === 0 || ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+export function verifyWebhookSignature(rawBody: string, signatureHeader: string, secret: string): boolean {
+  const parsed = parseSignatureHeader(signatureHeader);
+  if (!parsed) return false;
+  const expected = createHmac("sha256", secret).update(`${parsed.t}.${rawBody}`).digest("hex");
+  return (
+    (parsed.te ? safeEqualHex(parsed.te, expected) : false) ||
+    (parsed.li ? safeEqualHex(parsed.li, expected) : false)
+  );
+}
+
+export type WebhookEvent = {
+  eventId: string;
+  type: string;
+  paymentId: string | null;
+  paymentIntentId: string | null;
+  status: string | null;
+  metadata: Partial<QrhpMetadata>;
+};
+
+export function parseWebhookEvent(json: unknown): WebhookEvent {
+  const ev = (json as any)?.data;
+  const evAttrs = ev?.attributes ?? {};
+  const resource = evAttrs?.data ?? {};
+  const rAttrs = resource?.attributes ?? {};
+  return {
+    eventId: String(ev?.id ?? ""),
+    type: String(evAttrs?.type ?? ""),
+    paymentId: resource?.id ? String(resource.id) : null,
+    paymentIntentId: rAttrs?.payment_intent_id ? String(rAttrs.payment_intent_id) : null,
+    status: rAttrs?.status ? String(rAttrs.status) : null,
+    metadata: (rAttrs?.metadata ?? {}) as Partial<QrhpMetadata>,
   };
 }

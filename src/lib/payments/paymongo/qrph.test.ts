@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHmac } from "node:crypto";
 import {
   pesosToCentavos,
   assertPayableAmount,
@@ -7,6 +8,8 @@ import {
   buildPaymentMethodBody,
   buildAttachBody,
   parseAttachResponse,
+  verifyWebhookSignature,
+  parseWebhookEvent,
 } from "@/lib/payments/paymongo/qrph";
 
 // ===== Task 1: Money conversion + amount validation =====
@@ -120,5 +123,61 @@ describe("parseAttachResponse", () => {
 
   it("throws when there is no QR next_action", () => {
     expect(() => parseAttachResponse({ data: { id: "pi_x", attributes: { status: "awaiting_payment_method" } } })).toThrow();
+  });
+});
+
+// ===== Task 4: Webhook signature verification + event parsing =====
+
+const SECRET = "whsk_test_secret";
+const RAW = JSON.stringify({ hello: "world" });
+function sign(ts: string, body: string, field: "te" | "li") {
+  const sig = createHmac("sha256", SECRET).update(`${ts}.${body}`).digest("hex");
+  return `t=${ts},${field}=${sig}`;
+}
+
+describe("verifyWebhookSignature", () => {
+  it("accepts a valid test-mode (te) signature", () => {
+    expect(verifyWebhookSignature(RAW, sign("1751690400", RAW, "te"), SECRET)).toBe(true);
+  });
+  it("accepts a valid live-mode (li) signature", () => {
+    expect(verifyWebhookSignature(RAW, sign("1751690400", RAW, "li"), SECRET)).toBe(true);
+  });
+  it("rejects a tampered body", () => {
+    expect(verifyWebhookSignature(RAW + "x", sign("1751690400", RAW, "li"), SECRET)).toBe(false);
+  });
+  it("rejects a wrong secret", () => {
+    expect(verifyWebhookSignature(RAW, sign("1751690400", RAW, "li"), "other")).toBe(false);
+  });
+  it("rejects a malformed header", () => {
+    expect(verifyWebhookSignature(RAW, "garbage", SECRET)).toBe(false);
+  });
+});
+
+describe("parseWebhookEvent", () => {
+  it("pulls event id, type, payment id, intent id, status, and metadata", () => {
+    const evt = {
+      data: {
+        id: "evt_1",
+        attributes: {
+          type: "payment.paid",
+          data: {
+            id: "pay_1",
+            attributes: {
+              status: "paid",
+              payment_intent_id: "pi_abc",
+              metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
+            },
+          },
+        },
+      },
+    };
+    expect(parseWebhookEvent(evt)).toEqual({
+      eventId: "evt_1",
+      type: "payment.paid",
+      paymentId: "pay_1",
+      paymentIntentId: "pi_abc",
+      status: "paid",
+      metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
+    });
   });
 });
