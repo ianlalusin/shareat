@@ -728,8 +728,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         </div>
       </header>
       
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className="flex-1 overflow-hidden min-h-0">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 h-full">
               <div className="md:col-span-1 xl:col-span-2 bg-muted/20 md:h-full flex flex-col overflow-hidden">
                   {isMobile ? (
@@ -784,7 +784,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
         {/* Sticky footer action bar: Bill Discount, Add Charge, Pay — always
             visible while the bill/items scroll above it. */}
-        <div className="sticky bottom-0 z-10 w-full border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="shrink-0 w-full border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="flex items-center gap-2">
             <BillAdjustments
               appUser={appUser}
