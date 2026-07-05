@@ -159,7 +159,10 @@ export function PaymongoQrView({
   const mmss = `${Math.floor(remainingMs / 60000)}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`;
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/95 rounded-lg p-6 text-center animate-in fade-in-0 zoom-in-95 duration-300">
+    <div className="absolute inset-0 z-50 overflow-y-auto bg-background/95 rounded-lg animate-in fade-in-0 zoom-in-95 duration-300">
+      {/* min-h-full + justify-center centers when it fits and SCROLLS (no clipping of
+          the QR or the Check status / Cancel buttons) when the modal is short. */}
+      <div className="flex min-h-full flex-col items-center justify-center gap-3 p-6 text-center">
       {phase === "creating" && (
         <>
           <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
@@ -208,7 +211,7 @@ export function PaymongoQrView({
         <>
           <AlertTriangle className="h-10 w-10 text-amber-500" />
           <p className="font-medium text-amber-600">QR expired</p>
-          <p className="text-sm text-muted-foreground">No payment was received before the 10-minute window closed.</p>
+          <p className="text-sm text-muted-foreground">No payment was received before the QR expired.</p>
           <Button type="button" variant="outline" size="sm" onClick={onCancel} className="mt-1">
             Back
           </Button>
@@ -225,6 +228,7 @@ export function PaymongoQrView({
           </Button>
         </>
       )}
+      </div>
     </div>
   );
 }
