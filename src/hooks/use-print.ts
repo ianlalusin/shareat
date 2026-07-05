@@ -179,9 +179,13 @@ export function usePinPrint({
           });
           return;
         }
+        // TEMP timing instrumentation — grep logcat for "pin-print-timing".
+        const _t0 = performance.now(); let _tPrev = _t0;
+        const _step = (label: string) => { const n = performance.now(); console.log(`[pin-print-timing] ${label}: ${Math.round(n - _tPrev)}ms / total ${Math.round(n - _t0)}ms`); _tPrev = n; };
         const liveSettings = storeId
           ? await getReceiptSettings(db, storeId)
           : null;
+        _step("getReceiptSettings");
         const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
 
@@ -204,8 +208,10 @@ export function usePinPrint({
           scale: 4,
         });
         const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+        _step("qr-encode");
 
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
+        _step("bt-connect");
         try {
           await ThermalPrinter.printPinSlip({
             top,
@@ -214,6 +220,7 @@ export function usePinPrint({
             paperWidthMm: paperWidth,
             encoding: 'CP437',
           });
+          _step("print-slip");
         } finally {
           try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
         }
