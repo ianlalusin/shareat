@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Flavor, Store, StoreFlavor } from "@/lib/types";
-import { rebuildStoreConfig } from "@/lib/manager/dataManagement";
+import { rebuildStoreConfig, rebuildCustomerRefillOptionsCache } from "@/lib/manager/dataManagement";
 
 function coerceStoreFlavor(d: QueryDocumentSnapshot<DocumentData>): StoreFlavor {
   const data = d.data() ?? {};
@@ -101,13 +101,15 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
     }, [globalFlavors, storeFlavors]);
 
     // The cashier reads flavors from the denormalized storeConfig/current cache,
-    // so an edit must rebuild it or the change never reaches the POS.
+    // and the CUSTOMER app reads them from its own refillOptionsCache — an edit
+    // must rebuild both or the change never reaches the POS/customer refill screen.
     const syncConfigCache = async () => {
         try {
             await rebuildStoreConfig(db, store.id);
         } catch (e: any) {
             toast({ variant: "destructive", title: "POS cache not refreshed", description: "Saved, but the POS config cache didn't rebuild. Run Data Management → Rebuild." });
         }
+        await rebuildCustomerRefillOptionsCache(store.id);
     };
 
     const handleAddFlavor = async (flavor: Flavor) => {

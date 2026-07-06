@@ -12,6 +12,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 /**
  * Fetches all documents from a given collection path.
@@ -159,4 +160,28 @@ export async function rebuildStoreConfigsSafely(
       }
     })
   );
+}
+
+/**
+ * Triggers a rebuild of the CUSTOMER app's stores/{storeId}/refillOptionsCache/main
+ * doc (see CUSTOMER repo: src/lib/server/refill-options-cache.ts). Best-effort —
+ * swallows failures because the customer route self-heals via a 10-minute TTL
+ * if this call never fires or the CUSTOMER app is briefly unreachable.
+ */
+export async function rebuildCustomerRefillOptionsCache(storeId: string): Promise<void> {
+  try {
+    const user = getAuth().currentUser;
+    if (!user || !storeId) return;
+    const idToken = await user.getIdToken();
+    await fetch(
+      `https://customer.shareat.net/api/admin/rebuild-refill-options-cache?storeId=${encodeURIComponent(storeId)}`,
+      { method: "POST", headers: { Authorization: `Bearer ${idToken}` } }
+    );
+  } catch {}
+}
+
+/** Same as rebuildCustomerRefillOptionsCache, but for every store — use after a GLOBAL refills-collection edit. */
+export async function rebuildCustomerRefillOptionsCachesSafely(storeIds: string[]): Promise<void> {
+  const unique = Array.from(new Set(storeIds.filter(Boolean)));
+  await Promise.all(unique.map((id) => rebuildCustomerRefillOptionsCache(id)));
 }
