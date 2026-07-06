@@ -14,7 +14,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
+import { getReceiptSettings, getReceiptSettingsCacheFirst } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import QRCode from 'qrcode';
@@ -179,20 +179,12 @@ export function usePinPrint({
           });
           return;
         }
-        // Paper width for the slip. Read the locally-cached value first (instant): a
-        // plain getReceiptSettings() does a Firestore getDoc that waits on a SERVER
-        // round-trip (native-only — the web path skips it via window.print()), which is
-        // the APK print lag. The print page already mirrors the width into localStorage.
-        // Settings rarely change and a stale-by-one paper width is harmless; fall back to
-        // the Firestore read only when nothing is cached.
-        let paperWidth: 58 | 80 = 80;
-        const cachedWidth = typeof localStorage !== 'undefined' ? localStorage.getItem('receiptPaperWidth:global') : null;
-        if (cachedWidth === '58mm' || cachedWidth === '80mm') {
-          paperWidth = cachedWidth === '58mm' ? 58 : 80;
-        } else if (storeId) {
-          const liveSettings = await getReceiptSettings(db, storeId);
-          paperWidth = liveSettings?.paperWidth === '58mm' ? 58 : 80;
-        }
+        // Paper width for the slip. Read the REAL settings from the local Firestore cache
+        // (instant, no server round-trip) so the print hot path isn't blocked on a getDoc
+        // network round-trip (native-only — the web path skips it). Falls back to the
+        // server read only when the settings doc isn't cached yet.
+        const liveSettings = storeId ? await getReceiptSettingsCacheFirst(db, storeId) : null;
+        const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
 
         // Render the QR as a PNG bitmap client-side and let the native plugin

@@ -1,6 +1,6 @@
 "use client";
 
-import { doc, getDoc, onSnapshot, type DocumentData, type Firestore } from "firebase/firestore";
+import { doc, getDoc, getDocFromCache, onSnapshot, type DocumentData, type Firestore } from "firebase/firestore";
 import type { ReceiptSettings } from "@/lib/types";
 import { z } from "zod";
 
@@ -86,4 +86,21 @@ export async function getReceiptSettings(db: Firestore, storeId: string): Promis
     const docSnap = await getDoc(settingsRef);
     const fetched = docSnap.exists() ? (docSnap.data() as Partial<ReceiptSettings>) : {};
     return mergeReceiptSettings(fetched);
+}
+
+/**
+ * Cache-first read for print hot paths: returns the REAL stored settings from the
+ * local Firestore cache (instant, no server round-trip), falling back to the server
+ * read only when the doc isn't cached yet. Correct paperWidth etc. — unlike a separate
+ * localStorage mirror which can drift from the store's actual setting.
+ */
+export async function getReceiptSettingsCacheFirst(db: Firestore, storeId: string): Promise<ReceiptSettings> {
+    const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, "main");
+    try {
+        const cached = await getDocFromCache(settingsRef);
+        return mergeReceiptSettings(cached.exists() ? (cached.data() as Partial<ReceiptSettings>) : {});
+    } catch {
+        // Not in the local cache yet — fall back to the normal (server) read.
+        return getReceiptSettings(db, storeId);
+    }
 }
