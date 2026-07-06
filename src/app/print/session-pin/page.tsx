@@ -8,6 +8,7 @@ import { useStoreContext } from '@/context/store-context';
 import { Loader2, Printer, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePinPrint } from '@/hooks/use-print';
+import { getReceiptSettingsCacheFirst } from '@/lib/receipts/receipt-settings';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function PrintPinPage() {
@@ -20,17 +21,21 @@ export default function PrintPinPage() {
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState<string | null>(null);
   const [joinUrlStatus, setJoinUrlStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  // Paper width for the slip — the single source of truth the print follows. Defaults to
+  // 80mm (store/app default), gets refined to the store's actual configured width by the
+  // effect below, and is overridable via the on-screen selector.
   const [paperSize, setPaperSize] = useState<"58mm" | "80mm">(() => {
     try {
-      return (localStorage.getItem("receiptPaperWidth:global") as any) || "58mm";
-    } catch {
-      return "58mm";
-    }
+      const stored = localStorage.getItem("receiptPaperWidth:global");
+      if (stored === "58mm" || stored === "80mm") return stored;
+    } catch {}
+    return "80mm";
   });
+  const paperSeededRef = useRef(false);
+
+  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl, paperSize });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeStore?.id || !sessionId) {
@@ -113,6 +118,27 @@ export default function PrintPinPage() {
     fetchJoinUrl();
     return () => { clearTimeout(timeout); controller.abort(); };
   }, [pin, activeStore?.id, sessionId]);
+
+  // Seed the paper selector from the store's configured receipt width the first time the
+  // store loads (cache-first, instant), so the auto-print starts on the RIGHT paper (e.g.
+  // 80mm) instead of a stale default. Runs once per store; a manual selector change after
+  // that wins and is persisted below.
+  useEffect(() => {
+    if (paperSeededRef.current || !activeStore?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getReceiptSettingsCacheFirst(db, activeStore.id);
+        if (!cancelled) {
+          paperSeededRef.current = true;
+          setPaperSize(s.paperWidth === "58mm" ? "58mm" : "80mm");
+        }
+      } catch {
+        // Keep the current default if settings can't be read.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeStore?.id]);
 
   useEffect(() => {
     try { localStorage.setItem("receiptPaperWidth:global", paperSize); } catch {}

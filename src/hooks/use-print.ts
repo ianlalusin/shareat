@@ -14,7 +14,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { getReceiptSettings, getReceiptSettingsCacheFirst } from '@/lib/receipts/receipt-settings';
+import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import QRCode from 'qrcode';
@@ -142,6 +142,13 @@ export interface UsePinPrintOptions {
   storeName?: string;
   storeId?: string | null;
   joinUrl?: string | null;
+  /**
+   * Paper width from the on-screen selector — the single source of truth for the
+   * slip layout. Passed in so the print exactly matches what the cashier sees and
+   * selected, and so the hot path needs no Firestore read (fast on native). Defaults
+   * to 80mm when not provided.
+   */
+  paperSize?: "58mm" | "80mm";
 }
 
 export interface UsePinPrintReturn {
@@ -155,6 +162,7 @@ export function usePinPrint({
   storeName,
   storeId,
   joinUrl,
+  paperSize,
 }: UsePinPrintOptions): UsePinPrintReturn {
   const [isPrintingPin, setIsPrintingPin] = useState(false);
   // Ref mirrors the in-flight flag so the re-entry guard doesn't have to live
@@ -179,12 +187,10 @@ export function usePinPrint({
           });
           return;
         }
-        // Paper width for the slip. Read the REAL settings from the local Firestore cache
-        // (instant, no server round-trip) so the print hot path isn't blocked on a getDoc
-        // network round-trip (native-only — the web path skips it). Falls back to the
-        // server read only when the settings doc isn't cached yet.
-        const liveSettings = storeId ? await getReceiptSettingsCacheFirst(db, storeId) : null;
-        const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        // Paper width comes straight from the on-screen selector (the value the cashier
+        // sees). No settings/Firestore read here — that keeps the slip layout in lockstep
+        // with the selector AND removes the network round-trip that made native printing lag.
+        const paperWidth: 58 | 80 = paperSize === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
 
         // Render the QR as a PNG bitmap client-side and let the native plugin
@@ -229,7 +235,7 @@ export function usePinPrint({
       isPrintingPinRef.current = false;
       setIsPrintingPin(false);
     }
-  }, [pin, storeId, customerName, storeName, toast, joinUrl]);
+  }, [pin, storeId, customerName, storeName, toast, joinUrl, paperSize]);
 
   return { printPin, isPrintingPin };
 }
