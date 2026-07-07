@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthContext } from "@/context/auth-context";
@@ -36,11 +36,16 @@ export function InsightFloatingBadge() {
   const { activeStore } = useStoreContext();
   const { insight } = useDailyInsight(activeStore?.id);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
 
   // Master AI switch: hide the brief entirely for stores with AI off.
   if (activeStore?.aiEnabled !== true) return null;
   if (!insight || insight.status !== "ok") return null;
+  // Billing/payment view (/cashier?sessionId=...) pins Bill Discount / Add
+  // Charge to the same bottom-left corner in its sticky footer — the fixed
+  // badge sits on top and blocks those buttons, so skip it there.
+  if (pathname === "/cashier" && searchParams?.get("sessionId")) return null;
 
   const role = appUser?.role;
   const scope = scopeFor(role, pathname);
