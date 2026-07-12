@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthContext } from "@/context/auth-context";
@@ -36,16 +36,16 @@ export function InsightFloatingBadge() {
   const { activeStore } = useStoreContext();
   const { insight } = useDailyInsight(activeStore?.id);
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
 
   // Master AI switch: hide the brief entirely for stores with AI off.
   if (activeStore?.aiEnabled !== true) return null;
   if (!insight || insight.status !== "ok") return null;
-  // Billing/payment view (/cashier?sessionId=...) pins Bill Discount / Add
-  // Charge to the same bottom-left corner in its sticky footer — the fixed
-  // badge sits on top and blocks those buttons, so skip it there.
-  if (pathname === "/cashier" && searchParams?.get("sessionId")) return null;
+  // The billing/payment view (/cashier?sessionId=...) used to pin Bill
+  // Discount/Add Charge to this same bottom-left corner, which the fixed
+  // badge would sit on top of. That action bar now lives under the right
+  // (Billable Items) column instead of full-width, so the bottom-left corner
+  // is clear here too — no special-case hide needed.
 
   const role = appUser?.role;
   const scope = scopeFor(role, pathname);

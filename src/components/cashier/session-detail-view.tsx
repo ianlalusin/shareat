@@ -707,9 +707,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   // Root fills the space BELOW the global 56px fixed nav (h-[calc(100dvh-3.5rem)]),
   // and the negative margins cancel the app-shell <main>'s p-4/md:p-8 padding — so this
-  // screen is a self-contained bounded-height panel (bill/items scroll internally, footer
-  // pinned) instead of forcing 100vh inside the padded shell, which made the whole page
-  // scroll and pushed the footer off-screen.
+  // screen is a self-contained bounded-height panel instead of forcing 100vh inside the
+  // padded shell, which made the whole page scroll and pushed things off-screen. The
+  // action bar (Bill Discount/Add Charge/Pay) is pinned under the right (Billable
+  // Items) column only, not full-width — the left (bill preview) column is a plain
+  // scrollable panel with nothing pinned to its bottom, on purpose (see the action
+  // bar's own comment below).
   return (
     <div className="h-[calc(100dvh-3.5rem)] -m-4 md:-m-8 flex flex-col">
       <header className="flex items-center gap-4 border-b bg-muted/40 px-6 h-[72px]">
@@ -752,59 +755,63 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                     BillSummaryContent
                   )}
               </div>
-              <div className="md:col-span-1 xl:col-span-3 p-4 h-full flex flex-col gap-4 overflow-y-auto">
-                  <BillableItems
-                      lines={billLines}
-                      storeId={storeId}
-                      session={session}
-                      discounts={itemDiscounts}
-                      isLocked={isBillingLocked}
-                      onUpdateLine={(line) => setEditingLineId(line.id)}
-                      onAddLine={(newLine) => {
-                          setBillLines((currentLines) => {
-                              // Check if an identical addon line already exists
-                              const existingLineIndex = currentLines.findIndex(
-                                  (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
-                              );
+              <div className="md:col-span-1 xl:col-span-3 h-full flex flex-col overflow-hidden">
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <BillableItems
+                        lines={billLines}
+                        storeId={storeId}
+                        session={session}
+                        discounts={itemDiscounts}
+                        isLocked={isBillingLocked}
+                        onUpdateLine={(line) => setEditingLineId(line.id)}
+                        onAddLine={(newLine) => {
+                            setBillLines((currentLines) => {
+                                // Check if an identical addon line already exists
+                                const existingLineIndex = currentLines.findIndex(
+                                    (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
+                                );
 
-                              if (existingLineIndex >= 0) {
-                                  // If it exists, update the quantity
-                                  const nextLines = [...currentLines];
-                                  const existingLine = nextLines[existingLineIndex];
-                                  nextLines[existingLineIndex] = {
-                                      ...existingLine,
-                                      qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
-                                  };
-                                  return nextLines;
-                              } else {
-                                  // If it doesn't exist, add the new line
-                                  return [...currentLines, newLine];
-                              }
-                          });
-                      }}
-                  />
+                                if (existingLineIndex >= 0) {
+                                    // If it exists, update the quantity
+                                    const nextLines = [...currentLines];
+                                    const existingLine = nextLines[existingLineIndex];
+                                    nextLines[existingLineIndex] = {
+                                        ...existingLine,
+                                        qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
+                                    };
+                                    return nextLines;
+                                } else {
+                                    // If it doesn't exist, add the new line
+                                    return [...currentLines, newLine];
+                                }
+                            });
+                        }}
+                    />
+                  </div>
+
+                  {/* Action bar: Bill Discount, Add Charge, Pay — grouped under
+                      Billable Items only (not full-width), so the bottom-left
+                      corner (Customer Info / bill preview column) stays clear
+                      for the floating AI Brief badge instead of overlapping it. */}
+                  <div className="shrink-0 border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+                    <div className="flex items-center gap-2">
+                      <BillAdjustments
+                        appUser={appUser}
+                        charges={billCharges}
+                        discounts={billableDiscounts}
+                        onAddAdjustment={handleAddAdjustment}
+                        onAddCustomAdjustment={handleAddCustomAdjustment}
+                        onSetBillDiscount={handleSetBillDiscount}
+                        billDiscount={billDiscount}
+                        isLocked={isBillingLocked}
+                        busy={isMutatingBill}
+                      />
+                      <Button type="button" className="flex-1" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
+                          {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      </Button>
+                    </div>
+                  </div>
               </div>
-          </div>
-        </div>
-
-        {/* Sticky footer action bar: Bill Discount, Add Charge, Pay — always
-            visible while the bill/items scroll above it. */}
-        <div className="shrink-0 w-full border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <div className="flex items-center gap-2">
-            <BillAdjustments
-              appUser={appUser}
-              charges={billCharges}
-              discounts={billableDiscounts}
-              onAddAdjustment={handleAddAdjustment}
-              onAddCustomAdjustment={handleAddCustomAdjustment}
-              onSetBillDiscount={handleSetBillDiscount}
-              billDiscount={billDiscount}
-              isLocked={isBillingLocked}
-              busy={isMutatingBill}
-            />
-            <Button type="button" className="flex-1" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
-                {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            </Button>
           </div>
         </div>
       </main>
