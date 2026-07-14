@@ -213,7 +213,7 @@ export function SessionLogCard({ session, initialLogs }: SessionLogCardProps) {
                 <AccordionContent>
                     <div className="flex justify-end px-4 pb-3">
                         <Button asChild size="sm" variant="outline">
-                            <Link href={`/logs/sessions/${encodeURIComponent(session.storeId)}/${encodeURIComponent(session.id)}`}>
+                            <Link href={`/logs/sessions/details?storeId=${encodeURIComponent(session.storeId)}&sessionId=${encodeURIComponent(session.id)}`}>
                                 View full session
                             </Link>
                         </Button>

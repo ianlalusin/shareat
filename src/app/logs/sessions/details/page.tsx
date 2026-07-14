@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { format } from "date-fns";
 import {
@@ -83,10 +83,11 @@ function riskTotal(risk: ReturnType<typeof useSessionAuditTrail>["riskSummary"])
 }
 
 export default function SessionAuditPage() {
-  const params = useParams<{ storeId: string; sessionId: string }>();
+  // Query-param route (static-export friendly so the POS APK can open it):
+  // /logs/sessions/details?storeId=<storeId>&sessionId=<sessionId>&focus=<logId>.
   const searchParams = useSearchParams();
-  const storeId = decodeURIComponent(params.storeId);
-  const sessionId = decodeURIComponent(params.sessionId);
+  const storeId = decodeURIComponent(searchParams.get("storeId") || "");
+  const sessionId = decodeURIComponent(searchParams.get("sessionId") || "");
   const focusId = searchParams.get("focus");
   const { appUser } = useAuthContext();
   const {

@@ -146,7 +146,7 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                         itemLabel = `${meta.itemName || 'Bill Discount'} (Removed)`;
                                     }
 
-                                    const auditHref = `/logs/sessions/${encodeURIComponent(log.storeId)}/${encodeURIComponent(log.sessionId)}?focus=${encodeURIComponent(log.id)}`;
+                                    const auditHref = `/logs/sessions/details?storeId=${encodeURIComponent(log.storeId)}&sessionId=${encodeURIComponent(log.sessionId)}&focus=${encodeURIComponent(log.id)}`;
 
                                     return (
                                         <TableRow
