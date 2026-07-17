@@ -3,6 +3,7 @@ import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { generateDailyInsight as runDailyInsightFlow } from "@/ai/flows/daily-insight";
+import { INSIGHT_MODEL } from "@/ai/model-config";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type {
   DailyInsight,
@@ -11,7 +12,6 @@ import type {
   DailyContext,
 } from "@/lib/types";
 
-const MODEL = "googleai/gemini-2.5-flash";
 // Keep bursts well under the Gemini rate limit (gentle off-peak generation).
 const INSIGHT_CONCURRENCY = 2;
 // Max NEW (not-yet-done) stores generated per cron fire. With several off-peak
@@ -188,7 +188,9 @@ type DigestExtras = {
   leakageBaselinePct: number | null;
 };
 
-function buildMetricsAndDigest(
+/** Exported for testing/diagnostics: builds the deterministic digest the model
+ *  narrates. Pure — takes analytics docs, does no I/O and calls no model. */
+export function buildMetricsAndDigest(
   yest: DM,
   prevDay: DM | null,
   sameDowAvgGross: number | null,
@@ -503,7 +505,9 @@ export async function generateDailyInsightForStore(
     const yest = byOffset.get(1);
     if (!yest || grossOf(yest) <= 0) {
       const doc: DailyInsight = {
-        dayId, storeId: store.id, status: "no_data", source, model: MODEL,
+        // No Gemini call happens on this path — the model id is recorded only
+        // to show which model WOULD have run.
+        dayId, storeId: store.id, status: "no_data", source, model: INSIGHT_MODEL,
         generatedAt: FieldValue.serverTimestamp(), generatedAtMs: Date.now(),
         summary: { headline: "No sales recorded yesterday.", bullets: [], sentiment: "mixed" },
         sales: emptySection("No data", []), operations: emptySection("No data", []),
@@ -562,7 +566,7 @@ export async function generateDailyInsightForStore(
     const p = manilaParts(yesterday);
     const dateLabel = `${DAY_NAMES[yDow]}, ${p.day} ${MONTH_NAMES[p.m - 1]} ${p.y}`;
 
-    const ai = await runDailyInsightFlow({
+    const { insight: ai, usage } = await runDailyInsightFlow({
       storeName: store.name || store.id,
       dateLabel,
       dayOfWeek: DAY_NAMES[yDow],
@@ -579,7 +583,7 @@ export async function generateDailyInsightForStore(
     });
 
     const doc: DailyInsight = {
-      dayId, storeId: store.id, status: "ok", source, model: MODEL,
+      dayId, storeId: store.id, status: "ok", source, model: usage.model,
       generatedAt: FieldValue.serverTimestamp(), generatedAtMs: Date.now(),
       summary: ai.summary,
       sales: merge("sales"),
@@ -587,6 +591,9 @@ export async function generateDailyInsightForStore(
       inventory: merge("inventory"),
       anomalies: merge("anomalies"),
       suggestions: ai.suggestions ?? [],
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      costPesos: usage.costPesos,
       error: null,
     };
     await insightRef.set(doc);

@@ -13,6 +13,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { INSIGHT_MODEL, INSIGHT_MAX_OUTPUT_TOKENS, estimateCostPesos } from '@/ai/model-config';
 
 const DailyInsightInputSchema = z.object({
   storeName: z.string().describe('The store/branch name.'),
@@ -48,13 +49,29 @@ const DailyInsightOutputSchema = z.object({
 });
 export type DailyInsightOutput = z.infer<typeof DailyInsightOutputSchema>;
 
-export async function generateDailyInsight(input: DailyInsightInput): Promise<DailyInsightOutput> {
+/** What the call cost. Captured so spend is measurable — this app previously
+ *  logged nothing, so there was no way to see what the brief was costing. */
+const UsageSchema = z.object({
+  model: z.string(),
+  promptTokens: z.number(),
+  outputTokens: z.number(),
+  costPesos: z.number(),
+});
+
+const DailyInsightResultSchema = z.object({
+  insight: DailyInsightOutputSchema,
+  usage: UsageSchema,
+});
+export type DailyInsightResult = z.infer<typeof DailyInsightResultSchema>;
+
+export async function generateDailyInsight(input: DailyInsightInput): Promise<DailyInsightResult> {
   return dailyInsightFlow(input);
 }
 
 const prompt = ai.definePrompt({
   name: 'dailyInsightPrompt',
-  model: 'googleai/gemini-2.5-flash',
+  model: INSIGHT_MODEL,
+  config: { maxOutputTokens: INSIGHT_MAX_OUTPUT_TOKENS },
   input: { schema: DailyInsightInputSchema },
   output: { schema: DailyInsightOutputSchema },
   prompt: `You are a sharp restaurant operations & sales analyst for "{{{storeName}}}". You are writing the manager's morning brief about how the business did YESTERDAY ({{{dateLabel}}}), so they can act today.
@@ -88,11 +105,22 @@ const dailyInsightFlow = ai.defineFlow(
   {
     name: 'dailyInsightFlow',
     inputSchema: DailyInsightInputSchema,
-    outputSchema: DailyInsightOutputSchema,
+    outputSchema: DailyInsightResultSchema,
   },
   async (input) => {
-    const { output } = await prompt(input);
+    const response = await prompt(input);
+    const output = response.output;
     if (!output) throw new Error('Daily insight prompt returned no output');
-    return output;
+    const promptTokens = response.usage?.inputTokens ?? 0;
+    const outputTokens = response.usage?.outputTokens ?? 0;
+    return {
+      insight: output,
+      usage: {
+        model: INSIGHT_MODEL,
+        promptTokens,
+        outputTokens,
+        costPesos: estimateCostPesos(INSIGHT_MODEL, promptTokens, outputTokens),
+      },
+    };
   }
 );

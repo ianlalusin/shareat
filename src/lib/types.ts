@@ -1017,6 +1017,12 @@ export type DailyInsight = {
   inventory: InsightSectionData;
   anomalies: InsightSectionData;
   suggestions: DailyInsightSuggestion[];
+  /** Token/cost of the Gemini call that produced this doc. Absent on no_data /
+   *  error docs (no call was made) and on docs generated before cost capture
+   *  existed. Lets spend be measured per store/day without a separate call log. */
+  promptTokens?: number;
+  outputTokens?: number;
+  costPesos?: number;
   error?: string | null;
 };
 
