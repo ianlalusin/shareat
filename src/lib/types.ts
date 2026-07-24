@@ -1248,6 +1248,7 @@ export type ActivityLog = {
     text?: string;
     type?: string;
     responseMs?: number;
+    resolution?: string;
 
     // Refund-on-correction fields (RECEIPT_REFUND)
     refundAmount?: number;
