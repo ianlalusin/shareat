@@ -145,6 +145,13 @@ beforeEach(async () => {
       doc(raw as any, "stores", STORE_B, "sessions", "s9", "kitchentickets", "k9"),
       { storeId: STORE_B, status: "preparing" }
     );
+    await setDoc(doc(raw as any, "stores", STORE_A, "serverProfiles", "p1"), { name: "Ana" });
+    await setDoc(doc(raw as any, "stores", STORE_A, "serverProfileSecrets", "sec1"), {
+      profileId: "p1",
+      algo: "scrypt",
+      hash: "deadbeef",
+      salt: "abc123",
+    });
   });
 });
 
@@ -209,6 +216,37 @@ describe("server-only collections are closed to every client", () => {
       });
     }
   }
+});
+
+/**
+ * serverProfileSecrets holds hashed 6-digit passcodes for local device
+ * profiles. A readable hash is a sub-second offline crack, which would let
+ * anyone act on a shared tablet under a colleague's name — so unlike every
+ * other store-scoped collection, READ is denied too, for admins included.
+ * Only /api/server-profiles touches it, via the Admin SDK.
+ */
+describe("serverProfileSecrets is server-only, read included", () => {
+  for (const who of ["cashier", "server", "kitchen", "manager", "admin"] as const) {
+    it(`denies ${who} reading a secret`, async () => {
+      await assertFails(
+        getDoc(doc(db(who), "stores", STORE_A, "serverProfileSecrets", "sec1"))
+      );
+    });
+
+    it(`denies ${who} writing a secret`, async () => {
+      await assertFails(
+        setDoc(doc(db(who), "stores", STORE_A, "serverProfileSecrets", "sec1"), { hash: "x" })
+      );
+    });
+  }
+
+  it("still lets the shift roles read the profile roster itself", async () => {
+    for (const who of ["cashier", "server", "kitchen"] as const) {
+      await assertSucceeds(
+        getDoc(doc(db(who), "stores", STORE_A, "serverProfiles", "p1"))
+      );
+    }
+  });
 });
 
 describe("cross-store access", () => {

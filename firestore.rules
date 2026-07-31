@@ -236,10 +236,21 @@ service cloud.firestore {
     // cover read/create/update/delete, and this catch-all would otherwise OR
     // straight past their pinFieldsUnchanged() guard, leaving the customer PIN
     // fields forgeable by any store-scoped staff member.
+    //
+    // serverProfileSecrets is excluded from READ as well as write — the only
+    // store-scoped collection that is. It holds the hashed passcodes for local
+    // device profiles, which are 6 digits, so a readable hash is a sub-second
+    // offline crack and lets anyone act on a shared tablet under a colleague's
+    // name. Note this exclusion has to live in the catch-all condition itself:
+    // a separate `match … { allow read: if false }` block would do nothing,
+    // because rules OR across every matching block. /api/server-profiles reads
+    // and writes it through the Admin SDK.
     match /stores/{storeId}/{coll}/{docPath=**} {
-      allow read: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId)
+        && coll != 'serverProfileSecrets';
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
+        && coll != 'serverProfileSecrets'
         && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets',
                       'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents'])
         && (!isConfigCollection(coll) || isManagerOrAdmin());
