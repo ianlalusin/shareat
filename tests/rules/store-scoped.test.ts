@@ -344,38 +344,25 @@ describe("deletes on operational collections stay open", () => {
   });
 });
 
-/**
- * KNOWN HOLE — these assert the CURRENT (wrong) behaviour on purpose.
- *
- * isAdmin() uses staffExists() rather than isActiveStaff(), so deactivating an
- * admin in /admin/users revokes nothing at the rules layer. The fix is staged on
- * branch `rules/isadmin-active-status`, held back because it can lock out any
- * admin whose staff doc is not exactly status == 'active' and there is no
- * platformAdmin claim to fall back on.
- *
- * These are pinned rather than deleted so the hole stays visible and so merging
- * that branch produces an obvious diff: every assertSucceeds below flips to
- * assertFails.
- */
-describe("KNOWN HOLE (deferred): a deactivated admin keeps access", () => {
-  it("still lets a disabled admin write config", async () => {
-    await assertSucceeds(
+describe("§4 a deactivated admin loses access", () => {
+  it("denies a disabled admin writing config", async () => {
+    await assertFails(
       setDoc(doc(db("disabledAdmin"), "stores", STORE_A, "inventory", "x"), { v: 1 })
     );
   });
 
-  it("still lets a disabled admin write operational data", async () => {
-    await assertSucceeds(
+  it("denies a disabled admin writing operational data", async () => {
+    await assertFails(
       setDoc(doc(db("disabledAdmin"), "stores", STORE_A, "sessions", "x"), { v: 1 })
     );
   });
 
-  it("still lets a disabled admin write the global product catalog", async () => {
-    await assertSucceeds(setDoc(doc(db("disabledAdmin"), "products", "p1"), { name: "x" }));
+  it("denies a disabled admin writing the global product catalog", async () => {
+    await assertFails(setDoc(doc(db("disabledAdmin"), "products", "p1"), { name: "x" }));
   });
 
-  it("still lets a disabled admin read another store", async () => {
-    await assertSucceeds(getDoc(doc(db("disabledAdmin"), "stores", STORE_B, "receipts", "r1")));
+  it("denies a disabled admin reading another store", async () => {
+    await assertFails(getDoc(doc(db("disabledAdmin"), "stores", STORE_B, "receipts", "r1")));
   });
 });
 
