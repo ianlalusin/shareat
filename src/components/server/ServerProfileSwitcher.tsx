@@ -1,25 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  collection,
-  doc,
-  getDocs,
-  serverTimestamp,
-  updateDoc,
-} from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, LogOut, Plus, UserCircle2, Loader2 } from "lucide-react";
-import { hashPasscode } from "@/lib/server-profiles/passcode";
+import { useToast } from "@/hooks/use-toast";
+import { postServerProfileOp } from "@/lib/server-profiles/api";
 import { PasscodePad } from "./PasscodePad";
 import { CreateServerProfileModal } from "./CreateServerProfileModal";
 
+/** No passcodeHash: the secret is server-side only and never sent to clients. */
 interface ProfileDoc {
   id: string;
   name: string;
-  passcodeHash: string;
 }
 
 interface Props {
@@ -38,6 +33,7 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
   const [resetToken, setResetToken] = useState(0);
   const [shake, setShake] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -71,24 +67,37 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
     if (open) void loadProfiles();
   }, [open, loadProfiles]);
 
+  // Verification happens server-side. The passcode hash is deliberately not
+  // readable here any more: it protects a 6-digit code, so a client-side
+  // comparison meant anyone who could read the roster could crack every
+  // colleague's passcode offline in under a second.
   const handlePasscodeComplete = async (passcode: string) => {
     if (!selected) return;
     setVerifying(true);
     try {
-      const hash = await hashPasscode(storeId, passcode);
-      if (hash !== selected.passcodeHash) {
-        setShake(true);
-        setTimeout(() => setShake(false), 450);
-        setResetToken(t => t + 1);
-        return;
-      }
-      try {
-        await updateDoc(doc(db, "stores", storeId, "serverProfiles", selected.id), {
-          lastLoginAt: serverTimestamp(),
-        });
-      } catch { /* non-critical */ }
-      onSignIn(selected.id, selected.name);
+      const json = await postServerProfileOp({
+        op: "verify",
+        storeId,
+        profileId: selected.id,
+        passcode,
+      });
+      onSignIn(selected.id, json.profile?.name ?? selected.name);
       onOpenChange(false);
+    } catch (err: any) {
+      setShake(true);
+      setTimeout(() => setShake(false), 450);
+      setResetToken(t => t + 1);
+      // A plain wrong passcode just shakes the pad, as before. Lockout (429)
+      // and anything unexpected need words, or it looks like the pad is broken.
+      if (err?.status === 429) {
+        toast({ variant: "destructive", title: "Locked", description: err.message });
+      } else if (err?.status !== 401) {
+        toast({
+          variant: "destructive",
+          title: "Sign-in Failed",
+          description: err?.message || "Could not verify the passcode.",
+        });
+      }
     } finally {
       setVerifying(false);
     }

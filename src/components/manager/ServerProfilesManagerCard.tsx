@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KeyRound, Loader2, Trash2, UserCircle2, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { hashPasscode } from "@/lib/server-profiles/passcode";
+import { postServerProfileOp } from "@/lib/server-profiles/api";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 
 interface ProfileDoc {
@@ -58,7 +58,7 @@ export function ServerProfilesManagerCard({ storeId, allowDelete = false }: Prop
       confirmText: "Delete",
     }))) return;
     try {
-      await deleteDoc(doc(db, "stores", storeId, "serverProfiles", p.id));
+      await postServerProfileOp({ op: "delete", storeId, profileId: p.id });
       toast({ title: "Profile deleted", description: p.name });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Delete failed", description: err?.message });
@@ -73,10 +73,11 @@ export function ServerProfilesManagerCard({ storeId, allowDelete = false }: Prop
     }
     setSaving(true);
     try {
-      const passcodeHash = await hashPasscode(storeId, newPasscode);
-      await updateDoc(doc(db, "stores", storeId, "serverProfiles", resetTarget.id), {
-        passcodeHash,
-        passcodeResetAt: serverTimestamp(),
+      await postServerProfileOp({
+        op: "reset-passcode",
+        storeId,
+        profileId: resetTarget.id,
+        passcode: newPasscode,
       });
       toast({ title: "Passcode reset", description: `${resetTarget.name} can sign in with the new 6-digit passcode.` });
       setResetTarget(null);

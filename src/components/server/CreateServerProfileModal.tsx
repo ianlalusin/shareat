@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, UserPlus, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { hashPasscode } from "@/lib/server-profiles/passcode";
+import { postServerProfileOp } from "@/lib/server-profiles/api";
 import { PasscodePad } from "./PasscodePad";
 
 interface Props {
@@ -57,26 +55,29 @@ export function CreateServerProfileModal({ open, onOpenChange, storeId, onCreate
     setSaving(true);
     try {
       const trimmedName = name.trim();
-      // Block duplicate names (case-insensitive) so attribution stays unambiguous.
-      const existing = await getDocs(collection(db, "stores", storeId, "serverProfiles"));
-      const clash = existing.docs.some((d) => String((d.data() as any)?.name ?? "").trim().toLowerCase() === trimmedName.toLowerCase());
-      if (clash) {
-        toast({ title: "Name already exists", description: "Another profile on this store already uses that name.", variant: "destructive" });
+
+      // Creation (and the duplicate-name check that keeps attribution
+      // unambiguous) runs server-side, so the passcode hash is never written
+      // from, or readable by, a client.
+      const json = await postServerProfileOp({
+        op: "create",
+        storeId,
+        name: trimmedName,
+        passcode: pc,
+      });
+
+      toast({ title: "Profile created", description: `Signed in as ${trimmedName}.` });
+      onCreated(json.profile.id, trimmedName);
+      onOpenChange(false);
+    } catch (err: any) {
+      // A duplicate name is a correctable mistake, not a failure — send them
+      // back to the name step rather than closing the flow.
+      if (err?.status === 409) {
+        toast({ title: "Name already exists", description: err.message, variant: "destructive" });
         setStep("name");
         setResetToken((t) => t + 1);
         return;
       }
-      const passcodeHash = await hashPasscode(storeId, pc);
-      const ref = await addDoc(collection(db, "stores", storeId, "serverProfiles"), {
-        name: trimmedName,
-        passcodeHash,
-        createdAt: serverTimestamp(),
-        lastLoginAt: null,
-      });
-      toast({ title: "Profile created", description: `Signed in as ${trimmedName}.` });
-      onCreated(ref.id, trimmedName);
-      onOpenChange(false);
-    } catch (err: any) {
       toast({ title: "Error", description: err?.message || "Could not create profile.", variant: "destructive" });
     } finally {
       setSaving(false);
