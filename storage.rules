@@ -5,8 +5,14 @@ service firebase.storage {
   match /b/{bucket}/o {
     
     // -- Helper Functions --
+    // Cross-service Firestore reads from Storage rules must go through the
+    // `firestore.` namespace. A bare get() is Firestore-rules syntax: the
+    // compiler only warns ("Invalid function name: get"), but at evaluation
+    // time the call fails and every rule depending on it falls through to
+    // deny — which silently blocked the Items/ and loyaltyRewardImages/
+    // uploads below.
     function getUserRole(uid) {
-      return get(/databases/(default)/documents/staff/$(uid)).data.role;
+      return firestore.get(/databases/(default)/documents/staff/$(uid)).data.role;
     }
     
     function isManagerOrAdmin(uid) {
