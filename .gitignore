@@ -47,3 +47,7 @@ next-env.d.ts
 .design-sync/
 .ds-sync/
 ds-bundle/
+
+# Firestore emulator artifacts
+firestore-debug.log
+firebase-debug.log
