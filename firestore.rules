@@ -12,18 +12,10 @@ service cloud.firestore {
     function staffData() { return get(staffPath()).data; }
     function isActiveStaff() { return staffExists() && staffData().status == 'active'; }
 
-    // KNOWN HOLE, deliberately still open: this uses staffExists(), not
-    // isActiveStaff(), so a staff doc with role 'admin' and status 'disabled'
-    // keeps full write access to every store and the global catalog —
-    // deactivating an admin in /admin/users does not revoke anything here.
-    //
-    // The one-word fix is staged on branch `rules/isadmin-active-status`. It is
-    // held back because it can lock out any admin whose staff doc is not exactly
-    // status == 'active', and nothing in this repo calls setCustomUserClaims, so
-    // the platformAdmin claim is almost certainly unset — there is no second
-    // door. Merge that branch only after confirming, in the Firebase console for
-    // shareat-hub-v2, that `staff where role == 'admin'` all have
-    // status == 'active'.
+    // isActiveStaff() (not staffExists()) on the staff-doc branch: a deactivated
+    // admin must not keep god access to every store. The platformAdmin custom
+    // claim is the break-glass path and stays deliberately un-status-gated —
+    // nothing in this repo calls setCustomUserClaims, so it is set out of band.
     //
     // Note: the emulator logs an evaluation error here on deny paths, because
     // `platformAdmin` is absent from every real token and the property read
@@ -35,7 +27,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.platformAdmin == true ||
-        (staffExists() && staffData().role == 'admin')
+        (isActiveStaff() && staffData().role == 'admin')
       );
     }
 
