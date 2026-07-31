@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, ChevronsUpDown, Edit, Save, Trash2, XCircle, RotateCw } from "lucide-react";
+import { Check, ChevronsUpDown, Edit, KeyRound, Save, Trash2, XCircle, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -30,13 +30,15 @@ interface UserDetailsModalProps {
   onReactivate: (user: AppUser) => void;
   onDelete: (uid: string, name?: string) => void;
   onUpdate: (uid: string, data: Partial<AppUser>) => Promise<void>;
+  /** Issues a temporary password and forces a change on next sign-in. */
+  onResetPassword: (user: AppUser) => void;
   isProcessing?: boolean;
 }
 
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
 
-export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformAdmin, currentUserId, availableStores, onDeactivate, onReactivate, onDelete, onUpdate, isProcessing }: UserDetailsModalProps) {
+export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformAdmin, currentUserId, availableStores, onDeactivate, onReactivate, onDelete, onUpdate, onResetPassword, isProcessing }: UserDetailsModalProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [editableUser, setEditableUser] = useState<Partial<AppUser>>({});
 
@@ -239,6 +241,16 @@ export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformA
                         <div className="flex gap-2">
                              {!isSelf && isPlatformAdmin && (
                                 <>
+                                    {/* Resetting your own password here would revoke your session
+                                        mid-edit, so this is hidden on your own row — use
+                                        Account -> Change Password. The route enforces it too. */}
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => onResetPassword(user)}
+                                        disabled={isProcessing}
+                                    >
+                                        <KeyRound className="mr-2 h-4 w-4" /> Reset Password
+                                    </Button>
                                     {isDeactivated ? (
                                          <Button 
                                             variant="outline"

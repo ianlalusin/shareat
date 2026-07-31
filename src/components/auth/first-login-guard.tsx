@@ -30,6 +30,17 @@ const PUBLIC = ["/login", "/signup", "/forgot-password", "/support"];
 const PENDING_ALLOWED = ["/pending", "/support"];
 const NEEDS_PROFILE_ALLOWED = ["/signup", "/support"];
 
+/**
+ * Forced password change after an admin reset.
+ *
+ * Handled here rather than in RoleGuard for two reasons: this guard runs
+ * app-wide (RoleGuard only wraps guarded pages, so an unguarded route would
+ * slip through), and this route must render WITHOUT AppLayout — AppLayout's
+ * local-user gate would otherwise force a cashier to sign into a local profile
+ * before they could fix their own password.
+ */
+const CHANGE_PASSWORD_ROUTE = "/change-password";
+
 export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
   const { user, appUser, loading, isSigningOut, staffError, signOut } = useAuthContext();
   const router = useRouter();
@@ -72,7 +83,23 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        
+
+        // Signed in on an admin-issued temporary password → nothing else until
+        // it is replaced.
+        if (appUser.mustChangePassword === true) {
+          if (pathname !== CHANGE_PASSWORD_ROUTE) {
+            router.replace(CHANGE_PASSWORD_ROUTE);
+          }
+          return;
+        }
+
+        // On the change screen with no pending reset (bookmark, or they just
+        // finished) → send them home.
+        if (pathname === CHANGE_PASSWORD_ROUTE) {
+          router.replace(roleHome(appUser.role));
+          return;
+        }
+
         // If an active user is on a public/limbo page, redirect them to their designated home.
         if (appUser.status === 'active' && (PUBLIC.includes(pathname) || PENDING_ALLOWED.includes(pathname) || NEEDS_PROFILE_ALLOWED.includes(pathname) || pathname === '/')) {
             router.replace(roleHome(appUser.role));
@@ -125,6 +152,16 @@ export function FirstLoginGuard({ children }: { children: React.ReactNode }) {
     }
     if (appUser.status !== 'active') {
       return PENDING_ALLOWED.includes(pathname) ? <>{children}</> : <BrandLoader />;
+    }
+    // Forced password change — rendered bare, outside AppLayout, so the
+    // local-user gate cannot block a cashier from fixing their own password.
+    if (appUser.mustChangePassword === true) {
+      return pathname === CHANGE_PASSWORD_ROUTE ? <>{children}</> : <BrandLoader />;
+    }
+    // No pending reset but sitting on the change screen — the effect above is
+    // redirecting home.
+    if (pathname === CHANGE_PASSWORD_ROUTE) {
+      return <BrandLoader />;
     }
     // Active user on a protected page
     if (appUser.status === 'active' && !PUBLIC.includes(pathname) && !PENDING_ALLOWED.includes(pathname) && !NEEDS_PROFILE_ALLOWED.includes(pathname) && pathname !== '/') {

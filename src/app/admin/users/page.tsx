@@ -16,6 +16,7 @@ import { useStoreContext } from "@/context/store-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { UserDetailsModal, type StoreOption } from "@/components/admin/user-details-modal";
+import { TempPasswordDialog } from "@/components/admin/temp-password-dialog";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
@@ -47,6 +48,10 @@ export default function UserManagementPage() {
     const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
     const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
+    // Held only while the show-once dialog is open, then cleared.
+    const [tempPasswordFor, setTempPasswordFor] = useState<
+        { password: string; name: string | null; email: string | null } | null
+    >(null);
     const { confirm, Dialog } = useConfirmDialog();
     
     const [selectedRoles, setSelectedRoles] = useState<Record<string, AssignableRole>>({});
@@ -328,6 +333,51 @@ export default function UserManagementPage() {
             });
         } finally {
             setIsProcessing(prev => ({ ...prev, [uid]: false }));
+        }
+    }
+
+    async function handleResetPassword(user: AppUser) {
+        if (!appUser?.isPlatformAdmin) return;
+
+        const confirmed = await confirm({
+            title: `Reset the password for ${user.name || user.email}?`,
+            description:
+                "A temporary password is generated and shown once. Their current password stops working immediately and every device they are signed in on is signed out. They must set a new password at their next sign-in.",
+            confirmText: "Yes, reset it",
+            destructive: true,
+        });
+        if (!confirmed) return;
+
+        setIsProcessing(prev => ({ ...prev, [user.uid]: true }));
+        try {
+            const current = auth.currentUser;
+            if (!current) throw new Error("Not signed in.");
+            const idToken = await current.getIdToken();
+
+            const res = await fetch("/api/admin/users/reset-password", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ uid: user.uid }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) throw new Error(json?.error || `Reset failed (${res.status})`);
+
+            // Held in state only long enough to display; cleared when the
+            // dialog closes. Never logged.
+            setTempPasswordFor({
+                password: json.tempPassword,
+                name: user.name ?? null,
+                email: user.email ?? null,
+            });
+            setSelectedUser(null);
+        } catch (error: any) {
+            toast({
+                variant: "destructive",
+                title: "Reset Failed",
+                description: error.message || "Could not reset the password.",
+            });
+        } finally {
+            setIsProcessing(prev => ({ ...prev, [user.uid]: false }));
         }
     }
 
@@ -621,9 +671,18 @@ export default function UserManagementPage() {
                     }}
                     onDelete={handleDeleteUser}
                     onUpdate={handleUpdateUserDetails}
+                    onResetPassword={handleResetPassword}
                     isProcessing={isProcessing[selectedUser.uid]}
                 />
             )}
+
+            <TempPasswordDialog
+                isOpen={!!tempPasswordFor}
+                onClose={() => setTempPasswordFor(null)}
+                tempPassword={tempPasswordFor?.password ?? null}
+                userName={tempPasswordFor?.name}
+                userEmail={tempPasswordFor?.email}
+            />
             {Dialog}
         </RoleGuard>
     );

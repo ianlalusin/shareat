@@ -21,6 +21,11 @@ export type AppUser = {
   contactNumber?: string;
   address?: string;
   isPlatformAdmin?: boolean;
+  /**
+   * Set by an admin password reset. While true, RoleGuard routes every guarded
+   * page to /change-password until the user sets their own password.
+   */
+  mustChangePassword?: boolean;
 };
 
 type AuthCtx = {

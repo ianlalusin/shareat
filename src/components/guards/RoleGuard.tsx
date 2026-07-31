@@ -71,6 +71,12 @@ export function RoleGuard({ allow, children, hideOnDeny = false }: Props) {
       return;
     }
 
+    // NOTE: the forced password change after an admin reset is handled in
+    // FirstLoginGuard, not here. It has to run app-wide (this guard only wraps
+    // guarded pages) and has to render the change screen outside AppLayout,
+    // whose local-user gate would otherwise make a cashier sign into a local
+    // profile before they could fix their password.
+
     // NOTE: We intentionally do NOT auto-redirect a wrong-role user to their
     // role-home here. That silent `router.replace(roleHome)` is what made
     // restricted pages feel like random "jumps" (e.g. a cashier landing on a
