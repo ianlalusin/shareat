@@ -12,11 +12,44 @@ service cloud.firestore {
     function staffData() { return get(staffPath()).data; }
     function isActiveStaff() { return staffExists() && staffData().status == 'active'; }
 
+    // isActiveStaff() (not staffExists()) on the staff-doc branch: a deactivated
+    // admin must not keep god access to every store. The platformAdmin custom
+    // claim is the break-glass path and stays deliberately un-status-gated —
+    // nothing in this repo calls setCustomUserClaims, so it is set out of band.
+    //
+    // Note: the emulator logs an evaluation error here on deny paths, because
+    // `platformAdmin` is absent from every real token and the property read
+    // raises instead of returning false. It is verdict-neutral — an errored
+    // operand of `||` still yields true when the other side is true, so admins
+    // pass and non-admins deny, which is what the rules tests assert. Rewriting
+    // it as a keys()/`in` membership test does NOT silence it (verified), so it
+    // is left in its original form rather than made more complex for no gain.
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.platformAdmin == true ||
-        (staffExists() && staffData().role == 'admin')
+        (isActiveStaff() && staffData().role == 'admin')
       );
+    }
+
+    // Safe to trust staffData().role here for the same reason isAdmin() is:
+    // /staff/{uid} grants update+delete only to isAdmin(), the root fallback
+    // denies all writes, and the self-signup create pins role to 'server' and
+    // status to 'pending'. A user cannot promote themselves to manager.
+    function isManager() {
+      return isActiveStaff() && staffData().role == 'manager';
+    }
+    function isManagerOrAdmin() { return isAdmin() || isManager(); }
+
+    // Writing any of these changes money or the menu, so it is a manager/admin
+    // decision. Everything else under a store is operational and stays open to
+    // the shift roles. Names here are FIRST path segments only — the catch-all
+    // binds {coll} to one segment, so nested docs inherit their parent's verdict
+    // (receipts/{id}/revisions/{v} is 'receipts'; storeConfig/current/tables/{t}
+    // is 'storeConfig').
+    function isConfigCollection(coll) {
+      return coll in ['inventory', 'storeDiscounts', 'storeCharges', 'storeModesOfPayment',
+                      'storePackages', 'storeRefills', 'storeFlavors', 'menuSchedules',
+                      'kitchenLocations', 'receiptSettings', 'salesTargets', 'optionOverrides'];
     }
 
     function hasStoreAccess(storeId) {
@@ -49,23 +82,35 @@ service cloud.firestore {
     function customerParticipantId() { return request.auth.token.participantId; }
 
     function msNow() { return request.time.toMillis(); }
+    // Uses .get(field, null) rather than direct field access so the guard is safe
+    // on documents that have no PIN fields at all — this is applied to the
+    // activeSessions wildcard block below, which also matches subcollection docs
+    // like customerParticipants, and a missing-field read would error to deny.
+    // `resource == null` is the create case. The previous version used
+    // !resource.exists(), which raises "Null value error" on create — the guard
+    // was doubly broken: it errored here, and the activeSessions wildcard block
+    // OR-ed past it anyway, so nothing ever surfaced.
     function pinFieldsUnchanged() {
-      return !resource.exists()
+      return resource == null
         || (
-          request.resource.data.customerPin == resource.data.customerPin
-          && request.resource.data.customerAccessEnabled == resource.data.customerAccessEnabled
-          && request.resource.data.customerAccessExpiresAtMs == resource.data.customerAccessExpiresAtMs
+          request.resource.data.get('customerPin', null) == resource.data.get('customerPin', null)
+          && request.resource.data.get('customerAccessEnabled', null) == resource.data.get('customerAccessEnabled', null)
+          && request.resource.data.get('customerAccessExpiresAtMs', null) == resource.data.get('customerAccessExpiresAtMs', null)
         );
     }
 
     // -----------------------------
     // Collection Group Rules
     // -----------------------------
+    // Scoped to the querying user's stores. Collection-group rules are evaluated
+    // per returned document, so any client collectionGroup() query over these
+    // MUST filter where('storeId','==',...) or it will be denied for non-admins.
+    // The only live one, SyncKdsTicketsTool, already does.
     match /{path=**}/kitchentickets/{ticketId} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
     }
     match /{path=**}/activityLogs/{logId} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
     }
 
     // -----------------------------
@@ -130,9 +175,25 @@ service cloud.firestore {
         && resource.data.status == 'active';
     }
 
-    // Keep your existing catch-all for staff subpaths under activeSessions if needed
+    // Catch-all for staff subpaths under activeSessions. This block also matches
+    // the activeSessions/{sessionId} document itself ({docPath=**} covers one or
+    // more segments), so it MUST repeat pinFieldsUnchanged() — otherwise it ORs
+    // straight past the guard on the block above and the PIN fields are freely
+    // forgeable by any store-scoped staff member.
+    //
+    // Known residual: a client may still delete the session doc and recreate it
+    // with arbitrary PIN fields, since !resource.exists() permits any values on
+    // create and cashiers legitimately delete activeSessions on payment/void.
+    // Closing that requires PIN issuance to move fully server-side.
+    //
+    // create/update and delete are listed separately on purpose: `write` covers
+    // all three, but on a delete `request.resource` is null, so evaluating
+    // pinFieldsUnchanged() would error to deny and break every payment and void
+    // (both delete the activeSessions doc).
     match /stores/{storeId}/activeSessions/{docPath=**} {
-      allow read, write: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId);
+      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged();
+      allow delete: if hasStoreAccess(storeId);
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
@@ -161,11 +222,27 @@ service cloud.firestore {
     // webhook is the source of truth for status). Staff may READ them (to show
     // the live QR/payment status on the POS) but never write, so a cashier
     // device cannot forge a "paid" status.
+    //
+    // Config collections (isConfigCollection above) are further restricted to
+    // managers and admins. hasStoreAccess() alone does not distinguish roles, so
+    // without this a cashier or server could rewrite selling prices, discounts,
+    // charges, or payment methods straight from a devtools console — the
+    // manager-only restriction on /manager/inventory and /manager/store-settings
+    // is RoleGuard, i.e. UI-only. Operational collections stay open: a shift
+    // cannot run otherwise, and a denied offline replay is silent data loss
+    // (commitLocalFirst does not await the commit).
+    //
+    // activeSessions is excluded entirely: it has dedicated blocks above that
+    // cover read/create/update/delete, and this catch-all would otherwise OR
+    // straight past their pinFieldsUnchanged() guard, leaving the customer PIN
+    // fields forgeable by any store-scoped staff member.
     match /stores/{storeId}/{coll}/{docPath=**} {
       allow read: if hasStoreAccess(storeId);
       allow write, delete: if hasStoreAccess(storeId)
+        && coll != 'activeSessions'
         && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets',
-                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents']);
+                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents'])
+        && (!isConfigCollection(coll) || isManagerOrAdmin());
     }
 
     // PayMongo intent -> bridge-doc reverse index (server-only; written by create-qr,
@@ -299,12 +376,21 @@ service cloud.firestore {
     // otherwise this fallback can override server-only collection rules above.
     // paymongoIntentIndex is server-only (Admin SDK): exclude it from this read grant,
     // otherwise the OR-semantics of this fallback would expose its correlation docs.
+    //
+    // 'stores' is excluded from BOTH fallbacks. Without that exclusion the deep
+    // fallback matched stores/{anyStoreId}/{anything} with no hasStoreAccess
+    // check, so any active staff member could read every store's receipts,
+    // sessions and analytics. Store data is governed by the store-scoped blocks
+    // above; admins still reach every store because isAdmin() short-circuits
+    // hasStoreAccess().
     match /{collection}/{docId} {
-      allow read: if isActiveStaff() && collection != 'paymongoIntentIndex';
+      allow read: if isActiveStaff()
+        && collection != 'paymongoIntentIndex'
+        && collection != 'stores';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && collection != 'stores';
       allow create, update, delete: if false;
     }
   }

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-pos \"vitest run --config vitest.rules.config.ts\"",
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
     "build:storeConfig": "tsx scripts/build-store-config.ts",
@@ -84,12 +85,14 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/lodash": "^4.17.4",
     "@types/node": "^20",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "@types/uuid": "^9.0.8",
     "dotenv": "^17.2.3",
+    "firebase-tools": "^15.25.1",
     "genkit-cli": "^1.0.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",

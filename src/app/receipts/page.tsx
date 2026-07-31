@@ -687,7 +687,11 @@ export default function ReceiptsPage() {
                             {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
                             Export
                         </Button>
-                        <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                        {/* receiptSettings is manager/admin-only at the rules layer;
+                            without this gate a cashier gets a silent permission-denied. */}
+                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
+                            <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                        )}
                     </div>
                 </PageHeader>
                 
