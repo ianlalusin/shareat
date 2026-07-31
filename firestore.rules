@@ -268,6 +268,27 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // -----------------------------
+    // PRODUCT REGISTRATION REQUESTS
+    // A manager applies for a new global product from /manager/product-requests;
+    // a platform admin approves (which creates products/{id} and auto-imports it
+    // into the requesting store) or declines with a reason.
+    //
+    // EVERY write goes through POST /api/product-requests (Admin SDK, which
+    // bypasses these rules), so clients are strictly read-only here. A requester
+    // must never be able to forge `status`, `requestedByUid`, `nameKey`,
+    // `approvedProductId`, or the reviewer fields by writing the doc directly.
+    //
+    // NOTE: the read grant below is already implied by the root fallback at the
+    // bottom of this file (rules are OR-ed across matching blocks). It is spelled
+    // out here for the explicit write denial and so the collection is documented
+    // alongside the other platform-wide catalogs.
+    // -----------------------------
+    match /productRequests/{requestId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
     // Legacy user profiles can be read only by admins for migration tools.
     match /users/{userId} {
       allow read, list: if isAdmin();

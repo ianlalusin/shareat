@@ -74,6 +74,108 @@ export type Product = {
   updatedAt: Timestamp;
 };
 
+export type ProductRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+/**
+ * "addon"   -> on approval the requesting store's inventory record gets
+ *              isAddon: true, so it shows in the cashier add-ons modal.
+ * "product" -> imported as a plain inventory item (isAddon: false).
+ *
+ * This lives on the REQUEST only. The created Product doc is identical either
+ * way — add-on-ness is a per-store inventory flag, not a catalog property.
+ */
+export type ProductRequestKind = "addon" | "product";
+
+/**
+ * A manager's application to add a new item to the GLOBAL product catalog.
+ *
+ * Managers cannot write `products` (firestore.rules restricts it to isAdmin()),
+ * so the whole lifecycle is server-mediated through POST /api/product-requests.
+ * On approval the product is created, auto-imported into the requesting store at
+ * the suggested price, and becomes importable by every other store through the
+ * existing /manager/inventory -> "Add Products to Inventory" picker.
+ *
+ * The document is the audit record: writeActivityLog is session-scoped and
+ * cannot be used here, so requester/reviewer/timestamps all persist on the doc,
+ * which is immutable from the client.
+ */
+export type ProductRequest = {
+  id: string;
+  status: ProductRequestStatus;
+  requestKind: ProductRequestKind;
+
+  // ---- Proposed catalog definition (mirrors the admin product form) -------
+  name: string;
+  /** Single-axis variant label, e.g. "Large". Maps to Product.variant. */
+  variant?: string | null;
+  description?: string | null;
+  /** Free-text sub-category; mirrored into addonCategories/{slug} on approval. */
+  subCategory?: string | null;
+  /** Already passed through normalizeUom() server-side. */
+  uom: string;
+  barcode?: string | null;
+  /**
+   * Uploaded to productRequestImages/{requestId}/... before submit. Copied
+   * verbatim onto products.imageUrl and the store's inventory record on
+   * approval — the file is never moved to the canonical Items/ path.
+   */
+  imageUrl?: string | null;
+
+  /**
+   * slugify(`${name} ${variant ?? ""}`). Computed SERVER-SIDE, never trusted
+   * from the client. The sole duplicate-protection key.
+   */
+  nameKey: string;
+
+  // ---- Requesting store's activation intent ------------------------------
+  storeId: string;
+  /** Denormalized so the admin queue needs no per-row store lookup. */
+  storeName: string;
+  /**
+   * Suggested price for the requesting store only. The admin never sets a
+   * global price; every other store sets its own when it imports.
+   */
+  suggestedPrice: number;
+  cost?: number;
+  /**
+   * Kitchen station in the REQUESTING store. Required when
+   * requestKind === "addon": inventory.isAddon cannot be enabled without a
+   * price > 0 AND a kitchenLocationId (see /manager/inventory handleToggle).
+   */
+  kitchenLocationId?: string | null;
+  kitchenLocationName?: string | null;
+  /** Why this store needs it — shown to the reviewing admin. */
+  justification?: string | null;
+
+  // ---- Requester ---------------------------------------------------------
+  requestedByUid: string;
+  requestedByName: string;
+  requestedAt: Timestamp;
+
+  // ---- Review ------------------------------------------------------------
+  /**
+   * A single reviewer triple rather than the separate `approvedBy` / `rejectedBy`
+   * field pairs used by guestCountChange: `status` already records the outcome,
+   * and a request is only ever decided once.
+   */
+  reviewedByUid?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: Timestamp | null;
+  /** Admin's message. Required on reject — that is the manager's feedback. */
+  reviewNote?: string | null;
+
+  // ---- Approval result ---------------------------------------------------
+  /** products/{id} created by the approve op. The link back to the catalog. */
+  approvedProductId?: string | null;
+  /** Outcome of the auto-import into the requesting store. */
+  autoActivation?: "activated" | "activated_without_addon" | null;
+  /** Set when autoActivation !== "activated": the exact fix the manager needs. */
+  autoActivationNote?: string | null;
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 /**
  * A reusable, global option group attached to one or more Products.
  * At order time the cashier and customer modifier pickers iterate the

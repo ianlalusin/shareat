@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -13,6 +13,7 @@ const adminTools = [
     { title: "Store Management", description: "Create, edit, or deactivate store locations.", href: "/admin/stores", icon: Store },
     { title: "Universal Collections", description: "Manage platform-wide discounts, charges, and store overrides.", href: "/admin/collections", icon: Globe },
     { title: "Loyalty Rewards", description: "Rewards members redeem Sharelebrator points for.", href: "/admin/loyalty-rewards", icon: Gift },
+    { title: "Product Requests", description: "Review manager applications for new catalog products.", href: "/admin/product-requests", icon: ClipboardCheck },
 ]
 
 const menuTools = [
@@ -27,6 +28,7 @@ const managerTools = [
     { title: "Store Settings", description: "Manage add-ons, packages, and prices.", href: "/manager/store-settings", icon: SlidersHorizontal },
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
+    { title: "Product Requests", description: "Apply to add a new product or add-on to the global catalog.", href: "/manager/product-requests", icon: ClipboardCheck },
     { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
     { title: "Online Orders", description: "Accept and fulfill orders placed on the public website storefront.", href: "/admin/online-orders", icon: ShoppingBag },
     { title: "Menu Option Availability", description: "Turn add-on options (dips, extras, upgrades) on or off for your store.", href: "/admin/menu/option-groups", icon: Settings2 },

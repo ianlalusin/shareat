@@ -34,5 +34,13 @@ service firebase.storage {
     match /loyaltyRewardImages/{rewardId}/{fileName} {
       allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
     }
+
+    // Proposed product photos attached to a product-registration request.
+    // Uploaded by the requesting manager before the request doc exists, under a
+    // client-generated requestId; the approve op copies the resulting download
+    // URL onto products/{id}.imageUrl and the store's inventory record.
+    match /productRequestImages/{requestId}/{fileName} {
+      allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
+    }
   }
 }
