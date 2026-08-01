@@ -14,8 +14,15 @@ service cloud.firestore {
 
     // isActiveStaff() (not staffExists()) on the staff-doc branch: a deactivated
     // admin must not keep god access to every store. The platformAdmin custom
-    // claim is the break-glass path and stays deliberately un-status-gated —
-    // nothing in this repo calls setCustomUserClaims, so it is set out of band.
+    // claim is the break-glass path and stays deliberately un-status-gated, so
+    // it still works when the staff-doc branch cannot let anyone through.
+    //
+    // Grant it with `node scripts/set-platform-admin.mjs <UID>` (Admin SDK, so
+    // it needs a service account, not a signed-in user). An earlier version of
+    // this comment claimed nothing in the repo called setCustomUserClaims and
+    // that the claim was therefore set out of band — that was wrong, and it
+    // mattered: it made this branch look like a door nobody could open, which
+    // is the reasoning that held back the isActiveStaff() change above.
     //
     // Note: the emulator logs an evaluation error here on deny paths, because
     // `platformAdmin` is absent from every real token and the property read
