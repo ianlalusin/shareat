@@ -1,7 +1,9 @@
 import "server-only";
 
-import { Timestamp, FieldValue, type Firestore } from "firebase-admin/firestore";
+import { Timestamp, FieldValue, FieldPath, type Firestore } from "firebase-admin/firestore";
 import type { Receipt, KitchenTicket, Store } from "@/lib/types";
+import { buildSessionRow, type DailySessionRow } from "@/lib/analytics/session-row";
+import { getDayIdFromTimestamp, getDayStartMs } from "@/lib/analytics/daily";
 import {
   aggregateDailyMetrics,
   sumDailyBodyInto,
@@ -82,6 +84,104 @@ export async function rebuildDailyAnalyticsFromReceiptsServer(
   await Promise.all(commits);
 
   return { days: aggregates.size, receipts: receipts.length, tickets: tickets.length };
+}
+
+/**
+ * Rebuild the Daily Session Timeline day docs for [startDate, endDate] from receipts.
+ *
+ * The receipt window is deliberately widened by a day on each side and the
+ * resulting rows are then filtered by their Manila dayId. Querying `createdAt`
+ * gives a UTC window, but rows are bucketed by Manila day, so without the widening
+ * a receipt rung at 00:30 PHT would land in a day doc the caller never asked to
+ * rebuild — writing it partially and leaving it inconsistent.
+ *
+ * Day docs are overwritten (merge: false) so a rebuild is authoritative. Docs in
+ * range that end up with no rows (e.g. every receipt was voided) are deleted
+ * rather than left stale.
+ */
+export async function rebuildDailySessionsFromReceiptsServer(
+  db: Firestore,
+  storeId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<{ days: number; rows: number; receipts: number; deleted: number }> {
+  const startDayId = getDayIdFromTimestamp(startDate);
+  const endDayId = getDayIdFromTimestamp(endDate);
+
+  const storeSnap = await db.doc(`stores/${storeId}`).get();
+  if (!storeSnap.exists) throw new Error("Store not found.");
+  const store = { id: storeId, ...(storeSnap.data() as any) } as Store;
+
+  const queryStart = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+  const queryEnd = new Date(endDate.getTime() + 2 * 24 * 60 * 60 * 1000);
+
+  const receiptsSnap = await db
+    .collection(`stores/${storeId}/receipts`)
+    .where("createdAt", ">=", Timestamp.fromDate(queryStart))
+    .where("createdAt", "<", Timestamp.fromDate(queryEnd))
+    .orderBy("createdAt", "asc")
+    .get();
+
+  const byDay = new Map<string, Record<string, DailySessionRow>>();
+  let rows = 0;
+  for (const d of receiptsSnap.docs) {
+    const receipt = { id: d.id, ...(d.data() as any) } as Receipt;
+    const built = buildSessionRow(receipt, store);
+    if (!built) continue; // voided, or no usable close time
+    if (built.dayId < startDayId || built.dayId > endDayId) continue;
+    if (!byDay.has(built.dayId)) byDay.set(built.dayId, {});
+    byDay.get(built.dayId)![built.rowKey] = built.row;
+    rows++;
+  }
+
+  // Day docs already in range that this rebuild produced no rows for are stale.
+  // dayIds are YYYYMMDD, so lexicographic document-id order is chronological.
+  const existingSnap = await db
+    .collection(`stores/${storeId}/dailySessions`)
+    .orderBy(FieldPath.documentId())
+    .startAt(startDayId)
+    .endAt(endDayId)
+    .get();
+  const stale = existingSnap.docs.map((d) => d.id).filter((id) => !byDay.has(id));
+
+  let batch = db.batch();
+  let opCount = 0;
+  const commits: Promise<unknown>[] = [];
+  const flush = () => {
+    if (++opCount >= 450) {
+      commits.push(batch.commit());
+      batch = db.batch();
+      opCount = 0;
+    }
+  };
+
+  for (const [dayId, rowMap] of byDay.entries()) {
+    const anyRow = Object.values(rowMap)[0];
+    batch.set(
+      db.doc(`stores/${storeId}/dailySessions/${dayId}`),
+      {
+        meta: {
+          storeId,
+          dayId,
+          dayStartMs: anyRow ? getDayStartMs(anyRow.closedAtMs) : 0,
+          updatedAt: FieldValue.serverTimestamp(),
+          rebuiltAt: FieldValue.serverTimestamp(),
+          source: "backfill_sessions_v1",
+        },
+        rows: rowMap,
+      },
+      { merge: false },
+    );
+    flush();
+  }
+  for (const dayId of stale) {
+    batch.delete(db.doc(`stores/${storeId}/dailySessions/${dayId}`));
+    flush();
+  }
+  if (opCount > 0) commits.push(batch.commit());
+  await Promise.all(commits);
+
+  return { days: byDay.size, rows, receipts: receiptsSnap.size, deleted: stale.length };
 }
 
 /** Recompute dine-in session-duration fields on month/year rollups from daily docs. */

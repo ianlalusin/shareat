@@ -4,6 +4,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import {
   rebuildDailyAnalyticsFromReceiptsServer,
+  rebuildDailySessionsFromReceiptsServer,
   backfillSessionDurationRollupsServer,
   rebuildDashboardPresetsServer,
 } from "@/lib/server/analytics/backfillServer";
@@ -14,9 +15,10 @@ export const maxDuration = 300;
 
 /**
  * Server-side analytics backfill (admin maintenance). Actions:
- *  - "daily":   rebuild daily docs for [startMs, endMs] from receipts/tickets/sessions
- *  - "rollups": recompute month/year session-duration rollups for the range
- *  - "presets": rebuild the dashboard preset docs
+ *  - "daily":    rebuild daily docs for [startMs, endMs] from receipts/tickets/sessions
+ *  - "sessions": rebuild the Daily Session Timeline day docs for [startMs, endMs]
+ *  - "rollups":  recompute month/year session-duration rollups for the range
+ *  - "presets":  rebuild the dashboard preset docs
  * Admin/manager only. Ranges are client-driven (the admin pages page by
  * day/month/year) to keep each request bounded.
  */
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
   const storeId = String(body.storeId || "");
   const action = String(body.action || "");
   if (!storeId || !action) return bad("Missing storeId or action.");
-  if (!["daily", "rollups", "presets"].includes(action)) return bad(`Unsupported action '${action}'.`);
+  if (!["daily", "sessions", "rollups", "presets"].includes(action)) return bad(`Unsupported action '${action}'.`);
 
   try {
     const decoded = await verifyToken(req);
@@ -75,6 +77,10 @@ export async function POST(req: Request) {
 
     if (action === "daily") {
       const result = await rebuildDailyAnalyticsFromReceiptsServer(db, storeId, startDate, endDate);
+      return NextResponse.json({ ok: true, ...result });
+    }
+    if (action === "sessions") {
+      const result = await rebuildDailySessionsFromReceiptsServer(db, storeId, startDate, endDate);
       return NextResponse.json({ ok: true, ...result });
     }
     // action === "rollups"

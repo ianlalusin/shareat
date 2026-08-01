@@ -214,7 +214,8 @@ service cloud.firestore {
     }
 
     // Store scoped (everything else). Analytics rollups
-    // (analytics / analyticsMonths / analyticsYears / dashPresets) are SERVER-ONLY
+    // (analytics / analyticsMonths / analyticsYears / dashPresets / dailySessions)
+    // are SERVER-ONLY
     // writes: every writer goes through the admin SDK (which bypasses these rules),
     // so clients may READ them but not write/delete. `coll` is a single-segment
     // wildcard (a string), so the membership check is unambiguous.
@@ -258,7 +259,7 @@ service cloud.firestore {
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
         && coll != 'serverProfileSecrets'
-        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets',
+        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets', 'dailySessions',
                       'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents'])
         && (!isConfigCollection(coll) || isManagerOrAdmin());
     }

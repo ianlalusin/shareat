@@ -4,8 +4,12 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import { applyAnalyticsDeltaServer } from "@/lib/server/analytics/applyAnalyticsDeltaServer";
+import {
+  removeDailySessionRow,
+  upsertDailySessionRow,
+} from "@/lib/server/analytics/applyDailySessionRowServer";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
-import type { Receipt } from "@/lib/types";
+import type { Receipt, Store } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -83,6 +87,16 @@ export async function POST(req: Request) {
       if (!snap.exists) throw new Error("Receipt not found.");
       const receipt = { id: receiptRef.id, ...(snap.data() as any) } as Receipt;
 
+      // The session-timeline row needs the store's tax mode to split bill-level
+      // from line-level discounts. Read it here, with the receipt, so every read
+      // in this transaction still precedes every write. Ops that only remove a
+      // row (void) or touch a counter (voidcash-reverse) skip the read.
+      const needsStore = op === "payment" || op === "refund" || op === "edit";
+      const storeSnap = needsStore ? await tx.get(db.doc(`stores/${storeId}`)) : null;
+      const store = storeSnap?.exists
+        ? ({ id: storeId, ...(storeSnap.data() as any) } as Store)
+        : null;
+
       if (op === "void") {
         // Already reversed → no-op (idempotent across server + client fallback).
         if ((receipt as any).analyticsReversed === true) return { skipped: true as const };
@@ -110,6 +124,8 @@ export async function POST(req: Request) {
           db, storeId, asOriginal, null, tx, new Date(),
           retained > 0 ? { "payments.voidCashRetainedTotal": retained } : undefined,
         );
+        // The timeline lists closed/paid sessions only, so a void drops the row.
+        removeDailySessionRow(db, storeId, receipt, tx);
         tx.update(receiptRef, {
           analyticsReversed: true,
           analyticsReversedAt: FieldValue.serverTimestamp(),
@@ -169,6 +185,9 @@ export async function POST(req: Request) {
           return { skipped: true as const };
         }
         applyAnalyticsDeltaServer(db, storeId, oldReceipt, receipt, tx, new Date());
+        // Re-derive the row from the edited receipt (same close time, so it
+        // overwrites in place on the same day doc).
+        upsertDailySessionRow(db, storeId, receipt, store, tx);
         tx.update(receiptRef, {
           analyticsEditVersion: version,
           analyticsEditAppliedAt: FieldValue.serverTimestamp(),
@@ -181,6 +200,7 @@ export async function POST(req: Request) {
         return { skipped: true as const };
       }
       applyAnalyticsDeltaServer(db, storeId, null, receipt, tx, new Date());
+      upsertDailySessionRow(db, storeId, receipt, store, tx);
       tx.update(receiptRef, { analyticsApplied: true, analyticsAppliedAt: FieldValue.serverTimestamp() });
       return { skipped: false as const };
     });

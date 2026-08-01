@@ -22,6 +22,9 @@ async function postBackfill(body: Record<string, unknown>): Promise<any> {
 export async function rebuildDailyViaServer(storeId: string, startDate: Date, endDate: Date) {
   return postBackfill({ storeId, action: 'daily', startMs: startDate.getTime(), endMs: endDate.getTime() }) as Promise<{ days: number; receipts: number; tickets: number }>;
 }
+export async function rebuildSessionsViaServer(storeId: string, startDate: Date, endDate: Date) {
+  return postBackfill({ storeId, action: 'sessions', startMs: startDate.getTime(), endMs: endDate.getTime() }) as Promise<{ days: number; rows: number; receipts: number; deleted: number }>;
+}
 export async function rebuildRollupsViaServer(storeId: string, startDate: Date, endDate: Date) {
   return postBackfill({ storeId, action: 'rollups', startMs: startDate.getTime(), endMs: endDate.getTime() }) as Promise<{ months: number; years: number }>;
 }

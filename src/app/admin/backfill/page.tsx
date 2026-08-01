@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { addDays, format } from "date-fns";
 import { Loader2, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
-import { rebuildDailyViaServer, rebuildRollupsViaServer, rebuildPresetsViaServer } from "@/lib/analytics/backfillViaServer";
+import { rebuildDailyViaServer, rebuildSessionsViaServer, rebuildRollupsViaServer, rebuildPresetsViaServer } from "@/lib/analytics/backfillViaServer";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,14 @@ export default function BackfillPage() {
   const [presetConfirmText, setPresetConfirmText] = useState("");
   const [isRebuildingPresets, setIsRebuildingPresets] = useState(false);
   const [presetProgress, setPresetProgress] = useState("");
+  const [sessionsConfirmText, setSessionsConfirmText] = useState("");
+  const [isRebuildingSessions, setIsRebuildingSessions] = useState(false);
+  const [sessionsProgress, setSessionsProgress] = useState("");
+  const [sessionsDateRange, setSessionsDateRange] = useState<{ start: Date; end: Date }>({
+    start: addDays(new Date(), -60),
+    end: new Date(),
+  });
+  const [isSessionsCalendarOpen, setIsSessionsCalendarOpen] = useState(false);
 
   if (appUser?.role !== 'admin') {
     return null; // This page is strictly for admins, RoleGuard will handle redirect
@@ -75,6 +83,31 @@ export default function BackfillPage() {
     }
   };
   
+  const handleSessionsBackfill = async () => {
+    if (appUser?.role !== 'admin') {
+        toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
+        return;
+    }
+    if (sessionsConfirmText !== "SESSIONS" || !activeStore) return;
+
+    setIsRebuildingSessions(true);
+    setSessionsProgress("Rebuilding session timeline days...");
+    toast({ title: "Session Timeline Rebuild Started", description: "Rebuilding per-session rows from historical receipts." });
+
+    try {
+      const result = await rebuildSessionsViaServer(activeStore.id, sessionsDateRange.start, sessionsDateRange.end);
+      setSessionsProgress(`Rebuilt ${result.days} day(s) / ${result.rows} session row(s) from ${result.receipts} receipt(s).${result.deleted ? ` Removed ${result.deleted} stale day(s).` : ""}`);
+      toast({ title: "Session Timeline Rebuilt", description: `${result.rows} session row(s) across ${result.days} day(s).` });
+    } catch (error: any) {
+      console.error("Session timeline rebuild failed:", error);
+      toast({ variant: 'destructive', title: "Rebuild Failed", description: error.message });
+      setSessionsProgress(`Error: ${error.message}`);
+    } finally {
+      setIsRebuildingSessions(false);
+      setSessionsConfirmText("");
+    }
+  };
+
   const handleRollupBackfill = async () => {
     if (appUser?.role !== 'admin') {
         toast({ variant: "destructive", title: "Permission Denied", description: "You are not authorized to perform this action." });
@@ -208,6 +241,81 @@ export default function BackfillPage() {
                       className="w-full"
                   >
                       {isBackfilling ? "Running..." : `Rebuild Analytics for ${activeStore?.name || '...'}`}
+                  </Button>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Rebuild Daily Session Timeline</CardTitle>
+                    <CardDescription>
+                        Build the per-session day documents that the Daily Session Timeline page reads, so past
+                        dates work there. Safe to re-run.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert>
+                      <AlertTitle>Overwrites the selected days</AlertTitle>
+                      <AlertDescription>
+                          Each day in range is rebuilt from its receipts, so the rebuild is authoritative. Days that
+                          end up with no paid sessions are removed. Nothing else is touched — analytics totals,
+                          receipts and rollups are left alone.
+                      </AlertDescription>
+                  </Alert>
+                  <div className="grid sm:grid-cols-2 gap-4 items-end">
+                      <div className="space-y-2">
+                          <Label>Date Range</Label>
+                          <Popover open={isSessionsCalendarOpen} onOpenChange={setIsSessionsCalendarOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className="w-full justify-start text-left font-normal h-9"
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {sessionsDateRange.end && !isSameDay(sessionsDateRange.start, sessionsDateRange.end) ? (
+                                        <>
+                                        {format(sessionsDateRange.start, "LLL dd, y")} -{" "}
+                                        {format(sessionsDateRange.end, "LLL dd, y")}
+                                        </>
+                                    ) : (
+                                        format(sessionsDateRange.start, "LLL dd, y")
+                                    )}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <CompactCalendar
+                                    onChange={(range) => { setSessionsDateRange(range); setIsSessionsCalendarOpen(false); }}
+                                />
+                            </PopoverContent>
+                         </Popover>
+                      </div>
+                      <div className="space-y-2">
+                          <Label htmlFor="sessions-confirm">Type "SESSIONS" to confirm</Label>
+                          <Input
+                              id="sessions-confirm"
+                              value={sessionsConfirmText}
+                              onChange={(e) => setSessionsConfirmText(e.target.value)}
+                              placeholder='Type "SESSIONS"'
+                              disabled={isRebuildingSessions}
+                          />
+                      </div>
+                  </div>
+                  {isRebuildingSessions && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-background rounded-md">
+                          <Loader2 className="animate-spin h-4 w-4" />
+                          <span>{sessionsProgress}</span>
+                      </div>
+                  )}
+                  {!isRebuildingSessions && sessionsProgress && (
+                      <p className="text-sm text-muted-foreground p-2 bg-background rounded-md">{sessionsProgress}</p>
+                  )}
+                  <Button
+                      onClick={handleSessionsBackfill}
+                      disabled={isRebuildingSessions || sessionsConfirmText !== "SESSIONS" || !activeStore}
+                      className="w-full"
+                      variant="secondary"
+                  >
+                      {isRebuildingSessions ? "Running..." : `Rebuild Session Timeline for ${activeStore?.name || '...'}`}
                   </Button>
                 </CardContent>
             </Card>

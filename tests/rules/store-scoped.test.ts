@@ -75,6 +75,7 @@ const SERVER_ONLY_COLLECTIONS = [
   "analyticsMonths",
   "analyticsYears",
   "dashPresets",
+  "dailySessions",
   "storefrontCatalog",
   "storefrontConfig",
   "onlineOrders",
