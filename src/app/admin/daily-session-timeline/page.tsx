@@ -47,6 +47,23 @@ const peso = (n: number) =>
 
 const clock = (ms: number | null | undefined) => (ms ? format(new Date(ms), "h:mm a") : "—");
 
+/** Em dash placeholder, so an absent value reads as absent rather than as a real zero. */
+const NONE = <span className="text-muted-foreground">—</span>;
+
+/**
+ * Money cell that renders nothing-at-all for zero.
+ *
+ * A session with no discount shows "—", not "₱0.00": the point of the column is
+ * to let someone scan for the sessions that DID carry a discount or a charge, and
+ * a column of zeros buries them.
+ */
+function Money({ value, tone }: { value: number | null | undefined; tone: "discount" | "charge" }) {
+  if (!value) return NONE;
+  return (
+    <span className={tone === "discount" ? "text-green-600" : "text-red-600"}>{peso(value)}</span>
+  );
+}
+
 type LoadState =
   | { status: "idle" }
   | { status: "loading" }
@@ -91,14 +108,13 @@ export default function DailySessionTimelinePage() {
       rows.reduce(
         (acc, r) => ({
           pax: acc.pax + (r.pax ?? 0),
-          billDiscount: acc.billDiscount + (r.billDiscount || 0),
           charges: acc.charges + (r.chargesTotal || 0),
           totalDiscount: acc.totalDiscount + (r.totalDiscount || 0),
           sales: acc.sales + (r.total || 0),
           durationMs: acc.durationMs + (r.durationMs || 0),
           durationCount: acc.durationCount + (r.durationMs ? 1 : 0),
         }),
-        { pax: 0, billDiscount: 0, charges: 0, totalDiscount: 0, sales: 0, durationMs: 0, durationCount: 0 }
+        { pax: 0, charges: 0, totalDiscount: 0, sales: 0, durationMs: 0, durationCount: 0 }
       ),
     [rows]
   );
@@ -210,16 +226,15 @@ export default function DailySessionTimelinePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Session ID</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>Receipt</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Table</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead className="text-right">Pax</TableHead>
                     <TableHead>Package / Items</TableHead>
-                    <TableHead className="text-right">Discount</TableHead>
-                    <TableHead className="text-right">Charge</TableHead>
                     <TableHead className="text-right">Total Discount</TableHead>
-                    <TableHead>Start</TableHead>
+                    <TableHead className="text-right">Charge</TableHead>
                     <TableHead>Close</TableHead>
                     <TableHead className="text-right">Session Time</TableHead>
                   </TableRow>
@@ -227,11 +242,11 @@ export default function DailySessionTimelinePage() {
                 <TableBody>
                   {rows.map((r) => (
                     <TableRow key={r.receiptId}>
-                      <TableCell className="font-mono text-xs whitespace-nowrap">
-                        {(r.sessionId ?? r.receiptId).slice(0, 8)}
-                        {r.receiptNumber && (
-                          <span className="block text-muted-foreground">{r.receiptNumber}</span>
-                        )}
+                      <TableCell className="whitespace-nowrap font-medium tabular-nums">
+                        {clock(r.startedAtMs)}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+                        {r.receiptNumber ?? "—"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <Badge variant={r.sessionMode === "package_dinein" ? "default" : "outline"}>
@@ -241,34 +256,39 @@ export default function DailySessionTimelinePage() {
                           <Badge variant="destructive" className="ml-1">Refund</Badge>
                         )}
                       </TableCell>
-                      <TableCell>{r.tableNumber ?? "—"}</TableCell>
-                      <TableCell className="max-w-[180px] truncate">{r.customerName ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.pax ?? "—"}</TableCell>
+                      <TableCell>{r.tableNumber ?? NONE}</TableCell>
+                      <TableCell className="max-w-[180px] truncate">{r.customerName ?? NONE}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.pax ?? NONE}</TableCell>
                       <TableCell>
                         {r.sessionMode === "package_dinein"
-                          ? (r.packageName ?? "—")
+                          ? (r.packageName ?? NONE)
                           : `${r.itemCount} item${r.itemCount === 1 ? "" : "s"}`}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{peso(r.billDiscount)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{peso(r.chargesTotal)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{peso(r.totalDiscount)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{clock(r.startedAtMs)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{clock(r.closedAtMs)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <Money value={r.totalDiscount} tone="discount" />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <Money value={r.chargesTotal} tone="charge" />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{clock(r.closedAtMs)}</TableCell>
                       <TableCell className="text-right whitespace-nowrap tabular-nums">
-                        {r.durationMs ? formatDurationHuman(r.durationMs) : "—"}
+                        {r.durationMs ? formatDurationHuman(r.durationMs) : NONE}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
                 <TableFooter>
                   <TableRow>
-                    <TableCell colSpan={4}>{rows.length} session{rows.length === 1 ? "" : "s"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{totals.pax || "—"}</TableCell>
+                    <TableCell colSpan={5}>{rows.length} session{rows.length === 1 ? "" : "s"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.pax || NONE}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right tabular-nums">{peso(totals.billDiscount)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{peso(totals.charges)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{peso(totals.totalDiscount)}</TableCell>
-                    <TableCell colSpan={2} />
+                    <TableCell className="text-right tabular-nums">
+                      <Money value={totals.totalDiscount} tone="discount" />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <Money value={totals.charges} tone="charge" />
+                    </TableCell>
+                    <TableCell />
                     <TableCell className="text-right whitespace-nowrap tabular-nums">
                       avg {formatDurationHuman(avgDuration, "—")}
                     </TableCell>

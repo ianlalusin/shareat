@@ -55,7 +55,7 @@ function fmtDurationShort(ms: number): string {
 }
 
 // A stat card split into two labelled columns.
-function SplitStatCard({ title, icon, leftLabel = "Dine In", rightLabel = "Ala carte", left, right, footnote, isLoading }: {
+function SplitStatCard({ title, icon, leftLabel = "Dine In", rightLabel = "Ala carte", left, right, footnote, isLoading, href }: {
     title: string;
     icon: React.ReactNode;
     leftLabel?: string;
@@ -64,9 +64,11 @@ function SplitStatCard({ title, icon, leftLabel = "Dine In", rightLabel = "Ala c
     right: string;
     footnote?: string;
     isLoading: boolean;
+    /** When set, the whole card becomes a link (same treatment as Net Sales). */
+    href?: string;
 }) {
-    return (
-        <Card className="h-full">
+    const card = (
+        <Card className={href ? "h-full hover:bg-muted/50 transition-colors" : "h-full"}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{title}</CardTitle>
                 {icon}
@@ -92,6 +94,8 @@ function SplitStatCard({ title, icon, leftLabel = "Dine In", rightLabel = "Ala c
             </CardContent>
         </Card>
     );
+
+    return href ? <Link href={href} className="block h-full">{card}</Link> : card;
 }
 
 interface StatCardsProps {
@@ -99,6 +103,12 @@ interface StatCardsProps {
     activeSessions?: { count: number; guests: number };
     dailyMetrics?: DailyMetric[];
     isLoading: boolean;
+    /**
+     * Destination for the Transactions card. Left undefined for roles that
+     * cannot open it (the Daily Session Timeline is admin/manager only, while
+     * this dashboard is also shown to cashiers) so they don't hit a redirect.
+     */
+    transactionsHref?: string;
 }
 
 // Net Sales: big bold total, then a discount | charges footer (matches the
@@ -181,7 +191,7 @@ function ActiveSessionsCard({ count, guests, avgSessionMs, isLoading }: {
     );
 }
 
-export function StatCards({ stats, activeSessions, dailyMetrics = [], isLoading }: StatCardsProps) {
+export function StatCards({ stats, activeSessions, dailyMetrics = [], isLoading, transactionsHref }: StatCardsProps) {
     const { discounts, charges, avgSessionMs } = useMemo(() => {
         let d = 0;
         let c = 0;
@@ -206,6 +216,7 @@ export function StatCards({ stats, activeSessions, dailyMetrics = [], isLoading 
               right={stats.txAlacarte.toLocaleString("en-US")}
               footnote={`${stats.transactions.toLocaleString("en-US")} total sessions`}
               isLoading={isLoading}
+              href={transactionsHref}
             />
             {activeSessions !== undefined && (
               <ActiveSessionsCard

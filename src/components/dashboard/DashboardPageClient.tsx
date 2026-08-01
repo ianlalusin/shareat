@@ -201,7 +201,13 @@ export default function DashboardPageClient() {
 
                 {/* Group 1 — top stat cards (equal height) */}
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 items-stretch">
-                    <StatCards stats={stats} activeSessions={activeSessions} dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <StatCards
+                        stats={stats}
+                        activeSessions={activeSessions}
+                        dailyMetrics={dailyMetrics}
+                        isLoading={isLoading}
+                        transactionsHref={canSeeManagerContent ? "/admin/daily-session-timeline" : undefined}
+                    />
                 </div>
 
                 {/* Payment Mix — compact full-width row between groups 1 and 2.
