@@ -286,7 +286,7 @@ export type StorePackage = {
     sortOrder: number;
     menuScheduleId: string | null;
     /**
-     * Bundle package: billed as a single flat-priced unit that seats up to
+     * Bundle package: billed as a single flat-priced unit covering the first
      * `bundleMaxCap` guests. When true, billing uses `bundlePrice` (qty 1)
      * instead of `pricePerHead × guestCount`, but the entered headcount still
      * drives PIN slots, covers, kitchen prep, and guest analytics.
@@ -294,12 +294,17 @@ export type StorePackage = {
     isBundle?: boolean;
     /** Flat price for the whole bundle (used when `isBundle`). */
     bundlePrice?: number;
-    /** Upper cap on headcount for a bundle ("good for N pax"). */
+    /**
+     * How many guests the flat `bundlePrice` covers ("good for N pax").
+     *
+     * This is a BILLING threshold, never a seating limit — a party may exceed it
+     * freely, and the excess is billed via `bundleExtraHeadPrice`. Nothing in the
+     * app may clamp a headcount to this value.
+     */
     bundleMaxCap?: number;
     /**
-     * Optional per-head price for guests beyond `bundleMaxCap`. When > 0 the cap
-     * is soft (overflow guests billed at this rate via a separate "Extra Pax"
-     * line); when unset/0 the cap is a hard limit.
+     * Per-head price for guests beyond `bundleMaxCap`, billed on a separate
+     * "Extra Pax" line. 0 or unset means those guests are included at no charge.
      */
     bundleExtraHeadPrice?: number;
 };

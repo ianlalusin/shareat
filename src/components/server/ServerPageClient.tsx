@@ -154,13 +154,11 @@ export function ServerPageClient() {
     if (!activeStore || !appUser || !session.tableId) return;
 
     const isBundle = !!session.packageSnapshot?.isBundle;
-    const bundleCap = Number(session.packageSnapshot?.bundleMaxCap ?? 0);
-    const bundleExtraPrice = Number(session.packageSnapshot?.bundleExtraHeadPrice ?? 0);
     const cashierInitial = session.guestCountCashierInitial ?? 0;
-    let finalCount = Math.max(cashierInitial, serverCount);
-    // Hard-cap bundles clamp the headcount; overflow-priced bundles allow beyond
-    // the cap (excess billed on the Extra Pax line, reconciled on the bill view).
-    if (isBundle && bundleCap > 0 && bundleExtraPrice <= 0) finalCount = Math.min(finalCount, bundleCap);
+    // Never capped by the package: a bundle's `bundleMaxCap` is the headcount its
+    // flat price covers, not a seating limit. Guests beyond it are billed on the
+    // Extra Pax line, reconciled by reconcileBundleLines below.
+    const finalCount = Math.max(cashierInitial, serverCount);
     const startedMs = (session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime()) ?? null;
     const verifyDurationMs = startedMs != null ? Math.max(0, Date.now() - startedMs) : null;
 

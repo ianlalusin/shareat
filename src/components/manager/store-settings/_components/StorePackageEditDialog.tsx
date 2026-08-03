@@ -23,7 +23,7 @@ const formSchema = z.object({
     menuScheduleId: z.string().nullable(),
     refillsAllowed: z.array(z.string()).optional(),
     flavorsAllowed: z.array(z.string()).optional(),
-    // Bundle package: flat-priced unit good for up to `bundleMaxCap` guests.
+    // Bundle package: flat-priced unit covering the first `bundleMaxCap` guests.
     isBundle: z.boolean().optional(),
     bundlePrice: z.coerce.number().min(0).optional(),
     bundleMaxCap: z.coerce.number().min(1).optional(),
@@ -63,7 +63,7 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
           <FormItem className="flex items-center justify-between rounded-md border p-3">
               <div>
                   <FormLabel>Bundle package</FormLabel>
-                  <p className="text-xs text-muted-foreground">Bills as one flat-priced unit good for up to N guests.</p>
+                  <p className="text-xs text-muted-foreground">Bills as one flat-priced unit covering the first N guests.</p>
               </div>
               <FormControl><Switch checked={!!field.value} onCheckedChange={field.onChange} /></FormControl>
           </FormItem>
@@ -75,10 +75,10 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
                   <FormItem><FormLabel>Bundle Price</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="bundleMaxCap" render={({ field }) => (
-                  <FormItem><FormLabel>Max Pax (cap)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Max Pax (covered)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><p className="text-xs text-muted-foreground">Guests included in the bundle price. Not a seating limit.</p><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="bundleExtraHeadPrice" render={({ field }) => (
-                  <FormItem className="sm:col-span-2"><FormLabel>Extra Head Price (optional)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><p className="text-xs text-muted-foreground">Per-head charge for guests beyond the cap. Leave 0 for a hard cap.</p><FormMessage /></FormItem>
+                  <FormItem className="sm:col-span-2"><FormLabel>Extra Head Price (optional)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><p className="text-xs text-muted-foreground">Per-head charge for guests beyond the covered count. Leave 0 to include them at no charge.</p><FormMessage /></FormItem>
               )} />
             </>
           ) : (
@@ -197,7 +197,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
             <DrawerTitle>Edit Store Package</DrawerTitle>
             <DrawerDescription>{item.packageName}</DrawerDescription>
           </DrawerHeader>
-          <div className="p-4">
+          <div className="p-4 overflow-y-auto max-h-[65vh]">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} id="store-package-form-mobile" className="space-y-4">
                 {formContent}
@@ -215,13 +215,16 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-4xl">
+      {/* Flex column + capped height so the header and footer stay pinned and only
+          the field area scrolls — the refill/flavor checklists make this form
+          taller than the viewport on short screens. */}
+      <DialogContent className="sm:max-w-4xl flex flex-col max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>Edit Store Package: {item.packageName}</DialogTitle>
           <DialogDescription>Manage price and allowed items for this package in your store.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} id="store-package-form" className="space-y-4 py-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} id="store-package-form" className="space-y-4 py-4 flex-1 min-h-0 overflow-y-auto px-1">
             {formContent}
           </form>
         </Form>

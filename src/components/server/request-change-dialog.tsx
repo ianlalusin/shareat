@@ -91,22 +91,19 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   const watchedPackageReason = packageForm.watch("reason");
   const guestCountValue = guestForm.watch("requestedCount");
 
-  // Confirmed headcount this session must fit. Bundles smaller than this are
-  // hidden — a "good for N" bundle can't seat more than N guests.
-  const guestCount = session.guestCountFinal ?? session.guestCountCashierInitial ?? 0;
-
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
         if (!pkg.isEnabled) return false;
-        // Hide bundles that can't seat the confirmed headcount — but only when
-        // they're hard-capped. Overflow-priced bundles can absorb extra pax.
-        if (pkg.isBundle && Number(pkg.bundleMaxCap ?? 0) < guestCount && Number(pkg.bundleExtraHeadPrice ?? 0) <= 0) return false;
+        // Every bundle stays selectable regardless of headcount: its cap is the
+        // number of guests the flat price covers, not a seating limit. Guests
+        // beyond it are billed on the Extra Pax line. The option label shows the
+        // cap, so the cashier can see what they're choosing.
         if (!pkg.menuScheduleId) return true; // Always available if no schedule
         const schedule = schedules.get(pkg.menuScheduleId);
         if (!schedule) return true; // Fail open if schedule not found
         return isScheduleActiveNow(schedule);
     });
-  }, [storePackages, schedules, guestCount]);
+  }, [storePackages, schedules]);
 
 
   const lastSessionIdRef = useRef<string | null>(null);

@@ -26,6 +26,7 @@ import { SessionTimelineDrawer } from "@/components/session/session-timeline-dra
 import { useConfirmDialog } from "../global/confirm-dialog";
 import type { PendingSession, Charge, Discount, SessionBillLine, Adjustment, LineAdjustment, SessionLoyaltyRedemption } from "@/lib/types";
 import { calculateBillTotals } from "@/lib/tax";
+import { bundleExtraPax } from "@/lib/billing/bundle";
 import { EditBillableItemDialog } from "./edit-billable-item-dialog";
 import { writeActivityLog } from "./activity-log";
 import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
@@ -179,8 +180,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
       // line is invisible everywhere, so we update rather than delete.
       const cap = Number(session.packageSnapshot.bundleMaxCap ?? 0);
       const extraPrice = Number(session.packageSnapshot.bundleExtraHeadPrice ?? 0);
-      // Defensive: a missing/zero cap must not bill every guest as overflow.
-      const desiredExtra = cap > 0 ? Math.max(0, (session.guestCountFinal ?? 0) - cap) : 0;
+      const desiredExtra = bundleExtraPax(session.guestCountFinal ?? 0, cap);
       const extraLineId = `bundleextra_${session.packageOfferingId}`;
       const extraLine = billLines.find(l => l.id === extraLineId);
       if (extraLine) {

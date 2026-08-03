@@ -16,6 +16,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { recomputeSessionAdjustmentFlags, approveGuestCountChange, type GuestCountApprovalResult } from "@/components/cashier/firestore";
+import { bundleExtraPax } from "@/lib/billing/bundle";
 
 type ChangeRequest = {
   sessionId: string;
@@ -177,10 +178,9 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 });
 
                 // Overflow line for the new bundle when guests exceed its cap.
-                // Defensive: a missing/zero cap must not bill every guest as overflow.
                 const newExtraPrice = Number(reqSnap.bundleExtraHeadPrice ?? 0);
                 const newCap = Number(reqSnap.bundleMaxCap ?? 0);
-                const newDesiredExtra = newCap > 0 ? Math.max(0, (session.guestCountFinal ?? 0) - newCap) : 0;
+                const newDesiredExtra = bundleExtraPax(session.guestCountFinal ?? 0, newCap);
                 if (toBundle && newExtraPrice > 0 && newDesiredExtra > 0) {
                     const newExtraLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/bundleextra_${session.packageChange.requestedPackageId}`);
                     batch.set(newExtraLineRef, {

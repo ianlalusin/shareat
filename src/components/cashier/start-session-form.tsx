@@ -22,6 +22,7 @@ import { QuantityInput } from "./quantity-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "../ui/form";
 import type { StorePackage, StoreFlavor } from "@/lib/types";
+import { bundleExtraPax } from "@/lib/billing/bundle";
 
 // --- TYPES ---
 export type Table = {
@@ -126,29 +127,19 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, off
     const riceQty = unlimitedForm.watch("riceQty");
     const cheeseQty = unlimitedForm.watch("cheeseQty");
 
-    // Bundle packages cap the headcount the cashier can enter.
+    // A bundle's cap is the headcount its flat price covers, NOT a seating limit —
+    // the party may be any size, and guests beyond the cap are billed per-head at
+    // `bundleExtraHeadPrice` (0 = included at no charge).
     const selectedPackageId = unlimitedForm.watch("packageId");
     const selectedPackage = packages.find(p => p.packageId === selectedPackageId);
     const isBundle = !!selectedPackage?.isBundle;
     const bundleCap = Number(selectedPackage?.bundleMaxCap ?? 0);
     const bundleExtraPrice = Number(selectedPackage?.bundleExtraHeadPrice ?? 0);
-    // Hard cap only when the bundle has no overflow price; otherwise guests may
-    // exceed the cap and the excess is billed per-head.
-    const isHardCap = isBundle && bundleCap > 0 && bundleExtraPrice <= 0;
-    const extraPax = isBundle && bundleCap > 0 ? Math.max(0, guestCount - bundleCap) : 0;
+    const extraPax = isBundle ? bundleExtraPax(guestCount, bundleCap) : 0;
 
     const setGuestCount = (val: number) => {
-        let v = Math.max(1, Math.floor(Number(val) || 1));
-        if (isHardCap) v = Math.min(v, bundleCap);
-        unlimitedForm.setValue('guestCount', v);
+        unlimitedForm.setValue('guestCount', Math.max(1, Math.floor(Number(val) || 1)));
     };
-
-    // Clamp down when switching to a hard-cap bundle whose cap is below the count.
-    useEffect(() => {
-        if (isHardCap && guestCount > bundleCap) {
-            unlimitedForm.setValue('guestCount', bundleCap);
-        }
-    }, [isHardCap, bundleCap, guestCount, unlimitedForm]);
 
     // Seat-from-waitlist: prefill form when parent sets a pending seat.
     const formRef = useRef<HTMLDivElement>(null);
@@ -214,15 +205,6 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, off
             return;
         }
 
-        if (chosenPackage.isBundle) {
-            const cap = Number(chosenPackage.bundleMaxCap ?? 0);
-            const extra = Number(chosenPackage.bundleExtraHeadPrice ?? 0);
-            if (cap > 0 && extra <= 0 && data.guestCount > cap) {
-                toast({ variant: 'destructive', title: 'Too many guests', description: `This bundle is good for up to ${cap} guests.` });
-                setIsSubmitting(false);
-                return;
-            }
-        }
         
         const normOpt = (v: any) => {
             const s = typeof v === "string" ? v.trim() : "";
@@ -368,7 +350,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, off
                                         )}
                                     />
                                     <div className="space-y-2">
-                                        <Label>Guests{isHardCap ? ` (max ${bundleCap})` : isBundle && bundleCap > 0 ? ` (incl ${bundleCap})` : ''}</Label>
+                                        <Label>Guests{isBundle && bundleCap > 0 ? ` (first ${bundleCap} covered)` : ''}</Label>
                                         <div className="flex items-center gap-2">
                                             <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount - 1)}><Minus /></Button>
                                             <QuantityInput
@@ -376,10 +358,13 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId, off
                                                 onChange={(val) => setGuestCount(val)}
                                                 className="w-16 text-center"
                                             />
-                                            <Button type="button" variant="outline" size="icon" disabled={isHardCap && guestCount >= bundleCap} onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
+                                            <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
                                         </div>
                                         {extraPax > 0 && (
-                                            <p className="text-xs text-amber-600">+{extraPax} extra pax @ ₱{bundleExtraPrice} each</p>
+                                            <p className="text-xs text-amber-600">
+                                                +{extraPax} beyond the {bundleCap} covered
+                                                {bundleExtraPrice > 0 ? ` @ ₱${bundleExtraPrice} each` : ' — no extra charge'}
+                                            </p>
                                         )}
                                     </div>
                                 </div>

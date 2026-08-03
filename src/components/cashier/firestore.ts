@@ -58,6 +58,7 @@ import { sessionOwnershipFields } from '@/lib/offline/sessionOwnership';
 import { getBrowserDeviceId } from '@/lib/offline/browserDevice';
 import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile';
 import { calculateBillTotals } from '@/lib/tax';
+import { bundleExtraPax } from '@/lib/billing/bundle';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyReceiptDeltaServerFirst } from '@/lib/analytics/applyReceiptDeltaServerFirst';
@@ -276,8 +277,7 @@ export async function startSession(storeId: string, payload: StartSessionPayload
 
       // Bundle overflow: guests beyond the cap are billed per-head on a separate
       // "Extra Pax" addon line. Only when the bundle has an extra-head price.
-      // Defensive: a missing/zero cap must not bill every guest as overflow.
-      const extraQty = bundleMaxCap > 0 ? Math.max(0, payload.guestCount - bundleMaxCap) : 0;
+      const extraQty = bundleExtraPax(payload.guestCount, bundleMaxCap);
       if (isBundle && bundleExtraHeadPrice > 0 && extraQty > 0) {
         const extraLineId = `bundleextra_${payload.package.packageId}`;
         const extraLineRef = doc(db, `stores/${storeId}/sessions/${newSessionRef.id}/sessionBillLines`, extraLineId);
@@ -1101,14 +1101,11 @@ export async function approveGuestCountChange({
     }
 
     // Bundles bill a flat unit, so an approved count only changes the headcount
-    // (PINs/covers/analytics), never the package line qty. The count is also
-    // clamped to the bundle cap.
+    // (PINs/covers/analytics), never the package line qty. The approved count is
+    // NOT capped: `bundleMaxCap` is the headcount the flat price covers, not a
+    // seating limit, so guests beyond it are reconciled onto the Extra Pax line
+    // by reconcileBundleLines below.
     const isBundle = !!sessionData.packageSnapshot?.isBundle;
-    const cap = Number(sessionData.packageSnapshot?.bundleMaxCap ?? 0);
-    const extraPrice = Number(sessionData.packageSnapshot?.bundleExtraHeadPrice ?? 0);
-    // Hard-cap bundles clamp to cap; overflow-priced bundles allow beyond it
-    // (the excess is billed on the Extra Pax line, reconciled on the bill view).
-    const effectiveCount = isBundle && cap > 0 && extraPrice <= 0 ? Math.min(count, cap) : count;
 
     const packageOfferingId: string | undefined = sessionData.packageOfferingId || undefined;
     const pkgLineRef = packageOfferingId
@@ -1123,7 +1120,7 @@ export async function approveGuestCountChange({
       clearedVoidQty: 0,
       clampedFreeQty: 0,
       clampedDiscountQty: 0,
-      newBillable: effectiveCount,
+      newBillable: count,
     };
 
     if (isBundle && pkgLineRef && pkgSnap?.exists()) {
@@ -1136,17 +1133,17 @@ export async function approveGuestCountChange({
       const prevFree = Math.max(0, line.freeQty ?? 0);
       const prevDiscount = Math.max(0, line.discountQty ?? 0);
 
-      const newFree = Math.min(prevFree, effectiveCount);
-      const newDiscount = Math.min(prevDiscount, Math.max(0, effectiveCount - newFree));
+      const newFree = Math.min(prevFree, count);
+      const newDiscount = Math.min(prevDiscount, Math.max(0, count - newFree));
 
       summary.clearedVoidQty = prevVoid;
       summary.clampedFreeQty = prevFree - newFree;
       summary.clampedDiscountQty = prevDiscount - newDiscount;
-      summary.newBillable = Math.max(0, effectiveCount - newFree);
+      summary.newBillable = Math.max(0, count - newFree);
 
       const reqAt = sessionData.guestCountChange?.requestedAt;
       const linePatch: Record<string, any> = {
-        qtyOrdered: effectiveCount,
+        qtyOrdered: count,
         voidedQty: 0,
         freeQty: newFree,
         discountQty: newDiscount,
@@ -1167,7 +1164,7 @@ export async function approveGuestCountChange({
     }
 
     tx.update(sessionRef, {
-      guestCountFinal: effectiveCount,
+      guestCountFinal: count,
       'guestCountChange.status': 'approved',
       'guestCountChange.approvedByUid': stamp.uid,
       'guestCountChange.approvedAt': serverTimestamp(),
@@ -1177,7 +1174,7 @@ export async function approveGuestCountChange({
 
     if (projSnap.exists()) {
       tx.update(projectionRef, {
-        guestCountFinal: effectiveCount,
+        guestCountFinal: count,
         'guestCountChange.status': 'approved',
         updatedAt: serverTimestamp(),
       });
@@ -1221,8 +1218,7 @@ export async function reconcileBundleLines(storeId: string, sessionId: string, a
     const cap = Number(s.packageSnapshot.bundleMaxCap ?? 0);
     const extraPrice = Number(s.packageSnapshot.bundleExtraHeadPrice ?? 0);
     const guests = Number(s.guestCountFinal ?? 0);
-    // Defensive: a missing/zero cap must not bill every guest as overflow.
-    const desiredExtra = cap > 0 ? Math.max(0, guests - cap) : 0;
+    const desiredExtra = bundleExtraPax(guests, cap);
     const itemName = `Extra Pax — ${s.packageSnapshot.name ?? 'Bundle'}`;
     const ctx = {
       sessionStatus: s.status,
