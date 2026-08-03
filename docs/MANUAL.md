@@ -76,7 +76,7 @@ Managers oversee the operations of their assigned store(s).
 -   **Reporting & Logs**:
     -   **Dashboard**: real-time sales analytics, top-selling items, payment mix, and performance metrics.
     -   **Receipts & History**: browse past transactions, reprint, and correct.
-    -   **Activity Logs**: audit trail of staff actions, including a **Staff Adjustments** breakdown of voids / comps / discounts per cashier with outlier flags (manager / admin only).
+    -   **Daily Session Timeline**: every closed session for a day. Expand a row for its full sequence — start, verification, refills and add-ons with serve times, adjustments, bill out and close — plus bill lines, kitchen tickets, guest devices, the raw activity log and the manager review flag. Its **Day Review** panel carries the day's voids / comps / discounts and a **Staff Adjustments** breakdown per cashier with outlier flags.
     -   **Customer Requests** (Analysis): all floor requests with response times (§9).
 
 ---
@@ -190,7 +190,7 @@ A running log of feature changes and meaningful fixes shipped per session. Newes
 - `/cashier/handover` till log: starting float, auto-computed cash sales, deductions, counted cash, variance, both cashier names; history + XLSX.
 
 **Oversight & analysis**
-- `/logs` **Staff Adjustments** card: per-cashier voids/comps/discounts with outlier flags (manager/admin only).
+- `/admin/daily-session-timeline` **Day Review** panel: per-cashier voids/comps/discounts with outlier flags (manager/admin only). Replaces the former `/logs` and `/logs/sessions/details` pages, which were merged into the expandable session rows.
 - `/admin/customer-requests` (Analysis): full customer-request history with response-time stats and export.
 
 **Kitchen**

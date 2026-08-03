@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { useRouter, useSearchParams } from "next/navigation";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar as CalendarIcon, Clock, Loader2, Users } from "lucide-react";
+import { ArrowLeft, Calendar as CalendarIcon, Clock, Users } from "lucide-react";
 
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
@@ -19,18 +19,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { sortRows, type DailySessionRow, type DailySessionsDoc } from "@/lib/analytics/session-row";
 import { formatDurationHuman } from "@/lib/utils/date";
+import { fetchFlavorNames, fetchSessionTrail } from "@/lib/session-timeline/fetch-session-trail";
+import { buildRiskBySession } from "@/lib/session-timeline/risk";
+import type { RiskCounts } from "@/lib/session-timeline/types";
+import { DayReviewPanel } from "@/components/session-timeline/DayReviewPanel";
+import { SessionRowList } from "@/components/session-timeline/SessionRowList";
+import type { TrailEntry } from "@/components/session-timeline/ExpandedSessionPanel";
+import type { ActivityLog } from "@/lib/types";
 
 /**
  * Daily Session Timeline.
@@ -40,29 +38,18 @@ import { formatDurationHuman } from "@/lib/utils/date";
  * It deliberately does NOT fall back to querying receipts when a day doc is
  * missing: that per-session read cost is the thing this projection exists to
  * avoid, so a missing day is reported as "not built yet" instead.
+ *
+ * Expanding a row is what fetches that session's history, and the result is
+ * cached for the page's lifetime — so the day view stays one read, and the
+ * detail is there for whoever asks for it. This page absorbed the old /logs and
+ * /logs/sessions/details pages; the Day Review panel is the former's two
+ * cross-session cards, and the expanded row is the latter.
+ *
+ * Deep links: ?date=YYYY-MM-DD&receipt=…&session=…&focus=…&review=1
  */
 
 const peso = (n: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n || 0);
-
-const clock = (ms: number | null | undefined) => (ms ? format(new Date(ms), "h:mm a") : "—");
-
-/** Em dash placeholder, so an absent value reads as absent rather than as a real zero. */
-const NONE = <span className="text-muted-foreground">—</span>;
-
-/**
- * Money cell that renders nothing-at-all for zero.
- *
- * A session with no discount shows "—", not "₱0.00": the point of the column is
- * to let someone scan for the sessions that DID carry a discount or a charge, and
- * a column of zeros buries them.
- */
-function Money({ value, tone }: { value: number | null | undefined; tone: "discount" | "charge" }) {
-  if (!value) return NONE;
-  return (
-    <span className={tone === "discount" ? "text-green-600" : "text-red-600"}>{peso(value)}</span>
-  );
-}
 
 type LoadState =
   | { status: "idle" }
@@ -71,20 +58,46 @@ type LoadState =
   | { status: "loaded"; rows: DailySessionRow[] }
   | { status: "error"; message: string };
 
+/** Two rows of one session share a cache entry; a receipt-only row gets its own. */
+const trailKeyFor = (row: DailySessionRow) => row.sessionId ?? `receipt:${row.receiptId}`;
+
+function parseDateParam(raw: string | null): Date | null {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  // Local midnight, so getDayIdFromTimestamp lands on the intended Manila day.
+  const d = new Date(`${raw}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export default function DailySessionTimelinePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { activeStore } = useStoreContext();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  const [selectedDate, setSelectedDate] = useState<Date>(() => parseDateParam(searchParams.get("date")) ?? new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ status: "idle" });
 
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [trails, setTrails] = useState<Record<string, TrailEntry>>({});
+  const [flavorNames, setFlavorNames] = useState<Map<string, string>>(() => new Map());
+  const [riskBySession, setRiskBySession] = useState<Map<string, RiskCounts>>(() => new Map());
+  const [flaggedSessionIds, setFlaggedSessionIds] = useState<Set<string>>(() => new Set());
+  const [reviewOpen, setReviewOpen] = useState(() => searchParams.get("review") === "1");
+  const [focusId, setFocusId] = useState<string | null>(() => searchParams.get("focus"));
+  const [scrollToReceiptId, setScrollToReceiptId] = useState<string | null>(null);
+
+  const inflight = useRef(new Map<string, Promise<void>>());
+  const flavorsPromise = useRef<Promise<Map<string, string>> | null>(null);
+  const didAutoExpand = useRef<string | null>(null);
+
   const dayId = useMemo(() => getDayIdFromTimestamp(selectedDate), [selectedDate]);
+  const storeId = activeStore?.id;
 
   const load = useCallback(async () => {
-    if (!activeStore?.id) return;
+    if (!storeId) return;
     setState({ status: "loading" });
     try {
-      const snap = await getDoc(doc(db, "stores", activeStore.id, "dailySessions", dayId));
+      const snap = await getDoc(doc(db, "stores", storeId, "dailySessions", dayId));
       if (!snap.exists()) {
         setState({ status: "missing" });
         return;
@@ -95,37 +108,173 @@ export default function DailySessionTimelinePage() {
       console.error("[DailySessionTimeline] load error:", err);
       setState({ status: "error", message: err?.message || "Could not load that day." });
     }
-  }, [activeStore?.id, dayId]);
+  }, [storeId, dayId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // A new day (or store) invalidates every per-session cache.
+  useEffect(() => {
+    setExpanded(new Set());
+    setTrails({});
+    setRiskBySession(new Map());
+    inflight.current.clear();
+    didAutoExpand.current = null;
+  }, [dayId, storeId]);
+
+  useEffect(() => {
+    setFlavorNames(new Map());
+    flavorsPromise.current = null;
+    setFlaggedSessionIds(new Set());
+  }, [storeId]);
+
+  // Flagged sessions, once per store rather than per day: an equality filter on
+  // a single field needs no composite index, and open flags are few by nature.
+  useEffect(() => {
+    if (!storeId) return;
+    let cancelled = false;
+    getDocs(query(collection(db, "stores", storeId, "sessionAuditFlags"), where("status", "==", "flagged")))
+      .then((snap) => { if (!cancelled) setFlaggedSessionIds(new Set(snap.docs.map((d) => d.id))); })
+      .catch(() => {/* badges are a nicety, not worth an error state */});
+    return () => { cancelled = true; };
+  }, [storeId]);
+
   const rows = state.status === "loaded" ? state.rows : [];
+
+  const ensureFlavorNames = useCallback(() => {
+    if (!storeId) return;
+    if (!flavorsPromise.current) {
+      flavorsPromise.current = fetchFlavorNames(storeId);
+      flavorsPromise.current
+        .then((map) => setFlavorNames(map))
+        .catch(() => {/* ids render as-is */});
+    }
+  }, [storeId]);
+
+  const loadTrail = useCallback((row: DailySessionRow) => {
+    if (!storeId) return;
+    const key = trailKeyFor(row);
+    if (inflight.current.has(key)) return;
+
+    setTrails((prev) => ({ ...prev, [key]: { status: "loading" } }));
+    const p = fetchSessionTrail({ storeId, sessionId: row.sessionId, receiptId: row.receiptId })
+      .then((sources) => { setTrails((prev) => ({ ...prev, [key]: { status: "ready", sources } })); })
+      .catch((err: any) => {
+        setTrails((prev) => ({ ...prev, [key]: { status: "error", message: err?.message || "Fetch failed." } }));
+      })
+      .finally(() => { inflight.current.delete(key); });
+    inflight.current.set(key, p);
+  }, [storeId]);
+
+  const expandRow = useCallback((receiptId: string) => {
+    const row = rows.find((r) => r.receiptId === receiptId);
+    if (!row) return;
+    setExpanded((prev) => new Set(prev).add(receiptId));
+    ensureFlavorNames();
+    if (!trails[trailKeyFor(row)]) loadTrail(row);
+  }, [rows, trails, loadTrail, ensureFlavorNames]);
+
+  // Multi-open rather than an accordion: comparing sessions within a day is the
+  // reason this view exists, and collapsing a row the user just deep-linked into
+  // would be actively wrong.
+  const toggleRow = useCallback((receiptId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(receiptId)) {
+        next.delete(receiptId);
+        return next;
+      }
+      next.add(receiptId);
+      return next;
+    });
+    const row = rows.find((r) => r.receiptId === receiptId);
+    if (!row) return;
+    ensureFlavorNames();
+    if (!trails[trailKeyFor(row)]) loadTrail(row);
+  }, [rows, trails, loadTrail, ensureFlavorNames]);
+
+  // Deep-link arrival: resolve once per (day, target) so it never fights the user.
+  useEffect(() => {
+    if (state.status !== "loaded") return;
+    const receiptParam = searchParams.get("receipt");
+    const sessionParam = searchParams.get("session");
+    const target = receiptParam ?? sessionParam;
+    if (!target) return;
+
+    const marker = `${dayId}:${target}`;
+    if (didAutoExpand.current === marker) return;
+
+    const row = receiptParam
+      ? rows.find((r) => r.receiptId === receiptParam)
+      // Prefer the original sale over its refund when only a session is named.
+      : rows.filter((r) => r.sessionId === sessionParam).sort((a, b) => Number(!!a.isRefund) - Number(!!b.isRefund))[0];
+    if (!row) return;
+
+    didAutoExpand.current = marker;
+    expandRow(row.receiptId);
+    setScrollToReceiptId(row.receiptId);
+  }, [state.status, rows, searchParams, dayId, expandRow]);
+
+  const focusLog = useCallback((log: ActivityLog) => {
+    const row = rows.find((r) => r.sessionId === log.sessionId && !r.isRefund)
+      ?? rows.find((r) => r.sessionId === log.sessionId);
+    if (!row) return;
+    setFocusId(log.id);
+    expandRow(row.receiptId);
+    setScrollToReceiptId(row.receiptId);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("date", format(selectedDate, "yyyy-MM-dd"));
+    params.set("receipt", row.receiptId);
+    params.set("focus", log.id);
+    // Bookmarkable without a navigation, so nothing refetches.
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [rows, expandRow, searchParams, selectedDate, router]);
+
+  const handleLogsLoaded = useCallback((logs: ActivityLog[]) => {
+    setRiskBySession(buildRiskBySession(logs));
+  }, []);
 
   const totals = useMemo(
     () =>
       rows.reduce(
         (acc, r) => ({
-          pax: acc.pax + (r.pax ?? 0),
-          charges: acc.charges + (r.chargesTotal || 0),
-          totalDiscount: acc.totalDiscount + (r.totalDiscount || 0),
           sales: acc.sales + (r.total || 0),
           durationMs: acc.durationMs + (r.durationMs || 0),
           durationCount: acc.durationCount + (r.durationMs ? 1 : 0),
         }),
-        { pax: 0, charges: 0, totalDiscount: 0, sales: 0, durationMs: 0, durationCount: 0 }
+        { sales: 0, durationMs: 0, durationCount: 0 }
       ),
     [rows]
   );
-
   const avgDuration = totals.durationCount > 0 ? totals.durationMs / totals.durationCount : 0;
+
+  const sessionsSheet = useMemo(
+    () =>
+      rows.map((r) => ({
+        Receipt: r.receiptNumber ?? r.receiptId,
+        Start: r.startedAtMs ? format(new Date(r.startedAtMs), "HH:mm:ss") : "",
+        Close: format(new Date(r.closedAtMs), "HH:mm:ss"),
+        Type: r.sessionMode === "package_dinein" ? "Dine-in" : "Ala carte",
+        Table: r.tableNumber ?? "",
+        Customer: r.customerName ?? "",
+        Pax: r.pax ?? "",
+        "Package / Items": r.sessionMode === "package_dinein" ? r.packageName ?? "" : `${r.itemCount} items`,
+        Discount: r.totalDiscount || 0,
+        Charge: r.chargesTotal || 0,
+        Total: r.total || 0,
+        "Session Time": r.durationMs ? formatDurationHuman(r.durationMs) : "",
+        Refund: r.isRefund ? "Yes" : "",
+      })),
+    [rows]
+  );
 
   return (
     <RoleGuard allow={["admin", "manager"]}>
       <PageHeader
         title="Daily Session Timeline"
-        description="Every closed session for one day, with dwell time, discounts and charges."
+        description="Every closed session for one day — expand a row for its full sequence of events."
       >
         <Button variant="outline" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -181,6 +330,20 @@ export default function DailySessionTimelinePage() {
           </CardContent>
         </Card>
 
+        {storeId && (
+          <DayReviewPanel
+            storeId={storeId}
+            storeCode={(activeStore as any)?.code}
+            dayId={dayId}
+            selectedDate={selectedDate}
+            open={reviewOpen}
+            onOpenChange={setReviewOpen}
+            onLogsLoaded={handleLogsLoaded}
+            onFocusLog={focusLog}
+            sessionsSheet={sessionsSheet}
+          />
+        )}
+
         {state.status === "error" && (
           <Alert variant="destructive">
             <AlertTitle>Could not load that day</AlertTitle>
@@ -220,81 +383,35 @@ export default function DailySessionTimelinePage() {
           </Card>
         )}
 
-        {state.status === "loaded" && rows.length > 0 && (
+        {state.status === "loaded" && rows.length > 0 && storeId && (
           <Card>
             <CardContent className="pt-6 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Start</TableHead>
-                    <TableHead>Receipt</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Table</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Pax</TableHead>
-                    <TableHead>Package / Items</TableHead>
-                    <TableHead className="text-right">Total Discount</TableHead>
-                    <TableHead className="text-right">Charge</TableHead>
-                    <TableHead>Close</TableHead>
-                    <TableHead className="text-right">Session Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r) => (
-                    <TableRow key={r.receiptId}>
-                      <TableCell className="whitespace-nowrap font-medium tabular-nums">
-                        {clock(r.startedAtMs)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-                        {r.receiptNumber ?? "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Badge variant={r.sessionMode === "package_dinein" ? "default" : "outline"}>
-                          {r.sessionMode === "package_dinein" ? "Dine-in" : "Ala carte"}
-                        </Badge>
-                        {r.isRefund && (
-                          <Badge variant="destructive" className="ml-1">Refund</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{r.tableNumber ?? NONE}</TableCell>
-                      <TableCell className="max-w-[180px] truncate">{r.customerName ?? NONE}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.pax ?? NONE}</TableCell>
-                      <TableCell>
-                        {r.sessionMode === "package_dinein"
-                          ? (r.packageName ?? NONE)
-                          : `${r.itemCount} item${r.itemCount === 1 ? "" : "s"}`}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <Money value={r.totalDiscount} tone="discount" />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <Money value={r.chargesTotal} tone="charge" />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">{clock(r.closedAtMs)}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap tabular-nums">
-                        {r.durationMs ? formatDurationHuman(r.durationMs) : NONE}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                <TableFooter>
-                  <TableRow>
-                    <TableCell colSpan={5}>{rows.length} session{rows.length === 1 ? "" : "s"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{totals.pax || NONE}</TableCell>
-                    <TableCell />
-                    <TableCell className="text-right tabular-nums">
-                      <Money value={totals.totalDiscount} tone="discount" />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <Money value={totals.charges} tone="charge" />
-                    </TableCell>
-                    <TableCell />
-                    <TableCell className="text-right whitespace-nowrap tabular-nums">
-                      avg {formatDurationHuman(avgDuration, "—")}
-                    </TableCell>
-                  </TableRow>
-                </TableFooter>
-              </Table>
+              <SessionRowList
+                storeId={storeId}
+                rows={rows}
+                expanded={expanded}
+                onToggle={toggleRow}
+                trails={trails}
+                trailKeyFor={trailKeyFor}
+                flavorNames={flavorNames}
+                riskBySession={riskBySession}
+                flaggedSessionIds={flaggedSessionIds}
+                focusId={focusId}
+                scrollToReceiptId={scrollToReceiptId}
+                onRetry={(row) => {
+                  const key = trailKeyFor(row);
+                  setTrails((prev) => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  });
+                  loadTrail(row);
+                }}
+                onExpandSibling={(receiptId) => {
+                  expandRow(receiptId);
+                  setScrollToReceiptId(receiptId);
+                }}
+              />
             </CardContent>
           </Card>
         )}

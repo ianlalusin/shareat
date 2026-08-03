@@ -3,22 +3,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2 } from "lucide-react";
-import type { ActivityLog, PendingSession } from "@/lib/types";
+import type { ActivityLog } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { logActorName } from "@/lib/logs/actor";
-import { ScrollArea } from "../ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface VoidsAndCompsCardProps {
-    logs: (ActivityLog & { session: PendingSession })[];
-    discountLogs: (ActivityLog & { session: PendingSession })[];
+    logs: ActivityLog[];
+    discountLogs: ActivityLog[];
     isLoading: boolean;
+    /** Opens the log's session in place, on the timeline below. */
+    onFocusLog: (log: ActivityLog) => void;
 }
 
 function formatAmount(log: ActivityLog): string {
@@ -80,8 +81,7 @@ function getActor(log: ActivityLog): string {
    return log.actorUid ? log.actorUid.slice(0, 8) : '—';
 }
 
-export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCompsCardProps) {
-    const router = useRouter();
+export function VoidsAndCompsCard({ logs, discountLogs, isLoading, onFocusLog }: VoidsAndCompsCardProps) {
     const [filter, setFilter] = useState<'all' | 'voids' | 'free' | 'discounted'>('all');
 
     const filteredLogs = useMemo(() => {
@@ -96,7 +96,7 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
         <Card>
             <CardHeader>
                 <CardTitle>Voids, Comps &amp; Discounts</CardTitle>
-                <CardDescription>A summary of all voided, free, and discounted items.</CardDescription>
+                <CardDescription>Every voided, free and discounted item this day. Select a row to open its session below.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Tabs value={filter} onValueChange={(v) => setFilter(v as any)} className="mb-4">
@@ -111,9 +111,9 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                 {isLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
                 ) : filteredLogs.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">No relevant logs for this period.</p>
+                    <p className="text-center text-muted-foreground py-8">Nothing voided, comped or discounted this day.</p>
                 ) : (
-                    <ScrollArea className="h-[400px]">
+                    <ScrollArea className="h-[320px] md:h-[400px]">
                         <Table>
                             <TableHeader className="sticky top-0 bg-background">
                                 <TableRow>
@@ -128,7 +128,12 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                             <TableBody>
                                 {filteredLogs.map(log => {
                                     const meta = (log.meta || {}) as any;
-                                    const sessionLabel = computeSessionLabel(log.session);
+                                    const sessionLabel = log.sessionLabel ?? computeSessionLabel({
+                                        sessionMode: log.sessionMode,
+                                        customerName: log.customerName,
+                                        tableNumber: log.tableNumber,
+                                        tableDisplayName: log.tableDisplayName,
+                                    } as any);
                                     let itemLabel = "SESSION VOIDED";
                                     if (log.action === "RECEIPT_VOIDED") {
                                         itemLabel = `Receipt ${meta.receiptNumber} VOIDED`;
@@ -146,18 +151,16 @@ export function VoidsAndCompsCard({ logs, discountLogs, isLoading }: VoidsAndCom
                                         itemLabel = `${meta.itemName || 'Bill Discount'} (Removed)`;
                                     }
 
-                                    const auditHref = `/logs/sessions/details?storeId=${encodeURIComponent(log.storeId)}&sessionId=${encodeURIComponent(log.sessionId)}&focus=${encodeURIComponent(log.id)}`;
-
                                     return (
                                         <TableRow
                                             key={log.id}
                                             className="cursor-pointer"
                                             tabIndex={0}
-                                            onClick={() => router.push(auditHref)}
+                                            onClick={() => onFocusLog(log)}
                                             onKeyDown={(event) => {
                                                 if (event.key === "Enter" || event.key === " ") {
                                                     event.preventDefault();
-                                                    router.push(auditHref);
+                                                    onFocusLog(log);
                                                 }
                                             }}
                                         >

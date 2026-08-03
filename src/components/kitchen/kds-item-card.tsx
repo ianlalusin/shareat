@@ -27,7 +27,8 @@ function getStartMs(input: any): number | null {
   return null;
 }
 
-export const DEFAULT_SLA_MINUTES = 10;
+export { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
+import { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
 
 // Live ticket age in ms, ticking every second. Single source of truth for both
 // the elapsed display and the SLA "late" state on the card.

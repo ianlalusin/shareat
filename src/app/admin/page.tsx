@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag, History } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag, History } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -33,9 +33,8 @@ const managerTools = [
     { title: "Online Orders", description: "Accept and fulfill orders placed on the public website storefront.", href: "/admin/online-orders", icon: ShoppingBag },
     { title: "Menu Option Availability", description: "Turn add-on options (dips, extras, upgrades) on or off for your store.", href: "/admin/menu/option-groups", icon: Settings2 },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
-    { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
     { title: "Sales Reports", description: "Daily & monthly sales summary for printing and cash-up.", href: "/sales-report", icon: LineChart },
-    { title: "Daily Session Timeline", description: "Every closed session for one day, with dwell time, discounts, and charges.", href: "/admin/daily-session-timeline", icon: History },
+    { title: "Daily Session Timeline", description: "Every closed session for one day — expand any row for its full event sequence, plus the day's voids, comps and staff adjustments.", href: "/admin/daily-session-timeline", icon: History },
     { title: "AI Daily Insights", description: "AI analysis of yesterday's sales, operations, and movement.", href: "/admin/insights", icon: Sparkles },
     { title: "Printer Setup", description: "Configure Bluetooth thermal printers.", href: "/admin/tools/printer-test", icon: Printer },
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },

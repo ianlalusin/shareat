@@ -32,6 +32,7 @@ import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccura
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth } from "firebase/auth";
 
@@ -272,7 +273,15 @@ export default function DashboardPageClient() {
                 {/* Group 3 — operational checks */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                     <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <ItemAdjustmentsCard dailyMetrics={dailyMetrics} />
+                    <ItemAdjustmentsCard
+                        dailyMetrics={dailyMetrics}
+                        // Opens the timeline on the range's last day with Day
+                        // Review already expanded — that panel is where these
+                        // adjustments are broken down per session and per staff.
+                        href={canSeeManagerContent
+                            ? `/admin/daily-session-timeline?date=${format(dateRange.end, "yyyy-MM-dd")}&review=1`
+                            : undefined}
+                    />
                     <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
                 </div>
 

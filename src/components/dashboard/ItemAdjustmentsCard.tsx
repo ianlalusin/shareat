@@ -8,6 +8,11 @@ import { Scissors, Gift, Tag, RotateCcw, ArrowRight } from "lucide-react";
 
 interface ItemAdjustmentsCardProps {
   dailyMetrics: DailyMetric[];
+  /**
+   * Where the card drills through to. Left undefined for roles without access,
+   * so the card renders as a plain summary rather than a link into a redirect.
+   */
+  href?: string;
 }
 
 type AdjStat = {
@@ -38,7 +43,7 @@ function StatRow({ icon, label, qty, amount, color }: {
   );
 }
 
-export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) {
+export function ItemAdjustmentsCard({ dailyMetrics, href }: ItemAdjustmentsCardProps) {
   const router = useRouter();
   const stats = useMemo(() => {
     const totals = {
@@ -65,14 +70,17 @@ export function ItemAdjustmentsCard({ dailyMetrics }: ItemAdjustmentsCardProps) 
   const hasData = stats.voidedQty > 0 || stats.freeQty > 0 || stats.discountedQty > 0 || stats.refundCount > 0;
 
   return (
-    <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => router.push("/logs")}>
+    <Card
+      className={href ? "cursor-pointer hover:bg-muted/30 transition-colors" : undefined}
+      onClick={href ? () => router.push(href) : undefined}
+    >
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Item Adjustments</CardTitle>
             <CardDescription>Per-line activity: voided, line-discounted, free, and refunded items.</CardDescription>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          {href && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
         </div>
       </CardHeader>
       <CardContent>

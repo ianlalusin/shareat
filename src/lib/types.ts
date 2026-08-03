@@ -505,12 +505,18 @@ export type KitchenTicket = {
     qtyServed?: number;     // cumulative qty served across all batches
     qtyCancelled?: number;  // qty cancelled
     qtyRemaining?: number;  // qtyOrdered - qtyServed - qtyCancelled
+    /**
+     * One entry per batch serve. Written by `handleServeBatch` in the KDS —
+     * note `servedAt` is a plain epoch-ms number here, not a Timestamp, and the
+     * actor is carried as a server *profile*, not a staff name.
+     */
     serveLog?: {
       qty: number;
       servedAt: number;
       servedAtClientMs: number;
       servedByUid: string;
-      servedByName?: string;
+      servedByProfileId?: string | null;
+      servedByProfileName?: string | null;
     }[];
     refillRequest?: {
         /** Extra refill counts requested via customer app buttons */
@@ -976,6 +982,74 @@ export type PendingSession = {
   billDiscount?: Discount | null;
   customAdjustments?: Adjustment[];
   billingRevision?: number;
+};
+
+/**
+ * The session document as it is actually written to
+ * `stores/{storeId}/sessions/{sessionId}`.
+ *
+ * `PendingSession` describes the subset the live cashier/server screens read.
+ * The verify, close and change-request paths write considerably more, and code
+ * that reconstructs a session's history after the fact (the Daily Session
+ * Timeline) needs those fields typed. Kept as an extension rather than folded
+ * into `PendingSession` so the ~40 existing consumers stay untouched.
+ */
+export type SessionDoc = PendingSession & {
+  sessionLabel?: string;
+  notes?: string;
+  createdAt?: any;
+  updatedAt?: any;
+
+  startedByUid?: string | null;
+
+  // Verification (ServerPageClient.handleVerify)
+  verifiedAt?: any | null;
+  verifiedByUid?: string | null;
+  verifiedByServerProfileId?: string | null;
+  verifiedByServerProfileName?: string | null;
+  /** Start → verify lapse, stamped at verify time. Prefer this over recomputing. */
+  verifyDurationMs?: number | null;
+
+  // Close (closeSession)
+  closedAt?: any | null;
+  closedAtClientMs?: number | null;
+  closedByUid?: string | null;
+  closedByUsername?: string | null;
+  receiptSnapshot?: { grandTotal?: number } | null;
+
+  // Serve rollups, incremented by the KDS as tickets are served
+  serveCountByType?: Record<string, number>;
+  serveTimeMsTotalByType?: Record<string, number>;
+  servedRefillsTotal?: number;
+  servedRefillsByName?: Record<string, number>;
+
+  loyaltyRedemptions?: any[];
+
+  guestCountChange?: {
+    status: "none" | "pending" | "approved" | "rejected";
+    requestedCount?: number;
+    reason?: string | null;
+    reasonNote?: string | null;
+    requestedByUid?: string | null;
+    requestedAt?: any;
+    approvedByUid?: string | null;
+    approvedAt?: any;
+    rejectedByUid?: string | null;
+    rejectedAt?: any;
+  };
+  packageChange?: {
+    status: string;
+    requestedPackageId?: string | null;
+    requestedPackageSnapshot?: PendingSession["packageSnapshot"];
+    reason?: string | null;
+    reasonNote?: string | null;
+    requestedByUid?: string | null;
+    requestedAt?: any;
+    approvedByUid?: string | null;
+    approvedAt?: any;
+    rejectedByUid?: string | null;
+    rejectedAt?: any;
+  };
 };
 
 export type TopRefillRow = { name: string; qty: number };

@@ -104,7 +104,7 @@ export function StaffAdjustmentsCard({ logs, isLoading }: { logs: ActivityLog[];
           <Users className="h-5 w-5 text-primary" /> Adjustments by Staff
         </CardTitle>
         <CardDescription>
-          Voids, comps and discounts attributed to each cashier for the selected range. Flagged rows are well above the team average.
+          Voids, comps and discounts attributed to each cashier this day. Flagged rows are well above the team average.
         </CardDescription>
       </CardHeader>
       <CardContent>
