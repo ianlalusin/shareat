@@ -8,6 +8,7 @@ import {
   buildDeltaIncrements,
   getApplicablePresets,
   affectedDayIds,
+  dayStartMsOf,
 } from "@/lib/analytics/delta-core";
 
 // Minimal structural writer satisfied by both admin Transaction and WriteBatch.
@@ -64,8 +65,9 @@ export function applyAnalyticsDeltaServer(
   for (const dayId of dayIds) {
     const dayOld = pickDayContribution(oldContrib, dayId);
     const dayNew = pickDayContribution(newContrib, dayId);
-    const dayStartMs =
-      dayNew.payment.dayStartMs > 0 ? dayNew.payment.dayStartMs : dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0;
+    // An arrival-only day (session crossed midnight) has no payment contribution, so
+    // fall through to the peak/dow day start rather than writing dayStartMs: 0.
+    const dayStartMs = dayStartMsOf(dayNew, dayOld);
 
     const monthId = dayId.slice(0, 6);
     const yearId = dayId.slice(0, 4);

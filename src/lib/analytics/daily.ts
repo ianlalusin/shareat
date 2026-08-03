@@ -43,6 +43,40 @@ export function getDayStartMs(ts: Timestamp | Date | number): number {
 
 
 /**
+ * Hour of day (0..23) for an instant, read off the Asia/Manila wall clock.
+ *
+ * Never use Date#getHours() for analytics buckets: it reads the *host* timezone,
+ * so prod (Cloud Run, UTC) shifted every hourly bucket by -8 while dev machines
+ * (PHT) looked correct. Mirrors getDayStartMs's Manila-explicit approach.
+ */
+export function getManilaHour(ts: Timestamp | Date | number): number {
+    const base = toJsDate(ts) ?? new Date();
+    const hh = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        hourCycle: "h23",
+    }).format(base);
+    // Some ICU builds render midnight as "24" under h23; normalise to 0.
+    return Number(hh) % 24;
+}
+
+/**
+ * Day of week (0 = Sunday .. 6 = Saturday) for an instant, in Asia/Manila.
+ *
+ * Same rationale as getManilaHour — Date#getDay() reads the host timezone and
+ * lands on the previous calendar day when the server runs in UTC.
+ */
+export function getManilaDayOfWeek(ts: Timestamp | Date | number): number {
+    const base = toJsDate(ts) ?? new Date();
+    const short = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Manila",
+        weekday: "short",
+    }).format(base);
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(short);
+}
+
+
+/**
  * Converts a Firestore Timestamp, JavaScript Date, or millisecond epoch time
  * into a `YYYYMMDD` string formatted for the 'Asia/Manila' timezone.
  *
@@ -347,7 +381,7 @@ export function getPeakHourContribution(receipt: Receipt | null): PeakHourContri
     const date = new Date(eventMs);
     const dayId = getDayIdFromTimestamp(date);
     const dayStartMs = getDayStartMs(date);
-    const hour = date.getHours();
+    const hour = getManilaHour(date);
 
     return {
         dayId: dayId,
@@ -378,14 +412,14 @@ export function getDayOfWeekContribution(receipt: Receipt | null): DayOfWeekCont
     // Fall back to createdAt only for receipts that pre-date sessionStartedAt tracking.
     const sessionMs = r.analytics?.sessionStartedAtClientMs || toJsDate(r.analytics?.sessionStartedAt)?.getTime();
     const sessionEventMs = sessionMs || r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
-    const bucketEventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
-    if (!sessionEventMs || !bucketEventMs) return defaultReturn;
+    if (!sessionEventMs) return defaultReturn;
 
-    // dayId/dayStartMs are keyed off the payment day so this contribution lives in the same
-    // analytics doc as the receipt's other fields; dowKey is derived from session start.
-    const dayStartMs = getDayStartMs(bucketEventMs);
-    const dayId = getDayIdFromTimestamp(bucketEventMs);
-    const dow = new Date(getDayStartMs(sessionEventMs)).getDay();
+    // dayId/dayStartMs are keyed off the ARRIVAL day, not the payment day, so the bucket
+    // agrees with dowKey. A party arriving 11:30 PM Sat and paying 12:30 AM Sun counts as
+    // Saturday traffic in both. Writers route this contribution by its own dayId.
+    const dayStartMs = getDayStartMs(sessionEventMs);
+    const dayId = getDayIdFromTimestamp(sessionEventMs);
+    const dow = getManilaDayOfWeek(sessionEventMs);
 
     const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
     const amount = Number(r.total ?? analytics?.grandTotal ?? 0);

@@ -35,10 +35,17 @@ export async function rebuildDailyAnalyticsFromReceiptsServer(
   const ticketsStart = new Date(startInclusive.getTime() - 24 * 60 * 60 * 1000);
   const ticketsEnd = new Date(endExclusive.getTime() + 24 * 60 * 60 * 1000);
 
+  // Receipts are read a day wider than the rebuild window, like tickets: peak-hour and
+  // day-of-week bucket by ARRIVAL, so a party that arrived 11:30 PM on the last day in
+  // range pays after the window closes, and one that arrived before the window can pay
+  // inside it. aggregateDailyMetrics drops whatever falls outside the window.
+  const receiptsStart = new Date(startInclusive.getTime() - 24 * 60 * 60 * 1000);
+  const receiptsEnd = new Date(endExclusive.getTime() + 24 * 60 * 60 * 1000);
+
   const [receiptsSnap, ticketsSnap, sessionsSnap] = await Promise.all([
     db.collection(`stores/${storeId}/receipts`)
-      .where("createdAt", ">=", Timestamp.fromDate(startInclusive))
-      .where("createdAt", "<", Timestamp.fromDate(endExclusive))
+      .where("createdAt", ">=", Timestamp.fromDate(receiptsStart))
+      .where("createdAt", "<", Timestamp.fromDate(receiptsEnd))
       .orderBy("createdAt", "asc")
       .get(),
     db.collectionGroup("kitchentickets")

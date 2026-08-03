@@ -71,9 +71,14 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
   const { receipts, tickets, verifiedSessions, store, storeId, startInclusiveMs, endExclusiveMs } = params;
   const dailyAggregates = new Map<string, DailyMetric>();
 
-  const ensureDay = (dayId: string, dayStartMs: number) => {
-    if (!dailyAggregates.has(dayId)) {
-      dailyAggregates.set(dayId, {
+  // Receipts are read with a ±1-day margin (a session can arrive one day and pay the
+  // next), so any contribution whose target day falls outside the requested window must
+  // be dropped: day docs are written with merge:false, and materialising an out-of-window
+  // day here would overwrite that day's real analytics with a near-empty doc.
+  const inWindow = (dayStartMs: number) => dayStartMs >= startInclusiveMs && dayStartMs < endExclusiveMs;
+
+  const blankDay = (dayId: string, dayStartMs: number): DailyMetric =>
+      ({
         meta: { dayId, dayStartMs, storeId } as any,
         payments: { byMethod: {}, totalGross: 0, txCount: 0, discountsTotal: 0, chargesTotal: 0, txCountByMode: { dineIn: 0, walkIn: 0 } },
         guests: { guestCountFinalTotal: 0, packageCoversBilledByPackageName: {}, packageSessionsCount: 0, guestCountFinalByPackageName: {} },
@@ -89,10 +94,22 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
         staffNames: {},
         refills: { servedRefillsTotal: 0, servedRefillsByName: {}, packageSessionsCount: 0 },
         items: { voidedQty: 0, voidedAmount: 0, freeQty: 0, freeAmount: 0, discountedQty: 0, discountedAmount: 0, refundCount: 0, refundTotal: 0 },
-      } as DailyMetric);
+      }) as DailyMetric;
+
+  const ensureDay = (dayId: string, dayStartMs: number) => {
+    if (!dailyAggregates.has(dayId)) {
+      dailyAggregates.set(dayId, blankDay(dayId, dayStartMs));
     }
     return dailyAggregates.get(dayId)!;
   };
+
+  /**
+   * The day bucket to accumulate into, or a throwaway when the day is outside the
+   * rebuild window — lets the existing write blocks run unchanged without leaking a
+   * partial doc into the output map.
+   */
+  const dayBucketOrDiscard = (dayId: string, dayStartMs: number) =>
+    inWindow(dayStartMs) ? ensureDay(dayId, dayStartMs) : blankDay(dayId, dayStartMs);
 
   // --- aggregate receipts ---
   for (const receipt of receipts) {
@@ -102,7 +119,9 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
 
     const dayId = getDayIdFromTimestamp(eventMs);
     const dayStartMs = getDayStartMs(eventMs);
-    const dayData = ensureDay(dayId, dayStartMs);
+    // Payment-day families. Discarded when the payment day is outside the window —
+    // this receipt was only read for its arrival-day contribution (see below).
+    const dayData = dayBucketOrDiscard(dayId, dayStartMs);
 
     const paymentContrib = getPaymentContribution(receipt);
     const fixedByMethod = correctedByMethodForReceipt(receipt, (paymentContrib.byMethod || {}) as any);
@@ -169,24 +188,30 @@ export function aggregateDailyMetrics(params: AggregateParams): Map<string, Dail
       dayData.sales!.addonSalesByItem[itemName].amount += (itemData as any).amount;
     }
 
-    if (peakHourContrib.hourKey) {
-      dayData.sales!.salesAmountByHour[peakHourContrib.hourKey] = (dayData.sales!.salesAmountByHour[peakHourContrib.hourKey] || 0) + Number(peakHourContrib.amount || 0);
-      dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] = (dayData.sales!.sessionCountByHour[peakHourContrib.hourKey] || 0) + Number(peakHourContrib.count || 0);
+    // Peak-hour and day-of-week bucket by the ARRIVAL day (session start), which is the
+    // previous day whenever a session crosses midnight — so they go into their own day
+    // doc, not the payment day's. Keeps the hour/dow key consistent with the date shown.
+    if (peakHourContrib.hourKey && inWindow(peakHourContrib.dayStartMs)) {
+      const arrival = ensureDay(peakHourContrib.dayId, peakHourContrib.dayStartMs);
+      arrival.sales!.salesAmountByHour[peakHourContrib.hourKey] = (arrival.sales!.salesAmountByHour[peakHourContrib.hourKey] || 0) + Number(peakHourContrib.amount || 0);
+      arrival.sales!.sessionCountByHour[peakHourContrib.hourKey] = (arrival.sales!.sessionCountByHour[peakHourContrib.hourKey] || 0) + Number(peakHourContrib.count || 0);
       if (peakHourContrib.mode) {
-        dayData.sales!.salesAmountByHourByMode ??= { dineIn: {}, walkIn: {} };
-        dayData.sales!.sessionCountByHourByMode ??= { dineIn: {}, walkIn: {} };
+        arrival.sales!.salesAmountByHourByMode ??= { dineIn: {}, walkIn: {} };
+        arrival.sales!.sessionCountByHourByMode ??= { dineIn: {}, walkIn: {} };
         const m = peakHourContrib.mode;
         const hk = peakHourContrib.hourKey;
-        dayData.sales!.salesAmountByHourByMode[m][hk] = (dayData.sales!.salesAmountByHourByMode[m][hk] || 0) + Number(peakHourContrib.amount || 0);
-        dayData.sales!.sessionCountByHourByMode[m][hk] = (dayData.sales!.sessionCountByHourByMode[m][hk] || 0) + Number(peakHourContrib.count || 0);
+        arrival.sales!.salesAmountByHourByMode[m][hk] = (arrival.sales!.salesAmountByHourByMode[m][hk] || 0) + Number(peakHourContrib.amount || 0);
+        arrival.sales!.sessionCountByHourByMode[m][hk] = (arrival.sales!.sessionCountByHourByMode[m][hk] || 0) + Number(peakHourContrib.count || 0);
       }
     }
 
-    if (dowContrib.dowKey) {
-      dayData.sales!.salesAmountByDow ??= {};
-      dayData.sales!.sessionCountByDow ??= {};
-      dayData.sales!.salesAmountByDow[dowContrib.dowKey] = (dayData.sales!.salesAmountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.amount || 0);
-      dayData.sales!.sessionCountByDow[dowContrib.dowKey] = (dayData.sales!.sessionCountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.count || 0);
+    if (dowContrib.dowKey && inWindow(dowContrib.dayStartMs)) {
+      const arrival = ensureDay(dowContrib.dayId, dowContrib.dayStartMs);
+      // blankDay() already seeds these; the ??= is what narrows the optional type.
+      arrival.sales!.salesAmountByDow ??= {};
+      arrival.sales!.sessionCountByDow ??= {};
+      arrival.sales!.salesAmountByDow[dowContrib.dowKey] = (arrival.sales!.salesAmountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.amount || 0);
+      arrival.sales!.sessionCountByDow[dowContrib.dowKey] = (arrival.sales!.sessionCountByDow[dowContrib.dowKey] || 0) + Number(dowContrib.count || 0);
     }
 
     dayData.sessions!.closedCount = (dayData.sessions!.closedCount || 0) + Number(closedSessionContrib.closedCount || 0);

@@ -39,10 +39,39 @@ export function getContributions(receipt: Receipt | null): ContributionSet {
   };
 }
 
-/** Zero out a contribution set that doesn't belong to the given day. */
+/**
+ * Zero out the parts of a contribution set that don't belong to the given day.
+ *
+ * Most families bucket by the PAYMENT day. Peak-hour and day-of-week bucket by the
+ * ARRIVAL day (session start) so their hour/dow key agrees with the day doc they land
+ * in — a party arriving 11:30 PM Sat and paying 12:30 AM Sun is Saturday 11 PM traffic,
+ * not Sunday 11 PM traffic. Gating per family lets one receipt contribute arrival data
+ * to one day and payment data to the next.
+ */
 export function pickDayContribution(contrib: ContributionSet, dayId: string): ContributionSet {
-  if (contrib.payment.dayId !== dayId) return getContributions(null);
-  return contrib;
+  const nil = getContributions(null);
+  const paymentDay = contrib.payment.dayId === dayId;
+  return {
+    payment: paymentDay ? contrib.payment : nil.payment,
+    guest: paymentDay ? contrib.guest : nil.guest,
+    sales: paymentDay ? contrib.sales : nil.sales,
+    refill: paymentDay ? contrib.refill : nil.refill,
+    closed: paymentDay ? contrib.closed : nil.closed,
+    itemAdj: paymentDay ? contrib.itemAdj : nil.itemAdj,
+    // Arrival-day families:
+    peak: contrib.peak.dayId === dayId ? contrib.peak : nil.peak,
+    dow: contrib.dow.dayId === dayId ? contrib.dow : nil.dow,
+  };
+}
+
+/** Manila midnight for a day doc, whichever family supplied it. */
+export function dayStartMsOf(...sets: ContributionSet[]): number {
+  for (const s of sets) {
+    for (const ms of [s.payment.dayStartMs, s.peak.dayStartMs, s.dow.dayStartMs]) {
+      if (ms > 0) return ms;
+    }
+  }
+  return 0;
 }
 
 export function safeKey(s: string): string {
@@ -249,10 +278,16 @@ export function buildDeltaIncrements(dayOld: ContributionSet, dayNew: Contributi
   return out;
 }
 
-/** Day ids touched by an old->new receipt delta. */
+/**
+ * Day ids touched by an old->new receipt delta: the payment days plus the arrival
+ * days (peak-hour / day-of-week), which differ when a session crosses midnight.
+ */
 export function affectedDayIds(oldContrib: ContributionSet, newContrib: ContributionSet): string[] {
   const ids = new Set<string>();
-  if (oldContrib.payment.dayId) ids.add(oldContrib.payment.dayId);
-  if (newContrib.payment.dayId) ids.add(newContrib.payment.dayId);
+  for (const c of [oldContrib, newContrib]) {
+    if (c.payment.dayId) ids.add(c.payment.dayId);
+    if (c.peak.dayId) ids.add(c.peak.dayId);
+    if (c.dow.dayId) ids.add(c.dow.dayId);
+  }
   return [...ids];
 }

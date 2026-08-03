@@ -108,12 +108,29 @@ function getContributions(receipt: Receipt | null): ContributionSet {
   };
 }
 
+/**
+ * Zero out the parts of a contribution set that don't belong to the given day.
+ *
+ * Most families bucket by the PAYMENT day. Peak-hour and day-of-week bucket by the
+ * ARRIVAL day (session start) so their hour/dow key agrees with the day doc they land
+ * in — a party arriving 11:30 PM Sat and paying 12:30 AM Sun is Saturday 11 PM traffic,
+ * not Sunday 11 PM traffic. Gating per family lets one receipt contribute arrival data
+ * to one day and payment data to the next. Mirrors delta-core.pickDayContribution.
+ */
 function pickDayContribution(contrib: ContributionSet, dayId: string): ContributionSet {
-    const nullContrib = getContributions(null);
-    if (contrib.payment.dayId !== dayId) {
-        return nullContrib;
-    }
-    return contrib;
+    const nil = getContributions(null);
+    const paymentDay = contrib.payment.dayId === dayId;
+    return {
+        payment: paymentDay ? contrib.payment : nil.payment,
+        guest: paymentDay ? contrib.guest : nil.guest,
+        sales: paymentDay ? contrib.sales : nil.sales,
+        refill: paymentDay ? contrib.refill : nil.refill,
+        closed: paymentDay ? contrib.closed : nil.closed,
+        itemAdj: paymentDay ? contrib.itemAdj : nil.itemAdj,
+        // Arrival-day families:
+        peak: contrib.peak.dayId === dayId ? contrib.peak : nil.peak,
+        dow: contrib.dow.dayId === dayId ? contrib.dow : nil.dow,
+    };
 }
 
 function safeKey(s: string) {
@@ -164,9 +181,14 @@ export async function applyAnalyticsDeltaV2(
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
 
+  // Payment days plus arrival days (peak-hour / DOW bucket by session start, which
+  // falls on the previous day whenever a session crosses midnight).
   const affectedDayIds = new Set<string>();
-  if (oldContrib.payment.dayId) affectedDayIds.add(oldContrib.payment.dayId);
-  if (newContrib.payment.dayId) affectedDayIds.add(newContrib.payment.dayId);
+  for (const c of [oldContrib, newContrib]) {
+    if (c.payment.dayId) affectedDayIds.add(c.payment.dayId);
+    if (c.peak.dayId) affectedDayIds.add(c.peak.dayId);
+    if (c.dow.dayId) affectedDayIds.add(c.dow.dayId);
+  }
   if (affectedDayIds.size === 0) {
     console.warn("[applyAnalyticsDeltaV2] No valid dayId found. Skipping.");
     return;
@@ -176,9 +198,12 @@ export async function applyAnalyticsDeltaV2(
     const dayOld = pickDayContribution(oldContrib, dayId);
     const dayNew = pickDayContribution(newContrib, dayId);
 
-    const dayStartMs = dayNew.payment.dayStartMs > 0 
-      ? dayNew.payment.dayStartMs 
-      : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
+    // An arrival-only day (session crossed midnight) has no payment contribution, so
+    // fall through to the peak/dow day start rather than writing dayStartMs: 0.
+    const dayStartMs = [
+      dayNew.payment.dayStartMs, dayNew.peak.dayStartMs, dayNew.dow.dayStartMs,
+      dayOld.payment.dayStartMs, dayOld.peak.dayStartMs, dayOld.dow.dayStartMs,
+    ].find(ms => ms > 0) ?? 0;
 
     const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
     const monthId = dayId.slice(0, 6);
