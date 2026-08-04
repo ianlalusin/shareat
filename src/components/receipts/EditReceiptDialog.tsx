@@ -500,7 +500,7 @@ export function EditReceiptDialog(props: EditReceiptDialogProps) {
   if (isMobile) {
       return (
           <Drawer open={props.isOpen} onOpenChange={props.onClose}>
-              <DrawerContent className="h-[90vh]">
+              <DrawerContent className="h-[90dvh]">
                   <DrawerHeader>
                       <DrawerTitle>Edit Receipt: {props.receipt.receiptNumber}</DrawerTitle>
                       <DrawerDescription>Make corrections to this finalized receipt.</DrawerDescription>
@@ -513,7 +513,7 @@ export function EditReceiptDialog(props: EditReceiptDialogProps) {
 
   return (
     <Dialog open={props.isOpen} onOpenChange={props.onClose}>
-      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-4xl h-[90dvh] flex flex-col p-0 gap-0">
         <DialogHeader className="p-4 border-b">
           <DialogTitle>Edit Receipt: {props.receipt.receiptNumber}</DialogTitle>
           <DialogDescription>Make corrections to this finalized receipt. All changes are audited.</DialogDescription>

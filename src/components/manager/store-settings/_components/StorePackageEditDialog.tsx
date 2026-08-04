@@ -218,7 +218,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
       {/* Flex column + capped height so the header and footer stay pinned and only
           the field area scrolls — the refill/flavor checklists make this form
           taller than the viewport on short screens. */}
-      <DialogContent className="sm:max-w-4xl flex flex-col max-h-[90vh]">
+      <DialogContent className="sm:max-w-4xl flex flex-col max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle>Edit Store Package: {item.packageName}</DialogTitle>
           <DialogDescription>Manage price and allowed items for this package in your store.</DialogDescription>

@@ -115,7 +115,7 @@ export function UniversalDiscountEditDialog({ isOpen, onClose, onSave, item, sto
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isCreating ? "Add Universal Discount" : "Edit Universal Discount"}</DialogTitle>
           <DialogDescription>

@@ -148,7 +148,7 @@ export function OptionGroupEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-xl max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{group ? "Edit option group" : "New option group"}</DialogTitle>
           <DialogDescription>

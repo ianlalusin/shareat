@@ -415,7 +415,7 @@ export function EditBillableItemDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-md grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+            <DialogContent className="max-w-md grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
                 <DialogHeader className="p-6 pb-0">
                     <DialogTitle>Edit: {line.itemName}</DialogTitle>
                 </DialogHeader>

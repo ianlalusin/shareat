@@ -355,7 +355,7 @@ export default function OnlineOrdersClient() {
       </div>
 
       <Dialog open={!!selected} onOpenChange={(open) => { if (!open) { setSelected(null); setReasonFor(null); setReasonText(""); } }}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
           {selected && (
             <>
               <DialogHeader>

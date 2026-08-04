@@ -43,7 +43,11 @@ export function CashierTipModal({ open, message, onClose, durationMs = 7000 }: P
       aria-live="polite"
     >
       <div
-        className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border-l-[6px] border-primary p-5 sm:p-6 animate-in zoom-in-75 slide-in-from-bottom-12 duration-300"
+        // Hand-rolled overlay, so it gets no containment from DialogContent —
+        // bound it here. The tip body is model-generated and has no length
+        // ceiling, so a long one would otherwise run off both ends of a short
+        // cashier screen with the dismiss button unreachable.
+        className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-white shadow-2xl border-l-[6px] border-primary p-5 sm:p-6 animate-in zoom-in-75 slide-in-from-bottom-12 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         <button

@@ -345,7 +345,7 @@ export default function LoyaltyRewardsPage() {
         </DialogContent>
       </Dialog>
       <Dialog open={statsReward !== null} onOpenChange={(o) => { if (!o) { setStatsReward(null); setStatsData(null); } }}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /> Usage — {statsReward?.name}</DialogTitle>
             <DialogDescription>Claims, points spent, and where this reward is being used.</DialogDescription>

@@ -691,7 +691,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[88vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[88dvh] flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle>Add-ons</DialogTitle>
           <DialogDescription>Select add-on items to add to the order.</DialogDescription>

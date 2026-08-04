@@ -81,7 +81,7 @@ export function ProductImportPreviewDialog({ isOpen, onClose, data, onConfirm }:
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+            <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
                 <DialogHeader className="p-6 pb-0">
                     <DialogTitle>Import Preview</DialogTitle>
                     <DialogDescription>Review the products to be imported. Rows with errors will be skipped.</DialogDescription>

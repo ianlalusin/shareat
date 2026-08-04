@@ -163,7 +163,7 @@ export function ProductMergeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-xl max-h-[90dvh] flex flex-col p-0 gap-0">
         <DialogHeader className="p-6 pb-2 border-b">
           <DialogTitle>Merge into family</DialogTitle>
           <DialogDescription>

@@ -94,7 +94,7 @@ export function UniversalChargeEditDialog({ isOpen, onClose, onSave, item, store
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isCreating ? "Add Universal Charge" : "Edit Universal Charge"}</DialogTitle>
           <DialogDescription>

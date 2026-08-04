@@ -102,7 +102,7 @@ export function UserDetailsModal({ user, isOpen, onClose, isCurrentUserPlatformA
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto p-6">
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90dvh] overflow-y-auto p-6">
             <DialogHeader>
                 <div className="flex items-center gap-4">
                      <Avatar className="h-16 w-16">

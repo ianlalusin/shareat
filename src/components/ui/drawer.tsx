@@ -43,7 +43,13 @@ const DrawerContent = React.forwardRef<
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
+        // `h-auto` + no bound meant a long body (modifier lists, refill menus)
+        // grew the drawer straight past the top of the screen with nothing
+        // scrollable — `mt-24` doesn't cap height on a bottom-anchored fixed
+        // element. 92dvh matches the one consumer that already handled this
+        // (AddonsPOSModal); consumers with their own inner scroller are
+        // unaffected because the shell then never overflows.
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto max-h-[92dvh] flex-col overflow-y-auto rounded-t-[10px] border bg-background",
         className
       )}
       {...props}

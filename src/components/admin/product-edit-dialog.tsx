@@ -293,7 +293,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+        <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
             <DialogDescription>{product ? "Update the details of this product." : "Fill in the details to create a new global product."}</DialogDescription>

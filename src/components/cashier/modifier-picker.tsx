@@ -291,7 +291,7 @@ export function ModifierPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-0">
+      <DialogContent className="sm:max-w-lg max-h-[85dvh] overflow-y-auto p-0">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle>Customize</DialogTitle>
           <DialogDescription>Pick modifiers for this item before adding to the order.</DialogDescription>

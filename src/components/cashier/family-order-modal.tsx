@@ -448,7 +448,7 @@ export function FamilyOrderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto p-0">
+      <DialogContent className="sm:max-w-xl max-h-[85dvh] overflow-y-auto p-0">
         <DialogHeader className="p-4 pb-2">
           <DialogTitle className="flex items-center gap-2"><Layers className="h-4 w-4" /> {group.title}</DialogTitle>
           <DialogDescription>Pick a variant and any modifiers before adding to the order.</DialogDescription>
