@@ -206,23 +206,33 @@ export function QrDisplayModal({
         }}
       />
 
-      <div className="mt-auto flex flex-col gap-2 pt-2 sm:flex-row">
+      {/* Short labels on purpose. The right pane is narrow on a landscape till
+          and long labels clipped; the surrounding copy already explains what
+          the photo is for, so the button does not have to. */}
+      <div className="mt-auto flex gap-2 pt-2">
         <Button
           type="button"
-          className="flex-1"
+          className="min-w-0 flex-1"
           onClick={() => fileInputRef.current?.click()}
           disabled={capturing || !storeId}
         >
           {capturing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
           ) : (
-            <Camera className="mr-2 h-4 w-4" />
+            <Camera className="mr-2 h-4 w-4 shrink-0" />
           )}
-          {captured > 0 ? "Take another photo" : "Take proof of payment"}
+          <span className="truncate">{captured > 0 ? "Take another" : "Take photo"}</span>
         </Button>
-        <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={capturing}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to wallet
+        <Button
+          type="button"
+          variant="outline"
+          className="shrink-0"
+          onClick={onClose}
+          disabled={capturing}
+          aria-label="Back to wallet"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span className="ml-2 hidden sm:inline">Back</span>
         </Button>
       </div>
     </div>
