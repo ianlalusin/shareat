@@ -45,6 +45,9 @@ const CONFIG_COLLECTIONS = [
   "receiptSettings",
   "salesTargets",
   "optionOverrides",
+  // QR wallet. Any staffer may DISPLAY a saved QR, but adding or editing one
+  // changes which account receives money.
+  "savedQrCodes",
 ] as const;
 
 /** Written by cashier/server/kitchen during a normal shift — must stay open. */
@@ -67,6 +70,12 @@ const OPEN_COLLECTIONS = [
   "weatherRecords",
   "dailyContext",
   "sessionAuditFlags",
+  // Payment-proof photos of the customer's e-wallet confirmation screen. The
+  // cashier writes these mid-checkout, so they MUST stay open — see the header.
+  "paymentProofs",
+  // Audit trail written when a saved QR is displayed to a customer. Also a
+  // cashier action, and best-effort: it must never block showing the QR.
+  "qrWalletEvents",
 ] as const;
 
 /** Server-only (Admin SDK writes these; clients never may). */

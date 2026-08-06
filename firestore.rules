@@ -53,10 +53,19 @@ service cloud.firestore {
     // binds {coll} to one segment, so nested docs inherit their parent's verdict
     // (receipts/{id}/revisions/{v} is 'receipts'; storeConfig/current/tables/{t}
     // is 'storeConfig').
+    // savedQrCodes is the QR wallet (static merchant QRs shown to customers at
+    // the till). It is config, not operational: any staffer may DISPLAY a saved
+    // QR, but adding or editing one changes which account receives money, so it
+    // is a manager/admin decision.
+    //
+    // Deliberately NOT listed here: paymentProofs and qrWalletEvents. Cashiers
+    // write both on their critical path, and locking them would surface as
+    // silent offline data loss (see the note in tests/rules/store-scoped.test.ts).
     function isConfigCollection(coll) {
       return coll in ['inventory', 'storeDiscounts', 'storeCharges', 'storeModesOfPayment',
                       'storePackages', 'storeRefills', 'storeFlavors', 'menuSchedules',
-                      'kitchenLocations', 'receiptSettings', 'salesTargets', 'optionOverrides'];
+                      'kitchenLocations', 'receiptSettings', 'salesTargets', 'optionOverrides',
+                      'savedQrCodes'];
     }
 
     function hasStoreAccess(storeId) {

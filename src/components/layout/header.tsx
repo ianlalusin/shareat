@@ -5,6 +5,7 @@ import { MainNav } from './main-nav'
 import { UserNav } from './user-nav'
 import { StoreSwitcher } from './store-switcher'
 import { LocalUserNavButton } from './local-user-nav-button'
+import { QrWalletNavButton } from './qr-wallet-nav-button'
 import type { User } from '@/lib/types'
 import { Button } from '../ui/button'
 import { PanelLeft } from 'lucide-react'
@@ -31,6 +32,13 @@ export default function Header({ user }: { user: User }) {
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
+        {/* QR wallet, mobile only — on desktop it lives in MainNav next to Admin.
+            Duplicated here so a cashier on a tablet can show a customer a QR
+            without going through the hamburger mid-transaction. */}
+        <QrWalletNavButton
+          className="shrink-0 text-destructive-foreground hover:bg-white/20 hover:text-destructive-foreground md:hidden"
+        />
+
         {/* Local-user (device profile) selector — sits before the store switcher. */}
         <LocalUserNavButton />
 

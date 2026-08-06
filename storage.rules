@@ -20,6 +20,39 @@ service firebase.storage {
       return role == 'admin' || role == 'manager';
     }
 
+    // Store-scoped variants. The role-only helper above is fine for global
+    // assets (product images, loyalty rewards) but not for per-store uploads:
+    // without the membership check, a manager at one branch could write into
+    // another branch's folder. These mirror hasStoreAccess()/isManagerOrAdmin()
+    // in firestore.rules, including the status == 'active' gate so a
+    // deactivated account cannot keep uploading.
+    function staffDataFor(uid) {
+      return firestore.get(/databases/(default)/documents/staff/$(uid)).data;
+    }
+
+    function hasStoreAccess(uid, storeId) {
+      let d = staffDataFor(uid);
+      return d.status == 'active'
+        && (d.role == 'admin'
+            || (d.assignedStoreIds is list && d.assignedStoreIds.hasAny([storeId])));
+    }
+
+    function isStoreManagerOrAdmin(uid, storeId) {
+      let d = staffDataFor(uid);
+      return d.status == 'active'
+        && (d.role == 'admin'
+            || (d.role == 'manager'
+                && d.assignedStoreIds is list
+                && d.assignedStoreIds.hasAny([storeId])));
+    }
+
+    // Content-type and size gate. Without this, "upload an image" is really
+    // "upload anything up to the bucket limit".
+    function isImageUnder(maxMb) {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < maxMb * 1024 * 1024;
+    }
+
     // By default, allow public reads for images, but deny all writes.
     match /{allPaths=**} {
       allow read;
@@ -47,6 +80,53 @@ service firebase.storage {
     // URL onto products/{id}.imageUrl and the store's inventory record.
     match /productRequestImages/{requestId}/{fileName} {
       allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
+    }
+
+    // -- QR wallet (saved static merchant QRs) --
+    // The captured photo of the QR, plus the fetched brand icon. Adding one
+    // decides which account receives money, so manager/admin only — matching
+    // savedQrCodes in firestore.rules.
+    match /stores/{storeId}/qrWallet/{qrId}/{fileName} {
+      allow write: if request.auth != null
+        && isStoreManagerOrAdmin(request.auth.uid, storeId)
+        && isImageUnder(6);
+    }
+
+    // -- Payment proofs --
+    // Photo of the customer's e-wallet confirmation screen, taken after they
+    // scan a saved QR. ANY active store staffer may write: this is the
+    // CASHIER's flow, and gating it to managers would break it on the critical
+    // path. No update/delete rule — a proof is immutable once written.
+    //
+    // TOP-LEVEL prefix ON PURPOSE, not stores/{storeId}/paymentProofs/. These
+    // objects are deleted after 15 days by a Storage lifecycle rule, and
+    // lifecycle rules match a LITERAL prefix — with the store id in the middle
+    // of the path, no single prefix could target every store's proofs without
+    // also matching that store's logo. See storage-lifecycle.json.
+    //
+    // NOTE: these photos show a customer's payment confirmation, and the public
+    // root read below cannot be narrowed here (Storage rules OR across matching
+    // blocks, so a stricter `allow read` accomplishes nothing). The mitigation
+    // is the unguessable path: {proofId} is a crypto.randomUUID(), so 122 bits
+    // makes enumeration infeasible, and the object is gone in 15 days anyway.
+    match /paymentProofs/{storeId}/{fileName} {
+      allow write: if request.auth != null
+        && hasStoreAccess(request.auth.uid, storeId)
+        && isImageUnder(6);
+    }
+
+    // -- Store logos --
+    // PRE-EXISTING BUG, fixed here because we are already in this file: there
+    // was no rule matching stores/{storeId}/*, so uploadStoreLogo() and
+    // uploadReceiptLogo() in src/lib/firebase/client.ts fell through to the
+    // deny-all root and have ALWAYS failed at runtime.
+    //
+    // Single-segment {fileName} on purpose, so this matches stores/{id}/logo.png
+    // without shadowing the two deeper blocks above.
+    match /stores/{storeId}/{fileName} {
+      allow write: if request.auth != null
+        && isStoreManagerOrAdmin(request.auth.uid, storeId)
+        && isImageUnder(4);
     }
   }
 }

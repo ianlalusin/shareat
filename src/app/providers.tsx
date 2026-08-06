@@ -3,12 +3,14 @@
 import { AuthContextProvider } from '@/context/auth-context';
 import { StoreContextProvider } from '@/context/store-context';
 import { LocalProfileProvider } from '@/context/local-profile-context';
+import { QrWalletProvider } from '@/context/qr-wallet-context';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Capacitor } from '@capacitor/core';
 import { useEffect } from 'react';
 import { getLastPrinterAddress } from '@/lib/printing/printHub';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { AndroidBackHandler } from '@/components/shared/AndroidBackHandler';
+import { ProofOutboxSync } from '@/components/shared/ProofOutboxSync';
 import { installApiBaseFetch } from '@/lib/api-base';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -51,8 +53,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
             <AuthContextProvider>
                 <StoreContextProvider>
                     <LocalProfileProvider>
-                        <AndroidBackHandler />
-                        {children}
+                        {/* Inside LocalProfileProvider: the wallet's audit trail
+                            attributes a QR display to the device's local user. */}
+                        <QrWalletProvider>
+                            <AndroidBackHandler />
+                            <ProofOutboxSync />
+                            {children}
+                        </QrWalletProvider>
                     </LocalProfileProvider>
                 </StoreContextProvider>
             </AuthContextProvider>

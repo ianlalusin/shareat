@@ -10,6 +10,7 @@ import type { UserRole } from '@/lib/types'
 import { SheetClose } from '../ui/sheet'
 import { Badge } from '../ui/badge'
 import { useStoreContext } from '@/context/store-context'
+import { QrWalletNavButton } from './qr-wallet-nav-button'
 
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard', roles: ['admin', 'manager', 'cashier'] },
@@ -152,6 +153,18 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
 
         return link;
       })}
+
+      {/* Sits after the links so it lands next to Admin, the last entry. Not a
+          navLinks row: it opens a dialog rather than navigating, and it is
+          available to every store role (a cashier shows the QR; only a
+          manager can add one, which the wallet gates internally). */}
+      <QrWalletNavButton
+        showLabel={isMobile}
+        className={cn(
+          'text-white/70 hover:bg-white/10 hover:text-white',
+          isMobile && 'w-full justify-start px-0 text-lg hover:bg-transparent',
+        )}
+      />
     </nav>
   )
 }

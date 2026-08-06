@@ -760,6 +760,137 @@ export type ModeOfPayment = {
   updatedBy: string;
 };
 
+/**
+ * A saved static merchant/P2P QR (GCash QR Ph, Maya, bank QR) shown to a
+ * customer at the till. Lives at stores/{storeId}/savedQrCodes/{id}.
+ *
+ * DISPLAY-ONLY: showing one records no tender. The cashier still rings the sale
+ * through the normal Mode-of-Payment flow. Nothing here touches accounting.
+ */
+export type SavedQrCode = {
+  id: string;
+  storeId: string;
+  /** What the manager typed, e.g. "GCash — Ate Malou". */
+  name: string;
+  /**
+   * Stable brand key for icon lookup, e.g. "gcash". Kept separate from `name`
+   * so a personal label still resolves to the right logo. Derived by
+   * guessProvider() in lib/qr/emvco.ts — which matches on the BIC in the
+   * merchant-account template, NOT the GUID (that is "ph.ppmi.p2m" for every
+   * PH participant and identifies the scheme, not the wallet).
+   */
+  provider: string;
+  sortOrder: number;
+  isActive: boolean;
+
+  /**
+   * The EMVCo payload, VERBATIM as decoded. NEVER re-serialize this from `meta`
+   * — tag order is not canonical and the CRC covers the exact byte sequence, so
+   * a "cleaned up" payload is a different string that some bank apps reject.
+   *
+   * null when decoding failed; the UI then displays `photoUrl` instead, which a
+   * customer can still scan off the screen.
+   */
+  payload: string | null;
+  decodeStatus: 'decoded' | 'failed' | 'manual';
+
+  /** Parsed EMVCo fields. DISPLAY ONLY — not a source of truth for anything. */
+  meta?: {
+    merchantName?: string | null;
+    merchantCity?: string | null;
+    countryCode?: string | null;
+    currency?: string | null;
+    mcc?: string | null;
+    initiationMethod?: 'static' | 'dynamic' | null;
+    accountGuids?: string[];
+    maskedAccount?: string | null;
+    crcValid?: boolean;
+    /** EmvWarning codes from lib/qr/emvco.ts. */
+    warnings?: string[];
+  };
+
+  /** The captured photo. ALWAYS stored, whether or not decoding succeeded. */
+  photoUrl: string;
+  photoStoragePath: string;
+  photoWidth?: number;
+  photoHeight?: number;
+
+  iconUrl?: string | null;
+  iconStoragePath?: string | null;
+  iconSource?: 'simpleicons' | 'favicon' | 'upload' | 'initials';
+  /** Fallback badge when no icon was fetched — always populated. */
+  iconInitials?: string;
+  iconColor?: string;
+
+  createdAt: any;
+  createdAtMs: number;
+  createdByUid: string;
+  createdByName?: string | null;
+  updatedAt: any;
+  updatedByUid?: string;
+};
+
+/**
+ * Photo of a customer's e-wallet confirmation screen, taken right after they
+ * scan a saved QR. Lives at paymentProofs/{storeId}/{proofId}.
+ *
+ * DELIBERATELY JUST A PHOTO. No amount, no reference number, no OCR. The POS
+ * does not record what was received here — the sale is rung up through the
+ * normal Mode-of-Payment flow, and this is only a visual record that the
+ * customer showed a confirmation. Anything more would be a second, unreconciled
+ * source of truth for money.
+ *
+ * RETENTION: 15 days, enforced in two places that must stay in step —
+ *   - the photo, by a Storage lifecycle rule on the paymentProofs/ prefix
+ *     (see storage-lifecycle.json);
+ *   - this document, by a Firestore TTL policy on the `expiresAt` field.
+ * Neither costs anything to run, and neither needs a cron job.
+ */
+export type PaymentProof = {
+  id: string;
+  storeId: string;
+
+  /** Which saved QR was on screen when this was captured, for context. */
+  qrId: string | null;
+  qrName: string | null;
+  provider: string | null;
+
+  /** null while the upload is still queued in the offline outbox. */
+  imageUrl: string | null;
+  imageStoragePath: string | null;
+  imageUploadStatus: 'pending' | 'uploaded' | 'failed';
+
+  capturedAtMs: number;
+  createdAt: any;
+  createdByUid: string;
+  createdByName: string | null;
+  createdByLocalUserId: string | null;
+
+  /**
+   * Firestore TTL anchor — the policy deletes this document once the clock
+   * passes it. Must be a Timestamp, not a number: a TTL policy silently
+   * ignores a field of any other type, and the collection would grow forever
+   * with no error to notice.
+   */
+  expiresAt: any;
+};
+
+/**
+ * Audit trail written when a saved QR is displayed to a customer. Feature A
+ * records no tender, so this is the only signal that money may have moved
+ * outside the POS. Best-effort — a failed write must never block the display.
+ */
+export type QrWalletEvent = {
+  id: string;
+  qrId: string;
+  qrName: string;
+  provider: string;
+  sessionId: string | null;
+  createdAtMs: number;
+  createdByUid: string;
+  createdByLocalUserId: string | null;
+};
+
 export type ForecastConfig = {
   customHolidays?: { name: string; date: string }[]; // date in YYYY-MM-DD
   payrollScheduleType?: 'semi_monthly_15_eom' | 'weekly' | 'bi_weekly' | 'custom';
