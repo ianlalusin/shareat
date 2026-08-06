@@ -34,6 +34,23 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Camera — live QR scanning when a manager adds a saved QR to the wallet.
+         Required because the scanner reads the preview stream via getUserMedia
+         inside the WebView; capacitor.config's androidScheme:'https' already
+         makes that a secure context, and Capacitor's BridgeWebChromeClient
+         grants the WebView request once this permission exists.
+
+         NOTE: declaring CAMERA also makes ACTION_IMAGE_CAPTURE stricter — an
+         <input type="file" capture> (used for proof-of-payment photos) now
+         needs the runtime grant too, where before it delegated to the camera
+         app and needed nothing. Both paths therefore prompt once, on first use.
+
+         required="false" so tablets without a camera can still install and use
+         the rest of the POS. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <!-- Bluetooth Classic (for thermal printers) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />

@@ -87,6 +87,23 @@ function rotate90(image: ImageData): ImageData {
   return new ImageData(out, height, width);
 }
 
+/**
+ * Decodes a single live-preview frame.
+ *
+ * Deliberately cheaper than the still ladder: a scanner gets ~10 frames a
+ * second, so a frame that misses costs nothing and the next one is already on
+ * its way. Spending 12 passes on a frame would drop the frame rate and make
+ * scanning FEEL worse while finding nothing a later frame wouldn't.
+ *
+ * Centre first (that is where the aiming box is), then the full frame.
+ */
+export async function decodeQrFromFrame(frame: ImageData): Promise<QrDecodeResult | null> {
+  const decode = await loadJsQr();
+  return (
+    attempt(decode, centreCrop(frame), "centre-frame") ?? attempt(decode, frame, "full-frame")
+  );
+}
+
 function attempt(
   decode: JsQrModule["default"],
   image: ImageData | null,

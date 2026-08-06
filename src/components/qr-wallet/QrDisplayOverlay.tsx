@@ -140,21 +140,20 @@ export function QrDisplayOverlay({
               className="h-auto w-[min(72vw,52vh)] max-w-[420px]"
             />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={qr.photoUrl}
-              alt={`Saved QR code for ${qr.name}`}
-              className="h-auto w-[min(72vw,52vh)] max-w-[420px] object-contain"
-            />
+            // Only reachable for a doc saved by an older build, which stored a
+            // photo instead of a payload. Nothing here can render a scannable
+            // code from that, so say so plainly rather than showing a picture
+            // the customer's bank app may or may not read.
+            <div className="flex h-[min(72vw,52vh)] max-h-[420px] w-[min(72vw,52vh)] max-w-[420px] flex-col items-center justify-center gap-2 p-6 text-center">
+              <ImageIcon className="h-8 w-8 text-muted-foreground opacity-50" />
+              <p className="text-sm font-medium text-foreground">This QR needs re-scanning</p>
+              <p className="text-sm text-muted-foreground">
+                It was saved before the scanner was added. Ask a manager to edit it and scan
+                the code again.
+              </p>
+            </div>
           )}
         </div>
-
-        {!qr.payload && (
-          <Badge variant="secondary" className="gap-1.5">
-            <ImageIcon className="h-3.5 w-3.5" />
-            Showing the saved photo
-          </Badge>
-        )}
 
         {hasAmount && (
           <p className="flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-500">

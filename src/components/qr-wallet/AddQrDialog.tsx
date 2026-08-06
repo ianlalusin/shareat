@@ -1,22 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Camera,
-  CheckCircle2,
-  Loader2,
-  ShieldAlert,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { CheckCircle2, Loader2, ScanLine, ShieldAlert, Trash2 } from "lucide-react";
+import { collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 
 import { Button } from "@/components/ui/button";
@@ -35,12 +21,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { auth, db, storage } from "@/lib/firebase/client";
-import { QR_DECODE_MAX_EDGE, downscaleImage } from "@/lib/images/downscale";
-import { decodeQrFromImage } from "@/lib/qr/decode-image";
 import { guessProvider, maskAccountTail, parseEmvQr, type EmvQrInfo } from "@/lib/qr/emvco";
 import { initialsBadge } from "@/lib/qr/initials";
 import { cn } from "@/lib/utils";
 import type { SavedQrCode } from "@/lib/types";
+
+import { QrScanner } from "./QrScanner";
 
 type IconCandidate = {
   id: string;
@@ -49,7 +35,7 @@ type IconCandidate = {
   bytesBase64: string;
 };
 
-type Stage = "capture" | "details";
+type Stage = "scan" | "details";
 
 export type AddQrDialogProps = {
   open: boolean;
@@ -79,35 +65,26 @@ function base64ToBlob(base64: string, contentType: string): Blob {
 /**
  * Add or edit a saved QR.
  *
- * FLOW ORDER IS DELIBERATE, and it is the one rule of this component:
+ * THE WALLET STORES DATA, NOT PICTURES. The manager scans the QR live; we keep
+ * the decoded EMVCo payload and every tile re-renders it as a fresh, crisp code.
+ * No photograph is captured or uploaded, because a photo of a QR is strictly
+ * worse to show a customer than a QR generated from the same data — it is
+ * softer, it carries the glare and skew of the original shot, and it cannot be
+ * resized cleanly.
  *
- *   capture → downscale → UPLOAD THE PHOTO → decode → parse → name → icon → save
- *
- * The photo is uploaded before anything that can fail. A blurry capture, an
- * unreadable QR, a dead icon service, a manager who wanders off mid-form — none
- * of those may cost us the photo, because a photo alone is still a usable
- * wallet entry (a customer can scan it off the screen).
+ * Nothing is saved until a payload is in hand, which is what makes a scanner
+ * the right input: a still capture that fails to decode leaves nothing usable,
+ * whereas a scanner just keeps reading.
  */
 export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialogProps) {
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * Id for this dialog session, fixed on open. Retaking the photo must reuse it
-   * — minting a fresh one per capture would scatter orphaned objects across
-   * Storage under ids no document ever references.
-   */
+  /** Id for this dialog session, fixed on open — also the icon's Storage folder. */
   const draftIdRef = useRef<string>("");
 
-  const [stage, setStage] = useState<Stage>("capture");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>("scan");
   const [saving, setSaving] = useState(false);
-
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [photoSize, setPhotoSize] = useState<{ width: number; height: number } | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [payload, setPayload] = useState<string | null>(null);
   const [info, setInfo] = useState<EmvQrInfo | null>(null);
@@ -121,102 +98,47 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
 
   const isEditing = editing !== null;
 
-  // Reset per-open so a second Add never inherits the first one's photo.
   useEffect(() => {
     if (!open) return;
     draftIdRef.current = editing?.id ?? crypto.randomUUID();
     if (editing) {
       setStage("details");
-      setPhotoUrl(editing.photoUrl);
-      setPhotoPath(editing.photoStoragePath);
-      setPayload(editing.payload);
+      setPayload(editing.payload ?? null);
       setInfo(editing.payload ? parseEmvQr(editing.payload) : null);
       setName(editing.name);
     } else {
-      setStage("capture");
-      setPhotoUrl(null);
-      setPhotoPath(null);
+      setStage("scan");
       setPayload(null);
       setInfo(null);
       setName("");
     }
-    setPhotoSize(null);
-    setPreviewUrl(null);
     setAcknowledged(false);
     setIcons([]);
     setSelectedIcon(null);
-    setBusy(null);
     setSaving(false);
   }, [open, editing]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   const warnings = info?.warnings ?? [];
   const hasAmount = warnings.includes("has_amount");
   const isDynamic = warnings.includes("dynamic_initiation");
-  const needsAck = hasAmount || isDynamic;
+  const crcFailed = info !== null && !info.crcValid;
+  const notEmv = info !== null && !info.isEmv;
+  const needsAck = hasAmount || isDynamic || crcFailed || notEmv;
 
   const provider = useMemo(() => guessProvider(info, name), [info, name]);
   const fallbackBadge = useMemo(() => initialsBadge(name || "QR"), [name]);
 
-  /** Step 1–3: capture, upload, then decode. Upload before decode, always. */
-  const handleFile = useCallback(
-    async (file: File) => {
-      const qrId = draftIdRef.current;
-      try {
-        setBusy("Preparing photo…");
-        const shrunk = await downscaleImage(file, { maxEdge: QR_DECODE_MAX_EDGE });
-        setPhotoSize({ width: shrunk.width, height: shrunk.height });
-        setPreviewUrl(URL.createObjectURL(shrunk.blob));
-
-        setBusy("Saving photo…");
-        const path = `stores/${storeId}/qrWallet/${qrId}/photo-${Date.now()}.jpg`;
-        const target = storageRef(storage, path);
-        await uploadBytes(target, shrunk.blob, { contentType: "image/jpeg" });
-        const url = await getDownloadURL(target);
-        setPhotoUrl(url);
-        setPhotoPath(path);
-
-        setBusy("Reading QR code…");
-        const decoded = await decodeQrFromImage(shrunk.blob);
-        if (decoded) {
-          const parsed = parseEmvQr(decoded.payload);
-          setInfo(parsed);
-          // A CRC-failing payload rendered as a fresh QR looks valid and fails
-          // at the bank app — worse than useless. Treat it as not decoded.
-          setPayload(parsed.crcValid ? parsed.raw : null);
-          if (!parsed.crcValid) {
-            toast({
-              title: "QR checksum failed",
-              description: "The saved photo will be shown instead of a re-rendered code.",
-            });
-          }
-          if (!name && parsed.merchantName) setName(parsed.merchantName);
-        } else {
-          setInfo(null);
-          setPayload(null);
-          toast({
-            title: "Couldn't read the QR",
-            description: "The photo is saved — it will be shown as-is. Give it a name.",
-          });
-        }
-        setStage("details");
-      } catch (error: any) {
-        console.error("[AddQrDialog] capture failed:", error);
-        toast({
-          variant: "destructive",
-          title: "Couldn't save the photo",
-          description: error?.message ?? "Please try again.",
-        });
-      } finally {
-        setBusy(null);
-      }
+  /** A payload came off the scanner. Parse it and move to the details step. */
+  const handleScan = useCallback(
+    (scanned: string) => {
+      const parsed = parseEmvQr(scanned);
+      setInfo(parsed);
+      // Stored VERBATIM — never re-serialized from the parsed fields.
+      setPayload(parsed.raw);
+      if (!name && parsed.merchantName) setName(parsed.merchantName);
+      setStage("details");
     },
-    [editing?.id, name, storeId, toast],
+    [name],
   );
 
   /** Icon suggestion. Entirely optional — failure never blocks the save. */
@@ -248,7 +170,7 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
 
   const handleSave = useCallback(async () => {
     const trimmed = name.trim();
-    if (!trimmed || !photoUrl || !photoPath) return;
+    if (!trimmed || !payload) return;
 
     setSaving(true);
     try {
@@ -295,15 +217,13 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
         await updateDoc(doc(db, "stores", storeId, "savedQrCodes", editing.id), {
           name: trimmed,
           provider,
+          payload,
+          meta,
           iconUrl,
           iconStoragePath,
           iconSource,
           iconInitials: badge.initials,
           iconColor: badge.color,
-          ...(payload !== editing.payload ? { payload, meta } : {}),
-          ...(photoUrl !== editing.photoUrl
-            ? { photoUrl, photoStoragePath: photoPath }
-            : {}),
           updatedAt: serverTimestamp(),
           updatedByUid: auth.currentUser?.uid ?? "",
         });
@@ -317,11 +237,7 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
           sortOrder: 1000,
           isActive: true,
           payload,
-          decodeStatus: payload ? "decoded" : "failed",
           meta,
-          photoUrl,
-          photoStoragePath: photoPath,
-          ...(photoSize ?? {}),
           iconUrl,
           iconStoragePath,
           iconSource,
@@ -356,9 +272,6 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
     name,
     onOpenChange,
     payload,
-    photoPath,
-    photoSize,
-    photoUrl,
     provider,
     selectedIcon,
     storeId,
@@ -388,82 +301,50 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
     }
   }, [confirm, editing, onOpenChange, storeId, toast]);
 
-  const canSave =
-    !!name.trim() && !!photoUrl && !saving && !busy && (!needsAck || acknowledged);
+  const canSave = !!name.trim() && !!payload && !saving && (!needsAck || acknowledged);
+
+  const ackMessage = crcFailed
+    ? "This code's checksum doesn't match, so it may have been misread. Re-scan it if you can — if you save it anyway, test it with a wallet app before using it at the till."
+    : notEmv
+      ? "This doesn't look like a payment QR. It will still be saved and shown exactly as scanned."
+      : hasAmount
+        ? `This QR has a fixed amount of ₱${info?.amount} baked in. Every customer would be charged that exact amount.`
+        : "This is a one-time QR and will stop working after it is used.";
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !saving && !busy && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
       <DialogContent className="flex max-h-[90dvh] max-w-lg flex-col overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit QR code" : "Add QR code"}</DialogTitle>
           <DialogDescription>
-            {stage === "capture"
-              ? "Take a photo of the QR code. The photo is saved either way."
+            {stage === "scan"
+              ? "Scan the QR code. Only its data is saved — the wallet regenerates the code itself."
               : "Name it and pick an icon."}
           </DialogDescription>
         </DialogHeader>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          // Hints the OS to open the rear camera. Where a WebView ignores it the
-          // manager gets a file picker instead, which still works — that is why
-          // this path needs no CAMERA permission and no APK rebuild.
-          capture="environment"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void handleFile(file);
-          }}
-        />
-
         <div className="space-y-4 py-1">
-          {busy && (
-            <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/40 py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {busy}
-            </div>
+          {stage === "scan" && (
+            <QrScanner onResult={handleScan} onCancel={() => onOpenChange(false)} />
           )}
 
-          {!busy && stage === "capture" && (
-            <Button
-              type="button"
-              variant="outline"
-              className="h-32 w-full flex-col gap-2 border-dashed"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Camera className="h-8 w-8 opacity-60" />
-              <span className="font-medium">Take a photo of the QR</span>
-            </Button>
-          )}
-
-          {!busy && stage === "details" && (
+          {stage === "details" && (
             <>
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 overflow-hidden rounded-lg border bg-white">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl ?? photoUrl ?? ""}
-                    alt="Captured QR"
-                    className="h-24 w-24 object-contain"
-                  />
-                </div>
+              <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {payload ? (
+                  {payload && !crcFailed ? (
                     <Badge variant="secondary" className="w-fit gap-1.5">
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      QR read successfully
+                      Scanned successfully
                     </Badge>
                   ) : (
                     <Badge variant="outline" className="w-fit gap-1.5">
-                      <TriangleAlert className="h-3.5 w-3.5" />
-                      Saved as a photo
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      Checksum mismatch
                     </Badge>
                   )}
                   {info?.merchantName && (
-                    <p className="truncate text-sm text-muted-foreground">{info.merchantName}</p>
+                    <p className="truncate text-sm font-medium">{info.merchantName}</p>
                   )}
                   {info && maskAccountTail(info) && (
                     <p className="text-sm tabular-nums text-muted-foreground">
@@ -474,9 +355,13 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
                     type="button"
                     variant="link"
                     className="h-auto w-fit p-0 text-sm"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      setAcknowledged(false);
+                      setStage("scan");
+                    }}
                   >
-                    Retake photo
+                    <ScanLine className="mr-1.5 h-3.5 w-3.5" />
+                    Scan again
                   </Button>
                 </div>
               </div>
@@ -485,11 +370,7 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
                 <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                   <p className="flex items-start gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      {hasAmount
-                        ? `This QR has a fixed amount of ₱${info?.amount} baked in. Every customer would be charged that exact amount.`
-                        : "This is a one-time QR and will stop working after it is used."}
-                    </span>
+                    <span>{ackMessage}</span>
                   </p>
                   <label className="flex items-center gap-2 text-sm">
                     <Checkbox
@@ -586,14 +467,16 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={saving || !!busy}
+              disabled={saving}
             >
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleSave()} disabled={!canSave}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
+            {stage === "details" && (
+              <Button type="button" onClick={() => void handleSave()} disabled={!canSave}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

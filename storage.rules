@@ -83,9 +83,10 @@ service firebase.storage {
     }
 
     // -- QR wallet (saved static merchant QRs) --
-    // The captured photo of the QR, plus the fetched brand icon. Adding one
-    // decides which account receives money, so manager/admin only — matching
-    // savedQrCodes in firestore.rules.
+    // BRAND ICONS ONLY. No photograph of a QR is ever stored: the wallet keeps
+    // the scanned EMVCo payload and regenerates the code, so there is nothing
+    // to upload but the tile's logo. Adding a QR decides which account receives
+    // money, so manager/admin only — matching savedQrCodes in firestore.rules.
     match /stores/{storeId}/qrWallet/{qrId}/{fileName} {
       allow write: if request.auth != null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)

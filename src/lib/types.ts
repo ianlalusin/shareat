@@ -784,15 +784,16 @@ export type SavedQrCode = {
   isActive: boolean;
 
   /**
-   * The EMVCo payload, VERBATIM as decoded. NEVER re-serialize this from `meta`
+   * The EMVCo payload, VERBATIM as scanned. NEVER re-serialize this from `meta`
    * — tag order is not canonical and the CRC covers the exact byte sequence, so
    * a "cleaned up" payload is a different string that some bank apps reject.
    *
-   * null when decoding failed; the UI then displays `photoUrl` instead, which a
-   * customer can still scan off the screen.
+   * REQUIRED. The wallet stores data, never a picture: every tile renders a
+   * freshly generated QR from this string. A scan that does not decode (or
+   * whose CRC fails) is simply not saved — there is no photo fallback, because
+   * showing a customer a photograph of a QR is exactly what this design avoids.
    */
-  payload: string | null;
-  decodeStatus: 'decoded' | 'failed' | 'manual';
+  payload: string;
 
   /** Parsed EMVCo fields. DISPLAY ONLY — not a source of truth for anything. */
   meta?: {
@@ -809,11 +810,9 @@ export type SavedQrCode = {
     warnings?: string[];
   };
 
-  /** The captured photo. ALWAYS stored, whether or not decoding succeeded. */
-  photoUrl: string;
-  photoStoragePath: string;
-  photoWidth?: number;
-  photoHeight?: number;
+  // No photo is stored. The scanner keeps reading until it has a payload, and
+  // the payload is the only thing worth keeping — a picture of a QR is strictly
+  // worse to display than a QR regenerated from its data.
 
   iconUrl?: string | null;
   iconStoragePath?: string | null;
