@@ -9,6 +9,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { QrWalletModal } from "@/components/qr-wallet/QrWalletModal";
 import { AddQrDialog } from "@/components/qr-wallet/AddQrDialog";
+import { QrDisplayModal } from "@/components/qr-wallet/QrDisplayModal";
 import type { SavedQrCode } from "@/lib/types";
 
 interface QrWalletContextValue {
@@ -33,6 +34,7 @@ export function QrWalletProvider({ children }: { children: React.ReactNode }) {
   const [walletOpen, setWalletOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [editing, setEditing] = useState<SavedQrCode | null>(null);
+  const [displaying, setDisplaying] = useState<SavedQrCode | null>(null);
 
   const openWallet = useCallback(() => setWalletOpen(true), []);
 
@@ -52,6 +54,11 @@ export function QrWalletProvider({ children }: { children: React.ReactNode }) {
    */
   const handleDisplay = useCallback(
     (qr: SavedQrCode) => {
+      // Close the wallet and hand over to the dedicated display modal, so only
+      // one dialog is ever mounted — the QR needs the whole modal to size to.
+      setDisplaying(qr);
+      setWalletOpen(false);
+
       if (!activeStoreId) return;
       void addDoc(collection(db, "stores", activeStoreId, "qrWalletEvents"), {
         qrId: qr.id,
@@ -79,6 +86,17 @@ export function QrWalletProvider({ children }: { children: React.ReactNode }) {
         storeId={activeStoreId}
         onManage={handleManage}
         onDisplay={handleDisplay}
+      />
+      <QrDisplayModal
+        qr={displaying}
+        storeId={activeStoreId}
+        open={displaying !== null}
+        onClose={() => {
+          // Back to the wallet, so a cashier showing several QRs in a row does
+          // not have to reopen it from the navbar each time.
+          setDisplaying(null);
+          setWalletOpen(true);
+        }}
       />
       {activeStoreId && manageOpen && (
         <AddQrDialog

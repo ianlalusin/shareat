@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { Loader2, Pencil, Plus, QrCode } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,6 @@ import { cn } from "@/lib/utils";
 import type { SavedQrCode } from "@/lib/types";
 
 import { QrTileIcon } from "./QrTileIcon";
-import { QrDisplayOverlay } from "./QrDisplayOverlay";
 
 export type QrWalletModalProps = {
   open: boolean;
@@ -37,8 +36,8 @@ export type QrWalletModalProps = {
   storeId: string | null;
   /** Opens the add/edit dialog. `null` starts a new entry. */
   onManage: (qr: SavedQrCode | null) => void;
-  /** Recorded on the audit trail when a QR is displayed. */
-  onDisplay?: (qr: SavedQrCode) => void;
+  /** Hands a tile to the dedicated display modal (which replaces this one). */
+  onDisplay: (qr: SavedQrCode) => void;
 };
 
 /**
@@ -57,7 +56,6 @@ export function QrWalletModal({
 }: QrWalletModalProps) {
   const isMobile = useIsMobile();
   const { qrCodes, loading, error } = useSavedQrCodes(storeId);
-  const [displaying, setDisplaying] = useState<SavedQrCode | null>(null);
 
   const active = qrCodes.filter((qr) => qr.isActive !== false);
 
@@ -65,16 +63,17 @@ export function QrWalletModal({
   // are exactly the case that strands an overlay and leaves the app unclickable.
   useEffect(() => {
     if (!open) {
-      setDisplaying(null);
       const timer = setTimeout(cleanupRadixOverlays, 300);
       return () => clearTimeout(timer);
     }
   }, [open]);
 
+  // Hands off to the dedicated display modal. This wallet closes rather than
+  // hosting the QR: nested inside here it inherited this dialog's box and got
+  // clipped, and a QR that has to be scrolled to will not get scanned.
   const handleSelect = useCallback(
     (qr: SavedQrCode) => {
-      setDisplaying(qr);
-      onDisplay?.(qr);
+      onDisplay(qr);
     },
     [onDisplay],
   );
@@ -153,14 +152,6 @@ export function QrWalletModal({
           )}
         </div>
       </ScrollArea>
-
-      {displaying && (
-        <QrDisplayOverlay
-          qr={displaying}
-          storeId={storeId}
-          onBack={() => setDisplaying(null)}
-        />
-      )}
     </div>
   );
 
