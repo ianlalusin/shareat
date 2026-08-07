@@ -23,6 +23,7 @@ import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/s
 import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
 import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
 import { normalizePhone } from "@/lib/phone";
+import { paymentLabel } from "@/lib/payment-label";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -87,15 +88,6 @@ const TAB_STATES: Record<TabKey, string[]> = {
   cancelled: ["cancelled", "rejected", "expired"],
 };
 
-// Display label for an order whose payment.paid is true. Manual wallet
-// confirmations always carry a methodLabel; a PayMongo-settled order may not,
-// so it gets a named fallback instead of a blank string.
-function paidLabel(payment?: OnlineOrder["payment"]): string {
-  if (payment?.methodLabel) return payment.methodLabel;
-  if (payment?.method === "paymongo") return "Online (PayMongo)";
-  return "Paid";
-}
-
 function ordinalSuffix(n: number): string {
   const rem100 = n % 100;
   if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
@@ -113,7 +105,12 @@ function ordinalSuffix(n: number): string {
 export function buildTrustSignal(input: {
   normalizedPhone: string | null;
   priorOrders: { status: string }[];
-  visitCount: number | null;
+  // number: the customer's dine-in visit count. null: the customers/{phone}
+  // read SUCCEEDED and no such doc exists — a genuine "not a known customer"
+  // miss. undefined: the loyalty status is unknown (the read failed, or
+  // hasn't completed yet) — distinct from null, and must NOT be rendered as
+  // if it were a miss.
+  visitCount: number | null | undefined;
 }): string {
   const { normalizedPhone, priorOrders, visitCount } = input;
   if (!normalizedPhone) return "No phone on file";
@@ -122,6 +119,8 @@ export function buildTrustSignal(input: {
   const orderLabel = ordinal === 1 ? "First online order" : `${ordinalSuffix(ordinal)} online order`;
 
   if (priorOrders.length === 0) {
+    // Unknown loyalty status: omit the clause entirely rather than guessing.
+    if (visitCount === undefined) return orderLabel;
     if (visitCount === null) return `${orderLabel} · not a known customer`;
     const visits = `${visitCount} dine-in visit${visitCount === 1 ? "" : "s"}`;
     return `${orderLabel} · ${visits}`;
@@ -235,9 +234,8 @@ export default function OnlineOrdersClient() {
   // state already in memory — no read involved. The customer's dine-in
   // visitCount is the only actual Firestore read, fired once per distinct
   // phone (not on every `orders` snapshot tick) and never allowed to break
-  // the card: a failed or empty lookup just leaves visitCount at null, which
-  // buildTrustSignal renders as "not a known customer" / no-suffix rather
-  // than throwing.
+  // the card — see the tri-state note on the state below for how a failed
+  // read is kept distinct from a genuine miss.
   const normalizedPhone = selected ? normalizePhone(selected.contact?.phone || "") : null;
   const priorOrders = useMemo(() => {
     if (!selected || !normalizedPhone) return [];
@@ -246,11 +244,16 @@ export default function OnlineOrdersClient() {
       .map((o) => ({ status: o.status }));
   }, [orders, selected, normalizedPhone]);
 
-  const [visitCount, setVisitCount] = useState<number | null>(null);
+  // undefined = loyalty status unknown (not yet read, or the read failed);
+  // null = read succeeded, no customers/{phone} doc exists; number = visit
+  // count. The initial/loading state is undefined, never null, so a card
+  // that hasn't finished reading never renders "not a known customer" as if
+  // it were a confirmed fact.
+  const [visitCount, setVisitCount] = useState<number | null | undefined>(undefined);
   useEffect(() => {
-    if (!normalizedPhone) { setVisitCount(null); return; }
+    if (!normalizedPhone) { setVisitCount(undefined); return; }
     let cancelled = false;
-    setVisitCount(null);
+    setVisitCount(undefined);
     (async () => {
       try {
         const snap = await getDoc(doc(db, "customers", normalizedPhone));
@@ -258,7 +261,10 @@ export default function OnlineOrdersClient() {
         if (!cancelled) setVisitCount(vc);
       } catch (e) {
         console.error("[OnlineOrdersClient] customer lookup failed:", e);
-        // Leave visitCount at null — the online-order counts still render.
+        // A failed read is not the same fact as "no record exists" — leave
+        // visitCount at undefined so the card omits the loyalty clause
+        // instead of asserting a miss about someone who may be a regular.
+        if (!cancelled) setVisitCount(undefined);
       }
     })();
     return () => { cancelled = true; };
@@ -524,7 +530,7 @@ export default function OnlineOrdersClient() {
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {(o.lines?.length || 0)} item{(o.lines?.length || 0) === 1 ? "" : "s"}
-                          {" · "}{o.payment?.paid ? `Paid · ${paidLabel(o.payment)}` : o.payment?.method === "paymongo" ? "Online (unpaid)" : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
+                          {" · "}{o.payment?.paid ? `Paid · ${paymentLabel(o)}` : o.payment?.method === "paymongo" ? "Online (unpaid)" : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
                           {o.createdAtClientMs ? ` · ${new Date(o.createdAtClientMs).toLocaleString("en-PH")}` : ""}
                         </div>
                       </div>
@@ -618,7 +624,7 @@ export default function OnlineOrdersClient() {
                 <div className="rounded-md border p-3 space-y-2">
                   {selected.payment?.paid === true ? (
                     <>
-                      <div className="font-medium">Paid · {paidLabel(selected.payment)}</div>
+                      <div className="font-medium">Paid · {paymentLabel(selected)}</div>
                       <div className="text-xs text-muted-foreground space-y-0.5">
                         {selected.payment?.confirmedByName && <div>Confirmed by {selected.payment.confirmedByName}</div>}
                         {selected.payment?.settledAtMs && <div>{new Date(selected.payment.settledAtMs).toLocaleString("en-PH")}</div>}

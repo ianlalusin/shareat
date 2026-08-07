@@ -9,6 +9,7 @@ import {
   type StatusNotifyContext,
 } from "@/lib/server/notify-customer";
 import type { Receipt, ReceiptAnalyticsV2, SessionBillLine } from "@/lib/types";
+import { paymentLabel } from "@/lib/payment-label";
 
 export const runtime = "nodejs";
 
@@ -43,16 +44,6 @@ const NEXT_STATES: Record<string, string[]> = {
   // sits in the Cancelled tab and no caller offers that move.
   expired: ["pending"],
 };
-
-function paymentLabel(order: any): string {
-  // A manually confirmed wallet transfer names the wallet the money actually
-  // landed in. That string becomes the analyticsV2.mop key — i.e. a row in the
-  // daily sales report — so it outranks the generic fallbacks below.
-  const manual = order?.payment?.methodLabel;
-  if (typeof manual === "string" && manual.trim()) return manual.trim();
-  if (order?.payment?.method === "paymongo") return "Online (PayMongo)";
-  return order?.fulfillment?.type === "delivery" ? "Cash on Delivery" : "Pay at Counter";
-}
 
 function formatReceiptNumber(fmt: string, seq: number): string {
   const m = fmt.match(/#+/g);

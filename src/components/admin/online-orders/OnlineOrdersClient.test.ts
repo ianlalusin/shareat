@@ -124,4 +124,37 @@ describe("buildTrustSignal", () => {
       buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders, visitCount: null })
     ).toBe("13th online order · 12 completed, 0 cancelled");
   });
+
+  // Three distinct visitCount states: a number (known visit count), null (a
+  // genuine miss — the customers/{phone} read succeeded and no doc exists),
+  // and undefined (the loyalty status is unknown — the read failed, or
+  // hasn't completed yet). null and undefined must render DIFFERENT strings:
+  // collapsing them back together would print "not a known customer" about
+  // someone whose read simply failed, on the exact line a cashier uses to
+  // decide whether to cook before payment.
+  describe("visitCount tri-state (first order only — the only branch that reads it)", () => {
+    it("number renders the dine-in visit count", () => {
+      expect(
+        buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders: [], visitCount: 7 })
+      ).toBe("First online order · 7 dine-in visits");
+    });
+
+    it("null (successful read, no doc) renders 'not a known customer'", () => {
+      expect(
+        buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders: [], visitCount: null })
+      ).toBe("First online order · not a known customer");
+    });
+
+    it("undefined (unknown/failed read) omits the loyalty clause entirely", () => {
+      expect(
+        buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders: [], visitCount: undefined })
+      ).toBe("First online order");
+    });
+
+    it("null and undefined produce DIFFERENT strings", () => {
+      const withNull = buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders: [], visitCount: null });
+      const withUndefined = buildTrustSignal({ normalizedPhone: "+639171234567", priorOrders: [], visitCount: undefined });
+      expect(withNull).not.toBe(withUndefined);
+    });
+  });
 });
